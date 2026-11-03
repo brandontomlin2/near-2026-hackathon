@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan full git history for leaked credentials
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  structure:
+    name: Repository structure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every tracked symlink resolves
+        run: |
+          set -euo pipefail
+          broken=0
+          while IFS= read -r link; do
+            if [ ! -e "$link" ]; then
+              echo "::error file=$link::broken symlink -> $(readlink "$link")"
+              broken=1
+            fi
+          done < <(git ls-files -s | awk '$1 == "120000" { print $4 }')
+          [ "$broken" -eq 0 ]
+      - name: No tracked env or key files
+        run: |
+          set -euo pipefail
+          hits=$(git ls-files | grep -E '(^|/)\.env(\..*)?$|\.(pem|key)$' | grep -v '\.env\.example$' || true)
+          if [ -n "$hits" ]; then
+            echo "::error::tracked secret-looking files:"
+            echo "$hits"
+            exit 1
+          fi
+      - name: Required files present
+        run: |
+          set -euo pipefail
+          for f in README.md; do
+            [ -f "$f" ] || { echo "::error file=$f::missing"; exit 1; }
+          done
