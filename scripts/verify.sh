@@ -95,7 +95,9 @@ cleanup() {
 }
 
 write_runner() {
-  runner=$(mktemp "${TMPDIR:-/tmp}/near-verify-run.XXXXXX.js")
+  runner=$(mktemp "${TMPDIR:-/tmp}/near-verify-run.XXXXXX")
+  mv "$runner" "${runner}.js"
+  runner="${runner}.js"
   cat > "$runner" <<'JS'
 const { spawnSync } = require("node:child_process");
 
