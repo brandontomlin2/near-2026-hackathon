@@ -19,8 +19,8 @@ The chain stores only the sha256 hash of each token's character sheet, not the s
    contract:     personality-nft.demo.testnet
    token:        aloof
    sheet file:   out/memory/aloof/sheet.json
-   sheet hash:   685c3c71764322636ddf22dc0463afd6dda0dacf3ef5ea5591772d028d92d355
-   anchor hash:  685c3c71764322636ddf22dc0463afd6dda0dacf3ef5ea5591772d028d92d355
+   sheet hash:   94f4211aa7fc9e0938ce92000cbcbcb7cfe70862f2158d2a77e518f11fa3ebbb
+   anchor hash:  94f4211aa7fc9e0938ce92000cbcbcb7cfe70862f2158d2a77e518f11fa3ebbb
    in flight:    false (mock: demo has no transfer locks)
    result: MATCH
    ```
@@ -46,8 +46,8 @@ The chain stores only the sha256 hash of each token's character sheet, not the s
    contract:     personality-nft.demo.testnet
    token:        aloof
    sheet file:   out/tampered.json
-   sheet hash:   d9b7787501afdba52e55530f10e3cbac2bdaae9b91c15c2a88b3c3873e18a5b6
-   anchor hash:  685c3c71764322636ddf22dc0463afd6dda0dacf3ef5ea5591772d028d92d355
+   sheet hash:   cc6a82d8f936624799eb331a6d45be04264d941c0f48acd4574c0890eb60d672
+   anchor hash:  94f4211aa7fc9e0938ce92000cbcbcb7cfe70862f2158d2a77e518f11fa3ebbb
    in flight:    false (mock: demo has no transfer locks)
    result: MISMATCH
    ```
