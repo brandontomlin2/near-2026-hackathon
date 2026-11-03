@@ -8,7 +8,7 @@ import { createServer } from "node:http";
 import test from "node:test";
 import { inspect } from "node:util";
 
-import { InferenceError, createInferenceClient, createLiveClient } from "./client.mjs";
+import { DEFAULT_MAX_TOKENS, InferenceError, MAX_CONTENT_BYTES, createInferenceClient, createLiveClient } from "./client.mjs";
 
 const KEY = "sk-stub-edges-not-real-ABCDEFGHIJKLMNOP0123456789";
 const MODEL = "stub/edges-model";
@@ -82,14 +82,14 @@ function containsKeyFragment(text) {
   return false;
 }
 
-test("request shape: only model and messages when no options are given; string seeds are not sent", () =>
+test("request shape: model, messages and the default max_tokens when no options are given; string seeds are not sent", () =>
   withStub((_r, res) => json(res, 200, completion("pong")), async (s) => {
     const c = client(s);
     await c.chat(ask);
     await c.chat({ ...ask, seed: "run-7" });
     await c.chat({ ...ask, temperature: 0, maxTokens: 0, seed: 0 });
-    assert.deepEqual(s.seen[0].body, { model: MODEL, messages: ask.messages });
-    assert.deepEqual(Object.keys(s.seen[1].body).sort(), ["messages", "model"], "a string seed is mock-only");
+    assert.deepEqual(s.seen[0].body, { model: MODEL, messages: ask.messages, max_tokens: DEFAULT_MAX_TOKENS });
+    assert.deepEqual(Object.keys(s.seen[1].body).sort(), ["max_tokens", "messages", "model"], "a string seed is mock-only");
     assert.deepEqual(s.seen[2].body, { model: MODEL, messages: ask.messages, temperature: 0, max_tokens: 0, seed: 0 });
     for (const r of s.seen) {
       assert.equal(r.headers["content-type"], "application/json");
@@ -258,11 +258,11 @@ test("the client never writes to the console, on success or on any failure", asy
   assert.deepEqual(calls, []);
 });
 
-test("oversized replies: a 1 MiB assistant message comes back intact and untruncated", () =>
+test("oversized replies: a 1 MiB assistant message is cut to MAX_CONTENT_BYTES, the rest of the reply intact", () =>
   withStub((_r, res) => json(res, 200, completion("y".repeat(1 << 20))), async (s) => {
     const reply = await client(s).chat(ask);
-    assert.equal(reply.content.length, 1 << 20);
-    assert.equal(reply.content, "y".repeat(1 << 20));
+    assert.equal(reply.content.length, MAX_CONTENT_BYTES);
+    assert.equal(reply.content, "y".repeat(MAX_CONTENT_BYTES));
     assert.deepEqual(reply.usage, { promptTokens: 5, completionTokens: 2 });
     assert.equal(reply.id, "chatcmpl-edges");
   }));

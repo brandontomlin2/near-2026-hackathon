@@ -10,6 +10,7 @@ import test from "node:test";
 
 import { createMockClient } from "../inference/client.mjs";
 import { AGENTS } from "../traits/agents.mjs";
+import { replaceUnsafeChars } from "../util/text.mjs";
 import { renderViewer, escapeHtml } from "../viewer/render.mjs";
 import { renderDemoPage } from "./page.mjs";
 import { runDemo } from "./pipeline.mjs";
@@ -101,9 +102,11 @@ for (const [i, payload] of PAYLOADS.entries()) {
       const viewer = renderViewer(events);
       assertInertPage(viewer, (await benign).viewer, "viewer");
 
-      // Plain text files are not HTML, but must still be exactly the model text (no escaping applied).
+      // Plain text files are not HTML, so no escaping is applied: the model text is kept as is,
+      // except that control and bidi characters (which would drive a terminal) are U+FFFD.
       const transcript = await readFile(join(dir, "transcript.txt"), "utf8");
-      assert.ok(transcript.includes(payload.slice(0, 100)), "transcript keeps raw text");
+      assert.ok(transcript.includes(replaceUnsafeChars(payload).slice(0, 100)), "transcript keeps raw text");
+      assert.doesNotMatch(transcript, BIDI_OR_CONTROL, "control char reached the transcript");
 
       // Written SVGs: only our renderer's markup. Art and faces carry no text at all;
       // share cards carry the (hostile) post text, so they may add <text>/<tspan> and
@@ -195,6 +198,42 @@ test("renderDemoPage refuses a file list entry that is not a plain relative path
     for (const bad of ["javascript:alert(1)", "//evil.example/x", "https://evil.example", "../../etc/passwd", "a b", 'x"y', "data:text/html,<script>"]) {
       assert.throws(() => renderDemoPage({ ...manifest, files: [...manifest.files, bad] }, { events, anchors, svgs }), TypeError, bad);
     }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// Audit L-4: every path the page puts in a src or href, not only manifest.files, must be a
+// plain relative file name. HTML escaping alone lets <a href="javascript:..."> through.
+test("renderDemoPage refuses crafted art, face, share and meme paths", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "near-esc-demo-"));
+  try {
+    const { manifest } = await runDemo({ outDir: dir, rounds: 3, every: 3 });
+    const events = JSON.parse(await readFile(join(dir, "events.json"), "utf8")).events;
+    const anchors = JSON.parse(await readFile(join(dir, "anchors.json"), "utf8"));
+    const render = (m) => renderDemoPage(m, { events, anchors });
+    assert.ok(render(manifest).includes("<img"), "the untouched manifest renders");
+    const BAD = ["javascript:alert(1)", "//evil.example/x", "https://evil.example/x.svg", "../../etc/passwd", "a b.svg", 'x"y.svg', "data:text/html,<script>", "", 42, null];
+    const clone = () => structuredClone(manifest);
+    const variants = BAD.flatMap((bad) => {
+      const out = [];
+      let m = clone(); m.agents[0].art = bad; out.push(["agents[0].art", m]);
+      m = clone(); m.agents[1].mintArt = bad; out.push(["agents[1].mintArt", m]);
+      m = clone(); m.agents[2].faces[manifest.moods[0]] = bad; out.push([`agents[2].faces.${manifest.moods[0]}`, m]);
+      m = clone(); m.shares[0].file = bad; out.push(["shares[0].file", m]);
+      if (manifest.memes.length) { m = clone(); m.memes[0].file = bad; out.push(["memes[0].file", m]); }
+      return out.map(([where, man]) => [where, bad, man]);
+    });
+    for (const [where, bad, m] of variants) {
+      assert.throws(() => render(m), TypeError, `${where} = ${JSON.stringify(bad)}`);
+    }
+    // A face only used by the channel (not the strip) is checked as well.
+    const m = clone();
+    const mood = manifest.moods.find((x) => x !== "neutral") ?? manifest.moods[0];
+    m.agents[3].faces[mood] = "javascript:alert(1)";
+    assert.throws(() => render(m), TypeError, "channel face");
+    // Sanity: no rendered page ever holds a scheme in a src or href.
+    assert.doesNotMatch(render(manifest), /(?:src|href)="[^"]*(?::|\/\/)/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -15,6 +15,7 @@ import { mkdir, readFile, rename, writeFile, appendFile } from "node:fs/promises
 import { join } from "node:path";
 
 import { hashSheet } from "../anchor/hash.mjs";
+import { replaceUnsafeChars } from "../util/text.mjs";
 
 export const DEFAULT_SUMMARY_EVERY_N_ROUNDS = 5;
 export const DEFAULT_WAKE_EVENTS = 8;
@@ -190,7 +191,8 @@ export async function summarize({ client, tokenId, name, round, log, previous = 
     events: fresh,
   });
   const response = await client.chat({ messages, seed: `${tokenId}:${round}` });
-  const sheet = clampWords(response.content);
+  // The sheet is stored, hashed and printed, so control and bidi characters are replaced first.
+  const sheet = clampWords(replaceUnsafeChars(response.content));
   if (sheet.length === 0) {
     throw new MemoryError("summarizer returned an empty sheet", { code: "empty_sheet" });
   }
