@@ -918,10 +918,8 @@ mod tests {
         let res = catch_unwind(AssertUnwindSafe(|| {
             fresh.nft_mint("cloof".to_string(), accounts(2), aloof_metadata());
         }));
-        assert!(
-            res.is_err(),
-            "deposit below the storage cost must be rejected"
-        );
+        let err = res.expect_err("deposit below the storage cost must be rejected");
+        assert!(panic_text(err.as_ref()).contains("Must attach"));
     }
 
     #[test]
@@ -1246,7 +1244,8 @@ mod tests {
         let res = catch_unwind(AssertUnwindSafe(|| {
             contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
         }));
-        assert!(res.is_err());
+        let err = res.expect_err("one yocto cannot cover new storage");
+        assert!(panic_text(err.as_ref()).contains("Must attach"));
     }
 
     #[test]
@@ -1272,14 +1271,28 @@ mod tests {
         let res = catch_unwind(AssertUnwindSafe(|| {
             contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
         }));
-        assert!(res.is_err());
+        let err = res.expect_err("a stranger cannot anchor");
+        assert!(panic_text(err.as_ref()).contains("only the token owner can anchor a sheet"));
         let anchor = contract.sheet_anchor("aloof".to_string()).unwrap();
         assert_eq!(anchor.sheet_hash, None);
         assert_eq!(anchor.memory_depth, INITIAL_MEMORY_DEPTH);
     }
 
+    const LOCK_ANCHOR_MSG: &str = "token is in an nft_transfer_call; anchor after it resolves";
+    const LOCK_TRANSFER_MSG: &str = "token is in an nft_transfer_call; transfer after it resolves";
+    const LOCK_NESTED_MSG: &str = "token is already in an nft_transfer_call";
+
     fn panics<F: FnOnce()>(f: F) -> bool {
         catch_unwind(AssertUnwindSafe(f)).is_err()
+    }
+
+    /// The text of a caught panic payload (empty if it is neither string type).
+    fn panic_text(payload: &(dyn std::any::Any + Send)) -> &str {
+        payload
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| payload.downcast_ref::<&str>().copied())
+            .unwrap_or("")
     }
 
     /// True if `f` panics and the panic message contains `needle`, the same
@@ -1456,17 +1469,28 @@ mod tests {
         let _ = contract.nft_transfer_call(accounts(3), "aloof".to_string(), None, None, "".into());
         // The receiver owns the token now but must not touch the anchor.
         testing_env!(context(accounts(3), MINT_DEPOSIT).build());
-        assert!(panics(|| {
-            contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
-        }));
+        assert!(panics_with(
+            || {
+                contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+            },
+            LOCK_ANCHOR_MSG
+        ));
         // A nested transfer call cannot overwrite the in-flight lock either.
         testing_env!(context(accounts(3), ONE_YOCTO)
             .prepaid_gas(near_sdk::Gas::from_tgas(100))
             .build());
-        assert!(panics(|| {
-            let _ =
-                contract.nft_transfer_call(accounts(4), "aloof".to_string(), None, None, "".into());
-        }));
+        assert!(panics_with(
+            || {
+                let _ = contract.nft_transfer_call(
+                    accounts(4),
+                    "aloof".to_string(),
+                    None,
+                    None,
+                    "".into(),
+                );
+            },
+            LOCK_NESTED_MSG
+        ));
         // The receiver reverts the transfer: the token returns, anchor untouched.
         assert!(!resolve(&mut contract, true));
         let token = contract.nft_token("aloof".to_string()).unwrap();
@@ -1541,9 +1565,12 @@ mod tests {
                 accounts(3)
             );
             assert!(
-                panics(|| {
-                    contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
-                }),
+                panics_with(
+                    || {
+                        contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+                    },
+                    LOCK_ANCHOR_MSG
+                ),
                 "receiver anchored at height {height}"
             );
             testing_env!(context(accounts(3), ONE_YOCTO)
@@ -1551,28 +1578,34 @@ mod tests {
                 .prepaid_gas(near_sdk::Gas::from_tgas(100))
                 .build());
             assert!(
-                panics(|| {
-                    let _ = contract.nft_transfer_call(
-                        accounts(4),
-                        "aloof".to_string(),
-                        None,
-                        None,
-                        "".into(),
-                    );
-                }),
+                panics_with(
+                    || {
+                        let _ = contract.nft_transfer_call(
+                            accounts(4),
+                            "aloof".to_string(),
+                            None,
+                            None,
+                            "".into(),
+                        );
+                    },
+                    LOCK_NESTED_MSG
+                ),
                 "receiver nested a transfer call at height {height}"
             );
             assert!(
-                panics(|| {
-                    contract.nft_transfer_expecting_anchor(
-                        accounts(4),
-                        "aloof".to_string(),
-                        None,
-                        None,
-                        None,
-                        INITIAL_MEMORY_DEPTH,
-                    );
-                }),
+                panics_with(
+                    || {
+                        contract.nft_transfer_expecting_anchor(
+                            accounts(4),
+                            "aloof".to_string(),
+                            None,
+                            None,
+                            None,
+                            INITIAL_MEMORY_DEPTH,
+                        );
+                    },
+                    LOCK_TRANSFER_MSG
+                ),
                 "receiver sold with a pinned anchor at height {height}"
             );
         }
@@ -1647,9 +1680,12 @@ mod tests {
         testing_env!(context(accounts(4), MINT_DEPOSIT)
             .block_height(1_004)
             .build());
-        assert!(panics(|| {
-            contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
-        }));
+        assert!(panics_with(
+            || {
+                contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+            },
+            LOCK_ANCHOR_MSG
+        ));
         // Transfer 2's own callbacks (nonce 1) clear it.
         assert!(resolve_chain(
             &mut contract,
@@ -1691,16 +1727,19 @@ mod tests {
         // The receiver owns the token and the pinned anchor matches, but the
         // pending resolve may still take the token back, so the sale is refused.
         testing_env!(context(accounts(3), ONE_YOCTO).build());
-        assert!(panics(|| {
-            contract.nft_transfer_expecting_anchor(
-                accounts(4),
-                "aloof".to_string(),
-                None,
-                None,
-                None,
-                INITIAL_MEMORY_DEPTH,
-            );
-        }));
+        assert!(panics_with(
+            || {
+                contract.nft_transfer_expecting_anchor(
+                    accounts(4),
+                    "aloof".to_string(),
+                    None,
+                    None,
+                    None,
+                    INITIAL_MEMORY_DEPTH,
+                );
+            },
+            LOCK_TRANSFER_MSG
+        ));
         assert_eq!(
             contract.nft_token("aloof".to_string()).unwrap().owner_id,
             accounts(3)
@@ -1727,7 +1766,8 @@ mod tests {
     fn stale_callback_with_unknown_nonce_does_not_panic_or_freeze() {
         let mut contract = minted_contract();
         // No lock at all and a made-up nonce: still settles, nothing frozen.
-        let _ = resolve_with_nonce(&mut contract, false, 99);
+        assert!(resolve_with_nonce(&mut contract, false, 99));
+        assert!(!contract.nft_in_flight("aloof".to_string()));
         testing_env!(context(accounts(2), MINT_DEPOSIT).build());
         let anchor = contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
         assert_eq!(anchor.memory_depth, 2);
@@ -1739,9 +1779,12 @@ mod tests {
         testing_env!(context(accounts(2), MINT_DEPOSIT).build());
         contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
         contract.anchor_sheet("aloof".to_string(), HASH_B.to_string());
-        assert!(panics(|| {
-            contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
-        }));
+        assert!(panics_with(
+            || {
+                contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+            },
+            "was anchored before"
+        ));
         let anchor = contract.sheet_anchor("aloof".to_string()).unwrap();
         assert_eq!(anchor.sheet_hash.as_deref(), Some(HASH_B));
         assert_eq!(anchor.memory_depth, 3);
@@ -1749,21 +1792,49 @@ mod tests {
 
     #[test]
     fn transfer_expecting_anchor_checks_hash_and_depth() {
+        const MISMATCH: &str = "sheet anchor does not match";
         let mut contract = minted_contract();
+        // A never-anchored token: wrong hash, then wrong depth.
+        testing_env!(context(accounts(2), ONE_YOCTO).build());
+        for (hash, depth) in [(Some(HASH_A), INITIAL_MEMORY_DEPTH), (None, 2)] {
+            assert!(panics_with(
+                || {
+                    contract.nft_transfer_expecting_anchor(
+                        accounts(3),
+                        "aloof".to_string(),
+                        None,
+                        None,
+                        hash.map(String::from),
+                        depth,
+                    );
+                },
+                MISMATCH
+            ));
+            assert_eq!(owner_of(&contract), accounts(2));
+            assert_eq!(anchor_of(&contract).sheet_hash, None);
+            assert_eq!(anchor_of(&contract).memory_depth, INITIAL_MEMORY_DEPTH);
+        }
+
         testing_env!(context(accounts(2), MINT_DEPOSIT).build());
         contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+        let anchored = anchor_of(&contract);
         testing_env!(context(accounts(2), ONE_YOCTO).build());
         for (hash, depth) in [(Some(HASH_B), 2), (Some(HASH_A), 3), (None, 2)] {
-            assert!(panics(|| {
-                contract.nft_transfer_expecting_anchor(
-                    accounts(3),
-                    "aloof".to_string(),
-                    None,
-                    None,
-                    hash.map(String::from),
-                    depth,
-                );
-            }));
+            assert!(panics_with(
+                || {
+                    contract.nft_transfer_expecting_anchor(
+                        accounts(3),
+                        "aloof".to_string(),
+                        None,
+                        None,
+                        hash.map(String::from),
+                        depth,
+                    );
+                },
+                MISMATCH
+            ));
+            assert_eq!(owner_of(&contract), accounts(2));
+            assert_eq!(anchor_of(&contract), anchored);
         }
         contract.nft_transfer_expecting_anchor(
             accounts(3),
@@ -1773,8 +1844,8 @@ mod tests {
             Some(HASH_A.to_string()),
             2,
         );
-        let token = contract.nft_token("aloof".to_string()).unwrap();
-        assert_eq!(token.owner_id, accounts(3));
+        assert_eq!(owner_of(&contract), accounts(3));
+        assert_eq!(anchor_of(&contract), anchored);
     }
 
     #[test]
@@ -2135,12 +2206,20 @@ mod tests {
         contract.nft_transfer(accounts(2), "aloof".to_string(), None, None);
 
         testing_env!(context(accounts(2), MINT_DEPOSIT).build());
-        assert!(panics(|| {
-            contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
-        }));
-        assert!(panics(|| {
-            contract.anchor_sheet("aloof".to_string(), HASH_B.to_string());
-        }));
+        // B is the current hash ("already anchored"); A is only in history.
+        for (hash, msg) in [
+            (HASH_A, "was anchored before"),
+            (HASH_B, "already anchored"),
+        ] {
+            assert!(panics_with(
+                || {
+                    contract.anchor_sheet("aloof".to_string(), hash.to_string());
+                },
+                msg
+            ));
+            assert_eq!(anchor_of(&contract).memory_depth, 3);
+            assert_eq!(anchor_of(&contract).sheet_hash.as_deref(), Some(HASH_B));
+        }
         let third = format!("{:064x}", 3u8);
         let anchor = contract.anchor_sheet("aloof".to_string(), third.clone());
         assert_eq!(anchor.sheet_hash, Some(third));
@@ -2535,5 +2614,308 @@ mod tests {
         assert!(!contract.nft_in_flight("ghost".to_string()));
         assert_eq!(contract.sheet_anchor("ghost".to_string()), None);
         assert_eq!(contract.nft_token("ghost".to_string()), None);
+    }
+
+    // ---- audit-16 coverage tests -------------------------------------------
+
+    fn json(bytes: &[u8]) -> near_sdk::serde_json::Value {
+        near_sdk::serde_json::from_slice(bytes).unwrap()
+    }
+
+    /// Writes the contract to storage and reads it back, as the runtime does
+    /// between two calls. Dropping the old value flushes its lazy collections.
+    fn reload(contract: Contract) -> Contract {
+        env::state_write(&contract);
+        drop(contract);
+        env::state_read().expect("state was written")
+    }
+
+    #[test]
+    fn transfer_call_forwards_sender_owner_and_msg_to_receiver() {
+        let mut contract = minted_contract();
+        let id = approve(&mut contract, accounts(3));
+        transfer_call_env(accounts(3));
+        let _ = contract.nft_transfer_call(
+            accounts(4),
+            "aloof".to_string(),
+            Some(id),
+            None,
+            "hello".into(),
+        );
+        let receipts = get_created_receipts();
+        assert_eq!(receipts[0].receiver_id, accounts(4));
+        let calls = function_calls(&receipts);
+        assert_eq!(calls[0].0, "nft_on_transfer");
+        let args = json(&calls[0].1);
+        assert_eq!(args["sender_id"], accounts(3).to_string());
+        assert_eq!(args["previous_owner_id"], accounts(2).to_string());
+        assert_eq!(args["token_id"], "aloof");
+        assert_eq!(args["msg"], "hello");
+    }
+
+    #[test]
+    fn approved_spender_with_stale_anchor_cannot_sell_and_wrong_approval_id_is_rejected() {
+        let mut contract = minted_contract();
+        let id = approve(&mut contract, accounts(3));
+        testing_env!(context(accounts(2), MINT_DEPOSIT).build());
+        contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+        let anchored = anchor_of(&contract);
+
+        // The spender pinned the pre-anchor state; the sale must not land.
+        testing_env!(context(accounts(3), ONE_YOCTO).build());
+        assert!(panics_with(
+            || {
+                contract.nft_transfer_expecting_anchor(
+                    accounts(4),
+                    "aloof".to_string(),
+                    Some(id),
+                    None,
+                    None,
+                    INITIAL_MEMORY_DEPTH,
+                );
+            },
+            "sheet anchor does not match"
+        ));
+        assert_eq!(owner_of(&contract), accounts(2));
+        assert!(contract.nft_is_approved("aloof".to_string(), accounts(3), Some(id)));
+        assert_eq!(anchor_of(&contract), anchored);
+
+        // Right anchor, wrong approval id.
+        assert!(panics_with(
+            || {
+                contract.nft_transfer_expecting_anchor(
+                    accounts(4),
+                    "aloof".to_string(),
+                    Some(id + 1),
+                    None,
+                    Some(HASH_A.to_string()),
+                    2,
+                );
+            },
+            "is different from the given approval_id"
+        ));
+        // Only ownership is asserted: the standard clears approvals before it
+        // validates the id, which a real panic rolls back but the mock keeps.
+        assert_eq!(owner_of(&contract), accounts(2));
+    }
+
+    #[test]
+    fn release_lock_never_panics_on_malformed_results_and_clears_matching_lock() {
+        let mut contract = minted_contract();
+        let mut holder = accounts(2);
+        let mut other = accounts(3);
+        // Results that are not a JSON bool of at most 8 bytes count as
+        // completed (`true`); a real bool is forwarded as is.
+        let cases: [(&[u8], bool); 7] = [
+            (b"false      ", true),
+            (b"null", true),
+            (b"1", true),
+            (b"", true),
+            (b"\"false\"", true),
+            (b"false", false),
+            (b"true", true),
+        ];
+        for (bytes, expected) in cases {
+            transfer_call_env(holder.clone());
+            let _ = contract.nft_transfer_call(
+                other.clone(),
+                "aloof".to_string(),
+                None,
+                None,
+                "".into(),
+            );
+            let nonce = contract.in_flight.get("aloof").unwrap().nonce;
+            assert!(contract.nft_in_flight("aloof".to_string()));
+            // A foreign nonce never clears the lock, whatever the result.
+            callback_env(bytes.to_vec(), 0);
+            assert_eq!(
+                contract.release_lock("aloof".to_string(), U64(nonce + 1)),
+                expected,
+                "wrong nonce, result {bytes:?}"
+            );
+            assert!(contract.nft_in_flight("aloof".to_string()), "{bytes:?}");
+            // The matching nonce clears it and returns the same value.
+            callback_env(bytes.to_vec(), 0);
+            assert_eq!(
+                contract.release_lock("aloof".to_string(), U64(nonce)),
+                expected,
+                "matching nonce, result {bytes:?}"
+            );
+            assert!(!contract.nft_in_flight("aloof".to_string()), "{bytes:?}");
+            std::mem::swap(&mut holder, &mut other);
+        }
+        // A failed receipt with a foreign nonce keeps the lock, returns true.
+        transfer_call_env(holder.clone());
+        let _ = contract.nft_transfer_call(other, "aloof".to_string(), None, None, "".into());
+        testing_env!(
+            context(accounts(0), NearToken::from_yoctonear(0)).build(),
+            near_sdk::test_vm_config(),
+            near_sdk::RuntimeFeesConfig::test(),
+            Default::default(),
+            vec![near_sdk::PromiseResult::Failed]
+        );
+        let nonce = contract.in_flight.get("aloof").unwrap().nonce;
+        assert!(contract.release_lock("aloof".to_string(), U64(nonce + 1)));
+        assert!(contract.nft_in_flight("aloof".to_string()));
+    }
+
+    #[test]
+    fn mint_emits_exactly_one_nep171_mint_event() {
+        let _ = minted_contract();
+        assert_eq!(
+            get_logs(),
+            vec![format!(
+                r#"EVENT_JSON:{{"standard":"nep171","version":"1.0.0","event":"nft_mint","data":[{{"owner_id":"{}","token_ids":["aloof"]}}]}}"#,
+                accounts(2)
+            )]
+        );
+    }
+
+    #[test]
+    fn anchor_event_is_exact_json_and_names_the_caller_as_owner() {
+        let mut contract = minted_contract();
+        testing_env!(context(accounts(2), MINT_DEPOSIT).build());
+        contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+        // The refund is a receipt, not a log: the event is the only log.
+        assert_eq!(
+            get_logs(),
+            vec![format!(
+                r#"EVENT_JSON:{{"standard":"personality_nft","version":"1.0.0","event":"sheet_anchored","data":[{{"token_id":"aloof","owner_id":"{}","sheet_hash":"{HASH_A}","memory_depth":2}}]}}"#,
+                accounts(2)
+            )]
+        );
+        // After a transfer the new owner is the one named.
+        testing_env!(context(accounts(2), ONE_YOCTO).build());
+        contract.nft_transfer(accounts(3), "aloof".to_string(), None, None);
+        testing_env!(context(accounts(3), MINT_DEPOSIT).build());
+        contract.anchor_sheet("aloof".to_string(), HASH_B.to_string());
+        let logs = get_logs();
+        assert_eq!(logs.len(), 1);
+        assert!(logs[0].contains(&format!(r#""owner_id":"{}""#, accounts(3))));
+        assert!(logs[0].contains(r#""memory_depth":3"#));
+    }
+
+    fn set_uri_field(m: &mut TokenMetadata, field: &str, value: String) {
+        match field {
+            "reference" => m.reference = Some(value),
+            "issued_at" => m.issued_at = Some(value),
+            "expires_at" => m.expires_at = Some(value),
+            "starts_at" => m.starts_at = Some(value),
+            "updated_at" => m.updated_at = Some(value),
+            other => panic!("unknown field {other}"),
+        }
+    }
+
+    const URI_LIKE_FIELDS: [&str; 5] = [
+        "reference",
+        "issued_at",
+        "expires_at",
+        "starts_at",
+        "updated_at",
+    ];
+
+    #[test]
+    fn mint_overlong_uri_like_fields_panic() {
+        for (i, field) in URI_LIKE_FIELDS.into_iter().enumerate() {
+            let mut m = aloof_metadata();
+            set_uri_field(&mut m, field, "u".repeat(MAX_URI_LEN + 1));
+            let id = format!("over-{i}");
+            assert!(
+                panics_with(|| mint_with(&id, m), &format!("{field} is too long")),
+                "{field}"
+            );
+        }
+    }
+
+    #[test]
+    fn mint_accepts_limit_sized_uri_like_fields() {
+        let mut m = aloof_metadata();
+        m.media = Some("m".repeat(MAX_URI_LEN));
+        for field in URI_LIKE_FIELDS {
+            set_uri_field(&mut m, field, "u".repeat(MAX_URI_LEN));
+        }
+        mint_with("limit", m);
+    }
+
+    #[test]
+    fn mint_with_no_extra_and_no_copies_is_accepted() {
+        let mut m = aloof_metadata();
+        m.extra = None;
+        m.copies = None;
+        testing_env!(context(accounts(1), MINT_DEPOSIT).build());
+        let mut contract = Contract::new_default_meta(accounts(1));
+        let token = contract.nft_mint("plain".to_string(), accounts(2), m);
+        assert_eq!(token.owner_id, accounts(2));
+        assert_eq!(token.metadata.unwrap().extra, None);
+    }
+
+    #[test]
+    fn lock_and_anchor_survive_state_roundtrip() {
+        let mut contract = minted_contract();
+        transfer_call_env(accounts(2));
+        let _ = contract.nft_transfer_call(accounts(3), "aloof".to_string(), None, None, "".into());
+        let mut contract = reload(contract);
+        assert!(contract.nft_in_flight("aloof".to_string()));
+        assert_eq!(owner_of(&contract), accounts(3));
+
+        assert!(resolve(&mut contract, false));
+        let mut contract = reload(contract);
+        assert!(!contract.nft_in_flight("aloof".to_string()));
+
+        testing_env!(context(accounts(3), MINT_DEPOSIT).build());
+        contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+        contract.anchor_sheet("aloof".to_string(), HASH_B.to_string());
+        let mut contract = reload(contract);
+        let anchor = anchor_of(&contract);
+        assert_eq!(anchor.sheet_hash.as_deref(), Some(HASH_B));
+        assert_eq!(anchor.memory_depth, 3);
+        // The current hash and an earlier one are both still refused.
+        assert!(panics_with(
+            || {
+                contract.anchor_sheet("aloof".to_string(), HASH_B.to_string());
+            },
+            "already anchored"
+        ));
+        assert!(panics_with(
+            || {
+                contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+            },
+            "was anchored before"
+        ));
+        assert_eq!(anchor_of(&contract), anchor);
+    }
+
+    #[test]
+    fn anchor_sheet_on_token_without_anchor_record_panics() {
+        let mut contract = minted_contract();
+        contract.sheet_anchors.remove("aloof");
+        contract.sheet_anchors.flush();
+        testing_env!(context(accounts(2), MINT_DEPOSIT).build());
+        assert!(panics_with(
+            || {
+                contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+            },
+            "sheet anchor missing"
+        ));
+        assert_eq!(contract.sheet_anchor("aloof".to_string()), None);
+    }
+
+    #[test]
+    fn lock_nonce_wraps_without_panicking() {
+        let mut contract = minted_contract();
+        contract.next_lock_nonce = u64::MAX;
+        transfer_call_env(accounts(2));
+        let _ = contract.nft_transfer_call(accounts(3), "aloof".to_string(), None, None, "".into());
+        assert_eq!(contract.next_lock_nonce, 0);
+        let calls = function_calls(&get_created_receipts());
+        assert_eq!(calls[2].0, "release_lock");
+        assert_eq!(json(&calls[2].1)["nonce"], "18446744073709551615");
+        // The wrapped lock still clears with its own nonce.
+        assert!(resolve_with_nonce(&mut contract, false, u64::MAX));
+        assert!(!contract.nft_in_flight("aloof".to_string()));
+        // And the next transfer call carries nonce 0.
+        transfer_call_env(accounts(3));
+        let _ = contract.nft_transfer_call(accounts(4), "aloof".to_string(), None, None, "".into());
+        assert_eq!(contract.in_flight.get("aloof").unwrap().nonce, 0);
     }
 }
