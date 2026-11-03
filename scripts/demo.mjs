@@ -48,7 +48,8 @@ function parseArgs(argv) {
       throw new Error(`unknown argument ${JSON.stringify(flag)}`);
     }
   }
-  if (opts.every > opts.rounds) {
+  // --help wins over every other flag, so "--rounds 2 --help" prints usage, not an error.
+  if (!opts.help && opts.every > opts.rounds) {
     throw new Error(`--every (${opts.every}) must not exceed --rounds (${opts.rounds}), or no character sheet is written`);
   }
   return opts;
@@ -67,7 +68,14 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     log(USAGE);
     return 0;
   }
-  if (parseMode(env.MOCK_INFERENCE) === "live") {
+  let mode;
+  try {
+    mode = parseMode(env.MOCK_INFERENCE);
+  } catch (error) {
+    console.error(`${name}: ${error.message} (see --help)`);
+    return 2;
+  }
+  if (mode === "live") {
     console.error(`${name}: runs in mock mode only; unset MOCK_INFERENCE or set it to 1`);
     return 2;
   }

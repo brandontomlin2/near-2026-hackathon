@@ -51,3 +51,84 @@ describe("memory diff line", () => {
     assert.ok(line.includes('quote "xxx'));
   });
 });
+
+describe("memory diff line: edge cases", () => {
+  const withSheet = (sheet) => memoryDiffLine({ id: "a", sheets: [{ sheet }] });
+
+  it("handles a missing id and non-array sheets", () => {
+    assert.equal(memoryDiffLine({ sheets: [] }), "agent: no sheet yet");
+    assert.equal(memoryDiffLine({ id: "a", sheets: "nope" }), "a: no sheet yet");
+    assert.equal(memoryDiffLine({ id: "a" }), "a: no sheet yet");
+    assert.equal(memoryDiffLine(undefined), "agent: no sheet yet");
+  });
+
+  it("cleans control characters and clips a long id", () => {
+    assert.equal(memoryDiffLine({ id: "al\u001b[0m\u0007oof\n", sheets: [] }), "al [0m oof: no sheet yet");
+    const line = memoryDiffLine({ id: "x".repeat(200), sheets: [] });
+    assert.equal(line, `${"x".repeat(77)}...: no sheet yet`);
+  });
+
+  it("tolerates sheet entries without a sheet string", () => {
+    assert.equal(memoryDiffLine({ id: "a", sheets: [{}] }), "a: enemy none, ride-or-die none, quote none");
+    assert.equal(memoryDiffLine({ id: "a", sheets: [null, undefined] }), "a: enemy none, ride-or-die none, quote none");
+  });
+
+  // "-" and "(none)" are regression cases: the old `\b` after them never matched.
+  for (const word of ["none", "nobody", "no one", "no-one", "nothing", "n/a", "None", "NOBODY yet", "-", "(none)", "- (no one yet)"]) {
+    it(`maps the placeholder ${JSON.stringify(word)} to none`, () => {
+      const facts = sheetFacts(`Public enemy #1: ${word}. Ride-or-die: ${word}. Signature quote: ${word}. Receipts: 1.`);
+      assert.deepEqual(facts, { enemy: "none", friend: "none", quote: "none" });
+    });
+  }
+
+  it('maps a quoted "None." quote to none', () => {
+    assert.equal(sheetFacts('Signature quote: "None.". Receipts: 1.').quote, "none");
+    assert.equal(sheetFacts("Signature quote: None.").quote, "none");
+  });
+
+  it("keeps a real value that merely starts with a placeholder", () => {
+    const facts = sheetFacts("Public enemy #1: nonetheless I win. Ride-or-die: nobodyish. Signature quote: nothingness. Receipts: 1.");
+    assert.deepEqual(facts, { enemy: "nonetheless I win", friend: "nobodyish", quote: "nothingness" });
+    const glued = sheetFacts("Public enemy #1: -a. Ride-or-die: (none)x. Receipts: 1.");
+    assert.deepEqual([glued.enemy, glued.friend], ["-a", "(none)x"]);
+  });
+
+  it("clips a value over 80 characters to exactly 80 ending in ..., and keeps exactly 80", () => {
+    const long = sheetFacts(`Public enemy #1: ${"a".repeat(81)}. Receipts: 1.`).enemy;
+    assert.equal(long.length, 80);
+    assert.equal(long, `${"a".repeat(77)}...`);
+    const exact = sheetFacts(`Public enemy #1: ${"b".repeat(80)}. Receipts: 1.`).enemy;
+    assert.equal(exact, "b".repeat(80));
+    assert.equal(sheetSection(`Rival: ${"c".repeat(80)}`, /rival:\s*/i).length, 80);
+  });
+
+  it("sheetSection accepts a single RegExp and returns '' when nothing matches", () => {
+    assert.equal(sheetSection("Mood: calm. Receipts: 1.", /\bmood:\s*/i), "calm");
+    assert.equal(sheetSection("Mood: calm.", /\bnothing here:\s*/i), "");
+    assert.equal(sheetSection("Mood: calm.", [/x:/, /y:/]), "");
+    assert.equal(sheetSection(null, /x/), "");
+  });
+
+  it("stops at the next '. Label:' boundary and strips trailing punctuation", () => {
+    assert.equal(sheetSection("A: one two. B: three", /\bA:\s*/), "one two");
+    assert.equal(sheetSection("A: wow!?;, . B: three", /\bA:\s*/), "wow");
+    assert.equal(sheetSection("A: one. two. B: three", /\bA:\s*/), "one. two");
+    assert.equal(sheetSection("A: tail...", /\bA:\s*/), "tail");
+  });
+
+  it("does not match a label in the middle of a word", () => {
+    assert.equal(sheetFacts("Frenemy: Skeptic. Receipts: 1.").enemy, "none");
+    assert.equal(sheetFacts("Unbestie: Social.").friend, "none");
+    assert.equal(sheetFacts("Frenemy: Skeptic.").enemy, "none");
+    assert.equal(sheetFacts("The enemy: Skeptic.").enemy, "Skeptic");
+  });
+
+  it("unwraps curly quotes, and a quote whose closing mark was clipped", () => {
+    assert.equal(sheetFacts("Signature quote: \u201chello world\u201d. Receipts: 1.").quote, "hello world");
+    const clipped = sheetFacts(`Signature quote: "${"y".repeat(120)}". Receipts: 1.`).quote;
+    assert.ok(clipped.startsWith("y") && clipped.endsWith("..."));
+    assert.ok(!clipped.includes('"'));
+    assert.equal(clipped.length, 79);
+    assert.equal(sheetFacts("Signature quote: \u201dodd\u201c. Receipts: 1.").quote, "odd");
+  });
+});
