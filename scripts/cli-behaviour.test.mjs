@@ -108,25 +108,34 @@ test("site: a demo runtime failure exits 1 with one 'site: ' line and no 'Site r
   assert.ok(noStack(r.stderr));
 });
 
-test("seed 0: demo accepts it, swarm rejects it (current inconsistency)", () => {
+test("seed 0: demo and swarm both accept it; a negative seed is refused by both with the same wording", () => {
   const cwd = scratch();
   const d = run("demo.mjs", ["--seed", "0", "--rounds", "1", "--every", "1", "--out", "d"], { cwd });
   assert.equal(d.code, 0, d.stderr);
-  const s = run("swarm.mjs", ["--seed", "0", "--out", "s"], { cwd });
-  assert.equal(s.code, 2);
-  assert.equal(s.stderr, 'swarm: --seed must be a positive integer, got "0" (see --help)\n');
-  assert.equal(existsSync(join(cwd, "s")), false);
+  const s = run("swarm.mjs", ["--seed", "0", "--rounds", "1", "--out", "s"], { cwd });
+  assert.equal(s.code, 0, s.stderr);
+  assert.equal(JSON.parse(readFileSync(join(cwd, "s", "events.json"), "utf8")).seed, 0);
+  for (const [file, prefix] of [["demo.mjs", "demo"], ["swarm.mjs", "swarm"]]) {
+    const r = run(file, ["--seed", "-1", "--out", "neg"], { cwd });
+    assert.equal(r.code, 2, file);
+    assert.equal(r.stderr, `${prefix}: --seed must be a non-negative integer, got "-1" (see --help)\n`);
+  }
+  assert.equal(existsSync(join(cwd, "neg")), false);
 });
 
-test("--help --bogus: demo, swarm and render-agents parse left to right and exit 2", () => {
+test("seed usage: demo and swarm describe --seed the same way", () => {
+  const texts = ["demo.mjs", "swarm.mjs"].map((file) => run(file, ["--help"]).stdout);
+  for (const text of texts) assert.match(text, /^ {2}--seed N {4}swarm seed, a non-negative integer \(default \d+\)$/m, text);
+});
+
+test("--help --bogus: --help wins in demo, swarm and render-agents (usage, exit 0, nothing written)", () => {
   for (const file of ["demo.mjs", "swarm.mjs", "render-agents.mjs"]) {
     const cwd = scratch();
     const before = listing(cwd);
     const r = run(file, ["--help", "--bogus"], { cwd });
-    assert.equal(r.code, 2, file);
-    assert.equal(r.stdout, "", file);
-    assert.ok(oneLine(r.stderr), `${file}: ${r.stderr}`);
-    assert.match(r.stderr, /unknown argument "--bogus"/);
+    assert.equal(r.code, 0, `${file}: ${r.stderr}`);
+    assert.equal(r.stderr, "", file);
+    assert.match(r.stdout, /^Usage: node scripts\//, file);
     assert.equal(listing(cwd), before, file);
   }
 });
@@ -401,10 +410,9 @@ test("viewer: SWARM_ROUNDS sets rounds, a flag beats it, and it is ignored with 
   assert.equal(run("viewer.mjs", ["--out", "a.html"], { cwd, env: { SWARM_ROUNDS: "3" } }).code, 0);
   assert.match(readFileSync(join(cwd, "a.html"), "utf8"), /3 rounds/);
   assert.equal(run("viewer.mjs", ["--rounds", "1", "--out", "b.html"], { cwd, env: { SWARM_ROUNDS: "3" } }).code, 0);
-  // The page does not singularise: one round is "1 rounds".
   const b = readFileSync(join(cwd, "b.html"), "utf8");
-  assert.match(b, /1 rounds/);
-  assert.doesNotMatch(b, /3 rounds/);
+  assert.match(b, /1 round ·/);
+  assert.doesNotMatch(b, /1 rounds|3 rounds/);
   const c = run("viewer.mjs", ["--input", join(demoCwd, "d", "events.json"), "--out", "c.html"], { cwd, env: { SWARM_ROUNDS: "abc" } });
   assert.equal(c.code, 0, c.stderr);
   assert.match(readFileSync(join(cwd, "c.html"), "utf8"), /2 rounds/);

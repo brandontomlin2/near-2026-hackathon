@@ -219,6 +219,68 @@ test("README 'Live on testnet' is one short paragraph after the working sections
   assert.ok(body.includes("`out/evidence.json`"), "must say where the evidence will appear");
 });
 
+test("README meme paragraph: templates not jokes, caption bottom line is a scripted reply, fold rule is fights then replies then roster", async () => {
+  assert.doesNotMatch(readmeText, /no hand-written jokes/);
+  assert.ok(readmeText.includes("The 5 meme cards are fixed templates filled from the run's data"));
+  assert.ok(readmeText.includes("one card per rivalry goes to the side whose sheet counts more fights, then, on a tie, the side with more replies to its enemy, then the earlier agent in the roster"));
+  const memes = await readFile(join(root, "src/demo/memes.mjs"), "utf8");
+  const wins = memes.slice(memes.indexOf("const wins = (a, b) =>"));
+  assert.ok(wins.indexOf(".fights") < wins.indexOf("repliesTo(") && wins.indexOf("repliesTo(") < wins.indexOf("ids.indexOf("), "memes.mjs compares fights, then replies, then roster order");
+  await withTmp(async (dir) => {
+    const out = await runDemoCli(dir);
+    const demo = JSON.parse(await readFile(join(out, "demo.json"), "utf8"));
+    const fights = (id) => Number(/Public enemy #1: \w+ \((\d+) fights?\)/.exec(demo.agents.find((a) => a.id === id).sheets.at(-1).sheet)[1]);
+    assert.equal(fights("chaotic"), fights("skeptic"), "README says both sheets count the same fights (the tie the reply count breaks)");
+    assert.ok(readmeText.includes(`Here both sheets say ${fights("chaotic")} fights, and Chaotic replied to Skeptic 4 times against Skeptic's 2.`));
+    const events = JSON.parse(await readFile(join(out, "events.json"), "utf8"));
+    const list = Array.isArray(events) ? events : events.events;
+    const byId = new Map(list.map((e) => [e.id, e]));
+    const replies = (from, to) => list.filter((e) => e.agentId === from && e.kind === "reply" && byId.get(e.replyTo)?.agentId === to).length;
+    assert.deepEqual([replies("chaotic", "skeptic"), replies("skeptic", "chaotic")], [4, 2]);
+    const files = demo.memes.map((m) => m.file);
+    assert.ok(files.includes("share/meme-villain-chaotic.svg") && !files.includes("share/meme-villain-skeptic.svg"), "Skeptic's villain card folds into Chaotic's");
+    const { REPLY_LINES } = await import("../src/swarm/personas.mjs");
+    const caption = demo.memes.find((m) => m.format === "caption" && m.agentId === "chaotic");
+    const bottom = caption.alt.split(" / ").at(-1);
+    const scripted = REPLY_LINES.chaotic.Skeptic.map((l) => l.replace(/^@\S+\s*/, "").toUpperCase());
+    assert.ok(scripted.includes(bottom), `caption bottom line "${bottom}" must be a REPLY_LINES entry (scripted, not model text)`);
+  });
+});
+
+test("README hash normalisation summary matches normalizeSheet, and the TEE badge is a mode label with no attestation check wired in", async () => {
+  assert.ok(readmeText.includes("after normalizing (Unicode NFC, LF line endings, trailing spaces trimmed from each line, leading and trailing blank lines dropped, one final newline)"));
+  assert.doesNotMatch(readmeText, /\(NFC, LF, one final newline\)/);
+  const { normalizeSheet } = await import("../src/anchor/hash.mjs");
+  assert.equal(normalizeSheet("\n\n  é one  \r\n\r\ntwo \t\n\n"), "é one\n\ntwo\n");
+  assert.ok(readmeText.includes('the "NEAR AI Cloud (TEE) in live mode" badge says `mocked`. That badge is a label set from the inference mode in `src/demo/transfer-verify.mjs`, not an attestation check: nothing in the demo or in `verify.sh` verifies a TEE.'));
+  assert.ok(readmeText.includes("The offline attestation checker, `node scripts/attest-check.mjs`, runs only on a hand-built fixture"));
+  const { buildTransfer } = await import("../src/demo/transfer-verify.mjs");
+  const mock = buildTransfer([], { calls: [] }, { contractId: "x.testnet", mode: "mock" });
+  const live = buildTransfer([], { calls: [] }, { contractId: "x.testnet", mode: "live" });
+  assert.deepEqual([mock.teeInference.label, mock.teeInference.status, live.teeInference.status], ["NEAR AI Cloud (TEE) in live mode", "mocked", "live"]);
+  for (const file of ["scripts/verify.sh", "scripts/demo.mjs", "src/demo/pipeline.mjs", "src/demo/transfer-verify.mjs"]) {
+    assert.doesNotMatch(await readFile(join(root, file), "utf8"), /attest-check|attestation\.mjs/, `${file} must not wire in the attestation checker`);
+  }
+  const attest = await readFile(join(root, "scripts/attest-check.mjs"), "utf8");
+  assert.match(attest, /from "\.\.\/src\/privacy\/fixture\.mjs"/, "attest-check runs on the fixture");
+});
+
+test("README and verify.sh give the same --live command, with the contract account and an absolute EVIDENCE_TX_FILE", async () => {
+  const command = 'NEAR_NETWORK=testnet NEAR_ACCOUNT_ID=<contract-account> EVIDENCE_TX_FILE="$PWD/out/live-proof/txs.json" bash scripts/verify.sh --live';
+  assert.ok(readme.includes(`\n${command}\n`), "README 'Validate locally' must show the full --live command");
+  assert.doesNotMatch(readme, /NEAR_ACCOUNT_ID=<testnet-account> bash scripts\/verify\.sh --live/);
+  const verify = await readFile(join(root, "scripts/verify.sh"), "utf8");
+  assert.ok(verify.includes(`  ${command}\n`), "verify.sh usage must show the same command");
+  assert.ok(readmeText.includes("which reads `NEAR_ACCOUNT_ID` as the contract account to query"));
+  assert.ok(readmeText.includes("Give that path as an absolute path, because the script runs inside a fresh clone in a temp directory."));
+  assert.ok(readmeText.includes("Without it the stage records `FAIL` with `out/evidence.json missing tx hashes or RPC views`."));
+  assert.ok(verify.includes('record FAIL "evidence" "out/evidence.json missing tx hashes or RPC views"'));
+  const evidence = await readFile(join(root, "scripts/evidence.mjs"), "utf8");
+  assert.match(evidence, /NEAR_ACCOUNT_ID\s+contract account to query/);
+  assert.match(evidence, /fs\.readFileSync\(file, "utf8"\)/, "the tx file is read relative to the clone's cwd, hence the absolute path");
+  assert.match(verify, /git clone --local[\s\S]*cd "\$work\/repo"/, "verify.sh cd's into the fresh clone");
+});
+
 test("the submission checklist and live:check name the complete owner command, with --media-base", async () => {
   const { SEND_COMMAND } = await import("./live-proof.mjs");
   const checklist = await readFile(join(root, "docs/submission-checklist.md"), "utf8");
