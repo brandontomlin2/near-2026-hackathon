@@ -107,8 +107,10 @@ test("live reply: ANSI clear-screen, OSC title/hyperlink and bidi override never
     assert.doesNotMatch(JSON.parse(json.stdout).content, UNSAFE);
   }));
 
-test("live reply: a 4 MiB reply is cut before it is printed", () =>
-  withStub("A".repeat(4 * 1024 * 1024), async (baseUrl) => {
+// The reply stays under the 4 MiB raw body cap (which aborts the request with
+// response_too_large) so only the 32 KiB text cap is exercised here.
+test("live reply: a 2 MiB reply is cut before it is printed", () =>
+  withStub("A".repeat(2 * 1024 * 1024), async (baseUrl) => {
     const r = await runLive(["hello"], baseUrl);
     assert.equal(r.status, 0, r.stderr);
     assert.ok(r.stdout.length <= 32 * 1024 + 1, `${r.stdout.length} bytes`);
