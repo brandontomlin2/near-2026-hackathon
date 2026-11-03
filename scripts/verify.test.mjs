@@ -183,6 +183,26 @@ test("verify.sh --live passes the env gate with NEAR_CONTRACT_ACCOUNT_ID alone, 
   assert.match(fallback.stdout, /fresh clone/);
 });
 
+// The mainnet refusal runs before any clone or install, so both modes exit at once.
+test("verify.sh refuses NEAR_NETWORK=mainnet in mock and --live mode: non-zero, a FAIL network row, nothing cloned", (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "verify-mainnet-"));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  // Only the PATH-level basics plus mainnet: no secret-looking or account variables reach the child.
+  const env = { PATH: process.env.PATH, HOME: tmp, TMPDIR: tmp, NEAR_NETWORK: "mainnet" };
+  for (const args of [[], ["--live"]]) {
+    const label = args.join(" ") || "mock";
+    const started = Date.now();
+    const r = spawnSync("/bin/bash", [VERIFY, ...args], { encoding: "utf8", env, timeout: 20000 });
+    assert.notEqual(r.status, 0, label);
+    assert.equal(r.status, 1, label);
+    assert.match(r.stderr, /^error: NEAR_NETWORK=mainnet is refused\. This script never uses mainnet\.$/m, label);
+    assert.match(r.stdout, /FAIL\s+network\s+mainnet is refused/, `${label}: ${r.stdout}`);
+    assert.doesNotMatch(r.stdout, /fresh clone/, `${label}: refused before the clone`);
+    assert.ok(Date.now() - started < 15000, `${label}: exits quickly`);
+    assert.deepEqual(fs.readdirSync(tmp), [], `${label}: nothing left under TMPDIR`);
+  }
+});
+
 test("the mock runner drops both account variables and key-like names from the child env", () => {
   const text = fs.readFileSync(VERIFY, "utf8");
   assert.match(text, /mode === "mock" && \(isSecretName\(name\) \|\| name === "NEAR_ACCOUNT_ID" \|\| name === "NEAR_CONTRACT_ACCOUNT_ID"\)/);

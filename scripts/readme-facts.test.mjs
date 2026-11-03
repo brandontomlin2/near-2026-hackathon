@@ -189,13 +189,19 @@ test("README step 2 lists the page's h2 sections in the real order", async () =>
     const h2s = [...html.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/g)].map((m) => m[1].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim());
     assert.deepEqual(h2s, ["Agents", "Memory", "Meme pack", "Transfer: memory travels with the NFT", "Channel", "Anchor (dry run)", "Round hash chain", "Files"]);
     const step2 = readme.match(/^2\. Open `out\/index\.html`\..*$/m)[0];
-    const claimed = ["Memory", "Meme pack", "Transfer", "the Channel", "Anchor (dry run)", "Round hash chain", "share cards", "Files"];
+    const claimed = ["Agents (", "Memory", "Meme pack", "Transfer", "the Channel", "Anchor (dry run)", "Check a hash yourself", "Round hash chain", "collapsed \"24 share cards\"", "Files"];
     const positions = claimed.map((h) => step2.indexOf(h));
     assert.ok(positions.every((p) => p > 0), `step 2 must name every section: ${claimed.join(", ")}`);
     assert.deepEqual([...positions].sort((a, b) => a - b), positions, "step 2 must list the sections in page order");
     assert.ok(/Round hash chain with `verify: ok`/.test(step2), "verify: ok is in the Round hash chain section");
     assert.ok(html.includes("verify: ok"));
     assert.ok(html.indexOf("verify: ok") > html.indexOf(">Round hash chain<"), "verify: ok appears under the Round hash chain heading");
+    // The share cards sit in a fold that is closed by default, as step 2 says.
+    assert.match(html, /<details class="fold">\s*<summary>24 share cards<\/summary>/);
+    for (const h3 of ["Tampered sheet", "Mint metadata", "On testnet", "Check a hash yourself"]) {
+      assert.ok(html.includes(`<h3>${h3}</h3>`), `page has ${h3}`);
+      assert.ok(step2.includes(h3), `step 2 names ${h3}`);
+    }
   });
 });
 
@@ -211,6 +217,11 @@ test("README persona line counts match src/swarm/personas.mjs, and the mock pick
   assert.ok(readmeText.includes("The mock does not read what the prompt says. It picks the reply list from the name of the agent being answered"));
   assert.ok(readmeText.includes("from a hash of that agent's first request"));
   assert.doesNotMatch(readmeText, /ignores the prompt's content|reads only which agent/);
+  assert.ok(readmeText.includes("That hash is the sha256 of the whole request (model, messages including the system prompt, sampling settings and seed), so any change to the request can shift every line."));
+  // The request hash picks the start: same text, different hash, different line.
+  const h1 = personaResponder({ id: "aloof" })({ messages: [{ role: "user", content: "x" }] }, "00000000".padEnd(64, "0"));
+  const h2 = personaResponder({ id: "aloof" })({ messages: [{ role: "user", content: "x" }] }, "00000001".padEnd(64, "0"));
+  assert.notEqual(h1, h2);
   // Same hash, different prompt text: same line. Only the "Reply to event #N from X." marker changes the list.
   const a = personaResponder({ id: "aloof" })({ messages: [{ role: "user", content: "about gas" }] }, "ab".repeat(32));
   const b = personaResponder({ id: "aloof" })({ messages: [{ role: "user", content: "about validators" }] }, "ab".repeat(32));
@@ -345,10 +356,12 @@ test("README meme paragraph: templates not jokes, caption bottom line is a scrip
 });
 
 test("README hash normalisation summary matches normalizeSheet, and the Inference badge is a mode label with no attestation check wired in", async () => {
-  assert.ok(readmeText.includes("after normalizing (Unicode NFC, LF line endings, trailing spaces trimmed from each line, leading and trailing blank lines dropped, one final newline)"));
+  assert.ok(readmeText.includes("after normalizing (Unicode NFC, LF line endings, trailing whitespace (spaces, tabs, NBSP) trimmed from each line, leading and trailing whitespace of the whole sheet dropped, including the first line's indentation, one final newline)"));
+  assert.ok(readmeText.includes("no trailing whitespace on any line, no leading or trailing whitespace on the whole sheet and one final newline"));
   assert.doesNotMatch(readmeText, /\(NFC, LF, one final newline\)/);
   const { normalizeSheet } = await import("../src/anchor/hash.mjs");
   assert.equal(normalizeSheet("\n\n  é one  \r\n\r\ntwo \t\n\n"), "é one\n\ntwo\n");
+  assert.equal(normalizeSheet("\t first\u00a0\n  second\t\u00a0\n"), "first\n  second\n");
   assert.ok(readmeText.includes('the "Inference (NEAR AI Cloud)" badge says `mocked`. That badge is a label set from the inference mode in `src/demo/transfer-verify.mjs`, not an attestation check: nothing in the demo or in `verify.sh` verifies a TEE.'));
   assert.ok(readmeText.includes("The offline attestation checker, `node scripts/attest-check.mjs`, runs only on a hand-built fixture"));
   const { buildTransfer } = await import("../src/demo/transfer-verify.mjs");

@@ -22,6 +22,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isValidAccountId } from "../src/anchor/anchor.mjs";
 import { renderSvg } from "../src/art/render.mjs";
+import { AGENTS as SEED_AGENTS } from "../src/traits/agents.mjs";
 
 export const NETWORK = "testnet";
 export const INIT_METHOD = "new_default_meta";
@@ -49,13 +50,20 @@ export function defaultWasmPath(cwd = process.cwd()) {
   return path.resolve(cwd) === REPO_ROOT ? path.relative(REPO_ROOT, DEFAULT_WASM) : DEFAULT_WASM;
 }
 
-// The four agents from PRODUCT.md. Trait keys match the contract's `extra` example.
-export const AGENTS = [
-  { token_id: "aloof", description: "I watch. I rarely speak. When I do, it is because the room already got it wrong.", title: "Aloof", traits: { temperament: "cool", role: "observer", risk: "low", voice: "dry" } },
-  { token_id: "chaotic", description: "LOUD IDEAS, NO BRAKES. I poke the swarm until something interesting breaks!", title: "Chaotic", traits: { temperament: "neon", role: "trickster", risk: "high", voice: "loud" } },
-  { token_id: "social", description: "Hey, come in! I will introduce you to everyone and keep the whole swarm talking.", title: "Social", traits: { temperament: "warm", role: "connector", risk: "mid", voice: "open" } },
-  { token_id: "skeptic", description: "Show me the receipt. Until then I will assume nothing, and I will check twice.", title: "Skeptic", traits: { temperament: "muted", role: "auditor", risk: "wary", voice: "flat" } },
-];
+// The four agents from PRODUCT.md. Ids, names and traits come from src/traits/agents.mjs
+// (the single source of truth); only the deploy-time descriptions live here. The minted
+// `extra` JSON leaves out memory_depth, which the contract tracks itself.
+const DESCRIPTIONS = {
+  aloof: "I watch. I rarely speak. When I do, it is because the room already got it wrong.",
+  chaotic: "LOUD IDEAS, NO BRAKES. I poke the swarm until something interesting breaks!",
+  social: "Hey, come in! I will introduce you to everyone and keep the whole swarm talking.",
+  skeptic: "Show me the receipt. Until then I will assume nothing, and I will check twice.",
+};
+
+export const AGENTS = SEED_AGENTS.map(({ id, name, traits }) => {
+  const { memory_depth: _memoryDepth, ...deployTraits } = traits;
+  return { token_id: id, description: DESCRIPTIONS[id], title: name, traits: deployTraits };
+});
 
 export class UsageError extends Error {}
 
