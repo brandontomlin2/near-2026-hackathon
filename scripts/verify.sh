@@ -67,15 +67,27 @@ tmp_root=$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P) || {
 }
 export TMPDIR="$tmp_root"
 
+# A row that cannot be written is a hard failure: under set -e the run aborts, cleanup
+# prints the summary, and the stage check below refuses PASS for the missing rows.
 record() {
   local status="$1"
   local stage="$2"
   local detail="$3"
-  printf '%s\t%s\t%s\n' "$status" "$stage" "$detail" >> "$results_file"
+  if ! printf '%s\t%s\t%s\n' "$status" "$stage" "$detail" >> "$results_file"; then
+    echo "FAIL: could not record stage \"${stage}\" in \"${results_file}\"; the summary would be incomplete" >&2
+    failed=1
+    return 1
+  fi
 }
 
 print_summary() {
-  local status stage detail
+  # Every stage a complete run records, in order. result: PASS is printed only when
+  # each one has a row, so a lost results file can never look like a clean pass.
+  local expected_stages=(
+    "fresh clone" "workflows" "symlinks" "secret files" "npm install" "tests"
+    "secret scan" "deploy nft" "mint" "swarm" "demo" "round hash" "evidence"
+  )
+  local status stage detail seen=$'\n' missing=""
   echo
   echo "SUMMARY"
   printf '%-8s  %-14s  %s\n' "STATUS" "STAGE" "DETAIL"
@@ -83,9 +95,21 @@ print_summary() {
   if [[ -n "$results_file" && -f "$results_file" ]]; then
     while IFS=$'\t' read -r status stage detail; do
       printf '%-8s  %-14s  %s\n' "$status" "$stage" "$detail"
+      seen="${seen}${stage}"$'\n'
     done < "$results_file"
   fi
   echo
+  if [[ "$failed" -eq 0 ]]; then
+    for stage in "${expected_stages[@]}"; do
+      if [[ "$seen" != *$'\n'"${stage}"$'\n'* ]]; then
+        missing="${missing:+${missing}, }${stage}"
+      fi
+    done
+    if [[ -n "$missing" ]]; then
+      echo "FAIL: no row was recorded for: ${missing}"
+      failed=1
+    fi
+  fi
   if [[ "$secret_scan_skipped" -eq 1 ]]; then
     echo "WARN: the secret scan did NOT run because gitleaks is not installed; install it (brew install gitleaks) and rerun for a scanned result."
   fi
@@ -133,10 +157,14 @@ cleanup() {
     # An unexpected abort (set -e, a missing file) must never end in "result: PASS".
     failed=1
     if [[ -n "$results_file" && -f "$results_file" ]]; then
-      record FAIL "aborted" "exited with status $code before the last stage"
+      record FAIL "aborted" "exited with status $code before the last stage" || true
     fi
   fi
   print_summary || true
+  if [[ "$code" -eq 0 && "$failed" -ne 0 ]]; then
+    # The summary found a gap (a stage with no row): "result: FAIL" needs a nonzero exit too.
+    code=1
+  fi
   if [[ -n "$work" && -d "$work" ]]; then
     rm -rf "$work"
   fi
