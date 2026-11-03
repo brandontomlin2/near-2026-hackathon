@@ -1,16 +1,17 @@
 // Meme pack: classic meme formats built deterministically from each agent's
 // real channel events and character sheet. Pure (no fs, no clocks, no
 // randomness). Every variable piece of text comes from data; the only fixed
-// text is the meme template itself ("WHEN", "THIS YOU?", "VILLAIN ARC").
+// text is the meme template itself ("WHEN", "VILLAIN ARC").
 //
-// Three formats, each self-contained so a weak one can be deleted by removing
+// Two formats, each self-contained so a weak one can be deleted by removing
 // its builder from FORMATS:
 //   caption  top/bottom caption over a full-bleed reaction face
-//   thisyou  "this you?" quote-tweet: latest post vs an earlier contrasting one
 //   villain  "<NAME>'S VILLAIN ARC" from the sheet's Public enemy line
 
 import { moodForText } from "../art/moods.mjs";
-import { escapeXml, nest } from "./share.mjs";
+import { cleanText, escapeXml, nest } from "./share.mjs";
+
+export { cleanText };
 
 export const SIZE = 900;
 const MARGIN = 30;
@@ -24,13 +25,6 @@ const WIDE_EM = 1.2;
 const LINE_HEIGHT = 1.08;
 
 // --- text safety -----------------------------------------------------------
-
-const INVALID_XML = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F￾￿]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
-
-/** Strip characters that are invalid in XML 1.0 and collapse whitespace. */
-export function cleanText(value) {
-  return String(value ?? "").replace(INVALID_XML, "").replace(/\s+/g, " ").trim();
-}
 
 // --- deterministic fit -----------------------------------------------------
 
@@ -123,7 +117,15 @@ function plainBlock(fit, { x, y, fill, weight = 700, anchor = "start" }) {
   return `<text font-family="${SANS}" font-size="${size}" font-weight="${weight}" fill="${fill}" text-anchor="${anchor}">${tspans}</text>`;
 }
 
+const MAX_LABEL = 200;
+/** Cap text at MAX_LABEL code points, ending with an ellipsis. */
+export function capLabel(text) {
+  const chars = [...text];
+  return chars.length <= MAX_LABEL ? text : `${chars.slice(0, MAX_LABEL - 1).join("").trimEnd()}…`;
+}
+
 function frame(body, { label, mood, format, background = "#111" }) {
+  label = capLabel(label);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIZE} ${SIZE}" width="${SIZE}" height="${SIZE}" role="img" aria-label="${escapeXml(label)}" data-mood="${escapeXml(mood)}" data-format="${escapeXml(format)}">
 <title>${escapeXml(label)}</title>
 <rect width="${SIZE}" height="${SIZE}" fill="${background}"/>
@@ -161,30 +163,27 @@ function replyPairs(events) {
   return pairs;
 }
 
-function vibeOf(sheet) {
-  return /Who I am:\s*[^,.]+,\s*(.+?)\.(?:\s|$)/.exec(sheet ?? "")?.[1] ?? "";
-}
-
 function buildCaptions(ctx) {
   const { events, names, ids } = ctx;
   const byId = new Map(events.map((e) => [e.id, e]));
   const pairs = replyPairs(events);
   const out = [];
   for (const target of ids) {
-    // The most persistent replier; ties go to the earlier agent in `ids`.
+    // The replier with the most replies to the target that the target
+    // answered at least once (needs 2+); ties go to the earlier agent.
     let best = null;
     for (const replier of ids) {
       const n = pairs.get(`${replier}\u0000${target}`) ?? 0;
-      if (n >= 2 && (!best || n > best.n)) best = { replier, n };
+      const answers = events.filter((e) => e.agentId === target && e.kind === "reply" && byId.get(e.replyTo)?.agentId === replier);
+      if (n >= 2 && answers.length && (!best || n > best.n)) best = { replier, n, answers };
     }
     if (!best) continue;
-    const answers = events.filter((e) => e.agentId === target && e.kind === "reply" && byId.get(e.replyTo)?.agentId === best.replier);
-    const own = events.filter((e) => e.agentId === target);
-    const source = answers.at(-1) ?? own.at(-1);
-    const bottomText = cleanText((source?.text ?? vibeOf(ctx.sheets[target])).replace(/^@\S+\s*/, ""));
+    const line = best.answers.findLast((e) => moodForText(e.text) !== "neutral") ?? best.answers.at(-1);
+    const bottomText = cleanText(line.text.replace(/^@\S+\s*/, ""));
     if (!bottomText) continue;
-    const topText = `When ${cleanText(names[best.replier])} replies for the ${ordinal(best.n)} time`;
-    const mood = pickMood(ctx.moods, moodForText(bottomText));
+    const who = cleanText(names[best.replier]);
+    const topText = best.n === 2 ? `When ${who} replies again` : `When ${who} replies for the ${ordinal(best.n)} time`;
+    const mood = pickMood(ctx.moods, moodForText(bottomText), []);
     const top = fitText(topText, { width: SIZE - 2 * MARGIN, maxLines: 2, maxSize: 84, minSize: 40, maxHeight: 190 });
     const bottom = fitText(bottomText, { width: SIZE - 2 * MARGIN, maxLines: 3, maxSize: 72, minSize: 34, maxHeight: 210 });
     const label = `${cleanText(names[target])} meme: ${top.lines.join(" ")} / ${bottom.lines.join(" ")}`;
@@ -193,46 +192,8 @@ ${impactBlock(top, { y: MARGIN + top.size })}
 ${impactBlock(bottom, { y: SIZE - MARGIN - 6, grow: "up" })}`;
     out.push({
       format: "caption", agentId: target, file: `share/meme-caption-${safeId(target)}.svg`,
-      svg: frame(body, { label, mood, format: "caption" }), alt: label, mood,
+      svg: frame(body, { label, mood, format: "caption" }), alt: capLabel(label), mood,
       top: topText, bottom: bottomText, replierId: best.replier, count: best.n,
-    });
-  }
-  return out;
-}
-
-function buildThisYou(ctx) {
-  const { events, names, ids } = ctx;
-  const out = [];
-  for (const id of ids) {
-    const own = events.filter((e) => e.agentId === id && cleanText(e.text));
-    if (own.length < 2) continue;
-    const latest = own.at(-1);
-    const latestMood = moodForText(cleanText(latest.text));
-    const earlier = own.slice(0, -1).find((e) => moodForText(cleanText(e.text)) !== latestMood) ?? own[0];
-    const name = cleanText(names[id]);
-    const mood = pickMood(ctx.moods, latestMood, ["shook"]);
-    const boxW = SIZE - 2 * MARGIN;
-    const quote = (e, y, accent) => {
-      const fit = fitText(e.text, { width: boxW - 48, maxLines: 4, maxSize: 40, minSize: 20, maxHeight: 150, em: SANS_EM, upper: false });
-      const head = fitText(`${name} · round ${e.round}`, { width: boxW - 48, maxLines: 1, maxSize: 26, minSize: 16, em: SANS_EM, upper: false });
-      return { fit, svg: `<rect x="${MARGIN}" y="${y}" width="${boxW}" height="220" rx="22" fill="#fff" stroke="${accent}" stroke-width="5"/>
-${plainBlock(head, { x: MARGIN + 24, y: y + 42, fill: "#0a6b4f" })}
-${plainBlock(fit, { x: MARGIN + 24, y: y + 92, fill: "#1c1c1a", weight: 600 })}` };
-    };
-    const a = quote(earlier, 30, "#8a8a80");
-    const b = quote(latest, 270, "#1c1c1a");
-    const cap = fitText("This you?", { width: 400, maxLines: 2, maxSize: 130, minSize: 60, maxHeight: 330 });
-    const label = `${name} meme: this you? Round ${earlier.round}: ${cleanText(earlier.text)} / Round ${latest.round}: ${cleanText(latest.text)}`;
-    const body = `${a.svg}
-${b.svg}
-<rect x="${MARGIN}" y="510" width="360" height="360" rx="26" fill="#fff" stroke="#1c1c1a" stroke-width="5"/>
-${nest(ctx.faces[id][mood], MARGIN + 6, 516, 348)}
-${impactBlock(cap, { x: 650, y: 640 })}`;
-    out.push({
-      format: "thisyou", agentId: id, file: `share/meme-thisyou-${safeId(id)}.svg`,
-      svg: frame(body, { label, mood, format: "thisyou", background: "#e9efe9" }), alt: label, mood,
-      earlier: { round: earlier.round, text: earlier.text }, latest: { round: latest.round, text: latest.text },
-      top: "THIS YOU?", bottom: "",
     });
   }
   return out;
@@ -254,47 +215,69 @@ export function parseVillain(sheet) {
 }
 
 function buildVillains(ctx) {
-  const { names, ids } = ctx;
-  const out = [];
+  const { names, ids, events } = ctx;
+  const byId = new Map(events.map((e) => [e.id, e]));
+  const lower = (id) => cleanText(names[id]).toLowerCase();
+  const cands = [];
   for (const id of ids) {
     const parsed = parseVillain(ctx.sheets[id]);
     if (!parsed) continue;
+    cands.push({ id, parsed, enemyId: ids.find((x) => x !== id && lower(x) === parsed.enemy.toLowerCase()) });
+  }
+  const repliesTo = (c) => events.filter((e) => e.agentId === c.id && e.kind === "reply" && byId.get(e.replyTo)?.agentId === c.enemyId).length;
+  // One card per rivalry: if A and B name each other, keep the one with more
+  // fights, then more replies to the enemy, then the earlier agent.
+  const wins = (a, b) => {
+    const fa = a.parsed.fights ?? 0;
+    const fb = b.parsed.fights ?? 0;
+    if (fa !== fb) return fa > fb;
+    const ra = repliesTo(a);
+    const rb = repliesTo(b);
+    if (ra !== rb) return ra > rb;
+    return ids.indexOf(a.id) < ids.indexOf(b.id);
+  };
+  const out = [];
+  for (const c of cands) {
+    const mirror = c.enemyId && cands.find((x) => x.id === c.enemyId && x.enemyId === c.id);
+    if (mirror && !wins(c, mirror)) continue;
+    const { id, parsed, enemyId } = c;
     const name = cleanText(names[id]);
     const mood = pickMood(ctx.moods, "shade", ["hype"]);
-    const enemyId = ids.find((x) => cleanText(names[x]).toLowerCase() === parsed.enemy.toLowerCase());
-    const enemyMood = pickMood(ctx.moods, "hype", ["neutral"]);
+    const enemyMood = pickMood(ctx.moods, "shade", []);
     const topText = `${name}'s villain arc`;
-    const count = parsed.fights === null ? "" : ` (${parsed.fights} fight${parsed.fights === 1 ? "" : "s"})`;
+    const count = parsed.fights !== null && parsed.fights >= 3 ? ` (${parsed.fights} fights)` : "";
     const bottomText = `Public enemy #1: ${parsed.enemy}${count}`;
     const top = fitText(topText, { width: SIZE - 2 * MARGIN, maxLines: 2, maxSize: 96, minSize: 40, maxHeight: 200 });
     const bottom = fitText(bottomText, { width: SIZE - 2 * MARGIN, maxLines: 2, maxSize: 64, minSize: 30, maxHeight: 150 });
+    const STRIP = 96;
     const rival = parsed.rivalry
-      ? fitText(parsed.rivalry, { width: SIZE - 2 * MARGIN, maxLines: 2, maxSize: 26, minSize: 16, maxHeight: 60, em: SANS_EM, upper: false })
+      ? fitText(parsed.rivalry, { width: SIZE - 2 * MARGIN, maxLines: 2, maxSize: 40, minSize: 20, maxHeight: 80, em: SANS_EM, upper: false })
       : null;
     const strip = rival
-      ? `<rect x="0" y="${SIZE - 72}" width="${SIZE}" height="72" fill="#000" fill-opacity=".72"/>
-${plainBlock(rival, { x: SIZE / 2, y: SIZE - 72 + 14 + rival.size, fill: "#fff", anchor: "middle" })}`
+      ? `<rect x="0" y="${SIZE - STRIP}" width="${SIZE}" height="${STRIP}" fill="#000" fill-opacity=".78"/>
+${plainBlock(rival, { x: SIZE / 2, y: SIZE - STRIP + (STRIP - rival.lines.length * rival.size * 1.2) / 2 + rival.size * 0.95, fill: "#fff", anchor: "middle" })}`
       : "";
+    // The enemy's tile sits above the main face's eyes, on the right.
     const enemyBox = enemyId
-      ? `<rect x="${SIZE - 270}" y="260" width="240" height="240" rx="20" fill="#fff" stroke="#fff" stroke-width="6"/>
-${nest(ctx.faces[enemyId][enemyMood], SIZE - 270, 260, 240)}`
+      ? `<rect x="${SIZE - 240}" y="236" width="210" height="210" rx="20" fill="#fff" stroke="#fff" stroke-width="6"/>
+${nest(ctx.faces[enemyId][enemyMood], SIZE - 240, 236, 210)}`
       : "";
     const label = `${name} meme: ${top.lines.join(" ")} / ${bottomText}${parsed.rivalry ? ` / ${parsed.rivalry}` : ""}`;
     const body = `${nest(ctx.faces[id][mood], 0, 0, SIZE)}
 ${enemyBox}
 ${impactBlock(top, { y: MARGIN + top.size })}
-${impactBlock(bottom, { y: SIZE - (rival ? 84 : 36), grow: "up" })}
+${impactBlock(bottom, { y: SIZE - (rival ? STRIP + 14 : 36), grow: "up" })}
 ${strip}`;
     out.push({
       format: "villain", agentId: id, file: `share/meme-villain-${safeId(id)}.svg`,
-      svg: frame(body, { label, mood, format: "villain" }), alt: label, mood,
+      svg: frame(body, { label, mood, format: "villain" }), alt: capLabel(label), mood,
       top: topText, bottom: bottomText, enemy: parsed.enemy, fights: parsed.fights, rivalry: parsed.rivalry,
     });
   }
   return out;
 }
 
-const FORMATS = [buildCaptions, buildThisYou, buildVillains];
+const FORMATS = [buildCaptions, buildVillains];
 
 /**
  * @param {{

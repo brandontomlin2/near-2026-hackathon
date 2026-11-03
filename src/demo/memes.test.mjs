@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { buildMemes, fitText, estimateWidth, cleanText, ordinal, parseVillain, SIZE } from "./memes.mjs";
+import { buildMemes, fitText, estimateWidth, cleanText, capLabel, ordinal, parseVillain, SIZE } from "./memes.mjs";
 import { runDemo } from "./pipeline.mjs";
 import { getStyle } from "../art/styles/index.mjs";
 import { AGENTS } from "../traits/agents.mjs";
@@ -32,13 +32,53 @@ describe("memes: formats come from data", () => {
     const c = by(build(), "caption", "a");
     assert.equal(c.replierId, "b");
     assert.equal(c.count, 2);
-    assert.equal(c.top, "When Bob replies for the 2ND time");
+    assert.equal(c.top, "When Bob replies again");
     assert.equal(c.bottom, "fine. whatever.");
     assert.equal(c.mood, "shade");
-    assert.ok(c.svg.includes("WHEN BOB REPLIES"));
-    assert.ok(c.svg.includes("FOR THE 2ND TIME"));
+    assert.ok(c.svg.includes("WHEN BOB"));
+    assert.ok(c.svg.includes("REPLIES AGAIN"));
     assert.equal(c.file, "share/meme-caption-a.svg");
     assert.equal(by(build(), "caption", "b"), undefined, "Bob has one incoming reply only");
+  });
+
+  it("caption: 3+ replies use the ordinal, and the latest non-neutral answer is preferred", () => {
+    const more = [
+      ev(1, 1, "a", "post", null, "start"),
+      ev(2, 1, "b", "reply", 1, "@Ann one"),
+      ev(3, 1, "a", "reply", 2, "@Bob I doubt it."),
+      ev(4, 2, "b", "reply", 3, "@Ann two"),
+      ev(5, 2, "a", "reply", 4, "@Bob plain words"),
+      ev(6, 3, "b", "reply", 5, "@Ann three"),
+    ];
+    const c = by(build({ events: more }), "caption", "a");
+    assert.equal(c.top, "When Bob replies for the 3RD time");
+    assert.equal(c.bottom, "I doubt it.", "latest non-neutral, not the latest");
+    assert.equal(c.mood, "shade");
+    const flat = more.map((e) => (e.id === 3 ? { ...e, text: "@Bob plain too" } : e));
+    assert.equal(by(build({ events: flat }), "caption", "a").bottom, "plain words");
+    assert.equal(by(build({ events: flat }), "caption", "a").mood, "neutral");
+  });
+
+  it("caption: needs the target to have answered that replier", () => {
+    const unanswered = [
+      ev(1, 1, "a", "post", null, "hi"),
+      ev(2, 1, "b", "reply", 1, "@Ann x"),
+      ev(3, 2, "b", "reply", 1, "@Ann y"),
+    ];
+    assert.equal(build({ events: unanswered }).filter((c) => c.format === "caption").length, 0);
+  });
+
+  it("caption: ties go to the earlier agent in names order", () => {
+    const three = { a: "Ann", b: "Bob", c: "Cy" };
+    const f = Object.fromEntries(Object.keys(three).map((id) => [id, faces.a]));
+    const evs = [
+      ev(1, 1, "a", "post", null, "start"),
+      ev(2, 1, "c", "reply", 1, "@Ann c1"), ev(3, 1, "b", "reply", 1, "@Ann b1"),
+      ev(4, 2, "c", "reply", 1, "@Ann c2"), ev(5, 2, "b", "reply", 1, "@Ann b2"),
+      ev(6, 2, "a", "reply", 5, "@Bob fine"), ev(7, 2, "a", "reply", 4, "@Cy fine"),
+    ];
+    const c = by(buildMemes({ events: evs, sheets: {}, names: three, moods: MOODS, faces: f }), "caption", "a");
+    assert.equal(c.replierId, "b");
   });
 
   it("ordinals", () => {
@@ -46,37 +86,48 @@ describe("memes: formats come from data", () => {
       ["1ST", "2ND", "3RD", "4TH", "11TH", "12TH", "13TH", "21ST", "22ND", "101ST", "111TH"]);
   });
 
-  it("thisyou: both quotes are exact event texts, earliest contrasting mood first", () => {
-    const c = by(build(), "thisyou", "a");
-    assert.equal(c.latest.text, "send it \u{1F680}");
-    // latest is hype; the earliest post of a different mood is event 1 (shade)
-    assert.equal(c.earlier.text, "gas is free? I doubt it.");
-    assert.equal(c.earlier.round, 1);
-    assert.equal(c.latest.round, 3);
-    assert.ok(c.svg.includes("Ann · round 1") && c.svg.includes("Ann · round 3"));
-    assert.ok(c.svg.includes("gas is free? I doubt it."));
-    assert.ok(c.svg.includes("THIS"));
-    assert.equal(c.mood, "hype");
-  });
-
-  it("thisyou: falls back to the earliest post when no mood differs", () => {
-    const flat = [ev(1, 1, "a", "post", null, "hello there"), ev(2, 2, "a", "post", null, "hello again"), ev(3, 3, "a", "post", null, "hello last")];
-    const c = by(build({ events: flat }), "thisyou", "a");
-    assert.equal(c.earlier.text, "hello there");
-    assert.equal(c.latest.text, "hello last");
-  });
-
   it("villain: enemy, fight count and rivalry come from the sheet", () => {
     const c = by(build(), "villain", "a");
     assert.equal(c.enemy, "Bob");
     assert.equal(c.fights, 2);
     assert.equal(c.top, "Ann's villain arc");
-    assert.equal(c.bottom, "Public enemy #1: Bob (2 fights)");
+    assert.equal(c.bottom, "Public enemy #1: Bob", "fight count hidden below 3");
     assert.equal(c.rivalry, "Bob and I are not done yet.");
     assert.ok(c.svg.includes("ANN&#39;S"));
     assert.ok(c.svg.includes("Bob and I are not done yet."));
     assert.equal(c.mood, "shade");
-    assert.ok(c.svg.includes('data-mood="hype"'), "enemy face is nested");
+    assert.ok(c.svg.includes('data-mood="shade"') && !c.svg.includes('data-mood="hype"'), "enemy face is nested in shade");
+  });
+
+  it("villain: shows the fight count from 3 fights", () => {
+    const c = by(build({ sheets: { a: SHEET.replace("(2 fights)", "(3 fights)"), b: NOBODY } }), "villain", "a");
+    assert.equal(c.bottom, "Public enemy #1: Bob (3 fights)");
+  });
+
+  it("villain: a mirrored rivalry gets one card (fights, then replies, then agent order)", () => {
+    const sheetB = (n) => `Who I am: Bob, x. Public enemy #1: Ann (${n} fights). Rivalry arc: Ann and I. Receipts: 1 post.`;
+    const sheetA = (n) => `Who I am: Ann, x. Public enemy #1: Bob (${n} fights). Rivalry arc: Bob and I. Receipts: 1 post.`;
+    const villains = (sheets, evs = events) => build({ sheets, events: evs }).filter((c) => c.format === "villain").map((c) => c.agentId);
+    assert.deepEqual(villains({ a: sheetA(1), b: sheetB(4) }), ["b"]);
+    assert.deepEqual(villains({ a: sheetA(4), b: sheetB(1) }), ["a"]);
+    // equal fights: Bob sent 2 replies to Ann, Ann sent 1 to Bob
+    assert.deepEqual(villains({ a: sheetA(2), b: sheetB(2) }), ["b"]);
+    // equal fights and replies: the earlier agent
+    assert.deepEqual(villains({ a: sheetA(2), b: sheetB(2) }, []), ["a"]);
+    // a one-sided enemy still gets its card
+    assert.deepEqual(villains({ a: sheetA(2), b: NOBODY }), ["a"]);
+  });
+
+  it("capLabel caps at 200 code points with an ellipsis", () => {
+    assert.equal(capLabel("short"), "short");
+    const capped = capLabel("\u{1F525}".repeat(500));
+    assert.equal([...capped].length, 200);
+    assert.ok(capped.endsWith("…"));
+    const c = by(build({ names: { a: "x".repeat(400), b: "Bob" } }), "caption", "a");
+    assert.ok([...c.alt].length <= 200);
+    assert.ok(c.svg.includes(`aria-label="${"x".repeat(5)}`));
+    assert.ok([...c.svg.match(/aria-label="([^"]*)"/)[1]].length <= 200);
+    assert.ok([...c.svg.match(/<title>([^<]*)<\/title>/)[1]].length <= 200);
   });
 
   it("parseVillain handles singular, no count, missing and unparseable lines", () => {
@@ -92,10 +143,6 @@ describe("memes: skips", () => {
   it("no public enemy: no villain card", () => {
     assert.equal(build({ sheets: { a: NOBODY, b: NOBODY } }).filter((c) => c.format === "villain").length, 0);
     assert.equal(build({ sheets: {} }).filter((c) => c.format === "villain").length, 0);
-  });
-  it("fewer than 2 posts: no thisyou", () => {
-    const one = [ev(1, 1, "a", "post", null, "just one")];
-    assert.equal(build({ events: one }).filter((c) => c.format === "thisyou").length, 0);
   });
   it("no reply pairs (or one reply only): no caption", () => {
     assert.equal(build({ events: events.filter((e) => e.kind === "post") }).filter((c) => c.format === "caption").length, 0);
@@ -143,11 +190,6 @@ describe("memes: fit", () => {
     assert.equal(long.truncated, true);
     assert.ok(long.lines.at(-1).endsWith("…"));
   });
-  it("hostile long text on a real card never exceeds the card", () => {
-    const text = "x".repeat(200);
-    const c = by(buildMemes({ events: [ev(1, 1, "a", "post", null, text), ev(2, 2, "a", "post", null, `${text} ?`)], sheets: {}, names, moods: MOODS, faces }), "thisyou", "a");
-    for (const m of c.svg.matchAll(/<tspan x="(\d+)" y="(\d+)">([^<]*)/g)) assert.ok(Number(m[2]) <= SIZE);
-  });
 });
 
 describe("memes: hostile input", () => {
@@ -164,10 +206,10 @@ describe("memes: hostile input", () => {
   const cards = buildMemes({ events: hostileEvents, sheets: { a: hostileSheet, b: hostileSheet }, names: hostileNames, moods: MOODS, faces });
 
   it("emits all formats", () => {
-    assert.deepEqual([...new Set(cards.map((c) => c.format))], ["caption", "thisyou", "villain"]);
+    assert.deepEqual([...new Set(cards.map((c) => c.format))], ["caption", "villain"]);
   });
 
-  for (const format of ["caption", "thisyou", "villain"]) {
+  for (const format of ["caption", "villain"]) {
     it(`${format}: escaped, well formed, no refs`, () => {
       for (const c of cards.filter((x) => x.format === format)) {
         const svg = c.svg;
@@ -207,7 +249,7 @@ describe("memes: determinism and styles", () => {
   });
   it("works with neutral only", () => {
     const cards = build({ moods: ["neutral"], faces: Object.fromEntries(Object.keys(names).map((id) => [id, { neutral: face(id, "neutral") }])) });
-    assert.deepEqual(cards.map((c) => c.format), ["caption", "thisyou", "thisyou", "villain"]);
+    assert.deepEqual(cards.map((c) => c.format), ["caption", "villain"]);
     assert.ok(cards.every((c) => c.mood === "neutral"));
   });
 });
@@ -230,9 +272,9 @@ describe("memes: default demo run", () => {
     }
   });
 
-  it("is data driven end to end: 2 captions, 4 this-you, 2 villains", () => {
+  it("is data driven end to end: 2 captions and 1 villain", () => {
     const count = (f) => result.manifest.memes.filter((m) => m.format === f).length;
-    assert.deepEqual([count("caption"), count("thisyou"), count("villain")], [2, 4, 2]);
+    assert.deepEqual([count("caption"), count("villain")], [2, 1]);
     const events = JSON.parse(fs.readFileSync(path.join(dir, "events.json"), "utf8")).events;
     const skeptic = fs.readFileSync(path.join(dir, "share/meme-caption-skeptic.svg"), "utf8");
     const n = events.filter((e) => e.kind === "reply" && e.agentId === "chaotic" && events.find((x) => x.id === e.replyTo)?.agentId === "skeptic").length;
@@ -251,7 +293,7 @@ describe("memes: default demo run", () => {
     const d2 = fs.mkdtempSync(path.join(os.tmpdir(), "memes-test-"));
     try {
       const r = await runDemo({ outDir: d2, style: "default" });
-      assert.equal(r.manifest.memes.length, 8);
+      assert.equal(r.manifest.memes.length, 3);
       assert.ok(r.manifest.memes.every((m) => m.mood === "neutral"));
     } finally {
       fs.rmSync(d2, { recursive: true, force: true });

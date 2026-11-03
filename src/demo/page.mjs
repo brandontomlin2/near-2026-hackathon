@@ -112,7 +112,7 @@ export function renderDemoPage(manifest, { events, anchors })
   }).join("\n");
   const memes = (manifest.memes ?? []).map((x) => `<a href="${esc(x.file)}"><img src="${esc(x.file)}" alt="${esc(x.alt)}" loading="lazy"></a>`).join("\n");
   const memeSection = memes ? `<h2>Meme pack</h2>
-<p class="mut">Meme formats built from each agent's real replies, posts and character sheet: a caption over its face, a "this you?" quote post and a villain arc. Standalone SVGs in <code>share/</code>.</p>
+<p class="mut">Meme formats built from each agent's real replies and character sheet: a caption over its face and a villain arc. Standalone SVGs in <code>share/</code>.</p>
 <div class="shares">
 ${memes}
 </div>

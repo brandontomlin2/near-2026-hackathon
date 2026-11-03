@@ -13,13 +13,13 @@ import { MAX_SHEET_WORDS } from "../memory/summarizer.mjs";
 import { hashSheet } from "../anchor/hash.mjs";
 import { getStyle } from "../art/styles/index.mjs";
 import { moodForText, MOODS } from "../art/moods.mjs";
-import { renderShareCard, wrapText } from "./share.mjs";
+import { renderShareCard, wrapText, nest, cleanText } from "./share.mjs";
 
 const PINNED_FINAL_ROUND_HASH = "ed0b0c82315a4a04b81026fb90429ff0c7f292ede27a992c6cbadbee5435284d";
 const IDS = ["aloof", "chaotic", "social", "skeptic"];
 // Pins the sheet writer, summarizer prompt, hashing, art paths and anchors, not just the swarm.
 const PINNED_ALOOF_SHEET_HASH = "db3158b78dd0de587426fe2d272950caec99825ce8b2695502b7e7675e4130fb";
-const PINNED_DEMO_JSON_SHA256 = "636cedc5fcfaac82576f9c29da6e532d9d0b3869c61ffb96ad5106a8567d0c91";
+const PINNED_DEMO_JSON_SHA256 = "7024cbb8c4accf7eaf8031a6e03f460bbafcf84344570db4649e2885c5eb4c65";
 
 const tmp = [];
 function mkTmp() {
@@ -293,6 +293,32 @@ describe("demo: share cards", () => {
   });
 });
 
+describe("demo: share card hardening", () => {
+  const bad = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  const faceSvg = getStyle("sticker").render(AGENTS[0].traits, { mood: "shook" });
+
+  it("strips XML-invalid control characters from text, name, mood and round", () => {
+    const svg = renderShareCard({ agentName: "Na\u0000me\u000B", text: "hi\u0008 \u001Fthere \uD800 \u{1F525} caf\u00E9", mood: "sh\u000Cook", round: "1\uFFFE", faceSvg });
+    assert.ok(!bad.test(svg));
+    assert.ok(svg.includes("Name") && svg.includes("hi there") && svg.includes("\u{1F525} caf\u00E9"));
+    assert.equal(cleanText("a\u0000b\u{1F525}"), "ab\u{1F525}");
+  });
+
+  it("wrapText never splits a surrogate pair", () => {
+    const lines = wrapText("x".repeat(21) + "\u{1F600}y");
+    assert.ok(lines.every((l) => !bad.test(l)), JSON.stringify(lines));
+    assert.equal(lines.join(""), "x".repeat(21) + "\u{1F600}y");
+    for (const l of wrapText("\u{1F600}".repeat(30))) assert.ok(!bad.test(l));
+  });
+
+  it("nest() reads the opening tag quote-aware, even with > inside an attribute", () => {
+    const out = nest('<svg xmlns="http://www.w3.org/2000/svg" aria-label="a > b" width="256" height="256" viewBox="0 0 1 1"><rect/></svg>', 5, 6, 77);
+    assert.ok(out.startsWith('<svg xmlns="http://www.w3.org/2000/svg" aria-label="a > b" viewBox="0 0 1 1" x="5" y="6" width="77" height="77"><rect/>'), out);
+    const single = nest("<svg data-x='1 > 0' width='9'><g/></svg>", 1, 2, 3);
+    assert.ok(single.startsWith("<svg data-x='1 > 0' x=\"1\""), single);
+  });
+});
+
 describe("demo: styles", () => {
   it("--style default works: neutral only, no mood strip, still one share card per message", async () => {
     const dir = mkTmp();
@@ -307,7 +333,7 @@ describe("demo: styles", () => {
     const shareFiles = walk(dir).filter((f) => f.startsWith("share/"));
     assert.equal(shareFiles.filter((f) => !f.startsWith("share/meme-")).length, 24);
     assert.equal(shareFiles.filter((f) => f.startsWith("share/meme-")).length, manifest.memes.length);
-    assert.equal(manifest.memes.length, 8);
+    assert.equal(manifest.memes.length, 3);
     assert.ok(!fs.existsSync(path.join(dir, "art/aloof.hype.svg")));
     for (const f of walk(dir).filter((x) => x.startsWith("share/"))) {
       assert.ok(fs.readFileSync(path.join(dir, f), "utf8").includes("<svg"));

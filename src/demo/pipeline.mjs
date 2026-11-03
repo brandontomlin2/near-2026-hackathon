@@ -176,7 +176,7 @@ export async function runDemo({
     shares.push({ file, eventId: e.id, agentId: e.agentId, round: e.round, mood: shown });
   }
 
-  // Meme pack: caption, this-you and villain-arc cards from the real events
+  // Meme pack: caption and villain-arc cards from the real events
   // and each agent'"'"'s latest sheet.
   const memeCards = buildMemes({
     events: result.events,
