@@ -209,7 +209,7 @@ test("README 'Live on testnet' is one short paragraph after the working sections
 
 test("README meme paragraph: templates not jokes, caption bottom line is a scripted reply, fold rule is fights then replies then roster", async () => {
   assert.doesNotMatch(readmeText, /no hand-written jokes/);
-  assert.ok(readmeText.includes("The 5 meme cards are fixed templates filled from the run's data"));
+  assert.ok(readmeText.includes("The 3 meme cards are fixed templates filled from the run's data"));
   assert.ok(readmeText.includes("one card per rivalry goes to the side whose sheet counts more fights, then, on a tie, the side with more replies to its enemy, then the earlier agent in the roster"));
   const memes = await readFile(join(root, "src/demo/memes.mjs"), "utf8");
   const wins = memes.slice(memes.indexOf("const wins = (a, b) =>"));
