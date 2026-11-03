@@ -119,7 +119,7 @@ test("demo-video.md: the quoted banner is on the page, and 'mock' appears where 
   assert.ok(video.includes(banner));
   assert.ok(page.includes(banner));
   const mentions = page.match(/mock/gi) ?? [];
-  assert.equal(mentions.length, 4, "banner (Mock mode, mocked), MOCK_INFERENCE=0 note, TEE badge");
+  assert.equal(mentions.length, 6, "banner (Mock mode, mocked), MOCK_INFERENCE=0 note, transfer accounts and contract labelled mock placeholder, TEE badge");
   assert.ok(page.includes("MOCK_INFERENCE=0"));
   assert.ok(page.includes("NEAR AI Cloud (TEE) in live mode : mocked"));
 });
