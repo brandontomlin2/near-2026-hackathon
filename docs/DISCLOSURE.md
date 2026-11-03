@@ -4,7 +4,7 @@ Answers to the hackathon's disclosure questions (Q-002, Q-003, Q-005 in `docs/HA
 
 ## Pre-hackathon code (Q-002, Q-003)
 
-None. The first commit in this repository is `992acee`, "chore: initialize repository", committed at 2026-11-03T00:20:04Z (UTC). Git stores it in the committer's local time, UTC-6, as 2026-11-02T18:20:04-06:00. Check: `TZ=UTC git log --reverse --format='%h %cd %s' --date=iso-strict-local | head -1` prints the UTC time; plain `--date=iso-strict` prints the stored -06:00 form. Every commit is dated 2026-11-03 (UTC) or later, inside the hackathon window (2026-11-01 to 2026-11-14 UTC). No code was imported from an earlier project, so there is no `pre-hackathon` tag and no baseline diff to link.
+None. The first commit in this repository is `992acee`, "chore: initialize repository", committed at 2026-11-03T00:20:04Z (UTC). Git stores it in the committer's local time, UTC-6, as 2026-11-02T18:20:04-06:00. Check: `TZ=UTC git log --reverse --format='%h %cd %s' --date=iso-strict-local | head -1` prints the UTC time (some git versions write it as `+00:00` instead of `Z`); plain `--date=iso-strict` prints the stored -06:00 form. Every commit is dated 2026-11-03 (UTC) or later, inside the hackathon window (2026-11-01 to 2026-11-14 UTC). No code was imported from an earlier project, so there is no `pre-hackathon` tag and no baseline diff to link.
 
 ## AI-generated code (Q-005)
 

@@ -19,9 +19,11 @@ const haveHistory = () => {
 };
 
 test("DISCLOSURE.md first-commit timestamp equals git's UTC time", { skip: !haveHistory() && "needs full git history" }, async () => {
-  const [sha, utc] = git("log", "--reverse", "--format=%h %cd", "--date=iso-strict-local", "--max-parents=0")
+  const [sha, raw] = git("log", "--reverse", "--format=%h %cd", "--date=iso-strict-local", "--max-parents=0")
     .split("\n")[0]
     .split(" ");
+  // Git versions differ: some print UTC as Z, others as +00:00.
+  const utc = raw.replace(/\+00:00$/, "Z");
   const text = await disclosure;
   assert.match(utc, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
   assert.ok(text.includes(`\`${sha}\``), `first commit ${sha} named`);
