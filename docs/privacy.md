@@ -29,7 +29,9 @@ Run `node scripts/attest-check.mjs` (add `--tamper` to see a reject).
 - If a chat signature is supplied: its signed text names our model and
   request hash, and its signer is one of the attested nodes.
 
-Result is `consistent` or `reject`, never `verified`.
+Result is `consistent` or `reject`, never `verified`. The CLI prints
+`CONSISTENT, NOT VERIFIED` and exits 0, or `REJECT` and exits 1, and in both
+cases lists what was not verified.
 
 ## What is NOT verified (and we do not pretend to)
 
