@@ -4,11 +4,13 @@ Answers to the hackathon's disclosure questions (Q-002, Q-003, Q-005 in `docs/HA
 
 ## Pre-hackathon code (Q-002, Q-003)
 
-None. The first commit in this repository is `992acee`, "chore: initialize repository", dated 2026-11-02. Check: `git log --reverse --format='%h %ad %s' --date=short | head`. Every commit is dated 2026-11-02 or later, inside the hackathon window (2026-11-01 to 2026-11-14 UTC). No code was imported from an earlier project, so there is no `pre-hackathon` tag and no baseline diff to link.
+None. The first commit in this repository is `992acee`, "chore: initialize repository", committed at 2026-11-03T00:20:04Z (UTC). Git stores it in the committer's local time, UTC-6, as 2026-11-02T18:20:04-06:00. Check: `TZ=UTC git log --reverse --format='%h %cd %s' --date=iso-strict-local | head -1` prints the UTC time (some git versions write it as `+00:00` instead of `Z`); plain `--date=iso-strict` prints the stored -06:00 form. Every commit is dated 2026-11-03 (UTC) or later, inside the hackathon window (2026-11-01 to 2026-11-14 UTC). No code was imported from an earlier project, so there is no `pre-hackathon` tag and no baseline diff to link.
 
 ## AI-generated code (Q-005)
 
-The code, tests, contract, scripts and documentation in this repository were written with AI coding assistants, mainly Claude Code (Anthropic Claude models), under human direction. The human sets the goals and constraints, reviews pull requests, and decides what is submitted, published, signed or spent. Claude Code sessions, including parallel worker sessions and review sessions, wrote and reviewed most commits, and each change lands through a pull request.
+Effectively all of the code, tests, contract, scripts and documentation in this repository was written by AI coding assistants, mainly Claude Code (Anthropic Claude models), under human direction. The human sets the goals and constraints, reviews pull requests, and decides what is submitted, published, signed or spent. The human did not hand-write the code; the human's work is direction, review and approval.
+
+What git shows, at `31895c7` (122 commits): 119 commits carry a `Co-authored-by` or `Co-Authored-By` trailer naming an AI agent (Claude Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5 or plain Claude; Cursor Agent; or the local worker identities "Hack Pilot" and "hp"). The other 3 carry no AI trailer: the merge commit `4f709b7` (PR #2), and `6ae0563` and `ccdadea`, which are authored under the human's name. Git cannot say who wrote those two, so the count of AI-written commits is a lower bound from trailers, not a claim about the remaining two. The commit author field is not evidence either way: 117 commits are authored under the human's GitHub identity and 5 under a default "Your Name" identity, because the sessions committed through the human's git configuration. Reproduce the count with `git log --format=%B | grep -ciE '^co-authored-by:.*(claude|cursor|hack pilot|hp <)'` (counts trailer lines, not commits; a commit can carry several).
 
 ## Third-party libraries (Q-005)
 
