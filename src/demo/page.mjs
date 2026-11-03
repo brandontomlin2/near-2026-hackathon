@@ -1,10 +1,11 @@
 // Static HTML page for the offline demo. No scripts, no external assets, no
 // network. Only relative links to files in the same output directory. Every
-// value that came from the run is escaped; the SVGs come from our own
-// deterministic renderer (src/art/render.mjs) and are inlined as is.
+// value that came from the run is escaped. Art is referenced with <img> and
+// relative paths, never inlined, so the page stays small and no SVG ids clash.
 
 import { GENESIS_HASH as GENESIS } from "../swarm/runner.mjs";
 import { escapeHtml as esc } from "../viewer/render.mjs";
+import { moodForText } from "../art/moods.mjs";
 
 const CSS = `
 :root{color-scheme:light dark;--bg:#fafaf7;--fg:#1c1c1a;--mut:#5f5f58;--card:#fff;--line:#d9d9d0;--acc:#0a6b4f}
@@ -17,11 +18,17 @@ code,.hash{font:12px/1.4 ui-monospace,Menlo,monospace;word-break:break-all}
 .mut{color:var(--mut)}.ok{color:var(--acc);font-weight:600}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px}
-.arts{display:flex;gap:12px}.arts figure{margin:0;flex:1;text-align:center}.arts svg{width:100%;height:auto;max-width:180px}
+.hero{text-align:center;padding:12px 0 4px}.pitch{margin:0;color:var(--mut);font-size:.95rem}
+.hero h1{font-size:clamp(2rem,6vw,3.4rem);line-height:1.1;margin:.15em 0}.sub{max-width:36em;margin:.4em auto 1em;font-size:1.1rem}
+.faces{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}.faces figure{margin:0;text-align:center}.faces img{width:150px;height:150px;border-radius:12px}
+.arts{display:flex;gap:12px;align-items:flex-end}.arts figure{margin:0;text-align:center}.arts .big{flex:1}.arts .big img{width:100%;max-width:240px;height:auto}.arts .small img{width:90px;height:auto}
+.moods{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0}.moods figure{margin:0;text-align:center}.moods img{width:100%;height:auto}
+.shares{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}.shares img{width:100%;height:auto;border:1px solid var(--line);border-radius:8px}
+.msg{display:flex;gap:10px;align-items:center;margin:.5em 0}.msg img{width:64px;height:64px;flex:none;border-radius:8px}.msg .mood{display:block;font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
 figcaption{font-size:12px;color:var(--mut)}
 table{border-collapse:collapse;width:100%;font-size:14px}th,td{border-bottom:1px solid var(--line);padding:4px 8px;text-align:left;vertical-align:top}
-.msg{margin:.2em 0}.who{font-weight:600}
-.banner{border:2px solid var(--acc);border-radius:8px;padding:8px 12px;font-weight:600}
+.who{font-weight:600}
+.notice{border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;color:var(--mut)}
 .pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-bottom:12px}
 pre{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:8px;overflow-x:auto;font-size:12px}
 `;
@@ -37,17 +44,21 @@ export function formatDeposit(yocto) {
   return `${whole}${frac ? `.${frac}` : ""} NEAR`;
 }
 
-function agentCard(a, svg) {
+function agentCard(a, moods) {
   const traits = Object.entries(a.traits)
     .map(([k, v]) => (k === "memory_depth" ? `memory_depth: ${esc(v)} at mint, ${esc(a.memoryDepth)} now` : `${esc(k)}: ${esc(v)}`))
     .join(" · ");
   const latest = a.sheets.at(-1);
   const n = a.sheets.length;
+  const strip = moods.length > 1
+    ? `<div class="moods">${moods.map((m) => `<figure><img src="${esc(a.faces[m])}" alt="${esc(a.name)} in mood ${esc(m)}" loading="lazy"><figcaption>${esc(m)}</figcaption></figure>`).join("")}</div>`
+    : "";
   return `<div class="card">
 <div class="arts">
-<figure>${svg.mintArt}<figcaption>at mint (1 ring)</figcaption></figure>
-<figure>${svg.art}<figcaption>after ${n} summar${n === 1 ? "y" : "ies"} (${esc(a.memoryDepth)} rings)</figcaption></figure>
+<figure class="big"><img src="${esc(a.art)}" alt="${esc(a.name)}, signature image"><figcaption>now, after ${n} summar${n === 1 ? "y" : "ies"} (memory depth ${esc(a.memoryDepth)})</figcaption></figure>
+<figure class="small"><img src="${esc(a.mintArt)}" alt="${esc(a.name)} at mint"><figcaption>at mint (memory depth 1)</figcaption></figure>
 </div>
+${strip}
 <h3>${esc(a.name)} <span class="mut">· ${esc(a.personality)}</span></h3>
 <div class="mut">${traits}</div>
 <p>${latest ? esc(latest.sheet) : "No sheet yet."}</p>
@@ -63,18 +74,23 @@ function memorySection(a) {
 <div class="pair">${cells || '<div class="mut">No sheets yet.</div>'}</div>`;
 }
 
-function channel(manifest, events) {
-  const name = new Map(manifest.agents.map((a) => [a.id, a.name]));
+function channel(manifest, events, moods) {
+  const byAgent = new Map(manifest.agents.map((a) => [a.id, a]));
   const byId = new Map(events.map((e) => [e.id, e]));
   const out = [];
   for (let r = 1; r <= manifest.rounds; r++) {
     out.push(`<h3>Round ${r}</h3>`);
     for (const e of events.filter((x) => x.round === r)) {
+      const agent = byAgent.get(e.agentId);
+      const name = agent?.name ?? e.agentId;
       const target = e.kind === "reply" ? byId.get(e.replyTo) : null;
-      const who = target
-        ? `${esc(name.get(e.agentId) ?? e.agentId)} → ${esc(name.get(target.agentId) ?? target.agentId)}`
-        : esc(name.get(e.agentId) ?? e.agentId);
-      out.push(`<div class="msg"><span class="who">${who}</span> ${esc(e.text)}</div>`);
+      const who = target ? `${esc(name)} → ${esc(byAgent.get(target.agentId)?.name ?? target.agentId)}` : esc(name);
+      const mood = moodForText(e.text);
+      const shown = moods.includes(mood) ? mood : "neutral";
+      const face = agent?.faces?.[shown]
+        ? `<img src="${esc(agent.faces[shown])}" alt="${esc(name)} feeling ${esc(mood)}" data-mood="${esc(mood)}" loading="lazy">`
+        : "";
+      out.push(`<div class="msg">${face}<div><span class="who">${who}</span> <span class="mood">${esc(mood)}</span> ${esc(e.text)}</div></div>`);
     }
   }
   return out.join("\n");
@@ -82,30 +98,41 @@ function channel(manifest, events) {
 
 /**
  * @param {object} manifest the near-demo/run@1 manifest (demo.json)
- * @param {{ events: object[], anchors: { calls: object[] }, svgs: Record<string, { art: string, mintArt: string }> }} data
- *   events: runner events; anchors: contents of anchors.json; svgs: inline SVG markup per agent id
+ * @param {{ events: object[], anchors: { calls: object[] } }} data
+ *   events: runner events; anchors: contents of anchors.json
  * @returns {string} one self-contained HTML document
  */
-export function renderDemoPage(manifest, { events, anchors, svgs }) {
+export function renderDemoPage(manifest, { events, anchors })
+ {
+  const moods = manifest.moods ?? ["neutral"];
+  const shares = (manifest.shares ?? []).map((x) => {
+    const agent = manifest.agents.find((a) => a.id === x.agentId);
+    return `<a href="${esc(x.file)}"><img src="${esc(x.file)}" alt="Share card: ${esc(agent?.name ?? x.agentId)}, round ${esc(x.round)}, ${esc(x.mood)}" loading="lazy"></a>`;
+  }).join("\n");
+  const hero = manifest.agents.map((a) => `<figure><img src="${esc(a.art)}" alt="${esc(a.name)}"><figcaption>${esc(a.name)}</figcaption></figure>`).join("");
   const chain = manifest.roundHashes.map((h, i) => `<tr><td>${i + 1}</td><td class="hash">${esc(h)}</td></tr>`).join("\n");
   const calls = anchors.calls.map((c) => `<tr><td>${esc(c.tokenId)}</td><td>${esc(c.round)}</td><td>${esc(c.method)}</td><td class="hash">${esc(c.args.sheet_hash)}</td><td>${esc(formatDeposit(c.depositYocto))}</td><td>${esc(c.status)}</td></tr>`).join("\n");
   const files = manifest.files.filter((f) => f !== "index.html").map((f) => `<li><a href="${esc(f)}">${esc(f)}</a></li>`).join("\n");
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Personality NFT swarm — offline demo</title>
+<title>Your NFT remembers who you are</title>
 <style>${CSS}</style></head><body><main>
-<h1>Personality NFT swarm — offline demo</h1>
-<p class="banner">Offline demo: inference mocked, nothing signed, nothing sent, no network.</p>
-<p class="mut">mode: ${esc(manifest.mode)} · ${esc(manifest.rounds)} rounds · seed ${esc(manifest.seed)} · a sheet every ${esc(manifest.every)} rounds</p>
+<header class="hero">
+<p class="pitch">Personality NFT: an AI personality that lives in your NFT.</p>
+<h1>Your NFT remembers who you are</h1>
+<p class="sub">An AI personality lives in your NFT, argues with three others in a swarm, remembers it in a character sheet whose hash is anchored on NEAR, and reacts with a face to every line.</p>
+<div class="faces">${hero}</div>
+</header>
+<p class="notice">Mock mode, dry run: inference is mocked and nothing is signed, sent or deployed. ${esc(manifest.rounds)} rounds, seed ${esc(manifest.seed)}, a sheet every ${esc(manifest.every)} rounds, art style ${esc(manifest.style ?? "default")}.</p>
 <ol>
 <li>Four AI personalities talk on one shared channel. Each round has a hash that chains to the one before.</li>
-<li>Every ${esc(manifest.every)} rounds each agent rewrites its character sheet, and its art gains a ring.</li>
+<li>Every ${esc(manifest.every)} rounds each agent rewrites its character sheet, and its memory depth goes up by one, which changes its art.</li>
 <li>The sheet hash is what would be anchored on its NFT. Here that call is prepared and never signed.</li>
 </ol>
 
 <h2>Agents</h2>
 <div class="grid">
-${manifest.agents.map((a) => agentCard(a, svgs[a.id])).join("\n")}
+${manifest.agents.map((a) => agentCard(a, moods)).join("\n")}
 </div>
 
 <h2>Memory</h2>
@@ -119,7 +146,13 @@ ${chain}</table>
 <p>verify: <span class="ok">ok</span> · final round hash <span class="hash">${esc(manifest.finalRoundHash)}</span></p>
 
 <h2>Channel</h2>
-${channel(manifest, events)}
+${channel(manifest, events, moods)}
+
+<h2>Share cards</h2>
+<p class="mut">One card per channel message: the reaction face, the quote, the agent and a footer. Each is a standalone SVG in <code>share/</code>.</p>
+<div class="shares">
+${shares}
+</div>
 
 <h2>Anchor (dry run)</h2>
 <table><tr><th>Token</th><th>Round</th><th>Method</th><th>sheet_hash</th><th>Deposit</th><th>Status</th></tr>

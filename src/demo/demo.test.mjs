@@ -11,7 +11,9 @@ import { AGENTS } from "../traits/agents.mjs";
 import { verifyRounds } from "../swarm/runner.mjs";
 import { sheetHash, MAX_SHEET_WORDS } from "../memory/summarizer.mjs";
 import { hashSheet } from "../anchor/hash.mjs";
-import { renderSvg } from "../art/render.mjs";
+import { getStyle } from "../art/styles/index.mjs";
+import { moodForText, MOODS } from "../art/moods.mjs";
+import { renderShareCard, wrapText } from "./share.mjs";
 
 const PINNED_FINAL_ROUND_HASH = "ea0270925cbdff0bf41a7b3ee48a0129c4bec03b7dc1d675cd028ca30e34a948";
 const IDS = ["aloof", "chaotic", "social", "skeptic"];
@@ -94,6 +96,7 @@ describe("demo: determinism", () => {
       rounds: 6,
       seed: 1,
       every: 3,
+      style: "sticker",
       contractId: "personality-nft.demo.testnet",
     });
   });
@@ -208,13 +211,115 @@ describe("demo: round chain", () => {
 });
 
 describe("demo: art", () => {
-  it("current art uses 3 rings and mint art uses 1", () => {
+  it("writes the sticker style: neutral at memory depth 3, mint at 1, and one file per mood", () => {
+    const style = getStyle("sticker");
     for (const agent of AGENTS) {
-      const art = fs.readFileSync(path.join(dirA, `art/${agent.id}.svg`), "utf8");
-      const mint = fs.readFileSync(path.join(dirA, `art/${agent.id}.mint.svg`), "utf8");
-      assert.equal(art, renderSvg({ ...agent.traits, memory_depth: 3 }));
-      assert.equal(mint, renderSvg({ ...agent.traits, memory_depth: 1 }));
+      const read = (f) => fs.readFileSync(path.join(dirA, f), "utf8");
+      assert.equal(read(`art/${agent.id}.svg`), style.render({ ...agent.traits, memory_depth: 3 }, { mood: "neutral" }));
+      assert.equal(read(`art/${agent.id}.mint.svg`), style.render({ ...agent.traits, memory_depth: 1 }, { mood: "neutral" }));
+      for (const mood of MOODS) {
+        assert.equal(read(`art/${agent.id}.${mood}.svg`), style.render({ ...agent.traits, memory_depth: 3 }, { mood }));
+      }
     }
+  });
+});
+
+describe("demo: page content", () => {
+  const html = () => fs.readFileSync(path.join(dirA, "index.html"), "utf8");
+
+  it("has the hero text and one short mock notice", () => {
+    assert.ok(html().includes("<h1>Your NFT remembers who you are</h1>"));
+    assert.equal((html().match(/class="notice"/g) ?? []).length, 1);
+  });
+
+  it("each agent card shows four mood images", () => {
+    for (const agent of resultA.manifest.agents) {
+      const strip = html().split('<div class="card">').find((c) => c.includes(`alt="${agent.name} in mood neutral"`));
+      assert.ok(strip, `no card for ${agent.id}`);
+      for (const mood of MOODS) assert.ok(strip.includes(`src="art/${agent.id}.${mood}.svg" alt="${agent.name} in mood ${mood}"`), `${agent.id} lacks ${mood}`);
+    }
+  });
+
+  it("every channel message has a face whose mood matches its text", () => {
+    const events = readJson(dirA, "events.json").events;
+    const msgs = html().split('<div class="msg">').slice(1);
+    assert.equal(msgs.length, events.length);
+    msgs.forEach((m, i) => {
+      const e = events[i];
+      const mood = moodForText(e.text);
+      assert.ok(m.includes(`src="art/${e.agentId}.${mood}.svg"`), `message ${e.id}: wrong face`);
+      assert.ok(m.includes(`data-mood="${mood}"`));
+      assert.ok(m.includes(`<span class="mood">${mood}</span>`));
+    });
+  });
+
+  it("links every share card and the page stays small", () => {
+    for (const x of resultA.manifest.shares) assert.ok(html().includes(`<img src="${x.file}"`));
+    assert.ok(Buffer.byteLength(html()) < 100_000);
+  });
+});
+
+describe("demo: share cards", () => {
+  const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+  it("exist, are in manifest.files, and carry the quote, an svg and no external refs", () => {
+    const events = readJson(dirA, "events.json").events;
+    assert.equal(resultA.manifest.shares.length, events.length);
+    for (const e of events) {
+      const file = `share/${e.agentId}-${e.round}.svg`;
+      assert.ok(resultA.manifest.files.includes(file), `${file} not in manifest.files`);
+      const svg = fs.readFileSync(path.join(dirA, file), "utf8");
+      assert.ok(svg.startsWith("<svg"));
+      assert.ok(svg.includes("Personality NFT"));
+      assert.ok(svg.includes("<svg", 5), "face is nested");
+      assert.ok(!/href=|<script|<image/.test(svg));
+      assert.ok(wrapText(e.text).every((l) => svg.includes(esc(l))), `${file} lacks the quote`);
+    }
+    for (const id of IDS) for (const m of MOODS) assert.ok(resultA.manifest.files.includes(`art/${id}.${m}.svg`));
+  });
+
+  it("escapes a hostile quote and agent name", () => {
+    const hostile = `<script>alert("x")</script> & 'q'`;
+    const faceSvg = getStyle("sticker").render(AGENTS[0].traits, { mood: "shook" });
+    const svg = renderShareCard({ agentName: `<b>&"'`, text: hostile, mood: "shook", round: 1, faceSvg });
+    assert.ok(!svg.includes("<script"));
+    assert.ok(!svg.includes("<b>"));
+    assert.ok(svg.includes("&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;"));
+    assert.ok(svg.includes("&amp; &#39;q&#39;"));
+  });
+
+  it("wraps long words and keeps lines within the width", () => {
+    const lines = wrapText(`${"x".repeat(60)} short words here`, 22);
+    assert.ok(lines.every((l) => l.length <= 22));
+    assert.equal(lines.join("").replace(/ /g, ""), `${"x".repeat(60)}shortwordshere`);
+  });
+});
+
+describe("demo: styles", () => {
+  it("--style default works: neutral only, no mood strip, still one share card per message", async () => {
+    const dir = mkTmp();
+    const r = await main(["--style", "default", "--out", dir], { env: {}, log: () => {} });
+    assert.equal(r, 0);
+    const html = fs.readFileSync(path.join(dir, "index.html"), "utf8");
+    assert.ok(!html.includes('class="moods"'));
+    assert.ok(html.includes("Your NFT remembers who you are"));
+    const manifest = readJson(dir, "demo.json");
+    assert.equal(manifest.style, "default");
+    assert.deepEqual(manifest.moods, ["neutral"]);
+    assert.equal(walk(dir).filter((f) => f.startsWith("share/")).length, 24);
+    assert.ok(!fs.existsSync(path.join(dir, "art/aloof.hype.svg")));
+    for (const f of walk(dir).filter((x) => x.startsWith("share/"))) {
+      assert.ok(fs.readFileSync(path.join(dir, f), "utf8").includes("<svg"));
+    }
+  });
+
+  it("rejects an unknown --style and runDemo rejects it before writing", async () => {
+    const r = await quietly(() => main(["--style", "nope"], { env: {}, log: () => {} }));
+    assert.equal(r.value, 2);
+    assert.match(r.errors.join("\n"), /unknown style/);
+    const dir = path.join(mkTmp(), "out");
+    await assert.rejects(runDemo({ outDir: dir, style: "nope" }), /unknown style/);
+    assert.equal(fs.existsSync(dir), false);
   });
 });
 
@@ -244,7 +349,7 @@ describe("demo: page", () => {
     for (const a of AGENTS) assert.ok(html.includes(a.name), `missing ${a.name}`);
     assert.ok(html.includes(resultA.finalRoundHash));
     assert.ok(html.includes("dry-run"));
-    assert.ok((html.match(/<svg/g) ?? []).length >= 4);
+    assert.ok((html.match(/<img /g) ?? []).length >= 4);
   });
 
   it("escapes HTML in sheets and events", () => {
@@ -254,12 +359,9 @@ describe("demo: page", () => {
     manifest.agents[0].sheets[1].sheet = payload;
     const events = readJson(dirA, "events.json").events.map((e, i) => (i === 0 ? { ...e, text: payload } : e));
     const anchors = readJson(dirA, "anchors.json");
-    const svgs = Object.fromEntries(
-      AGENTS.map((a) => [a.id, { art: renderSvg({ ...a.traits, memory_depth: 3 }), mintArt: renderSvg({ ...a.traits, memory_depth: 1 }) }]),
-    );
-    const html = renderDemoPage(manifest, { events, anchors, svgs });
+    const html = renderDemoPage(manifest, { events, anchors });
     assert.ok(!html.includes(payload));
-    assert.ok(!html.includes("<img"));
+    assert.ok(!html.includes("<img src=x"));
     assert.ok(html.includes("&lt;img src=x onerror=alert(1)&gt;"));
   });
 });
@@ -358,6 +460,7 @@ describe("demo: guards and formatting", () => {
     assert.ok(html.includes("0.01 NEAR") && html.includes("1 yoctoNEAR"));
     assert.ok(html.includes("shasum -a 256"));
     assert.ok(html.includes("memory_depth: 1 at mint, 3 now"));
+    assert.ok(!/\brings?\b/.test(html));
     assert.ok(!html.includes('href="index.html"'));
   });
 });

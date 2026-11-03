@@ -10,15 +10,18 @@ import { runSwarm, verifyRounds, GENESIS_HASH } from "../swarm/runner.mjs";
 import { AGENTS } from "../traits/agents.mjs";
 import { createMemoryStore, maybeSummarize } from "../memory/summarizer.mjs";
 import { createMockClient } from "../inference/client.mjs";
-import { renderSvg } from "../art/render.mjs";
+import { getStyle } from "../art/styles/index.mjs";
+import { moodForText } from "../art/moods.mjs";
 import { prepareAnchor, submitAnchor } from "../anchor/anchor.mjs";
 import { sheetResponder } from "./sheet-responder.mjs";
 import { renderDemoPage } from "./page.mjs";
+import { renderShareCard } from "./share.mjs";
 
 export const DEMO_DEFAULTS = Object.freeze({
   rounds: 6,
   seed: 1,
   every: 3,
+  style: "sticker",
   contractId: "personality-nft.demo.testnet",
 });
 
@@ -27,7 +30,7 @@ const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 
 /**
  * Run the whole demo and write it under outDir.
- * @param {{ outDir?: string, rounds?: number, seed?: number, every?: number, contractId?: string }} [options]
+ * @param {{ outDir?: string, rounds?: number, seed?: number, every?: number, style?: string, contractId?: string }} [options]
  * @returns {Promise<{ outDir: string, files: string[], finalRoundHash: string, verified: true, manifest: object }>}
  */
 export async function runDemo({
@@ -35,11 +38,14 @@ export async function runDemo({
   rounds = DEMO_DEFAULTS.rounds,
   seed = DEMO_DEFAULTS.seed,
   every = DEMO_DEFAULTS.every,
+  style: styleName = DEMO_DEFAULTS.style,
   contractId = DEMO_DEFAULTS.contractId,
 } = {}) {
   if (!Number.isInteger(every) || every < 1 || every > rounds) {
     throw new RangeError(`every must be between 1 and rounds (${rounds}), got ${every}; otherwise no sheet is written`);
   }
+
+  const style = getStyle(styleName); // throws on an unknown style before anything is written
 
   // 1. Swarm, with the persona mocks, then re-check the hash chain.
   const result = await runSwarm({ rounds, seed });
@@ -108,19 +114,32 @@ export async function runDemo({
   }
   const anchors = { network: "testnet", contractId, signed: false, calls };
 
-  // 4. Art, at mint (1 ring) and now.
+  // 4. Art, in the chosen style: the signature image (neutral, current memory
+  // depth), the same at mint, and one reaction face per mood. A style with a
+  // single mood (default) gets the neutral image only.
   const artDir = join(outDir, "art");
+  const shareDir = join(outDir, "share");
   await mkdir(artDir, { recursive: true });
-  const svgs = {};
+  await mkdir(shareDir, { recursive: true });
+  const moods = [...style.moods];
+  const faceSvgs = {};
   const agents = [];
   for (const agent of AGENTS) {
     const sheets = history.get(agent.id);
     const memoryDepth = Math.min(12, 1 + sheets.length);
-    const art = renderSvg({ ...agent.traits, memory_depth: memoryDepth });
-    const mintArt = renderSvg({ ...agent.traits, memory_depth: 1 });
+    const traits = { ...agent.traits, memory_depth: memoryDepth };
+    const art = style.render(traits, { mood: "neutral" });
+    const mintArt = style.render({ ...agent.traits, memory_depth: 1 }, { mood: "neutral" });
     await writeFile(join(artDir, `${agent.id}.svg`), art);
     await writeFile(join(artDir, `${agent.id}.mint.svg`), mintArt);
-    svgs[agent.id] = { art, mintArt };
+    faceSvgs[agent.id] = {};
+    const faces = {};
+    for (const mood of moods) {
+      const svg = style.render(traits, { mood });
+      await writeFile(join(artDir, `${agent.id}.${mood}.svg`), svg);
+      faceSvgs[agent.id][mood] = svg;
+      faces[mood] = `art/${agent.id}.${mood}.svg`;
+    }
     agents.push({
       id: agent.id,
       name: agent.name,
@@ -129,6 +148,7 @@ export async function runDemo({
       memoryDepth,
       art: `art/${agent.id}.svg`,
       mintArt: `art/${agent.id}.mint.svg`,
+      faces,
       sheets: sheets.map((s) => ({
         round: s.round,
         sheetHash: s.sheetHash,
@@ -136,6 +156,22 @@ export async function runDemo({
         sheet: s.sheet,
       })),
     });
+  }
+
+  // Share cards: one per channel message (an agent posts once per round).
+  const shares = [];
+  for (const e of result.events) {
+    const mood = moodForText(e.text);
+    const shown = moods.includes(mood) ? mood : "neutral";
+    const file = `share/${e.agentId}-${e.round}.svg`;
+    await writeFile(join(outDir, file), renderShareCard({
+      agentName: nameOf.get(e.agentId),
+      text: e.text,
+      mood: shown,
+      round: e.round,
+      faceSvg: faceSvgs[e.agentId][shown],
+    }));
+    shares.push({ file, eventId: e.id, agentId: e.agentId, round: e.round, mood: shown });
   }
 
   // 5. Write the rest.
@@ -150,24 +186,29 @@ export async function runDemo({
     rounds,
     seed,
     every,
+    style: style.name,
+    moods,
     finalRoundHash,
     roundHashes: result.roundHashes,
     agents,
+    shares,
     anchors: "anchors.json",
     files: [],
   };
   // The manifest lists every file the demo wrote, including itself and the page.
   manifest.files = [
     "transcript.txt", "events.json", "anchors.json", "demo.json", "index.html",
+    ...shares.map((x) => x.file),
     ...AGENTS.flatMap((a) => [
       `art/${a.id}.svg`, `art/${a.id}.mint.svg`,
+      ...moods.map((m) => `art/${a.id}.${m}.svg`),
       `memory/${a.id}/log.jsonl`, `memory/${a.id}/sheet.json`,
     ]),
   ].sort();
   await writeFile(join(outDir, "demo.json"), json(manifest));
   await writeFile(
     join(outDir, "index.html"),
-    renderDemoPage(manifest, { events: result.events, anchors, svgs, genesisHash: GENESIS_HASH }),
+    renderDemoPage(manifest, { events: result.events, anchors, genesisHash: GENESIS_HASH }),
   );
 
   return { outDir, files: manifest.files, finalRoundHash, verified: true, manifest };
