@@ -93,15 +93,21 @@ struct EventLog<T> {
 }
 
 /// An in-flight lock older than this many blocks counts as expired. The
-/// `nft_resolve_transfer` callback normally runs within a handful of blocks
-/// (the receiver call is gas-bounded), so if it ever fails and never clears the
-/// lock, the anchor would stay frozen forever. ~1000 blocks (about 17 minutes
-/// at ~1 s/block) is far beyond any legitimate resolution time and keeps the
-/// freeze short without an admin backdoor.
+/// `release_lock` callback (chained after the standard `nft_resolve_transfer`)
+/// normally runs within a handful of blocks (the receiver call is gas-bounded),
+/// so if it ever fails and never clears the lock, the anchor would stay frozen
+/// forever. ~1000 blocks (about 17 minutes at ~1 s/block) is far beyond any
+/// legitimate resolution time and keeps the freeze short without an admin
+/// backdoor.
 pub const IN_FLIGHT_EXPIRY_BLOCKS: u64 = 1000;
 
-/// Gas reserved for the resolve callback. Same budget the standard uses.
+/// Gas reserved for the standard resolve callback. Same budget the SDK uses.
 const GAS_FOR_RESOLVE_TRANSFER: Gas = Gas::from_tgas(5);
+
+/// Gas reserved for the `release_lock` callback chained after the resolve. It
+/// reads one promise result and removes one map entry; 5 Tgas matches the
+/// resolve budget and leaves ample headroom.
+const GAS_FOR_RELEASE_LOCK: Gas = Gas::from_tgas(5);
 
 /// An in-flight lock: when it was set and which transfer set it.
 #[near(serializers = [borsh])]
@@ -375,9 +381,13 @@ impl NonFungibleTokenCore for Contract {
             !self.is_in_flight(&token_id),
             "token is already in an nft_transfer_call"
         );
-        // Same flow as the standard implementation, except the callback also
-        // receives this transfer's lock nonce (the standard's fixed callback
-        // arguments leave no room for one).
+        // Same flow as the standard implementation: the receiver's
+        // `nft_on_transfer` is followed by the standard `nft_resolve_transfer`
+        // callback (unchanged name and signature, so wallets and indexers that
+        // match on it keep working). The standard callback's fixed arguments
+        // leave no room for the lock nonce, so a second, private `release_lock`
+        // callback is chained after it; it clears the lock only if the nonce
+        // still matches and forwards the resolve result as the NEP-171 bool.
         let sender_id = env::predecessor_account_id();
         let (old_owner, old_approvals) =
             self.tokens
@@ -400,7 +410,13 @@ impl NonFungibleTokenCore for Contract {
                 Self::ext(env::current_account_id())
                     .with_static_gas(GAS_FOR_RESOLVE_TRANSFER)
                     .with_unused_gas_weight(0)
-                    .resolve_transfer_call(old_owner, receiver_id, token_id, old_approvals, nonce),
+                    .nft_resolve_transfer(old_owner, receiver_id, token_id.clone(), old_approvals),
+            )
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(GAS_FOR_RELEASE_LOCK)
+                    .with_unused_gas_weight(0)
+                    .release_lock(token_id, U64(nonce)),
             )
             .into()
     }
@@ -420,9 +436,9 @@ impl NonFungibleTokenResolver for Contract {
         token_id: TokenId,
         approved_account_ids: Option<HashMap<AccountId, u64>>,
     ) -> bool {
-        // Standard entry point. `nft_transfer_call` schedules
-        // `resolve_transfer_call` instead, so nothing reaches this with a lock
-        // to clear; it only settles the transfer and never touches the lock.
+        // Standard callback, unchanged: settles the transfer (returning the
+        // token if the receiver asked for it). It never touches the in-flight
+        // lock; `release_lock`, chained after it, does that.
         self.tokens.nft_resolve_transfer(
             previous_owner_id,
             receiver_id,
@@ -434,33 +450,33 @@ impl NonFungibleTokenResolver for Contract {
 
 #[near]
 impl Contract {
-    /// Callback of `nft_transfer_call`: settles the transfer (returning the
-    /// token if the receiver asked for it) and releases the in-flight lock,
-    /// but only if the lock still belongs to this transfer. A late callback of
-    /// an earlier transfer still settles its own transfer but leaves a newer
-    /// transfer's lock alone.
+    /// Second callback of `nft_transfer_call`, chained after the standard
+    /// `nft_resolve_transfer`. Releases the in-flight lock, but only if the lock
+    /// still belongs to this transfer (`nonce` matches), so a late callback of an
+    /// earlier transfer leaves a newer transfer's lock alone. Never panics: a
+    /// missing or foreign lock is simply left as is (an uncleared lock expires
+    /// after `IN_FLIGHT_EXPIRY_BLOCKS`).
+    ///
+    /// Returns the resolve result so the promise `nft_transfer_call` returns
+    /// still yields the NEP-171 bool. Should the resolve callback itself have
+    /// failed (only possible by running out of its fixed gas), ownership has
+    /// already moved to the receiver and was not rolled back, so the transfer
+    /// counts as completed and `true` is returned.
     #[private]
-    pub fn resolve_transfer_call(
-        &mut self,
-        previous_owner_id: AccountId,
-        receiver_id: AccountId,
-        token_id: TokenId,
-        approved_account_ids: Option<HashMap<AccountId, u64>>,
-        lock_nonce: u64,
-    ) -> bool {
+    pub fn release_lock(&mut self, token_id: TokenId, nonce: U64) -> bool {
         if self
             .in_flight
             .get(&token_id)
-            .is_some_and(|lock| lock.nonce == lock_nonce)
+            .is_some_and(|lock| lock.nonce == nonce.0)
         {
             self.in_flight.remove(&token_id);
         }
-        self.tokens.nft_resolve_transfer(
-            previous_owner_id,
-            receiver_id,
-            token_id,
-            approved_account_ids,
-        )
+        // The resolve result is a JSON bool (at most 5 bytes); anything else
+        // (a failed receipt, or an oversized body) counts as completed.
+        env::promise_result_checked(0, 8)
+            .ok()
+            .and_then(|bytes| near_sdk::serde_json::from_slice::<bool>(&bytes).ok())
+            .unwrap_or(true)
     }
 }
 
@@ -1243,16 +1259,141 @@ mod tests {
     }
 
     fn resolve_with_nonce(contract: &mut Contract, receiver_reverts: bool, nonce: u64) -> bool {
+        resolve_chain(contract, accounts(2), accounts(3), receiver_reverts, nonce, 0)
+    }
+
+    /// Runs the two callbacks `nft_transfer_call` schedules, in order, with the
+    /// promise results the runtime would hand each: the receiver's answer to
+    /// `nft_resolve_transfer`, then its bool to `release_lock`.
+    fn resolve_chain(
+        contract: &mut Contract,
+        previous_owner: AccountId,
+        receiver: AccountId,
+        receiver_reverts: bool,
+        nonce: u64,
+        block_height: u64,
+    ) -> bool {
+        callback_env(
+            receiver_reverts.to_string().into_bytes(),
+            block_height,
+        );
+        let kept = contract.nft_resolve_transfer(
+            previous_owner,
+            receiver,
+            "aloof".to_string(),
+            None,
+        );
+        callback_env(kept.to_string().into_bytes(), block_height);
+        contract.release_lock("aloof".to_string(), U64(nonce))
+    }
+
+    fn callback_env(promise_result: Vec<u8>, block_height: u64) {
+        testing_env!(
+            context(accounts(0), NearToken::from_yoctonear(0))
+                .block_height(block_height)
+                .build(),
+            near_sdk::test_vm_config(),
+            near_sdk::RuntimeFeesConfig::test(),
+            Default::default(),
+            vec![near_sdk::PromiseResult::Successful(promise_result)]
+        );
+    }
+
+    fn function_calls(receipts: &[near_sdk::mock::Receipt]) -> Vec<(String, Vec<u8>, Gas)> {
+        receipts
+            .iter()
+            .flat_map(|r| r.actions.iter())
+            .filter_map(|a| match a {
+                MockAction::FunctionCallWeight {
+                    method_name,
+                    args,
+                    prepaid_gas,
+                    ..
+                } => Some((
+                    String::from_utf8(method_name.clone()).unwrap(),
+                    args.clone(),
+                    *prepaid_gas,
+                )),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn transfer_call_schedules_standard_resolve_then_release_lock_with_its_nonce() {
+        let mut contract = minted_contract();
+        // Two transfer calls so the lock under test carries nonce 1, not the
+        // default 0, proving the receipt carries the stored nonce.
+        testing_env!(context(accounts(2), ONE_YOCTO)
+            .prepaid_gas(near_sdk::Gas::from_tgas(100))
+            .build());
+        let _ = contract.nft_transfer_call(accounts(3), "aloof".to_string(), None, None, "".into());
+        assert!(resolve(&mut contract, false));
+        testing_env!(context(accounts(3), ONE_YOCTO)
+            .prepaid_gas(near_sdk::Gas::from_tgas(100))
+            .build());
+        let _ = contract.nft_transfer_call(accounts(4), "aloof".to_string(), None, None, "".into());
+        let stored_nonce = contract.in_flight.get("aloof").unwrap().nonce;
+        assert_eq!(stored_nonce, 1);
+
+        let receipts = get_created_receipts();
+        assert_eq!(receipts.len(), 3, "receiver call, resolve, release");
+        assert_eq!(receipts[0].receiver_id, accounts(4));
+        assert_eq!(receipts[1].receiver_id, accounts(0));
+        assert_eq!(receipts[2].receiver_id, accounts(0));
+        // Each callback depends on the receipt before it. The mock records a
+        // dependency as the position of the receipt's `CreateReceipt` entry in
+        // its action log, where each receipt is followed by its own actions.
+        let mut action_log_index = vec![0usize];
+        for r in &receipts[..receipts.len() - 1] {
+            action_log_index.push(action_log_index.last().unwrap() + 1 + r.actions.len());
+        }
+        assert_eq!(receipts[0].receipt_indices, Vec::<u64>::new());
+        assert_eq!(receipts[1].receipt_indices, vec![action_log_index[0] as u64]);
+        assert_eq!(receipts[2].receipt_indices, vec![action_log_index[1] as u64]);
+
+        let calls = function_calls(&receipts);
+        let names: Vec<&str> = calls.iter().map(|(n, _, _)| n.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["nft_on_transfer", "nft_resolve_transfer", "release_lock"]
+        );
+        // The standard callback keeps its standard arguments and gas budget.
+        let resolve_args: near_sdk::serde_json::Value =
+            near_sdk::serde_json::from_slice(&calls[1].1).unwrap();
+        assert_eq!(resolve_args["previous_owner_id"], accounts(3).to_string());
+        assert_eq!(resolve_args["receiver_id"], accounts(4).to_string());
+        assert_eq!(resolve_args["token_id"], "aloof");
+        assert_eq!(calls[1].2, GAS_FOR_RESOLVE_TRANSFER);
+        // The release callback carries exactly the nonce stored in the lock.
+        let release_args: near_sdk::serde_json::Value =
+            near_sdk::serde_json::from_slice(&calls[2].1).unwrap();
+        assert_eq!(release_args["token_id"], "aloof");
+        assert_eq!(release_args["nonce"], stored_nonce.to_string());
+        assert_eq!(calls[2].2, GAS_FOR_RELEASE_LOCK);
+    }
+
+    #[test]
+    fn release_lock_forwards_resolve_result_and_survives_a_failed_resolve() {
+        let mut contract = minted_contract();
+        testing_env!(context(accounts(2), ONE_YOCTO)
+            .prepaid_gas(near_sdk::Gas::from_tgas(100))
+            .build());
+        let _ = contract.nft_transfer_call(accounts(3), "aloof".to_string(), None, None, "".into());
+        // A failed resolve result: no panic, lock still released, reported as
+        // completed because ownership was not rolled back.
         testing_env!(
             context(accounts(0), NearToken::from_yoctonear(0)).build(),
             near_sdk::test_vm_config(),
             near_sdk::RuntimeFeesConfig::test(),
             Default::default(),
-            vec![near_sdk::PromiseResult::Successful(
-                receiver_reverts.to_string().into_bytes()
-            )]
+            vec![near_sdk::PromiseResult::Failed]
         );
-        contract.resolve_transfer_call(accounts(2), accounts(3), "aloof".to_string(), None, nonce)
+        assert!(contract.release_lock("aloof".to_string(), U64(0)));
+        assert!(!contract.is_in_flight(&"aloof".to_string()));
+        // Forwards `false` from a successful resolve that returned the token.
+        callback_env(b"false".to_vec(), 0);
+        assert!(!contract.release_lock("aloof".to_string(), U64(0)));
     }
 
     #[test]
@@ -1353,35 +1494,18 @@ mod tests {
             .prepaid_gas(near_sdk::Gas::from_tgas(100))
             .build());
         let _ = contract.nft_transfer_call(accounts(4), "aloof".to_string(), None, None, "".into());
-        // The stale callback of transfer 1 finally runs. It must not clear the
-        // lock of transfer 2 (the token has moved on, so it settles as a no-op).
-        testing_env!(
-            context(accounts(0), NearToken::from_yoctonear(0))
-                .block_height(later + 1)
-                .build(),
-            near_sdk::test_vm_config(),
-            near_sdk::RuntimeFeesConfig::test(),
-            Default::default(),
-            vec![near_sdk::PromiseResult::Successful(b"false".to_vec())]
-        );
-        contract.resolve_transfer_call(accounts(2), accounts(3), "aloof".to_string(), None, 0);
+        // The stale callbacks of transfer 1 finally run. They must not clear
+        // the lock of transfer 2 (the token has moved on, so the standard
+        // resolve settles as a no-op and `release_lock` sees a foreign nonce).
+        resolve_chain(&mut contract, accounts(2), accounts(3), false, 0, later + 1);
         testing_env!(context(accounts(4), MINT_DEPOSIT)
             .block_height(later + 2)
             .build());
         assert!(panics(|| {
             contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
         }));
-        // Transfer 2's own callback (nonce 1) clears it.
-        testing_env!(
-            context(accounts(0), NearToken::from_yoctonear(0))
-                .block_height(later + 3)
-                .build(),
-            near_sdk::test_vm_config(),
-            near_sdk::RuntimeFeesConfig::test(),
-            Default::default(),
-            vec![near_sdk::PromiseResult::Successful(b"false".to_vec())]
-        );
-        contract.resolve_transfer_call(accounts(3), accounts(4), "aloof".to_string(), None, 1);
+        // Transfer 2's own callbacks (nonce 1) clear it.
+        resolve_chain(&mut contract, accounts(3), accounts(4), false, 1, later + 3);
         testing_env!(context(accounts(4), MINT_DEPOSIT)
             .block_height(later + 4)
             .build());
