@@ -180,7 +180,7 @@ Every pull request must paste the real `bash scripts/verify.sh` output in a `## 
 
 ## Live on testnet
 
-Not run yet: no contract has been deployed to testnet from this repository, and there are no transaction hashes to show. `npm run live-proof` prints the deploy, four mint and `anchor_sheet` steps and writes `out/live-proof/evidence.example.json` (gitignored, marked `"example": true`); nothing is signed. Only the owner can run it live (`npm run live-proof -- --send --i-approve` with the account variables set). When that has happened, this section will list the contract id and transaction hashes for a judge to check with read-only `near contract call-function as-read-only` calls.
+Not run yet. Nothing from this repository is deployed to testnet, so there is no contract id and no transaction hash to check, and every hash above is a mock or a dry run. Only the owner can change that, with `npm run live-proof -- --send --i-approve` (refused unless `NEAR_ACCOUNT_ID` and `NEAR_CONTRACT_ACCOUNT_ID` are set); it deploys, mints the four tokens and anchors one sheet, then `npm run evidence` writes the real transaction hashes and RPC views to `out/evidence.json`. When that has happened, this section will quote that file.
 
 ## Disclosure
 
