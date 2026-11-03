@@ -139,22 +139,23 @@ test("art gains a star per sheet (not a ring); the X post, video and script say 
   assert.match(await doc("x-post.md"), /a star is added to its art/);
 });
 
-test("demo-script.md: page facts (verify: ok, Chaotic's enemy, one shook per agent, section order)", async () => {
+test("demo-script.md: page facts (verify: ok, Chaotic's rivalry grows, who is caught off guard, section order)", async () => {
   const script = await doc("demo-script.md");
   assert.ok(page.includes("verify: ok"));
   const chaotic = demo.agents.find((a) => a.id === "chaotic");
   const [r3, r6] = chaotic.sheets.map((s) => s.sheet);
-  assert.ok(r3.includes("Public enemy #1: nobody yet"));
-  assert.ok(r6.includes("Public enemy #1: Skeptic"));
-  assert.ok(r3.includes("Ride-or-die: no one yet") && r6.includes("Ride-or-die: no one yet"), "allies do not grow");
-  assert.match(script, /Skeptic became its public enemy #1/);
-  assert.doesNotMatch(script, /allies grew|allies have changed/);
+  const fights = (sheet) => Number(/Public enemy #1: Skeptic \((\d+) fights?\)/.exec(sheet)?.[1]);
+  const hugs = (sheet) => Number(/Ride-or-die: Social \((\d+) warm moments?\)/.exec(sheet)?.[1]);
+  assert.deepEqual([fights(r3), fights(r6), hugs(r3), hugs(r6)], [3, 5, 1, 3], "Chaotic: 3 to 5 fights with Skeptic, 1 to 3 warm moments with Social");
+  assert.match(script, /fights with Skeptic went from 3 to 5/);
+  assert.match(script, /Social (?:became|is) its ride-or-die/);
   const events = JSON.parse(await readFile(join(out, "events.json"), "utf8"));
   const shook = {};
   for (const e of Array.isArray(events) ? events : events.events) {
     if (moodForText(e.text) === "shook") shook[e.agentId] = (shook[e.agentId] ?? 0) + 1;
   }
-  assert.deepEqual(shook, { aloof: 1, chaotic: 1, skeptic: 1, social: 1 }, "each agent is caught off guard once");
+  assert.deepEqual(shook, { aloof: 1, skeptic: 1 }, "Aloof and Skeptic are each caught off guard once; Chaotic and Social never are");
+  assert.match(script, /Aloof and Skeptic each get caught off guard once/);
   const order = ["Agents", "Memory", "Round hash chain", "Channel", "Share cards", "Anchor (dry run)", "Transfer: memory travels with the NFT"];
   const positions = order.map((h) => page.indexOf(` ${h} `));
   assert.deepEqual([...positions].sort((a, b) => a - b), positions, "section order on the page");
