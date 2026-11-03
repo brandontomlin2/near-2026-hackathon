@@ -56,11 +56,19 @@ test("README swarm step counts match the real 5-round output", async () => {
   await withTmp(async (dir) => {
     const { stdout } = await run(process.execPath, [join(root, "scripts/swarm.mjs"), "--rounds", "5", "--out", dir], { env });
     const sheetLines = stdout.split("\n").filter((l) => /^sheet \w+ round \d+ /.test(l));
-    const linked = stdout.match(/linked to (\d+) anchor dry-runs/);
-    assert.ok(linked);
+    const linked = stdout.match(/^(\d+) anchor dry-runs, each linked to its round hash; final round hash ([0-9a-f]{64}) \(MOCK, not on-chain\)$/m);
+    assert.ok(linked, "summary line names the anchor count, the per-round link and the final hash");
     assert.equal(Number(linked[1]), sheetLines.length);
     assert.ok(readmeText.includes(`Then ${sheetLines.length} sheet lines`));
-    assert.ok(readmeText.includes(`linked to ${sheetLines.length} anchor dry-runs (MOCK, not on-chain)`));
+    assert.ok(readmeText.includes(`${sheetLines.length} anchor dry-runs, each linked to its round hash; final round hash <64 hex> (MOCK, not on-chain)`));
+    // The line is true of the data: each anchor carries its own round's hash, and only the last one the final hash.
+    const loop = JSON.parse(await readFile(join(dir, "memory-loop.json"), "utf8"));
+    assert.equal(loop.finalRoundHash, linked[2]);
+    for (const token of loop.tokens) {
+      for (const entry of token.sheets) assert.equal(entry.anchor.linkedRoundHash, loop.roundHashes[entry.round - 1]);
+      assert.equal(token.sheets.at(-1).anchor.linkedRoundHash, loop.finalRoundHash);
+      assert.ok(token.sheets.slice(0, -1).every((e) => e.anchor.linkedRoundHash !== loop.finalRoundHash));
+    }
     const events = stdout.split("\n").filter((l) => /^\[/.test(l)).length;
     assert.ok(readmeText.includes(`See 5 round headers, ${events} lines`));
   });
@@ -118,7 +126,7 @@ test("README step 2 lists the page's h2 sections in the real order", async () =>
   });
 });
 
-test("README persona line counts match src/swarm/personas.mjs, and the mock reads only the reply target", async () => {
+test("README persona line counts match src/swarm/personas.mjs, and the mock picks the list by reply target and the start by first-request hash", async () => {
   const { PERSONA_LINES, REPLY_LINES, personaResponder } = await import("../src/swarm/personas.mjs");
   const counts = Object.fromEntries(Object.entries(PERSONA_LINES).map(([id, lines]) => [id, lines.length]));
   const sizes = [...new Set(Object.values(counts))].sort((a, b) => a - b);
@@ -127,7 +135,9 @@ test("README persona line counts match src/swarm/personas.mjs, and the mock read
   assert.ok(readmeText.includes(`(${perAgent})`), `README must list "(${perAgent})"`);
   for (const replies of Object.values(REPLY_LINES)) for (const list of Object.values(replies)) assert.equal(list.length, 3);
   assert.ok(readmeText.includes("3 reply lines per agent it answers"));
-  assert.ok(readmeText.includes("The mock ignores the prompt's content"));
+  assert.ok(readmeText.includes("The mock does not read what the prompt says. It picks the reply list from the name of the agent being answered"));
+  assert.ok(readmeText.includes("from a hash of that agent's first request"));
+  assert.doesNotMatch(readmeText, /ignores the prompt's content|reads only which agent/);
   // Same hash, different prompt text: same line. Only the "Reply to event #N from X." marker changes the list.
   const a = personaResponder({ id: "aloof" })({ messages: [{ role: "user", content: "about gas" }] }, "ab".repeat(32));
   const b = personaResponder({ id: "aloof" })({ messages: [{ role: "user", content: "about validators" }] }, "ab".repeat(32));
@@ -135,6 +145,18 @@ test("README persona line counts match src/swarm/personas.mjs, and the mock read
   assert.ok(PERSONA_LINES.aloof.includes(a));
   const reply = personaResponder({ id: "aloof" })({ messages: [{ role: "user", content: "Reply to event #4 from Skeptic. x" }] }, "ab".repeat(32));
   assert.ok(REPLY_LINES.aloof.Skeptic.includes(reply));
+  // The start point comes from the first request's hash, not the seed alone: two different first hashes
+  // start at different lines, and a second request's hash does not move the start.
+  const post = { messages: [{ role: "user", content: "post" }] };
+  const starts = new Set(["00", "01", "02", "03", "04", "05", "06", "07"].map((b) => personaResponder({ id: "aloof" })(post, b.repeat(32))));
+  assert.ok(starts.size > 1, "a different first-request hash gives a different start line");
+  const one = personaResponder({ id: "aloof" });
+  const firstA = one(post, "ab".repeat(32));
+  const secondA = one(post, "ff".repeat(32));
+  const two = personaResponder({ id: "aloof" });
+  two(post, "ab".repeat(32));
+  assert.equal(secondA, two(post, "00".repeat(32)), "later request hashes do not move the start");
+  assert.notEqual(firstA, secondA, "later requests step the list forward");
 });
 
 test("README sheet provenance: demo sheets count fights, swarm mock sheets are generic one-liners, events carry agentId", async () => {
@@ -186,7 +208,9 @@ test("README track-fit paragraph covers every claimed track and disclaims agent 
   const fit = readme.match(/^Track fit, plainly: .*$/m);
   assert.ok(fit, "README must have a 'Track fit, plainly:' paragraph");
   for (const t of tracks) assert.ok(fit[0].includes(`\`${t}\``), `track fit must mention ${t}`);
-  assert.ok(fit[0].includes("There is no bidding, payment or settlement between agents in this version"));
+  // Says what exists and, against the organisers' track definitions, what does not.
+  assert.ok(fit[0].includes("What does not exist: no coordination market, bidding, collective purchasing or settlement between agents, and no agent earns, spends, negotiates, hires or pays."));
+  assert.ok(fit[0].includes("The agents talk, remember and anchor, and nothing else."));
 });
 
 test("README 'Live on testnet' is one short paragraph after the working sections, with the owner-only command", async () => {
