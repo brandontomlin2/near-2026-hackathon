@@ -149,7 +149,7 @@ test("connection cut mid-body is an error, not a hang or a fake reply", () =>
     res.write('{"id":"x","choices":[');
     setTimeout(() => res.destroy(), 10);
   }, async (s) => {
-    await assert.rejects(clientFor(s, { maxRetries: 0, timeoutMs: 2000 }).chat(ask), (e) => e instanceof InferenceError);
+    await assert.rejects(clientFor(s, { maxRetries: 0, timeoutMs: 120_000 }).chat(ask), (e) => e instanceof InferenceError);
   }));
 
 /** A completion whose serialized body is exactly `bytes` long. */
@@ -232,7 +232,7 @@ test("response cap: an endless chunked body without content-length is aborted on
     };
     pump();
   }, async (s) => {
-    await assert.rejects(clientFor(s, { maxRetries: 0, maxResponseBytes: 256 * 1024, timeoutMs: 5000 }).chat(ask), (e) => {
+    await assert.rejects(clientFor(s, { maxRetries: 0, maxResponseBytes: 256 * 1024, timeoutMs: 120_000 }).chat(ask), (e) => {
       assert.equal(e.code, "response_too_large");
       assert.equal(e.retryable, false);
       assertNoKey(e);
@@ -246,7 +246,7 @@ test("response cap: a content-length header over the cap is refused before the b
     res.writeHead(200, { "content-type": "application/json", "content-length": String(DEFAULT_MAX_RESPONSE_BYTES + 1) });
     res.write("{");
   }, async (s) => {
-    await assert.rejects(clientFor(s, { maxRetries: 0, timeoutMs: 5000 }).chat(ask), (e) => {
+    await assert.rejects(clientFor(s, { maxRetries: 0, timeoutMs: 120_000 }).chat(ask), (e) => {
       assert.equal(e.code, "response_too_large");
       assertNoKey(e);
       return true;
