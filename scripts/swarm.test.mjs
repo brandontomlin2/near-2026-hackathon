@@ -69,3 +69,27 @@ test("CLI rejects unknown flags with exit status 2", async () => {
     (err) => err.code === 2 && /unknown argument "--wallet"/.test(err.stderr),
   );
 });
+
+test("npm run swarm and npm run demo defaults do not overwrite each other", async () => {
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const dir = await mkdtemp(join(tmpdir(), "swarm-demo-"));
+  try {
+    const env = { ...process.env, MOCK_INFERENCE: "1" };
+    // Same default layout as the npm scripts, relocated under a temp cwd.
+    const demo = fileURLToPath(new URL("./demo.mjs", import.meta.url));
+    await run(process.execPath, [demo, "--rounds", "3", "--out", join(dir, "out")], { env, cwd: root });
+    const demoEvents = await readFile(join(dir, "out", "events.json"), "utf8");
+    await run(process.execPath, [script, "--rounds", "2", "--seed", "9", "--out", join(dir, "out", "swarm")], { env, cwd: root });
+    assert.equal(await readFile(join(dir, "out", "events.json"), "utf8"), demoEvents);
+    assert.notEqual(await readFile(join(dir, "out", "swarm", "events.json"), "utf8"), demoEvents);
+    assert.ok((await readFile(join(dir, "out", "swarm", "memory-loop.json"), "utf8")).length > 0);
+    assert.ok((await readFile(join(dir, "out", "index.html"), "utf8")).length > 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("swarm default output directory is out/swarm, distinct from the demo's out/", async () => {
+  const src = await readFile(script, "utf8");
+  assert.match(src, /out: "out\/swarm"/);
+});

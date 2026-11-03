@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { hashSheet } from "../anchor/hash.mjs";
 import { createMockClient } from "../inference/client.mjs";
 import {
   MAX_SHEET_WORDS,
@@ -14,7 +15,6 @@ import {
   makeEvent,
   maybeSummarize,
   parseSummaryEvery,
-  sheetHash,
   shouldSummarize,
   summarize,
   wakeContext,
@@ -80,11 +80,11 @@ test("clampWords keeps at most the word limit and normalises whitespace", () => 
   assert.equal(clamped.split(" ")[0], "w0");
 });
 
-test("sheetHash is a stable sha256 hex of the sheet text", () => {
-  const hash = sheetHash("I am careful.");
+test("hashSheet is a stable sha256 hex of the sheet text", () => {
+  const hash = hashSheet("I am careful.");
   assert.match(hash, /^[0-9a-f]{64}$/);
-  assert.equal(hash, sheetHash("I am careful."));
-  assert.notEqual(hash, sheetHash("I am careful"));
+  assert.equal(hash, hashSheet("I am careful."));
+  assert.notEqual(hash, hashSheet("I am careful"));
 });
 
 test("buildSummaryMessages carries the previous sheet and every new event", () => {
@@ -142,7 +142,7 @@ test("summarize sends only events after the previous cursor", async () => {
   assert.equal(record.newEvents, 2);
   assert.equal(record.throughIndex, 4);
   assert.equal(record.sheet, "I watched four rounds.");
-  assert.equal(record.sheetHash, sheetHash("I watched four rounds."));
+  assert.equal(record.sheetHash, hashSheet("I watched four rounds."));
   assert.equal(record.tokenId, "1");
   assert.equal(record.round, 5);
 });
@@ -209,7 +209,7 @@ test("store writes the sheet atomically and reads it back", async (t) => {
   const root = await tempDir(t);
   const store = createMemoryStore(root);
   assert.equal(await store.readSheet("1"), null);
-  const record = { tokenId: "1", round: 5, sheet: "I am here.", sheetHash: sheetHash("I am here."), throughIndex: 3 };
+  const record = { tokenId: "1", round: 5, sheet: "I am here.", sheetHash: hashSheet("I am here."), throughIndex: 3 };
   await store.writeSheet("1", record);
   assert.deepEqual(await store.readSheet("1"), record);
   const onDisk = JSON.parse(await readFile(join(root, "1", "sheet.json"), "utf8"));

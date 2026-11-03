@@ -8,8 +8,11 @@
 //
 // The responder writes one section per line; the summarizer collapses
 // whitespace, so the stored sheet is one line with "Label: ..." sections.
-// Allies and grudges come from the tone of each exchange (warm or tense
-// words), so they agree with what a reader sees in the channel.
+// Rivals and ride-or-dies come from the tone of each exchange (warm or tense
+// words), so they agree with what a reader sees in the channel. Every line is
+// built from counts and the agent's own words; the only choice left is which
+// fixed phrasing to use, and that depends on the agent's name and counts, so
+// the same request always gives the same sheet.
 
 const MAX_QUOTE_WORDS = 12;
 
@@ -52,6 +55,13 @@ function clip(text, max = MAX_QUOTE_WORDS) {
   return words.length > max ? `${cut}...` : cut;
 }
 
+// Small stable string hash (FNV-1a) used only to pick between fixed phrasings.
+function fnv(text) {
+  let h = 2166136261;
+  for (const ch of text) h = Math.imul(h ^ ch.codePointAt(0), 16777619) >>> 0;
+  return h;
+}
+
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 // Text of one "Label: ..." section of a one-line sheet, up to the next label.
@@ -85,9 +95,11 @@ function interactions(previous, name, events) {
     const tone = toneOf(String(text));
     add(who, 1, tone === "warm" ? 1 : 0, tone === "tense" ? 1 : 0);
   };
-  const before = section(previous, "Relationships", "Grudges and allies");
-  for (const [, who, n, warm, tense] of before.matchAll(/([A-Z][A-Za-z]*) (\d+) times? \((\d+) warm, (\d+) tense\)/g)) {
-    add(who, Number(n), Number(warm), Number(tense));
+  const before = section(previous, "Scorecard", "Signature quote");
+  for (const [, who, tense, warm, shrugs] of before.matchAll(
+    /([A-Z][A-Za-z]*): (\d+) fights?, (\d+) hugs?, (\d+) shrugs?/g,
+  )) {
+    add(who, Number(tense) + Number(warm) + Number(shrugs), Number(warm), Number(tense));
   }
   for (const e of events) {
     if (e.kind === "mention" && e.from !== name) addTone(String(e.from), e.text);
@@ -124,34 +136,59 @@ export function sheetResponder(request, _hash) {
 
   const own = events.filter((e) => e.from === name && (e.kind === "post" || e.kind === "reply"));
   const mentions = events.filter((e) => e.kind === "mention" && e.from !== name).length;
-  const prior = /Reputation: (\d+) posts?, (\d+) repl(?:y|ies), mentioned (\d+) times?/.exec(previous);
+  const prior = /Receipts: (\d+) posts?, (\d+) repl(?:y|ies), mentioned (\d+) times?/.exec(previous);
   const posts = own.filter((e) => e.kind === "post").length + (prior ? Number(prior[1]) : 0);
   const replies = own.filter((e) => e.kind === "reply").length + (prior ? Number(prior[2]) : 0);
   const mentioned = mentions + (prior ? Number(prior[3]) : 0);
 
   const partners = interactions(previous, name, events);
   const ally = strongest(partners, "warm", "tense");
-  const grudge = strongest(partners, "tense", "warm");
+  const rival = strongest(partners, "tense", "warm");
+  const stats = Object.fromEntries(partners);
 
   const latest = own.at(-1);
-  const priorBelief = /Running beliefs: I still hold to "([^"]*)"/.exec(previous)?.[1];
-  const quote = latest ? clip(String(latest.text).replace(/^@[A-Za-z]+\s+/, "")) : priorBelief;
+  const priorQuote = /Signature quote: "([^"]*)"/.exec(previous)?.[1];
+  const quote = latest ? clip(String(latest.text).replace(/^@[A-Za-z]+\s+/, "")) : priorQuote;
 
-  const relationships = partners.length === 0
-    ? "nobody has traded words with me yet"
-    : `I have traded words with ${partners
-      .map(([n, c]) => `${n} ${plural(c.total, "time", "times")} (${c.warm} warm, ${c.tense} tense)`)
-      .join(", ")}`;
-  const allies = [
-    ally ? `${ally} is my ally` : "I have no ally yet",
-    grudge ? `I hold a grudge against ${grudge}` : "I hold no grudges yet",
-  ].join("; ");
+  const fights = partners.reduce((n, [, c]) => n + c.tense, 0);
+  const hugs = partners.reduce((n, [, c]) => n + c.warm, 0);
+  const pick = (options) => options[fnv(`${name}:${posts}:${replies}:${mentioned}`) % options.length];
+
+  const vibe = fights === 0 && hugs === 0
+    ? pick(["main character, no scene partner yet", "lurking with great potential", "waiting for the group chat to notice me"])
+    : fights > hugs
+      ? pick(["villain arc, fully committed", "chaos goblin, picks fights for sport", "locked in and looking for a fight"])
+      : hugs > fights
+        ? pick(["group chat mom, snacks provided", "wholesome menace", "soft launch of a friend group"])
+        : pick(["perfectly balanced, as all things should be", "fights and hugs, no notes"]);
+
+  const enemy = rival
+    ? `${rival} (${plural(stats[rival].tense, "fight", "fights")})`
+    : "nobody yet, the lore is still loading";
+  const friend = ally
+    ? `${ally} (${plural(stats[ally].warm, "warm moment", "warm moments")})`
+    : "no one yet, applications open";
+  const story = rival && ally
+    ? `${rival} and I keep clashing. ${ally} keeps the peace. I am just trying to post.`
+    : rival
+      ? `${rival} and I are not done yet.`
+      : ally
+        ? `${ally} gets me. No fights so far, so the drama is on hold.`
+        : "Nobody has picked a side yet, so the drama is on hold.";
+
+  const scorecard = partners.length === 0
+    ? "empty, still waiting on the first chat"
+    : partners
+      .map(([n, c]) => `${n}: ${plural(c.tense, "fight", "fights")}, ${plural(c.warm, "hug", "hugs")}, ${plural(c.total - c.warm - c.tense, "shrug", "shrugs")}`)
+      .join("; ");
 
   return [
-    `Who I am: I am ${name}, a personality that lives in a shared channel with three other agents.`,
-    `Relationships: ${relationships}.`,
-    `Grudges and allies: ${allies}.`,
-    `Running beliefs: ${quote ? `I still hold to "${quote}"` : "I have not settled on a belief yet"}.`,
-    `Reputation: ${plural(posts, "post", "posts")}, ${plural(replies, "reply", "replies")}, mentioned ${plural(mentioned, "time", "times")}.`,
+    `Who I am: ${name}, ${vibe}. I live in a shared channel with three other agents.`,
+    `Public enemy #1: ${enemy}.`,
+    `Ride-or-die: ${friend}.`,
+    `Rivalry arc: ${story}`,
+    `Scorecard: ${scorecard}.`,
+    `Signature quote: ${quote ? `"${quote}"` : "none yet, ask me after I post"}.`,
+    `Receipts: ${plural(posts, "post", "posts")}, ${plural(replies, "reply", "replies")}, mentioned ${plural(mentioned, "time", "times")}.`,
   ].join("\n");
 }

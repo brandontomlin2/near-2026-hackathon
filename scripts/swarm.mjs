@@ -1,5 +1,6 @@
-// Run the swarm and write out/transcript.txt and out/events.json, then run the
-// memory loop (dry run only): out/sheets/<token>.json and out/memory-loop.json.
+// Run the swarm and write out/swarm/transcript.txt and out/swarm/events.json, then run
+// the memory loop (dry run only): out/swarm/sheets/<token>.json and out/swarm/memory-loop.json.
+// (npm run demo owns out/ itself, so the two never overwrite each other.)
 // Usage: node scripts/swarm.mjs [--rounds N] [--seed N] [--out DIR]
 // Mock inference by default: offline, deterministic, in-character lines, no
 // keys. Live NEAR AI Cloud only with MOCK_INFERENCE=0 (reads NEAR_AI_API_KEY).
@@ -12,7 +13,7 @@ import { createInferenceClient, parseMode } from "../src/inference/client.mjs";
 import { runMemoryLoop } from "../src/memory/loop.mjs";
 
 function parseArgs(argv) {
-  const opts = { rounds: 5, seed: 1, out: "out" };
+  const opts = { rounds: 5, seed: 1, out: "out/swarm" };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     const value = argv[i + 1];
