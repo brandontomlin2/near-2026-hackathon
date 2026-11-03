@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -63,8 +63,15 @@ const NUM_FLAG_ROWS = (flag, { zeroOk = false } = {}) => [
 
 const OUT_ROWS = [
   ["--out missing value", ["--out"]],
+  ["--out empty", ["--out", ""]],
   ["--out is under a file", ["--out", "afile/x"]],
   ["--out is a flag", ["--out", "--rounds"]],
+];
+const STYLE_ROWS = [
+  ["--style missing value", ["--style"]],
+  ["--style empty", ["--style", ""]],
+  ["--style is a flag", ["--style", "--out"]],
+  ["--style unknown", ["--style", "nope"]],
 ];
 
 for (const file of ["demo.mjs", "swarm.mjs"]) {
@@ -73,17 +80,32 @@ for (const file of ["demo.mjs", "swarm.mjs"]) {
     ["positional argument", ["stray"]],
     ...NUM_FLAG_ROWS("--rounds"),
     ...NUM_FLAG_ROWS("--seed", { zeroOk: true }).filter(([l]) => !l.includes("zero") && !l.endsWith(" huge")), // a large seed is valid
+    ...NUM_FLAG_ROWS("--every"),
     ...OUT_ROWS,
   ]);
 }
-add("demo.mjs", [...NUM_FLAG_ROWS("--every"), ["--every above --rounds", ["--rounds", "2", "--every", "5"]]]);
+add("demo.mjs", [["--every above --rounds", ["--rounds", "2", "--every", "5"]], ...STYLE_ROWS]);
+add("swarm.mjs", [["--every from env is bad", ["--rounds", "1"], { SUMMARY_EVERY_N_ROUNDS: "abc" }]]);
 add("render-agents.mjs", [
   ["unknown flag", ["--bogus"]],
+  ["unknown short flag", ["-x"]],
+  ["--flag=value form", ["--style=all"]],
   ["positional argument", ["stray"]],
-  ["--style missing value", ["--style"]],
-  ["--style unknown", ["--style", "nope"]],
-  ["--out missing value", ["--out"]],
-  ["--out is under a file", ["--out", "afile/x"]],
+  ...STYLE_ROWS,
+  ...OUT_ROWS.map(([label, args]) => [label, args.map((a) => (a === "--rounds" ? "--style" : a))]),
+]);
+add("live-check.mjs", [
+  ["unknown flag", ["--bogus"]],
+  ["unknown short flag", ["-x"]],
+  ["positional argument", ["stray"]],
+]);
+add("site.mjs", [
+  ["unknown flag", ["--bogus"]],
+  ["unknown short flag", ["-x"]],
+  ["--out instead of a positional", ["--out", "x"]],
+  ["two directories", ["a", "b"]],
+  ["empty directory", [""]],
+  ["directory under a file", ["afile/x"]],
 ]);
 add("viewer.mjs", [
   ["unknown flag", ["--bogus"]],
@@ -102,8 +124,10 @@ add("infer.mjs", [
   ["unknown flag", ["--bogus", "hi"]],
   ["no prompt", []],
   ["blank prompt", ["  "]],
+  ["unknown short flag", ["-x", "hi"]],
   ["--system missing value", ["--system"]],
   ["--system swallows nothing", ["hi", "--system"]],
+  ["--system is a flag", ["--system", "--json", "hi"]],
   ["--seed missing value", ["hi", "--seed"]],
   ["--seed non-numeric", ["--seed", "abc", "hi"]],
   ["--seed negative", ["--seed", "-1", "hi"]],
@@ -117,17 +141,27 @@ add("testnet-deploy.mjs", [
   ["unknown command", ["frobnicate"]],
   ["two commands", ["deploy", "mint"]],
   ["--count missing value", ["mint", "--count"]],
+  ["--count is a flag", ["mint", "--count", "--send"]],
+  ["--count empty", ["mint", "--count", ""]],
   ["--count zero", ["mint", "--count", "0"]],
+  ["--count above the agent count", ["mint", "--count", "5"]],
   ["--count negative", ["mint", "--count", "-1"]],
   ["--count non-numeric", ["mint", "--count", "abc"]],
   ["--count fractional", ["mint", "--count", "1.5"]],
   ["--count huge", ["mint", "--count", "99999999999999999999"]],
   ["--count on deploy", ["deploy", "--count", "1"]],
   ["--wasm missing value", ["deploy", "--wasm"]],
+  ["--wasm empty", ["deploy", "--wasm", ""]],
+  ["--wasm is a flag", ["deploy", "--wasm", "--send"]],
+  ["--wasm does not exist", ["deploy", "--wasm", "missing.wasm"]],
   ["--wasm on mint", ["mint", "--wasm", "x.wasm"]],
   ["--receiver missing value", ["mint", "--receiver"]],
+  ["--receiver empty", ["mint", "--receiver", ""]],
+  ["--receiver is a flag", ["mint", "--receiver", "--send"]],
   ["--receiver invalid", ["mint", "--receiver", "NOT VALID!"]],
   ["--media-base missing value", ["mint", "--media-base"]],
+  ["--media-base empty", ["mint", "--media-base", ""]],
+  ["--media-base is a flag", ["mint", "--media-base", "--send"]],
   ["--media-base not a url", ["mint", "--media-base", "not a url"]],
   ["--media-base data uri", ["mint", "--media-base", "data:text/plain,x"]],
   ["--send with --dry-run", ["mint", "--send", "--dry-run"]],
@@ -138,9 +172,11 @@ add("live-proof.mjs", [
   ["unknown flag", ["--bogus"]],
   ["positional argument", ["stray"]],
   ["--out missing value", ["--out"]],
+  ["--out empty", ["--out", ""]],
   ["--out is a flag", ["--out", "--send"]],
   ["--out is under a file", ["--out", "afile/x.json"]],
   ["--out is a directory", ["--out", "."]],
+  ["--out with --update-example", ["--update-example", "--out", "x.json"]],
   ["bad NEAR_ACCOUNT_ID", [], { NEAR_ACCOUNT_ID: "NOT VALID!" }],
   ["bad NEAR_CONTRACT_ACCOUNT_ID", [], { NEAR_CONTRACT_ACCOUNT_ID: "NOT VALID!" }],
   ["--i-approve alone is not a send", ["--i-approve", "--bogus"]],
@@ -155,6 +191,9 @@ add("evidence.mjs", [
   ["EVIDENCE_OUT under a file", [], { EVIDENCE_OUT: "afile/x.json" }],
 ]);
 
+// The judge-facing npm scripts: a usage error (exit 2) must say where the usage is. Exit 1 is a runtime failure (unwritable path, no key).
+const HINTED = new Set(["demo.mjs", "swarm.mjs", "render-agents.mjs", "infer.mjs", "testnet-deploy.mjs", "live-check.mjs", "live-proof.mjs", "site.mjs"]);
+
 for (const [file, label, args, env] of BAD) {
   test(`${file}: ${label} fails with one clear line`, () => {
     const dir = scratch();
@@ -166,6 +205,7 @@ for (const [file, label, args, env] of BAD) {
       const lines = r.stderr.split("\n").filter((l) => l.trim());
       assert.equal(lines.length, 1, `expected exactly one stderr line, got:\n${r.stderr}`);
       assert.ok(lines[0].length < 300, "message should be short");
+      if (HINTED.has(file) && r.code === 2) assert.match(lines[0], /--help/, "a usage error points at --help");
       assert.equal(listing(dir), before, "no partial output in the working directory");
     } finally {
       cleanup(dir);
@@ -183,6 +223,7 @@ test("read-only --out fails cleanly (demo, swarm, render, viewer)", (t) => {
       ["render-agents.mjs", ["--out", "ro/x"]],
       ["viewer.mjs", ["--out", "ro/x/index.html"]],
       ["live-proof.mjs", ["--out", "ro/x.json"]],
+      ["site.mjs", ["ro/x"]],
     ];
     for (const [file, args] of cases) {
       const r = run(file, args, { cwd: dir });
@@ -196,6 +237,43 @@ test("read-only --out fails cleanly (demo, swarm, render, viewer)", (t) => {
   }
 });
 
+test("render --style all writes nothing when one style's directory is read-only", (t) => {
+  const dir = scratch();
+  try {
+    if (canWriteReadOnly(dir)) return t.skip("running as root");
+    // pixel comes after default and sticker in STYLE_NAMES: a file-by-file writer would leave those two behind.
+    mkdirSync(join(dir, "styles", "pixel"), { recursive: true });
+    chmodSync(join(dir, "styles", "pixel"), 0o555);
+    try {
+      const r = run("render-agents.mjs", ["--style", "all", "--out", "."], { cwd: dir });
+      assert.notEqual(r.code, 0);
+      assert.ok(noStack(r.stderr), r.stderr);
+      assert.equal(r.stderr.split("\n").filter((l) => l.trim()).length, 1, r.stderr);
+      assert.deepEqual(readdirSync(join(dir, "styles")), ["pixel"], "no other style directory was created");
+      assert.deepEqual(readdirSync(join(dir, "styles", "pixel")), []);
+    } finally {
+      chmodSync(join(dir, "styles", "pixel"), 0o755);
+    }
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("render and site refuse dangerous --out dirs without touching anything", () => {
+  const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+  for (const [file, toArgs] of [
+    ["render-agents.mjs", (d) => ["--style", "all", "--out", d]],
+    ["site.mjs", (d) => [d]],
+  ]) {
+    for (const bad of ["/", homedir(), repoRoot]) {
+      const r = run(file, toArgs(bad));
+      assert.notEqual(r.code, 0, `${file} ${bad}`);
+      assert.match(r.stderr, /refusing --out/);
+      assert.equal(r.stderr.trim().split("\n").length, 1, r.stderr);
+    }
+  }
+});
+
 const HELP = [
   ["demo.mjs", ["--help"]],
   ["demo.mjs", ["-h"]],
@@ -206,6 +284,10 @@ const HELP = [
   ["testnet-deploy.mjs", ["--help"]],
   ["testnet-deploy.mjs", ["deploy", "--help"]],
   ["live-proof.mjs", ["--help"]],
+  ["live-check.mjs", ["--help"]],
+  ["live-check.mjs", ["-h"]],
+  ["site.mjs", ["--help"]],
+  ["site.mjs", ["-h"]],
   ["anchor.mjs", ["--help"]],
 ];
 for (const [file, args] of HELP) {

@@ -61,8 +61,11 @@ function assertTokenId(tokenId) {
  */
 export function parseSummaryEvery(raw) {
   if (raw === undefined || raw.trim() === "") return DEFAULT_SUMMARY_EVERY_N_ROUNDS;
-  const value = Number(raw.trim());
-  return assertPositiveInteger(value, "SUMMARY_EVERY_N_ROUNDS");
+  const value = /^[1-9][0-9]*$/.test(raw.trim()) ? Number(raw.trim()) : Number.NaN;
+  if (!Number.isSafeInteger(value)) {
+    throw new MemoryError(`SUMMARY_EVERY_N_ROUNDS must be a positive integer, got ${JSON.stringify(raw)}`, { code: "bad_config" });
+  }
+  return value;
 }
 
 /**
