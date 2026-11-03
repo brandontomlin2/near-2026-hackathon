@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { InferenceError, createInferenceClient, createMockClient, parseMode } from "../src/inference/client.mjs";
-import { createMemoryStore } from "../src/memory/summarizer.mjs";
+import { MemoryError, createMemoryStore } from "../src/memory/summarizer.mjs";
 import { sheetResponder } from "../src/demo/sheet-responder.mjs";
 import { AskError, MAX_QUESTION_CHARS, askAgent, askResponder } from "../src/owner/ask.mjs";
 import { AGENTS } from "../src/traits/agents.mjs";
@@ -125,9 +125,24 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
   return 0;
 }
 
-const label = (error) => (error instanceof InferenceError ? `inference error (${error.code})` : error instanceof AskError ? `error (${error.code})` : "error");
+const label = (error) => {
+  if (error instanceof InferenceError) return `inference error (${error.code})`;
+  if (error instanceof MemoryError) return `memory error (${error.code})`;
+  if (error instanceof AskError) return `error (${error.code})`;
+  return "error";
+};
 const firstLine = (error) => String(error.message).split("\n")[0];
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  process.exitCode = await main();
+  // main() catches everything it expects; this keeps a bug or an EPIPE on the
+  // final log calls to one line and exit 1, as infer.mjs and anchor.mjs do.
+  main().then(
+    (code) => {
+      process.exitCode = code;
+    },
+    (error) => {
+      console.error(`ask: ${label(error)}: ${firstLine(error)}`);
+      process.exitCode = 1;
+    },
+  );
 }

@@ -104,8 +104,8 @@
     "owner": "claude-lead",
     "kind": "task",
     "lane": "claude",
-    "notes": "judge screen: the owner can do nothing; add npm run ask -- <agentId> <question> (mock, no keys)\nscripts/ask.mjs + src/owner/ask.mjs: npm run ask -- <agentId> <question>; 54 new tests; verify PASS",
-    "updated_at": "2026-11-03T18:16:51.510Z",
+    "notes": "judge screen: the owner can do nothing; add npm run ask -- <agentId> <question> (mock, no keys)\nscripts/ask.mjs + src/owner/ask.mjs: npm run ask -- <agentId> <question>; 54 new tests; verify PASS\nreview fixes: README step 5 (npm run ask) + readme-facts lock, demo-script command status, answer template picked from scorecard counts, main() wrapped, MemoryError label, dead assertion dropped",
+    "updated_at": "2026-11-03T18:51:55.029Z",
     "updated_by": "claude-lead"
   },
   {

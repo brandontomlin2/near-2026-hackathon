@@ -80,15 +80,25 @@ export function buildAskMessages({ agent, sheet, question }) {
   return { system: `${brief}\n\n${SHEET_MARKER}${sheet}`, messages: [{ role: "user", content: question }] };
 }
 
-// Templates per voice trait, then per what the question touches. {subject} is
-// the agent the owner asked about; {enemy} and {friend} are the sheet's own
-// phrasing; {vibe} is the "Who I am" tail. No double quotes, and no
-// capitalised "Label:" inside a line: the answer is logged, clipped into the
-// sheet's signature quote by the stand-in, and the sheet is split on labels.
+// Templates per voice trait, then per what the sheet says about the subject:
+//   enemy    the sheet's public enemy #1
+//   friend   the sheet's ride-or-die
+//   fights   on the scorecard with fights, but not the #1 enemy
+//   hugs     on the scorecard with hugs and no fights, but not the ride-or-die
+//   known    on the scorecard with shrugs only
+//   unknown  not on the scorecard
+//   self     no other agent asked about
+// Each line claims only what its counts say, so an answer never contradicts the
+// scorecard. {subject} is the agent the owner asked about; {enemy} and {friend}
+// are the sheet's own phrasing; {vibe} is the "Who I am" tail. No double quotes,
+// and no capitalised "Label:" inside a line: the answer is logged, clipped into
+// the sheet's signature quote by the stand-in, and the sheet is split on labels.
 const TEMPLATES = Object.freeze({
   dry: Object.freeze({
     enemy: "{subject}. {fights} on the books. I have not forgiven any of them, mostly out of inertia. …anyway",
     friend: "{subject} is my ride-or-die, {hugs} logged. I would not say it out loud. …anyway",
+    fights: "{subject}. {fights}. Not my main feud, I do not have the energy for two. …anyway",
+    hugs: "{subject}. {hugs}. Pleasant, I suppose. Not ride-or-die. Please stop asking. …anyway",
     known: "{subject}? {total}, nothing I would call a feeling. …anyway",
     unknown: "{subject}? We have not spoken. I am fine with that. …anyway",
     self: "I am {name}, {vibe}. enemy: {enemy}. ride-or-die: {friend}. That is the whole sheet. …anyway",
@@ -96,6 +106,8 @@ const TEMPLATES = Object.freeze({
   loud: Object.freeze({
     enemy: "{subject}?? {fights} and counting, bro I did not read the contract and it SHOWS \u{1F480}",
     friend: "{subject} is my RIDE-OR-DIE, {hugs}, zero notes \u{1F680}",
+    fights: "{subject}? {fights}, side quest beef, my main villain is busy \u{1F525}",
+    hugs: "{subject}? {hugs}, we vibe, not ride-or-die tier but we VIBE \u{1F680}",
     known: "{subject}? {total}, no beef, no hugs, no CONTEXT \u{1F525}",
     unknown: "{subject}? never met, already a fan or a rival, I have not decided \u{1F525}",
     self: "I am {name}, {vibe}!!! enemy: {enemy}. ride-or-die: {friend}. bro I did not read the contract and it SHOWS \u{1F480}",
@@ -103,6 +115,8 @@ const TEMPLATES = Object.freeze({
   open: Object.freeze({
     enemy: "{subject} and I have {fights} on the sheet, but I still saved them a seat. love that for us!",
     friend: "{subject} is my ride-or-die, {hugs} and counting! love that for us!",
+    fights: "{subject} and I have {fights} on the sheet, which is {fights} too many! group hug pending! love that for us!",
+    hugs: "{subject}? {hugs} so far, not quite ride-or-die yet, but the seat is warm! love that for us!",
     known: "{subject}? {total} so far, and there is always a seat at the sheet! love that for us!",
     unknown: "{subject}? We have not met yet, but there is a seat with their name on it! love that for us!",
     self: "I am {name}, {vibe}! enemy: {enemy}. ride-or-die: {friend}. love that for us!",
@@ -110,6 +124,8 @@ const TEMPLATES = Object.freeze({
   flat: Object.freeze({
     enemy: "{subject}. {fights}, all documented. I doubt that changes.",
     friend: "{subject}. {hugs} on the record. audited, it passed.",
+    fights: "{subject}. {fights}, documented. not my main case. show the hash.",
+    hugs: "{subject}. {hugs} on the record. cordial. not audited yet.",
     known: "{subject}. {total}, no verdict. show the hash.",
     unknown: "{subject}. no exchanges logged. no receipts, no opinion.",
     self: "I am {name}, {vibe}. enemy: {enemy}. ride-or-die: {friend}. source: my sheet.",
@@ -195,22 +211,28 @@ export function askResponder(agent) {
     if (!subject && FRIEND_WORDS.test(question)) subject = friend ?? undefined;
     const score = subject ? scoreFor(sheet, subject) : null;
 
+    // The template follows the scorecard counts, not only the #1 lines: an agent
+    // with fights who is not the current enemy still gets fight wording, never
+    // "no beef"; one with hugs who is not the ride-or-die gets hug wording,
+    // never "ride-or-die". Fights win over hugs when both are on the record.
     let kind = "self";
     if (subject && subject === enemy) kind = "enemy";
     else if (subject && subject === friend) kind = "friend";
+    else if (subject && score && score.fights > 0) kind = "fights";
+    else if (subject && score && score.hugs > 0) kind = "hugs";
     else if (subject && score) kind = "known";
     else if (subject) kind = "unknown";
 
     const vibe = vibeOf(sheet, agent.name);
     return voice[kind]
-      .replace("{subject}", subject ?? "")
-      .replace("{fights}", plural(score?.fights ?? 0, "fight", "fights"))
-      .replace("{hugs}", plural(score?.hugs ?? 0, "warm moment", "warm moments"))
-      .replace("{total}", plural((score?.fights ?? 0) + (score?.hugs ?? 0) + (score?.shrugs ?? 0), "exchange", "exchanges"))
-      .replace("{name}", agent.name)
-      .replace("{vibe}", vibe || `the ${agent.personality}`)
-      .replace("{enemy}", facts.enemy)
-      .replace("{friend}", facts.friend);
+      .replaceAll("{subject}", subject ?? "")
+      .replaceAll("{fights}", plural(score?.fights ?? 0, "fight", "fights"))
+      .replaceAll("{hugs}", plural(score?.hugs ?? 0, "warm moment", "warm moments"))
+      .replaceAll("{total}", plural((score?.fights ?? 0) + (score?.hugs ?? 0) + (score?.shrugs ?? 0), "exchange", "exchanges"))
+      .replaceAll("{name}", agent.name)
+      .replaceAll("{vibe}", vibe || `the ${agent.personality}`)
+      .replaceAll("{enemy}", facts.enemy)
+      .replaceAll("{friend}", facts.friend);
   };
 }
 

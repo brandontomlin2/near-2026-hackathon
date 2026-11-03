@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after, before } from "node:test";
@@ -92,7 +92,7 @@ test("happy path: output contract, one mode line, exit 0", () => {
   assert.match(lines[3], new RegExp(`^sheet diff \\(round 6 -> 7, ${join(memDir, "chaotic", "sheet.json").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\):$`));
   const body = lines.slice(4, -2);
   assert.ok(body.length > 0);
-  assert.ok(body.every((l) => /^ {2}[-+] /.test(l) || l.length > 0), "diff body");
+  assert.ok(body.every((l) => /^ {2}[-+] /.test(l)), "every diff body line is a removed or added section");
   assert.ok(body.some((l) => l.startsWith("  - ")));
   assert.ok(body.some((l) => l.startsWith("  + ")));
   assert.ok(body.some((l) => l.startsWith("  + Scorecard:") && l.includes("Owner: 0 fights, 0 hugs, 1 shrug")));
@@ -316,6 +316,18 @@ test("MOCK_INFERENCE=0 without a key fails with exit 1 before reading or writing
   const r2 = ask(["--out", join(empty, "o"), "chaotic", "hello?"], { env: { MOCK_INFERENCE: "0" } });
   assert.equal(r2.code, 1);
   assert.deepEqual(readdirSync(empty), []);
+});
+
+test("a malformed sheet.json is a memory error with its code: exit 1, one line, nothing written", () => {
+  const out = fresh();
+  writeFileSync(join(out, "memory", "chaotic", "sheet.json"), "{not json");
+  const before = snapshot(out);
+  const r = ask(["--out", out, "chaotic", "hello?"]);
+  assert.equal(r.code, 1);
+  assert.equal(r.stdout, "");
+  assert.equal(r.stderr, `${MODE_LINE}ask: memory error (bad_sheet): the sheet file is malformed\n`);
+  assert.ok(noStack(r.stderr));
+  assert.deepEqual(snapshot(out), before);
 });
 
 test("MOCK_INFERENCE=2 is a bad_config error: exit 2, nothing written", () => {

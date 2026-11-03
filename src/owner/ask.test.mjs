@@ -142,6 +142,62 @@ describe("askResponder", () => {
     assert.equal(/exchanges?/.test(out), false);
   });
 
+  test("an agent with fights who is not the #1 enemy gets fight wording, never 'no beef' or 'no verdict'", () => {
+    // Skeptic's fresh demo sheet: enemy Chaotic (5 fights), but Aloof also has 1 fight on the scorecard.
+    const skeptic = agentById("skeptic");
+    const skepticSheet =
+      "Who I am: Skeptic, professional doubter, currently winning. I live in a shared channel with three other agents. " +
+      "Public enemy #1: Chaotic (5 fights). Ride-or-die: nobody yet, the lore is still loading. " +
+      "Scorecard: Chaotic: 5 fights, 0 hugs, 1 shrug; Social: 1 fight, 0 hugs, 1 shrug; Aloof: 1 fight, 0 hugs, 0 shrugs. " +
+      'Signature quote: "vibes is not an audit". Receipts: 3 posts, 3 replies, mentioned 6 times.';
+    const out = respond(skeptic, skepticSheet, "what about Aloof?");
+    assert.equal(out, "Aloof. 1 fight, documented. not my main case. show the hash.");
+    assert.doesNotMatch(out, /no verdict|no beef|exchanges?/);
+
+    // Chaotic after six hostile asks: the Owner displaced Skeptic as enemy, Skeptic still has 5 fights.
+    const displaced = SHEET
+      .replace("Public enemy #1: Skeptic (5 fights).", "Public enemy #1: Owner (6 fights).")
+      .replace("Scorecard: ", "Scorecard: Owner: 6 fights, 0 hugs, 0 shrugs; ");
+    const later = respond(chaotic, displaced, "what do you think of Skeptic?");
+    assert.equal(later, "Skeptic? 5 fights, side quest beef, my main villain is busy \u{1F525}");
+    assert.doesNotMatch(later, /no beef|no hugs/);
+    // The enemy question still names the Owner with the Owner's count.
+    assert.match(respond(chaotic, displaced, "who is your enemy?"), /^Owner\?\? 6 fights and counting/);
+  });
+
+  test("an agent with hugs and no fights who is not the ride-or-die gets hug wording, never 'ride-or-die'", () => {
+    const warmAloof = SHEET.replace("Aloof: 0 fights, 0 hugs, 2 shrugs", "Aloof: 0 fights, 1 hug, 2 shrugs");
+    const out = respond(chaotic, warmAloof, "and Aloof?");
+    assert.equal(out, "Aloof? 1 warm moment, we vibe, not ride-or-die tier but we VIBE \u{1F680}");
+    assert.doesNotMatch(out, /RIDE-OR-DIE|no hugs|exchanges?/);
+    // Fights win over hugs when both are on the record.
+    const mixed = SHEET.replace("Aloof: 0 fights, 0 hugs, 2 shrugs", "Aloof: 2 fights, 3 hugs, 0 shrugs");
+    assert.match(respond(chaotic, mixed, "and Aloof?"), /^Aloof\? 2 fights, side quest beef/);
+  });
+
+  test("every fresh-demo cross answer agrees with the responder's own scorecard", async () => {
+    const store = createMemoryStore(join(demoA, "memory"));
+    for (const agent of AGENTS) {
+      const { sheet } = await store.readSheet(agent.id);
+      for (const other of AGENTS.filter((a) => a.id !== agent.id)) {
+        const m = new RegExp(`\\b${other.name}: (\\d+) fights?, (\\d+) hugs?, (\\d+) shrugs?`).exec(sheet);
+        assert.ok(m, `${agent.id}'s sheet has no scorecard entry for ${other.name}`);
+        const [fights, hugs, shrugs] = m.slice(1).map(Number);
+        const out = respond(agent, sheet, `what do you think of ${other.name}?`);
+        const label = `${agent.id} about ${other.name}: ${out}`;
+        if (fights > 0) {
+          assert.ok(out.includes(`${fights} fight`), label);
+          assert.doesNotMatch(out, /no beef|no verdict|nothing I would call a feeling|always a seat at the sheet/, label);
+        } else if (hugs > 0) {
+          assert.ok(out.includes(`${hugs} warm moment`), label);
+          assert.doesNotMatch(out, /no hugs|no verdict|nothing I would call a feeling|always a seat at the sheet/, label);
+        } else {
+          assert.ok(out.includes(`${shrugs} exchange`), label);
+        }
+      }
+    }
+  });
+
   test("no agent named gives the self template with the name, the enemy and the friend", () => {
     const out = respond(chaotic, SHEET, "how are you today?");
     assert.ok(out.startsWith("I am Chaotic, villain arc, fully committed, zero regrets!!!"), out);
