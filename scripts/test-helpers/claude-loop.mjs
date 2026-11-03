@@ -58,7 +58,7 @@ export function baseEnv(home, extra = {}) {
 // only has to catch a loop that hangs, so it is sized for a loaded machine.
 // spawnSync kills the loop with SIGTERM when it fires, which the loop's TERM
 // trap turns into exit 143, so a tripped guard is reported as such instead.
-export const LOOP_RUN_TIMEOUT_MS = 120_000;
+export const LOOP_RUN_TIMEOUT_MS = 300_000;
 
 export function loopTimeout(runs) {
   return runs * LOOP_RUN_TIMEOUT_MS + 10_000;
