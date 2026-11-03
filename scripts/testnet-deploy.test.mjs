@@ -205,7 +205,7 @@ test("--send refuses to run without a valid NEAR_ACCOUNT_ID and never calls near
 
 test("--send stops before any transaction when near-cli-rs is missing or has no keychain key", async () => {
   const noBinary = collector();
-  assert.equal(await run(["mint", "--send"], { NEAR_ACCOUNT_ID: OWNER }, {
+  assert.equal(await run(["mint", "--send", "--media-base", "https://art.example"], { NEAR_ACCOUNT_ID: OWNER }, {
     exec: forbiddenExec, hasNear: () => false, out: noBinary.out, err: noBinary.err,
   }), 1);
 
@@ -215,7 +215,7 @@ test("--send stops before any transaction when near-cli-rs is missing or has no 
     calls.push(argv);
     return argv.includes("get-public-key") ? 1 : 0;
   };
-  const code = await run(["mint", "--send"], { NEAR_ACCOUNT_ID: OWNER }, {
+  const code = await run(["mint", "--send", "--media-base", "https://art.example"], { NEAR_ACCOUNT_ID: OWNER }, {
     exec, hasNear: () => true, out: noKey.out, err: noKey.err,
   });
   assert.equal(code, 1);
@@ -247,7 +247,7 @@ test("--send probes every signer, then sends mints in order; stops at the first 
     sent.push(argv);
     return sent.length === 2 ? 9 : 0; // second mint fails
   };
-  const code = await run(["mint", "--send", "--count", "3"], {
+  const code = await run(["mint", "--send", "--media-base", "https://art.example", "--count", "3"], {
     NEAR_ACCOUNT_ID: OWNER, NEAR_CONTRACT_ACCOUNT_ID: CONTRACT,
   }, { exec, hasNear: () => true, out: c.out, err: c.err });
   assert.equal(code, 9);
