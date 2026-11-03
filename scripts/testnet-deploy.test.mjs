@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
   AGENTS,
+  DEFAULT_WASM,
   GAS,
   INIT_METHOD,
   MINT_DEPOSIT,
@@ -17,6 +18,7 @@ import {
   buildDeployStep,
   buildMintStep,
   buildPlan,
+  defaultWasmPath,
   parseArgs,
   parseCount,
   run,
@@ -345,4 +347,46 @@ test("CLI --send without env exits 2 and prints usage, not a transaction", () =>
   });
   assert.equal(result.status, 2);
   assert.match(result.stderr, /NEAR_ACCOUNT_ID is unset/);
+});
+
+// Privacy audit L-4: dry-run output is pasted into pull requests, so the default wasm
+// path must not carry the home directory. Under the repo root it is repo-relative.
+const REPO_ROOT = path.join(HERE, "..");
+const RELATIVE_WASM = "contracts/personality-nft/target/near/personality_nft.wasm";
+
+test("defaultWasmPath is repo-relative from the repo root and absolute elsewhere", () => {
+  assert.equal(defaultWasmPath(REPO_ROOT), RELATIVE_WASM);
+  assert.equal(defaultWasmPath(`${REPO_ROOT}/`), RELATIVE_WASM);
+  assert.equal(path.resolve(REPO_ROOT, defaultWasmPath(REPO_ROOT)), DEFAULT_WASM);
+  // Anywhere else the absolute path is kept, so the printed command resolves where it was
+  // printed. That includes ancestors such as "/", where a cwd-relative path would start
+  // with the home directory again, and subdirectories, where it would need ".." hops.
+  for (const cwd of [path.parse(REPO_ROOT).root, path.dirname(REPO_ROOT), path.join(REPO_ROOT, "contracts"), path.join(REPO_ROOT, "scripts"), tmpdir()]) {
+    assert.equal(defaultWasmPath(cwd), DEFAULT_WASM, cwd);
+  }
+});
+
+test("default deploy dry run from the repo root prints the repo-relative wasm and no home directory", () => {
+  const env = { PATH: path.dirname(process.execPath) };
+  const dry = spawnSync(process.execPath, [SCRIPT, "deploy", "--json"], { cwd: REPO_ROOT, env, encoding: "utf8" });
+  assert.equal(dry.status, 0, dry.stderr);
+  const plan = JSON.parse(dry.stdout);
+  assert.equal(plan.steps[0].command[plan.steps[0].command.indexOf("use-file") + 1], RELATIVE_WASM);
+  assert.ok(!dry.stdout.includes(homedir()), "home directory leaked into the dry-run plan");
+
+  const help = spawnSync(process.execPath, [SCRIPT, "--help"], { cwd: REPO_ROOT, env, encoding: "utf8" });
+  assert.match(help.stdout, new RegExp(`--wasm <path>.*\\(default ${RELATIVE_WASM.replaceAll(".", "\\.")}\\)`));
+
+  // The not-built error names the same relative path (the README quotes its shape).
+  const missing = spawnSync(process.execPath, [SCRIPT, "deploy"], {
+    cwd: REPO_ROOT, env, encoding: "utf8",
+  });
+  if (missing.status === 1) {
+    assert.equal(missing.stderr.trim(), `error: wasm not found at ${RELATIVE_WASM}. Run npm run build:contract first.`);
+  } else {
+    // The contract is built on this machine: the printed command uses the relative path.
+    assert.equal(missing.status, 0, missing.stderr);
+    assert.ok(missing.stdout.includes(`use-file ${RELATIVE_WASM} `), missing.stdout);
+    assert.ok(!missing.stdout.includes(homedir()), "home directory leaked into the dry run");
+  }
 });

@@ -17,6 +17,7 @@ import {
   lastAttempts,
   lockDir,
   loopEnv,
+  loopTimeout,
   readItemStatus,
   readStatus,
   runLoop,
@@ -24,7 +25,7 @@ import {
   task,
 } from "./test-helpers/claude-loop.mjs";
 
-test("verify failure increments attempts and the second failure is blocked", { timeout: 20000 }, (t) => {
+test("verify failure increments attempts and the second failure is blocked", { timeout: loopTimeout(3) }, (t) => {
   const fixture = initRepo(t, {
     verify: FAIL_VERIFY,
     stubMode: "verify-fail",
@@ -64,7 +65,7 @@ test("verify failure increments attempts and the second failure is blocked", { t
   assert.equal(git(fixture.repo, ["branch", "--show-current"], fixture.env), "main");
 });
 
-test("success moves the item to review and does not push main", { timeout: 20000 }, (t) => {
+test("success moves the item to review and does not push main", { timeout: loopTimeout(2) }, (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "success",
@@ -141,7 +142,7 @@ test("success moves the item to review and does not push main", { timeout: 20000
   );
 });
 
-test("verify pass with no product diff increments attempts", { timeout: 20000 }, (t) => {
+test("verify pass with no product diff increments attempts", { timeout: loopTimeout(1) }, (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "no-diff",

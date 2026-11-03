@@ -11,13 +11,14 @@ import {
   liveLock,
   lockDir,
   lockNames,
+  loopTimeout,
   readStatus,
   runLoop,
   tempHome,
   writeClaudeStub,
 } from "./test-helpers/claude-loop.mjs";
 
-test("STOP file exits quietly without calling claude", { timeout: 20000 }, (t) => {
+test("STOP file exits quietly without calling claude", { timeout: loopTimeout(1) }, (t) => {
   const { root, home } = tempHome(t);
   const stubLog = path.join(root, "claude.log");
   fs.mkdirSync(path.join(home, ".claude-loop"), { recursive: true });
@@ -35,7 +36,7 @@ test("STOP file exits quietly without calling claude", { timeout: 20000 }, (t) =
   assert.equal(fs.existsSync(stubLog), false);
 });
 
-test("missing timeout tells the operator to install coreutils", { timeout: 20000 }, (t) => {
+test("missing timeout tells the operator to install coreutils", { timeout: loopTimeout(1) }, (t) => {
   const { root, home } = tempHome(t);
   const bin = path.join(root, "bin");
   fs.mkdirSync(bin);
@@ -45,7 +46,7 @@ test("missing timeout tells the operator to install coreutils", { timeout: 20000
   assert.match(result.stderr, /brew install coreutils/);
 });
 
-test("refuses when both Claude credentials are set", { timeout: 20000 }, (t) => {
+test("refuses when both Claude credentials are set", { timeout: loopTimeout(1) }, (t) => {
   const { root, home } = tempHome(t);
   const stubLog = path.join(root, "claude.log");
   writeClaudeStub(path.join(root, "claude"));
@@ -63,7 +64,7 @@ test("refuses when both Claude credentials are set", { timeout: 20000 }, (t) => 
   assert.equal(readStatus(home).last_result, "auth_conflict");
 });
 
-test("logged-out auth status refuses to run", { timeout: 20000 }, (t) => {
+test("logged-out auth status refuses to run", { timeout: loopTimeout(1) }, (t) => {
   const { root, home } = tempHome(t);
   const stubLog = path.join(root, "claude.log");
   writeClaudeStub(path.join(root, "claude"));
@@ -78,7 +79,7 @@ test("logged-out auth status refuses to run", { timeout: 20000 }, (t) => {
   assert.equal(readStatus(home).last_result, "logged_out");
 });
 
-test("daily spend cap refuses at the default of 25", { timeout: 20000 }, (t) => {
+test("daily spend cap refuses at the default of 25", { timeout: loopTimeout(1) }, (t) => {
   const { root, home } = tempHome(t);
   const stubLog = path.join(root, "claude.log");
   const day = new Date().toISOString().slice(0, 10);
@@ -103,7 +104,7 @@ test("daily spend cap refuses at the default of 25", { timeout: 20000 }, (t) => 
   assert.match(fs.readFileSync(stubLog, "utf8"), /auth status/);
 });
 
-test("at the parallel cap the loop exits 0 quietly without calling claude", { timeout: 20000 }, (t) => {
+test("at the parallel cap the loop exits 0 quietly without calling claude", { timeout: loopTimeout(1) }, (t) => {
   const { root, home } = tempHome(t);
   const stubLog = path.join(root, "claude.log");
   liveLock(home, "busy-item");
@@ -121,7 +122,7 @@ test("at the parallel cap the loop exits 0 quietly without calling claude", { ti
   assert.equal(fs.readFileSync(path.join(lockDir(home, "busy-item"), "pid"), "utf8").trim(), String(process.pid));
 });
 
-test("the cap scan never deletes a lock; reclaiming stale locks happens only under locks.lock", { timeout: 20000 }, (t) => {
+test("the cap scan never deletes a lock; reclaiming stale locks happens only under locks.lock", { timeout: loopTimeout(1) }, (t) => {
   const { root, home } = tempHome(t);
   liveLock(home, "dead-item", 999999);
   // Exits 1 right after the quick cap scan, before acquire_item runs.

@@ -14,6 +14,7 @@ import {
   lastAttempts,
   lockNames,
   loopEnv,
+  loopTimeout,
   readItemStatus,
   readStatus,
   runLoop,
@@ -21,7 +22,7 @@ import {
   task,
 } from "./test-helpers/claude-loop.mjs";
 
-test("rate-limit output backs off without counting an attempt", { timeout: 20000 }, (t) => {
+test("rate-limit output backs off without counting an attempt", { timeout: loopTimeout(2) }, (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "rate-limit",
@@ -62,7 +63,7 @@ test("rate-limit output backs off without counting an attempt", { timeout: 20000
   assert.equal(readStatus(fixture.home).last_result, "backoff");
 });
 
-test("auth error in Claude output backs off without counting an attempt", { timeout: 20000 }, (t) => {
+test("auth error in Claude output backs off without counting an attempt", { timeout: loopTimeout(1) }, (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "auth-error",
@@ -80,18 +81,13 @@ test("auth error in Claude output backs off without counting an attempt", { time
   assert.equal(status.last_result, "auth");
 });
 
-test("heartbeat refreshes status while claude is running", { timeout: 30000 }, (t) => {
+test("heartbeat refreshes status while claude is running", { timeout: loopTimeout(1) }, (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "heartbeat",
     items: [task("beat-task", "Watch the heartbeat", "claude")],
   });
-  const result = runLoop(
-    fixture.repo,
-    fixture.home,
-    loopEnv(fixture, { CLAUDE_LOOP_HEARTBEAT_SEC: "1" }),
-    25000,
-  );
+  const result = runLoop(fixture.repo, fixture.home, loopEnv(fixture, { CLAUDE_LOOP_HEARTBEAT_SEC: "1" }));
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   const item = itemById(showBoard(fixture.origin, "claude/beat-task", fixture.env), "beat-task");
   assert.equal(item.status, "review");
