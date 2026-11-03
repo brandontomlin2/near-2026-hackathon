@@ -166,7 +166,7 @@ ${shares}
 <table><tr><th>Token</th><th>Round</th><th>Method</th><th>sheet_hash</th><th>Deposit</th><th>Status</th></tr>
 ${calls}</table>
 <p class="mut">Each <code>sheet_hash</code> is the sha256 of the normalized sheet, the same value recorded in <code>memory/&lt;token&gt;/sheet.json</code>. A new owner recomputes it from the sheet they receive and compares it with the token's <code>sheet_anchor</code>.</p>
-<p>A live run would call <code>anchor_sheet</code> on testnet with these arguments. <code>${esc(anchors.contractId)}</code> is a placeholder contract id; nothing is deployed or signed by this demo. The first anchor per token carries a storage deposit (the contract refunds the unused part); later ones carry 1 yoctoNEAR.</p>
+<p>A live run would call <code>anchor_sheet</code> on testnet with these arguments. <code>${esc(anchors.contractId)}</code> is a placeholder contract id; nothing is deployed or signed by this demo. Every anchor carries a storage deposit (the contract refunds the unused part).</p>
 <h3>Check a hash yourself</h3>
 <p>The sheet is normalized before hashing (Unicode NFC, LF line endings, no trailing spaces, exactly one final newline). A one-line sheet is the text plus a newline, so from the folder that holds this page:</p>
 <pre>node -p 'require("./memory/aloof/sheet.json").sheet' | shasum -a 256

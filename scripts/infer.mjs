@@ -24,12 +24,16 @@ function parseArgs(argv) {
     if (arg === "--json") {
       options.json = true;
     } else if (arg === "--system") {
-      options.system = argv[i + 1];
+      const raw = argv[i + 1];
+      if (raw === undefined || raw.trim() === "") throw new Error("--system needs a non-empty value");
+      options.system = raw;
       i += 1;
     } else if (arg === "--seed") {
       const raw = argv[i + 1];
-      const n = Number(raw);
-      options.seed = Number.isFinite(n) ? n : raw;
+      if (raw === undefined || !/^(0|[1-9][0-9]*)$/.test(raw) || !Number.isSafeInteger(Number(raw))) {
+        throw new Error(`--seed must be a non-negative integer, got ${JSON.stringify(raw)}`);
+      }
+      options.seed = Number(raw);
       i += 1;
     } else if (arg.startsWith("--")) {
       throw new Error(`unknown flag ${arg}`);
@@ -45,7 +49,7 @@ async function main() {
   try {
     options = parseArgs(process.argv.slice(2));
   } catch (err) {
-    process.stderr.write(`error: ${err.message}\n${USAGE}`);
+    process.stderr.write(`infer: ${err.message} (see --help)\n`);
     return 2;
   }
   if (options.help) {
@@ -54,7 +58,7 @@ async function main() {
   }
   const prompt = options.prompt.join(" ").trim();
   if (!prompt) {
-    process.stderr.write(`error: a prompt is required\n${USAGE}`);
+    process.stderr.write("infer: a prompt is required (see --help)\n");
     return 2;
   }
 
@@ -73,7 +77,7 @@ main().then(
   (code) => process.exit(code),
   (err) => {
     const label = err instanceof InferenceError ? `inference error (${err.code})` : "error";
-    process.stderr.write(`${label}: ${err.message}\n`);
+    process.stderr.write(`infer: ${label}: ${String(err.message).split("\n")[0]}\n`);
     process.exit(1);
   },
 );

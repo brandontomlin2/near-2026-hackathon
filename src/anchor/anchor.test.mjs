@@ -7,7 +7,6 @@ import {
   AnchorError,
   DEFAULT_GAS,
   FIRST_ANCHOR_DEPOSIT_YOCTO,
-  ONE_YOCTO,
   anchorConfigFromEnv,
   anchorViewRequest,
   isValidAccountId,
@@ -95,7 +94,7 @@ test("deposit rules", () => {
   const first = prepareAnchor({ ...base, currentAnchor: { sheet_hash: null } });
   assert.equal(first.depositYocto, FIRST_ANCHOR_DEPOSIT_YOCTO);
   const again = prepareAnchor({ ...base, currentAnchor: { sheet_hash: "a".repeat(64) } });
-  assert.equal(again.depositYocto, ONE_YOCTO);
+  assert.equal(again.depositYocto, FIRST_ANCHOR_DEPOSIT_YOCTO); // every anchor adds a seen-hash record
   assert.equal(again.firstAnchor, false);
   assert.equal(prepareAnchor({ ...base }).depositYocto, FIRST_ANCHOR_DEPOSIT_YOCTO);
   assert.throws(() => prepareAnchor({ ...base, currentAnchor: null }), codeOf("unknown_token"));

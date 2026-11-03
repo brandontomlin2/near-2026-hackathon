@@ -165,12 +165,21 @@ test("dry run is the default: prints every command and signs nothing", async () 
 
 test("dry run prints placeholders when no env is set, and does not fail", async () => {
   const c = collector();
-  const code = await run(["deploy", "--wasm", "/definitely/not/built.wasm"], {}, {
-    exec: forbiddenExec, out: c.out, err: c.err,
+  const code = await run(["deploy", "--wasm", "/x.wasm"], {}, {
+    exec: forbiddenExec, wasmExists: () => true, out: c.out, err: c.err,
   });
   assert.equal(code, 0);
   assert.match(c.text(), /owner: <NEAR_ACCOUNT_ID>/);
-  assert.match(c.text(), /warning: wasm not found/);
+});
+
+test("deploy dry run fails fast with a clear message when the wasm is not built", async () => {
+  const c = collector();
+  const code = await run(["deploy", "--wasm", "/definitely/not/built.wasm"], {}, {
+    exec: forbiddenExec, out: c.out, err: c.err,
+  });
+  assert.equal(code, 1);
+  assert.match(c.errors.join("\n"), /error: wasm not found at \/definitely\/not\/built\.wasm\. Run npm run build:contract first\./);
+  assert.equal(c.text(), "");
 });
 
 test("dry run --json prints the plan as parseable JSON with the exact argv", async () => {

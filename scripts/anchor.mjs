@@ -40,6 +40,10 @@ export async function mockReport() {
 }
 
 export async function main(argv = process.argv.slice(2), out = console.log) {
+  if (argv.includes("--help") || argv.includes("-h")) {
+    out("usage: npm run anchor -- --dry-run [--check]  (dry run only; this CLI never signs)");
+    return 0;
+  }
   const known = new Set(["--dry-run", "--check"]);
   const bad = argv.filter((a) => !known.has(a));
   if (bad.length > 0 || !argv.includes("--dry-run")) {

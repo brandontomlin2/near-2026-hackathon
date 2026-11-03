@@ -24,7 +24,7 @@ const never = () => { throw new Error("exec must not be called in a dry run"); }
 
 async function dry(argv, env = {}) {
   const s = sink();
-  const code = await run(argv, env, { exec: never, hasNear: never, out: s.out, err: s.err });
+  const code = await run(argv, env, { exec: never, hasNear: never, wasmExists: () => true, out: s.out, err: s.err });
   return { code, s };
 }
 
@@ -63,7 +63,7 @@ test("--json output is pure JSON: no banner line before it", async () => {
 
 test("dry run with a mistyped NEAR_ACCOUNT_ID is a clear error that does not echo the value", async () => {
   const secret = "ed25519:SUPERSECRETKEYMATERIAL";
-  for (const argv of [["mint"], ["deploy"], ["mint", "--json"]]) {
+  for (const argv of [["mint"], ["deploy", "--json"], ["mint", "--json"]]) {
     const { code, s } = await dry(argv, { NEAR_ACCOUNT_ID: secret });
     assert.equal(code, 2);
     assert.match(s.errText(), /NEAR_ACCOUNT_ID/);
@@ -174,7 +174,7 @@ test("CLI dry run never launches a `near` binary, even when one is on PATH", () 
     writeFileSync(stub, `#!/bin/sh\ntouch '${marker}'\nexit 0\n`);
     chmodSync(stub, 0o755);
     const env = { PATH: `${dir}:${process.env.PATH}`, NEAR_ACCOUNT_ID: OWNER };
-    for (const args of [["mint"], ["deploy"], ["mint", "--json"], ["mint", "--dry-run"]]) {
+    for (const args of [["mint"], ["deploy", "--json"], ["mint", "--json"], ["mint", "--dry-run"]]) {
       const r = spawnSync(process.execPath, [SCRIPT, ...args], { env, encoding: "utf8" });
       assert.equal(r.status, 0, r.stderr);
     }

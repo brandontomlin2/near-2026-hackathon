@@ -252,6 +252,7 @@ export async function run(argv, env = process.env, deps = {}) {
   const exec = deps.exec ?? defaultExec;
   const out = deps.out ?? ((line) => process.stdout.write(`${line}\n`));
   const errOut = deps.err ?? ((line) => process.stderr.write(`${line}\n`));
+  const wasmExists = deps.wasmExists ?? existsSync;
   const hasNear = deps.hasNear ?? (() => exec("near", ["--version"], { quiet: true }) === 0);
 
   let opts;
@@ -288,6 +289,13 @@ export async function run(argv, env = process.env, deps = {}) {
     }
     const receiver = (opts.receiver ? validateAccountId(opts.receiver, "--receiver") : null) ?? owner;
 
+    // Fail fast, before any plan is printed. --json is the machine-readable plan
+    // (used by live-proof offline) and is not gated.
+    if (opts.command === "deploy" && !(opts.json && !opts.send) && !wasmExists(opts.wasm)) {
+      errOut(`error: wasm not found at ${opts.wasm}. Run npm run build:contract first.`);
+      return 1;
+    }
+
     const steps = buildPlan({
       command: opts.command, contract, owner, receiver, count: opts.count, wasm: opts.wasm,
       mediaBase: opts.mediaBase ?? undefined,
@@ -305,9 +313,6 @@ export async function run(argv, env = process.env, deps = {}) {
         out(`network: ${NETWORK}   owner: ${owner}   contract: ${contract}`);
         out("");
         steps.forEach((step, i) => out(`${formatStep(step, i, steps.length)}\n`));
-        if (opts.command === "deploy" && !existsSync(opts.wasm)) {
-          out(`warning: wasm not found at ${opts.wasm}. Run npm run build:contract before --send.`);
-        }
       }
       return 0;
     }
@@ -315,10 +320,6 @@ export async function run(argv, env = process.env, deps = {}) {
     // Real mode: every check runs before the first signed transaction.
     if (!hasNear()) {
       errOut("error: near-cli-rs (the `near` command) is not on PATH. Install it first; see README 'Deploy to testnet'.");
-      return 1;
-    }
-    if (opts.command === "deploy" && !existsSync(opts.wasm)) {
-      errOut(`error: wasm not found at ${opts.wasm}. Run npm run build:contract first.`);
       return 1;
     }
     const signers = [...new Set(steps.map((step) => step.signer))];
@@ -343,9 +344,7 @@ export async function run(argv, env = process.env, deps = {}) {
     return 0;
   } catch (err) {
     if (err instanceof UsageError) {
-      errOut(`error: ${err.message}`);
-      errOut("");
-      errOut(USAGE);
+      errOut(`error: ${err.message} (see --help)`);
       return 2;
     }
     throw err;

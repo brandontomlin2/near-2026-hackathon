@@ -46,7 +46,7 @@ an example evidence file. Nothing is signed or sent.
 export function buildAnchorStep({ contract, owner }) {
   const p = prepareAnchor({ contractId: contract === PLACEHOLDER_CONTRACT ? "placeholder.testnet" : contract, tokenId: ANCHOR_TOKEN, sheet: SHEET, network: NETWORK });
   const gasTgas = `${Number(BigInt(p.gas) / 10n ** 12n)} Tgas`;
-  const deposit = p.firstAnchor ? "0.01 NEAR" : "1 yoctoNEAR";
+  const deposit = "0.01 NEAR";
   const argv = [
     "--quiet", "contract", "call-function", "as-transaction", contract, p.methodName,
     "json-args", JSON.stringify(p.args),
@@ -123,7 +123,7 @@ function parseArgs(argv) {
     else if (a === "--i-approve") opts.approve = true;
     else if (a === "--update-example") opts.out = TRACKED_EXAMPLE;
     else if (a === "--out") {
-      if (argv[i + 1] === undefined) throw new UsageError("--out needs a value");
+      if (argv[i + 1] === undefined || argv[i + 1].startsWith("-")) throw new UsageError("--out needs a file path");
       opts.out = argv[(i += 1)];
     } else if (a === "-h" || a === "--help") opts.help = true;
     else throw new UsageError(`unknown argument: ${a}`);
@@ -189,7 +189,9 @@ export async function run(argv, env = process.env, deps = {}) {
       errOut(`error: ${err.message}`);
       return 2;
     }
-    throw err;
+    // Filesystem failures on --out and the like: one line, no stack.
+    errOut(`error: ${String(err?.message ?? err).split("\n")[0]}`);
+    return 1;
   }
 }
 
