@@ -4,6 +4,8 @@
 !.env.example
 *.pem
 *.key
+.near-credentials/
+.claude/settings.local.json
 
 # Dependencies
 node_modules/
