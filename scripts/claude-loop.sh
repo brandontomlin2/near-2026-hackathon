@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# One task-board item per invocation, then exit.
+# One task-board item per invocation, then exit. Several invocations can run
+# at once: each takes a different item under ~/.claude-loop/locks/<id>, up to
+# CLAUDE_LOOP_MAX_PARALLEL live locks.
 # macOS has no flock(1) and no timeout(1) until coreutils is installed:
-# the lock is an atomic mkdir, and the timer is gtimeout or timeout.
+# every lock is an atomic mkdir, and the timer is gtimeout or timeout.
 # Bash 3.2 compatible. Do not run under xtrace; it can print credentials.
+# Several functions run only through the EXIT trap or with_repo_lock.
+# shellcheck disable=SC2329
 set -euo pipefail
 unset CDPATH
 unset GIT_DIR
@@ -22,27 +26,35 @@ MAX_USD=${CLAUDE_LOOP_MAX_USD:-5}
 TIMEOUT_DUR=${CLAUDE_LOOP_TIMEOUT:-45m}
 DAILY_USD=${CLAUDE_LOOP_DAILY_USD:-25}
 BACKOFF_SEC=${CLAUDE_LOOP_BACKOFF_SEC:-900}
+MAX_PARALLEL=${CLAUDE_LOOP_MAX_PARALLEL:-3}
 ONLY_ID=${CLAUDE_LOOP_ONLY:-}
+LOG_DIR=${CLAUDE_LOOP_LOG_DIR:-}
 LOOP_DIR="$HOME/.claude-loop"
 STATUS_FILE="$LOOP_DIR/status.json"
+STATUS_DIR="$LOOP_DIR/status"
 STATUS_LOCK="$LOOP_DIR/status.lock"
-LOCK_DIR="$LOOP_DIR/lock"
+LOCKS_DIR="$LOOP_DIR/locks"
+LOCKS_META="$LOOP_DIR/locks.lock"
+REPO_LOCK="$LOOP_DIR/repo.lock"
 BACKOFF_FILE="$LOOP_DIR/backoff.json"
-PROMPT_FILE="$LOOP_DIR/last-prompt.txt"
 STOP_FILE="$LOOP_DIR/STOP"
+TMP_DIR="$LOOP_DIR/tmp"
 
 HB_PID=""
 WT=""
 REPO=""
 LOCK_HELD=0
+ITEM_LOCK=""
+RUN_DIR=""
 ITEM_ID=""
 SESSION_ID=""
 LAST_RESULT=""
 SPEND_TODAY=0
-STARTED_AT=""
 SPEND_FILE=""
+STARTED_AT=""
 TIMEOUT_BIN=""
 HEARTBEAT_SEC=60
+TODAY=""
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -57,6 +69,206 @@ now_iso() {
   node -e 'process.stdout.write(new Date().toISOString())'
 }
 
+# Waits for a mkdir mutex. A lock whose recorded pid is gone is renamed away
+# first, so two waiters cannot both remove and recreate it.
+mutex_acquire() {
+  local dir="$1"
+  local wait_sec="${2:-120}"
+  local tries=0
+  local old=""
+  while true; do
+    if mkdir "$dir" 2>/dev/null; then
+      printf '%s\n' "$$" > "$dir/pid"
+      return 0
+    fi
+    old=$(cat "$dir/pid" 2>/dev/null || true)
+    if [[ -n "$old" ]] && ! kill -0 "$old" 2>/dev/null; then
+      if mv "$dir" "$dir.stale.$$" 2>/dev/null; then
+        rm -rf "$dir.stale.$$"
+      fi
+      continue
+    fi
+    tries=$((tries + 1))
+    if [[ "$tries" -ge $((wait_sec * 5)) ]]; then
+      return 1
+    fi
+    sleep 0.2
+  done
+}
+
+mutex_release() {
+  local dir="$1"
+  if [[ "$(cat "$dir/pid" 2>/dev/null || true)" == "$$" ]]; then
+    rm -rf "$dir"
+  fi
+}
+
+# Serialises git operations that touch the control checkout. Two concurrent
+# fetches or worktree adds in one repository can fail on each other's ref locks.
+with_repo_lock() {
+  local code=0
+  if ! mutex_acquire "$REPO_LOCK" 180; then
+    die "timed out waiting for ${REPO_LOCK}"
+  fi
+  set +e
+  "$@"
+  code=$?
+  set -e
+  mutex_release "$REPO_LOCK"
+  return "$code"
+}
+
+# MODE write: rewrite status/<item>.json (when an item is set) and the summary.
+# MODE beat: refresh last_activity on a running item and the summary.
+status_node() {
+  local mode="$1"
+  local state="${2-}"
+  local result="${3-}"
+  CLAUDE_LOOP_STATUS_MODE="$mode" \
+    CLAUDE_LOOP_STATUS_FILE="$STATUS_FILE" \
+    CLAUDE_LOOP_STATUS_DIR="$STATUS_DIR" \
+    CLAUDE_LOOP_STATUS_LOCK="$STATUS_LOCK" \
+    CLAUDE_LOOP_SPEND_FILE="$SPEND_FILE" \
+    CLAUDE_LOOP_STATUS_STATE="$state" \
+    CLAUDE_LOOP_STATUS_ITEM="$ITEM_ID" \
+    CLAUDE_LOOP_STATUS_SESSION="$SESSION_ID" \
+    CLAUDE_LOOP_STATUS_STARTED="$STARTED_AT" \
+    CLAUDE_LOOP_STATUS_RESULT="$result" \
+    CLAUDE_LOOP_STATUS_PID="$$" \
+    node <<'JS'
+const { spawnSync } = require("node:child_process");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const mode = process.env.CLAUDE_LOOP_STATUS_MODE;
+const file = process.env.CLAUDE_LOOP_STATUS_FILE;
+const dir = process.env.CLAUDE_LOOP_STATUS_DIR;
+const lock = process.env.CLAUDE_LOOP_STATUS_LOCK;
+const spendFile = process.env.CLAUDE_LOOP_SPEND_FILE || "";
+const item = process.env.CLAUDE_LOOP_STATUS_ITEM || "";
+const itemFile = item ? path.join(dir, `${item}.json`) : "";
+
+function alive(pid) {
+  const number = Number(pid);
+  if (!Number.isInteger(number) || number <= 0) return false;
+  try {
+    process.kill(number, 0);
+    return true;
+  } catch (err) {
+    return Boolean(err && err.code === "EPERM");
+  }
+}
+
+function acquire() {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    try {
+      fs.mkdirSync(lock);
+      return true;
+    } catch (err) {
+      if (!err || err.code !== "EEXIST") return false;
+      spawnSync("sleep", ["0.05"]);
+    }
+  }
+  if (mode !== "write") return false;
+  try {
+    fs.renameSync(lock, `${lock}.stale.${process.pid}`);
+    fs.rmSync(`${lock}.stale.${process.pid}`, { recursive: true, force: true });
+    fs.mkdirSync(lock);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function writeJson(target, body) {
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const tmp = `${target}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify(body, null, 2)}\n`);
+  fs.renameSync(tmp, target);
+}
+
+function readJson(target) {
+  try {
+    return JSON.parse(fs.readFileSync(target, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function spendToday() {
+  let micros = 0;
+  if (spendFile && fs.existsSync(spendFile)) {
+    for (const line of fs.readFileSync(spendFile, "utf8").split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const value = Number(JSON.parse(line).total_cost_usd);
+        if (Number.isFinite(value)) micros += Math.round(value * 1e6);
+      } catch {
+        // Ignore a torn or non-JSON line.
+      }
+    }
+  }
+  return micros / 1e6;
+}
+
+function writeSummary(now, last) {
+  const running = [];
+  if (fs.existsSync(dir)) {
+    for (const name of fs.readdirSync(dir).sort()) {
+      if (!name.endsWith(".json")) continue;
+      const data = readJson(path.join(dir, name));
+      if (!data || data.state !== "running" || !alive(data.pid)) continue;
+      running.push({
+        item: data.item,
+        session_id: data.session_id,
+        started_at: data.started_at,
+        last_activity: data.last_activity,
+        pid: data.pid,
+      });
+    }
+  }
+  const previous = readJson(file) || {};
+  writeJson(file, {
+    running,
+    spend_today: spendToday(),
+    last_item: last ? last.item : previous.last_item || null,
+    last_result: last ? last.result : previous.last_result || "",
+    updated_at: now,
+  });
+}
+
+if (!acquire()) process.exit(mode === "write" ? 1 : 0);
+try {
+  const now = new Date().toISOString();
+  if (mode === "write") {
+    const session = process.env.CLAUDE_LOOP_STATUS_SESSION || "";
+    const result = process.env.CLAUDE_LOOP_STATUS_RESULT || "";
+    if (itemFile) {
+      writeJson(itemFile, {
+        state: process.env.CLAUDE_LOOP_STATUS_STATE,
+        item,
+        session_id: session || null,
+        started_at: process.env.CLAUDE_LOOP_STATUS_STARTED || now,
+        last_activity: now,
+        last_result: result,
+        pid: Number(process.env.CLAUDE_LOOP_STATUS_PID),
+      });
+    }
+    writeSummary(now, { item: item || null, result });
+  } else if (itemFile) {
+    const data = readJson(itemFile);
+    if (data && data.state === "running") {
+      data.last_activity = now;
+      writeJson(itemFile, data);
+    }
+    writeSummary(now, null);
+  }
+} finally {
+  fs.rmSync(lock, { recursive: true, force: true });
+}
+JS
+}
+
 write_status() {
   local state="$1"
   local result="${2-}"
@@ -65,59 +277,7 @@ write_status() {
   else
     result=$LAST_RESULT
   fi
-  CLAUDE_LOOP_STATUS_FILE="$STATUS_FILE" \
-    CLAUDE_LOOP_STATUS_LOCK="$STATUS_LOCK" \
-    CLAUDE_LOOP_STATUS_STATE="$state" \
-    CLAUDE_LOOP_STATUS_ITEM="$ITEM_ID" \
-    CLAUDE_LOOP_STATUS_SESSION="$SESSION_ID" \
-    CLAUDE_LOOP_STATUS_STARTED="$STARTED_AT" \
-    CLAUDE_LOOP_STATUS_RESULT="$result" \
-    CLAUDE_LOOP_STATUS_SPEND="$SPEND_TODAY" \
-    node <<'JS'
-const { spawnSync } = require("node:child_process");
-const fs = require("node:fs");
-const path = require("node:path");
-
-const file = process.env.CLAUDE_LOOP_STATUS_FILE;
-const lock = process.env.CLAUDE_LOOP_STATUS_LOCK;
-
-function acquire() {
-  for (let attempt = 0; attempt < 80; attempt += 1) {
-    try {
-      fs.mkdirSync(lock);
-      return;
-    } catch (err) {
-      if (!err || err.code !== "EEXIST") throw err;
-      spawnSync("sleep", ["0.05"]);
-    }
-  }
-  fs.rmSync(lock, { recursive: true, force: true });
-  fs.mkdirSync(lock);
-}
-
-acquire();
-try {
-  const now = new Date().toISOString();
-  const spend = Number(process.env.CLAUDE_LOOP_STATUS_SPEND);
-  const item = process.env.CLAUDE_LOOP_STATUS_ITEM || "";
-  const session = process.env.CLAUDE_LOOP_STATUS_SESSION || "";
-  const body = {
-    state: process.env.CLAUDE_LOOP_STATUS_STATE,
-    item: item || null,
-    session_id: session || null,
-    started_at: process.env.CLAUDE_LOOP_STATUS_STARTED || now,
-    last_activity: now,
-    spend_today: Number.isFinite(spend) ? spend : 0,
-    last_result: process.env.CLAUDE_LOOP_STATUS_RESULT || "",
-  };
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, `${JSON.stringify(body, null, 2)}\n`);
-  fs.renameSync(tmp, file);
-} finally {
-  fs.rmSync(lock, { recursive: true, force: true });
-}
-JS
+  status_node write "$state" "$result"
 }
 
 stop_heartbeat() {
@@ -142,46 +302,16 @@ start_heartbeat() {
       else
         exit 0
       fi
-      CLAUDE_LOOP_STATUS_FILE="$STATUS_FILE" \
-        CLAUDE_LOOP_STATUS_LOCK="$STATUS_LOCK" \
-        node <<'JS' || true
-const { spawnSync } = require("node:child_process");
-const fs = require("node:fs");
-
-const file = process.env.CLAUDE_LOOP_STATUS_FILE;
-const lock = process.env.CLAUDE_LOOP_STATUS_LOCK;
-
-function acquire() {
-  for (let attempt = 0; attempt < 80; attempt += 1) {
-    try {
-      fs.mkdirSync(lock);
-      return true;
-    } catch (err) {
-      if (!err || err.code !== "EEXIST") return false;
-      spawnSync("sleep", ["0.05"]);
-    }
-  }
-  return false;
-}
-
-if (!acquire()) process.exit(0);
-try {
-  const data = JSON.parse(fs.readFileSync(file, "utf8"));
-  if (data.state === "running") {
-    data.last_activity = new Date().toISOString();
-    const tmp = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, `${JSON.stringify(data, null, 2)}\n`);
-    fs.renameSync(tmp, file);
-  }
-} catch {
-  // The next transition rewrites the file.
-} finally {
-  fs.rmSync(lock, { recursive: true, force: true });
-}
-JS
+      status_node beat || true
     done
   ) &
   HB_PID=$!
+}
+
+remove_worktree() {
+  git -C "$REPO" worktree remove --force "$WT" >/dev/null 2>&1 || true
+  rm -rf "$WT" || true
+  git -C "$REPO" worktree prune >/dev/null 2>&1 || true
 }
 
 # Invoked from the EXIT trap. Shellcheck cannot see that call.
@@ -191,17 +321,22 @@ cleanup() {
   trap - EXIT INT TERM
   stop_heartbeat
   if [[ -n "$WT" && -n "$REPO" ]]; then
-    git -C "$REPO" worktree remove --force "$WT" >/dev/null 2>&1 || true
-    rm -rf "$WT" || true
-    git -C "$REPO" worktree prune >/dev/null 2>&1 || true
-  fi
-  if [[ "$LOCK_HELD" -eq 1 && -n "$LOCK_DIR" && -d "$LOCK_DIR" ]]; then
-    local lock_pid=""
-    lock_pid=$(cat "$LOCK_DIR/pid" 2>/dev/null || true)
-    if [[ "$lock_pid" == "$$" ]]; then
-      rm -rf "$LOCK_DIR" || true
+    if mutex_acquire "$REPO_LOCK" 60; then
+      remove_worktree
+      mutex_release "$REPO_LOCK"
+    else
+      remove_worktree
     fi
   fi
+  mutex_release "$REPO_LOCK"
+  if [[ "$LOCK_HELD" -eq 1 && -n "$ITEM_LOCK" && -d "$ITEM_LOCK" ]]; then
+    local lock_pid=""
+    lock_pid=$(cat "$ITEM_LOCK/pid" 2>/dev/null || true)
+    if [[ "$lock_pid" == "$$" ]]; then
+      rm -rf "$ITEM_LOCK" || true
+    fi
+  fi
+  rm -f "$TMP_DIR/$$-"* 2>/dev/null || true
   exit "$code"
 }
 
@@ -353,29 +488,50 @@ fs.renameSync(tmp, file);
 JS
 }
 
-acquire_lock() {
-  mkdir -p "$LOOP_DIR"
-  if mkdir "$LOCK_DIR" 2>/dev/null; then
-    printf '%s\n' "$$" > "$LOCK_DIR/pid"
-    LOCK_HELD=1
-    return 0
-  fi
-  local old=""
-  if [[ -f "$LOCK_DIR/pid" ]]; then
-    old=$(cat "$LOCK_DIR/pid" 2>/dev/null || true)
-  fi
-  if [[ -n "$old" ]] && kill -0 "$old" 2>/dev/null; then
-    printf 'error: another claude-loop instance holds the lock\n' >&2
-    exit 1
-  fi
-  rm -rf "$LOCK_DIR"
-  if mkdir "$LOCK_DIR" 2>/dev/null; then
-    printf '%s\n' "$$" > "$LOCK_DIR/pid"
-    LOCK_HELD=1
-    return 0
-  fi
-  printf 'error: another claude-loop instance holds the lock\n' >&2
-  exit 1
+# Prints the number of item locks whose pid is still running. Stale locks are
+# renamed away and removed.
+live_lock_count() {
+  CLAUDE_LOOP_LOCKS_DIR="$LOCKS_DIR" node <<'JS'
+const fs = require("node:fs");
+const path = require("node:path");
+const dir = process.env.CLAUDE_LOOP_LOCKS_DIR;
+function alive(pid) {
+  const number = Number(pid);
+  if (!Number.isInteger(number) || number <= 0) return false;
+  try {
+    process.kill(number, 0);
+    return true;
+  } catch (err) {
+    return Boolean(err && err.code === "EPERM");
+  }
+}
+let live = 0;
+if (fs.existsSync(dir)) {
+  for (const name of fs.readdirSync(dir)) {
+    const lock = path.join(dir, name);
+    let pid = "";
+    try {
+      pid = fs.readFileSync(path.join(lock, "pid"), "utf8").trim();
+    } catch {
+      // A lock without a pid yet belongs to a process between mkdir and write.
+      live += 1;
+      continue;
+    }
+    if (alive(pid)) {
+      live += 1;
+      continue;
+    }
+    const stale = `${lock}.stale.${process.pid}`;
+    try {
+      fs.renameSync(lock, stale);
+      fs.rmSync(stale, { recursive: true, force: true });
+    } catch {
+      // Another run removed it first.
+    }
+  }
+}
+process.stdout.write(String(live));
+JS
 }
 
 ensure_git_identity() {
@@ -470,10 +626,12 @@ process.stdout.write(String(count));
 JS
 }
 
+# One appendFileSync of one line. O_APPEND keeps concurrent writers from
+# interleaving a line this short, so parallel runs share today's log.
 append_spend() {
   local today="$1"
   CLAUDE_LOOP_SPEND_FILE="$LOOP_DIR/spend-${today}.jsonl" \
-    CLAUDE_LOOP_PARSED="$LOOP_DIR/parsed.json" \
+    CLAUDE_LOOP_PARSED="$RUN_DIR/parsed.json" \
     CLAUDE_LOOP_ITEM="$ITEM_ID" \
     node <<'JS'
 const fs = require("node:fs");
@@ -494,7 +652,7 @@ JS
 
 read_parsed_field() {
   local field="$1"
-  CLAUDE_LOOP_PARSED="$LOOP_DIR/parsed.json" CLAUDE_LOOP_FIELD="$field" node <<'JS'
+  CLAUDE_LOOP_PARSED="$RUN_DIR/parsed.json" CLAUDE_LOOP_FIELD="$field" node <<'JS'
 const fs = require("node:fs");
 const parsed = JSON.parse(fs.readFileSync(process.env.CLAUDE_LOOP_PARSED, "utf8"));
 const value = parsed[process.env.CLAUDE_LOOP_FIELD];
@@ -504,9 +662,9 @@ JS
 
 parse_claude_output() {
   local code="$1"
-  CLAUDE_LOOP_STDOUT="$LOOP_DIR/last-claude.out" \
-    CLAUDE_LOOP_STDERR="$LOOP_DIR/last-claude.err" \
-    CLAUDE_LOOP_PARSED="$LOOP_DIR/parsed.json" \
+  CLAUDE_LOOP_STDOUT="$RUN_DIR/claude.out" \
+    CLAUDE_LOOP_STDERR="$RUN_DIR/claude.err" \
+    CLAUDE_LOOP_PARSED="$RUN_DIR/parsed.json" \
     CLAUDE_LOOP_EXIT="$code" \
     node <<'JS'
 const fs = require("node:fs");
@@ -620,7 +778,7 @@ JS
 build_prompt() {
   CLAUDE_LOOP_BOARD="$WT/board/board.json" \
     CLAUDE_LOOP_ITEM="$ITEM_ID" \
-    CLAUDE_LOOP_PROMPT="$PROMPT_FILE" \
+    CLAUDE_LOOP_PROMPT="$RUN_DIR/prompt.txt" \
     node <<'JS'
 const fs = require("node:fs");
 const path = require("node:path");
@@ -671,9 +829,20 @@ prepare_branch() {
   git -C "$REPO" worktree add "$WT" "claude/${id}" >/dev/null
 }
 
-pick_item() {
+prepare_checkout() {
+  ensure_git_identity
+  prepare_branch "$ITEM_ID"
+}
+
+fetch_origin() {
+  git -C "$REPO" fetch origin
+}
+
+# Writes the ordered list of items this run may take, as JSON:
+# [{id, mode}] in board order, or {reason} when CLAUDE_LOOP_ONLY is ineligible.
+list_candidates() {
   local list_file="$1"
-  local pick_file="$2"
+  local out_file="$2"
   (
     cd "$REPO" || exit 1
     if [[ -n "$ONLY_ID" ]]; then
@@ -683,7 +852,7 @@ pick_item() {
     fi
   ) > "$list_file"
   CLAUDE_LOOP_REPO="$REPO" CLAUDE_LOOP_TODOS="$list_file" CLAUDE_LOOP_ONLY="$ONLY_ID" \
-    node > "$pick_file" <<'JS'
+    node > "$out_file" <<'JS'
 const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 
@@ -706,23 +875,42 @@ function blocked(notes) {
   return /(?:^|\n)\s*blocked\s*(?=\n|$)/.test(String(notes || ""));
 }
 
-function branchItem(id) {
+function boardAt(ref) {
   let raw = "";
   try {
-    raw = execFileSync(
-      "git",
-      ["-C", repo, "show", `origin/claude/${id}:board/board.json`],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-    );
+    raw = execFileSync("git", ["-C", repo, "show", `${ref}:board/board.json`], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
   } catch {
     return null;
   }
   try {
     const items = JSON.parse(raw);
-    return items.find((entry) => entry.id === id) || null;
+    return Array.isArray(items) ? items : null;
   } catch {
     return null;
   }
+}
+
+function branchItem(id) {
+  const items = boardAt(`origin/claude/${id}`);
+  return items ? items.find((entry) => entry.id === id) || null : null;
+}
+
+// A dependency counts as finished only when origin/main says it is done.
+const mainBoard = boardAt("origin/main") || [];
+function unmetDependency(item, remote) {
+  const deps = Array.isArray(remote && remote.depends_on)
+    ? remote.depends_on
+    : Array.isArray(item.depends_on)
+      ? item.depends_on
+      : [];
+  for (const dep of deps) {
+    const found = mainBoard.find((entry) => entry.id === dep);
+    if (!found || found.status !== "done") return String(dep);
+  }
+  return "";
 }
 
 // Notes and status on origin/claude/<id> win over the control checkout.
@@ -734,26 +922,147 @@ function eligibility(item) {
   if (blocked(notes)) return { reason: "blocked" };
   const attempts = attemptsOf(notes);
   if (attempts >= 2) return { reason: `attempts=${attempts}` };
+  const waiting = unmetDependency(item, remote);
+  if (waiting) return { reason: `waiting on ${waiting}` };
   if (status === "todo") return { mode: "claim" };
   if (status === "doing" && owner === "claude") return { mode: "resume" };
   if (status === "doing") return { reason: `doing for ${owner || "nobody"}` };
   return { reason: `status ${status}` };
 }
 
-let picked = null;
+let output;
 if (only) {
   const item = todos.find((entry) => entry.id === only);
   const result = item ? eligibility(item) : { reason: "not on the board" };
-  picked = result.mode ? { id: only, mode: result.mode } : { reason: result.reason };
+  output = result.mode ? [{ id: only, mode: result.mode }] : { reason: result.reason };
 } else {
+  output = [];
   for (const item of todos) {
     if (item.lane !== "claude" && item.lane !== "any") continue;
     const result = eligibility(item);
-    if (result.mode) {
-      picked = { id: item.id, mode: result.mode };
+    if (result.mode) output.push({ id: item.id, mode: result.mode });
+  }
+}
+process.stdout.write(JSON.stringify(output));
+JS
+}
+
+# Under locks.lock: drop stale item locks, stop at the parallel cap, and take
+# the first candidate whose lock is free. Prints JSON: {id, mode}, {reason},
+# or null when no candidate is left.
+acquire_item() {
+  local cand_file="$1"
+  CLAUDE_LOOP_LOCKS_DIR="$LOCKS_DIR" \
+    CLAUDE_LOOP_LOCKS_META="$LOCKS_META" \
+    CLAUDE_LOOP_MAX_PARALLEL="$MAX_PARALLEL" \
+    CLAUDE_LOOP_CANDIDATES="$cand_file" \
+    CLAUDE_LOOP_ONLY="$ONLY_ID" \
+    CLAUDE_LOOP_PID="$$" \
+    node <<'JS'
+const { spawnSync } = require("node:child_process");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const dir = process.env.CLAUDE_LOOP_LOCKS_DIR;
+const meta = process.env.CLAUDE_LOOP_LOCKS_META;
+const max = Number(process.env.CLAUDE_LOOP_MAX_PARALLEL);
+const only = process.env.CLAUDE_LOOP_ONLY || "";
+const pid = process.env.CLAUDE_LOOP_PID;
+const raw = fs.readFileSync(process.env.CLAUDE_LOOP_CANDIDATES, "utf8").trim();
+const candidates = raw ? JSON.parse(raw) : [];
+
+function alive(value) {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number <= 0) return false;
+  try {
+    process.kill(number, 0);
+    return true;
+  } catch (err) {
+    return Boolean(err && err.code === "EPERM");
+  }
+}
+
+function readPid(lock) {
+  try {
+    return fs.readFileSync(path.join(lock, "pid"), "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
+function discard(lock) {
+  const stale = `${lock}.stale.${process.pid}`;
+  try {
+    fs.renameSync(lock, stale);
+    fs.rmSync(stale, { recursive: true, force: true });
+  } catch {
+    // Another run removed it first.
+  }
+}
+
+function acquireMeta() {
+  for (let attempt = 0; attempt < 600; attempt += 1) {
+    try {
+      fs.mkdirSync(meta);
+      fs.writeFileSync(path.join(meta, "pid"), `${pid}\n`);
+      return true;
+    } catch (err) {
+      if (!err || err.code !== "EEXIST") throw err;
+    }
+    const holder = readPid(meta);
+    if (holder && !alive(holder)) {
+      discard(meta);
+      continue;
+    }
+    spawnSync("sleep", ["0.05"]);
+  }
+  return false;
+}
+
+if (!Array.isArray(candidates)) {
+  process.stdout.write(JSON.stringify(candidates));
+  process.exit(0);
+}
+
+if (!acquireMeta()) {
+  process.stderr.write(`error: timed out waiting for ${meta}\n`);
+  process.exit(1);
+}
+let picked = null;
+try {
+  fs.mkdirSync(dir, { recursive: true });
+  let live = 0;
+  const held = new Set();
+  for (const name of fs.readdirSync(dir)) {
+    const lock = path.join(dir, name);
+    const holder = readPid(lock);
+    if (holder && !alive(holder)) {
+      discard(lock);
+      continue;
+    }
+    live += 1;
+    held.add(name);
+  }
+  if (live >= max) {
+    picked = { reason: "at_cap" };
+  } else {
+    for (const candidate of candidates) {
+      if (held.has(candidate.id)) continue;
+      const lock = path.join(dir, candidate.id);
+      try {
+        fs.mkdirSync(lock);
+      } catch (err) {
+        if (err && err.code === "EEXIST") continue;
+        throw err;
+      }
+      fs.writeFileSync(path.join(lock, "pid"), `${pid}\n`);
+      picked = candidate;
       break;
     }
+    if (!picked && only && candidates.length > 0) picked = { reason: "locked by another run" };
   }
+} finally {
+  if (readPid(meta) === pid) fs.rmSync(meta, { recursive: true, force: true });
 }
 process.stdout.write(JSON.stringify(picked));
 JS
@@ -792,16 +1101,23 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-mkdir -p "$LOOP_DIR"
+set_today() {
+  TODAY=$(date -u +%Y-%m-%d)
+  SPEND_FILE="$LOOP_DIR/spend-${TODAY}.jsonl"
+}
+
+mkdir -p "$LOOP_DIR" "$TMP_DIR"
 
 if [[ -f "$STOP_FILE" ]]; then
+  set_today
   STARTED_AT=$(now_iso || true)
-  refresh_spend "$(date -u +%Y-%m-%d)" || true
   write_status stopped "stopped" || true
   exit 0
 fi
 
+# Nothing above this line may need a tool outside bash and mkdir.
 resolve_timeout
+set_today
 STARTED_AT=$(now_iso)
 
 case "${CLAUDE_LOOP_HEARTBEAT_SEC:-60}" in
@@ -813,12 +1129,24 @@ case "${CLAUDE_LOOP_HEARTBEAT_SEC:-60}" in
     ;;
 esac
 require_number_setting CLAUDE_LOOP_BACKOFF_SEC "$BACKOFF_SEC"
+case "$MAX_PARALLEL" in
+  [1-9] | [1-9][0-9] | [1-9][0-9][0-9]) ;;
+  *)
+    die "CLAUDE_LOOP_MAX_PARALLEL must be a positive integer"
+    ;;
+esac
 case "$ONLY_ID" in
   "") ;;
   *[!a-z0-9-]* | -*)
     die "CLAUDE_LOOP_ONLY must be a board item id"
     ;;
 esac
+
+# Quick cap check before any network or auth work. The authoritative check
+# happens again under locks.lock in acquire_item.
+if [[ "$(live_lock_count)" -ge "$MAX_PARALLEL" ]]; then
+  exit 0
+fi
 
 if [[ -n "${ANTHROPIC_API_KEY:-}" && -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
   printf 'error: both ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN are set\n' >&2
@@ -832,7 +1160,6 @@ if ! auth_is_logged_in; then
   exit 1
 fi
 
-TODAY=$(date -u +%Y-%m-%d)
 refresh_spend "$TODAY"
 case "$(cap_state)" in
   ok) ;;
@@ -853,8 +1180,6 @@ if backoff_active; then
 fi
 clear_backoff_file
 
-acquire_lock
-
 if [[ -n "${CLAUDE_LOOP_REPO:-}" ]]; then
   REPO=$CLAUDE_LOOP_REPO
 else
@@ -863,16 +1188,18 @@ fi
 if [[ -z "$REPO" ]] || ! git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   die "run this from the control checkout (or set CLAUDE_LOOP_REPO)"
 fi
-if ! git -C "$REPO" fetch origin; then
+if ! with_repo_lock fetch_origin; then
   die "git fetch origin failed"
 fi
 if ! git -C "$REPO" show-ref --verify --quiet refs/remotes/origin/main; then
   die "origin/main is missing after fetch"
 fi
 
-LIST_FILE="$LOOP_DIR/todos.json"
-PICK_FILE="$LOOP_DIR/pick.json"
-pick_item "$LIST_FILE" "$PICK_FILE"
+LIST_FILE="$TMP_DIR/$$-todos.json"
+CAND_FILE="$TMP_DIR/$$-candidates.json"
+PICK_FILE="$TMP_DIR/$$-pick.json"
+list_candidates "$LIST_FILE" "$CAND_FILE"
+acquire_item "$CAND_FILE" > "$PICK_FILE"
 pick_code=0
 set +e
 pick_out=$(
@@ -881,6 +1208,7 @@ const fs = require("node:fs");
 const raw = fs.readFileSync(process.env.CLAUDE_LOOP_PICK, "utf8").trim();
 if (!raw || raw === "null") process.exit(2);
 const pick = JSON.parse(raw);
+if (pick && pick.reason === "at_cap") process.exit(4);
 if (pick && typeof pick.reason === "string") {
   process.stdout.write(pick.reason.replace(/\s+/g, " "));
   process.exit(3);
@@ -891,6 +1219,9 @@ JS
 )
 pick_code=$?
 set -e
+if [[ "$pick_code" -eq 4 ]]; then
+  exit 0
+fi
 if [[ "$pick_code" -eq 2 ]]; then
   printf 'claude-loop: no eligible todo item\n'
   finish 0 idle "no_item"
@@ -915,12 +1246,23 @@ case "$ITEM_MODE" in
     die "unknown pick mode"
     ;;
 esac
+ITEM_LOCK="$LOCKS_DIR/$ITEM_ID"
+LOCK_HELD=1
+RUN_DIR="$LOOP_DIR/runs/$ITEM_ID"
+mkdir -p "$RUN_DIR"
+
+if [[ -n "$LOG_DIR" ]]; then
+  mkdir -p "$LOG_DIR"
+  printf 'claude-loop: %s log %s\n' "$ITEM_ID" "$LOG_DIR/$ITEM_ID.log"
+  exec >> "$LOG_DIR/$ITEM_ID.log" 2>&1
+fi
 
 write_status running "running"
 start_heartbeat
-ensure_git_identity
 WT="$LOOP_DIR/worktrees/$ITEM_ID"
-prepare_branch "$ITEM_ID"
+if ! with_repo_lock prepare_checkout; then
+  die "could not prepare the worktree for ${ITEM_ID}"
+fi
 
 if [[ "$ITEM_MODE" == "claim" ]]; then
   board_cmd claim "$ITEM_ID" --owner claude >/dev/null
@@ -929,9 +1271,9 @@ if [[ "$ITEM_MODE" == "claim" ]]; then
 fi
 
 build_prompt
-PROMPT=$(cat "$PROMPT_FILE")
-: > "$LOOP_DIR/last-claude.out"
-: > "$LOOP_DIR/last-claude.err"
+PROMPT=$(cat "$RUN_DIR/prompt.txt")
+: > "$RUN_DIR/claude.out"
+: > "$RUN_DIR/claude.err"
 set +e
 (
   cd "$WT" || exit 1
@@ -943,7 +1285,7 @@ set +e
     --strict-mcp-config \
     --allowedTools "Read,Edit,Write,Glob,Grep,Bash(npm *),Bash(node *),Bash(git add *),Bash(git commit *)" \
     --disallowedTools "Bash(git push *),Read(.env*),Read(**/*.key)"
-) > "$LOOP_DIR/last-claude.out" 2> "$LOOP_DIR/last-claude.err"
+) > "$RUN_DIR/claude.out" 2> "$RUN_DIR/claude.err"
 claude_code=$?
 set -e
 
