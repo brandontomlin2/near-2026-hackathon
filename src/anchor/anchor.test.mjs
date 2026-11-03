@@ -197,3 +197,23 @@ test("anchorConfigFromEnv", () => {
   assert.equal(cfg.contractId, CONTRACT);
   assert.ok(!JSON.stringify(cfg).includes("fake-not-a-real-credential"));
 });
+
+// Token id rules must match the contract's validate_token_id
+// (contracts/personality-nft/src/lib.rs): 1-64 bytes of [a-z0-9_-].
+test("anchorViewRequest token id charset and length match the contract", () => {
+  const ok = ["a", "agent_0-z9", "a".repeat(64)];
+  for (const tokenId of ok) {
+    assert.equal(anchorViewRequest({ contractId: CONTRACT, tokenId }).args.token_id, tokenId);
+  }
+  const bad = ["", "a".repeat(65), "Aloof", "a.b", "a b", "café", "a/b"];
+  for (const tokenId of bad) {
+    assert.throws(() => anchorViewRequest({ contractId: CONTRACT, tokenId }), (e) => e.code === "bad_token", JSON.stringify(tokenId));
+  }
+});
+
+test("contract source declares the same token id rules as the JS builder", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../../contracts/personality-nft/src/lib.rs", import.meta.url), "utf8");
+  assert.match(src, /MAX_TOKEN_ID_LEN: usize = 64;/);
+  assert.match(src, /b\.is_ascii_lowercase\(\) \|\| b\.is_ascii_digit\(\) \|\| b == b'_' \|\| b == b'-'/);
+});
