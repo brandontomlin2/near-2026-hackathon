@@ -12,17 +12,17 @@ Run everything in mock mode (`MOCK_INFERENCE=1`, the default). No keys on screen
 | --- | --- | --- | --- |
 | 1 | 0:00 to 0:12 | Title card: name, one line. Then terminal. | none |
 | 2 | 0:12 to 0:30 | Fresh clone, install, one command. The five `[n/5]` lines and "Nothing was signed or sent". | `git clone <REPO_URL> && cd <repo> && npm install && npm run demo` |
-| 3 | 0:30 to 0:50 | Browser on `out/index.html`, Agents section. Sticker art at mint next to art now (it gains detail with memory depth); point at each agent's strip of four reaction faces. | `open out/index.html` |
+| 3 | 0:30 to 0:50 | Browser on `out/index.html`, Agents section. Sticker art at mint next to art now (it gains one star along the edge per sheet written: 1 at mint, 3 now); point at each agent's strip of four reaction faces. | `open out/index.html` |
 | 4 | 0:50 to 1:15 | Scroll to Channel. Rounds scroll by with a reaction face beside each message; find a `Chaotic → Skeptic` exchange. Then the share cards grid. | page, Channel section |
-| 5 | 1:15 to 1:35 | Scroll to Memory. Chaotic's round 3 sheet, then round 6: counts and allies grew. | page, Memory section |
-| 6 | 1:35 to 1:50 | Anchor (dry run) table, then the round hash chain with `verify: ok`. Back in the terminal, run `npm run demo` again: same final hash. | page, then `npm run demo` |
+| 5 | 1:15 to 1:35 | Scroll up to Memory (it sits above Channel on the page). Chaotic's round 3 sheet, then round 6: the scorecard counts grew and Skeptic became its public enemy #1. | page, Memory section |
+| 6 | 1:35 to 1:50 | Anchor (dry run) table, then the Round hash chain (above Channel) ending in `verify: ok`. Back in the terminal, run `npm run demo` again: same final hash. | page, then `npm run demo` |
 | 7 | 1:50 to 2:00 | Close: repo URL, one question. | none |
 
 Fallbacks if the browser is awkward on camera: `cat out/transcript.txt` for shot 4, `cat out/memory/chaotic/sheet.json` for shot 5, `cat out/anchors.json` for shot 6. `bash scripts/verify.sh` ends with `result: PASS` and runs the demo in a fresh clone.
 
 ## Narration
 
-Plain words. Read at a normal pace; about 290 words in total.
+Plain words. Read at a normal pace; about 300 words in total.
 
 **Scene 1 (0:00 to 0:12)**
 "When you move an AI character to a new app, it forgets who it was. We built an NFT that carries its character with it."
@@ -37,7 +37,7 @@ Plain words. Read at a normal pace; about 290 words in total.
 "Now the swarm. For six rounds the agents post and reply on one shared channel. Each turn is a call to NEAR AI Cloud. Here it is mocked, so it is repeatable. Each message gets the reaction face that matches its tone, chosen by a simple rule on the text. Watch Skeptic push back on Chaotic, and each agent get caught off guard once. Every message also becomes a share card: face, quote, agent name."
 
 **Scene 5 (1:15 to 1:35)**
-"Every three rounds, each agent's log is summarized into a short character sheet. Here is Chaotic's sheet at round three, and at round six. Its counts and its allies have changed. The picture changes with each sheet."
+"Every three rounds, each agent's log is summarized into a short character sheet. Here is Chaotic's sheet at round three, and at round six. Its counts have changed, and Skeptic is now its public enemy. The picture changes with each sheet."
 
 **Scene 6 (1:35 to 1:50)**
 "The hash of each sheet goes on the token. So if the token is transferred, the new owner hashes the sheet they received and compares it with the chain. Here the anchor call is prepared and shown, and never signed. Run it again: the same hash, byte for byte."

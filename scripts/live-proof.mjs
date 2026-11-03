@@ -126,14 +126,19 @@ function parseArgs(argv) {
     const a = argv[i];
     if (a === "--send") opts.send = true;
     else if (a === "--i-approve") opts.approve = true;
-    else if (a === "--update-example") { opts.out = TRACKED_EXAMPLE; opts.outLabel = OUT_LABELS.tracked; }
+    else if (a === "--update-example") opts.updateExample = true;
     else if (a === "--out") {
-      if (argv[i + 1] === undefined || argv[i + 1].startsWith("-")) throw new UsageError("--out needs a file path");
-      opts.out = argv[(i += 1)];
+      const value = argv[i + 1];
+      if (!value || value.startsWith("-")) throw new UsageError(`--out needs a file path, got ${JSON.stringify(value)}`);
+      opts.out = value;
       opts.outLabel = OUT_LABELS.custom;
+      i += 1;
+      opts.outGiven = true;
     } else if (a === "-h" || a === "--help") opts.help = true;
     else throw new UsageError(`unknown argument: ${a}`);
   }
+  if (opts.updateExample && opts.outGiven) throw new UsageError("--update-example and --out cannot be combined");
+  if (opts.updateExample) { opts.out = TRACKED_EXAMPLE; opts.outLabel = OUT_LABELS.tracked; }
   return opts;
 }
 
@@ -192,7 +197,7 @@ export async function run(argv, env = process.env, deps = {}) {
     return 0;
   } catch (err) {
     if (err instanceof UsageError) {
-      errOut(`error: ${err.message}`);
+      errOut(`error: ${err.message} (see --help)`);
       return 2;
     }
     // Filesystem failures on --out and the like: one line, no stack.

@@ -190,8 +190,9 @@ export function parseArgs(argv) {
     countGiven: false, receiverGiven: false, wasmGiven: false, mediaBase: null,
   };
   const need = (i, flag) => {
-    if (argv[i + 1] === undefined) throw new UsageError(`${flag} needs a value`);
-    return argv[i + 1];
+    const value = argv[i + 1];
+    if (!value || value.startsWith("-")) throw new UsageError(`${flag} needs a value, got ${JSON.stringify(value)}`);
+    return value;
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];

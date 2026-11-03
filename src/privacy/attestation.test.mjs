@@ -72,3 +72,74 @@ test("report with no model name skips the model check rather than passing it", (
   const r = run(report);
   assert.equal(status(r, "node[0].model"), "skip");
 });
+
+const good = () => mockAttestation({ requestBody });
+const ids = (r, suffix) => r.checks.filter((c) => c.id.endsWith(suffix));
+
+test("report without a top-level nonce skips nonce-echo and can still be consistent", () => {
+  const { report } = good();
+  delete report.nonce;
+  const r = run(report);
+  assert.equal(status(r, "nonce-echo"), "skip");
+  assert.equal(r.verdict, VERDICT.CONSISTENT);
+});
+
+test("signing_algo: unsupported fails, absent adds no check, ed25519 passes", () => {
+  const rsa = good().report; rsa.model_attestations[0].signing_algo = "rsa";
+  const r = run(rsa);
+  assert.equal(status(r, "node[0].signing-algo"), "fail");
+  assert.equal(r.verdict, VERDICT.REJECT);
+  const none = good().report; delete none.model_attestations[0].signing_algo;
+  assert.equal(ids(run(none), "signing-algo").length, 0);
+  const ed = good().report; ed.model_attestations[0].signing_algo = "ed25519";
+  assert.equal(status(run(ed), "node[0].signing-algo"), "pass");
+});
+
+test("nvidia_payload: parsed object passes; null or number fails", () => {
+  const set = (v) => { const { report } = good(); report.model_attestations[0].nvidia_payload = v; return run(report); };
+  assert.equal(status(set({ a: 1 }), "node[0].nvidia-payload"), "pass");
+  assert.equal(status(set(null), "node[0].nvidia-payload"), "fail");
+  assert.equal(status(set(7), "node[0].nvidia-payload"), "fail");
+});
+
+test("non-hex intel_quote fails quote-binding with 'not hex'", () => {
+  const { report } = good();
+  report.model_attestations[0].intel_quote = "zz";
+  const c = run(report).checks.find((x) => x.id === "node[0].quote-binding");
+  assert.equal(c.status, "fail");
+  assert.match(c.detail, /not hex/);
+});
+
+test("quote with the nonce but not the signing address names only the address", () => {
+  const { report } = good();
+  const quote = Buffer.from(report.model_attestations[0].intel_quote, "hex");
+  quote.fill(0, 568, 588);
+  report.model_attestations[0].intel_quote = quote.toString("hex");
+  const c = run(report).checks.find((x) => x.id === "node[0].quote-binding");
+  assert.equal(c.status, "fail");
+  assert.match(c.detail, /missing signing address$/);
+  assert.doesNotMatch(c.detail, /nonce/);
+});
+
+test("explicit malformed nonce fails nonce-format and emits no quote-binding", () => {
+  const { report } = good();
+  for (const nonce of [requestHash(requestBody).toUpperCase(), "abcd"]) {
+    const r = run(report, { nonce });
+    assert.equal(status(r, "nonce-format"), "fail");
+    assert.equal(ids(r, "quote-binding").length, 0);
+  }
+});
+
+test("chat signature: wrong part count fails text; signer match ignores letter case", () => {
+  const { report, chatSignature } = good();
+  assert.equal(status(run(report, { chatSignature: { ...chatSignature, text: "abc" } }), "signature-text"), "fail");
+  const upper = { ...chatSignature, signing_address: "0x" + chatSignature.signing_address.slice(2).toUpperCase() };
+  assert.equal(status(run(report, { chatSignature: upper }), "signature-signer"), "pass");
+});
+
+test("summary of a rejected report lists the failed check ids", () => {
+  const { report } = mockAttestation({ requestBody: requestBody + " " });
+  const r = run(report);
+  assert.match(r.summary, /^REJECT:/);
+  assert.match(r.summary, /nonce-echo/);
+});

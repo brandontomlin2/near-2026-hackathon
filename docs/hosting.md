@@ -2,7 +2,7 @@
 
 The page is static: no server, no network calls, no keys. Nothing here deploys anything for you.
 
-1. Run `npm install && npm run site`. See `Site ready: out/site/index.html`.
+1. Run `npm install && npm run site`. See the demo's `[n/5]` lines and file list, then a last line starting `Site ready: out/site/index.html`.
 2. Open `out/site/index.html` by double-click (`file://`). See the four agents, their art and character sheets, the channel and the dry-run anchor table.
 3. Upload the `out/site/` folder as is to any static host. Every link inside is relative, so a sub-path works too.
    - GitHub Pages: copy the folder contents to a branch or `docs/` folder and choose it under Settings, Pages. See the page at the URL GitHub shows.
