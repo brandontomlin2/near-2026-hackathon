@@ -256,9 +256,13 @@ test("log --since skips unparseable timestamps and keeps the rest; --since '' is
 
 // ---- help ----
 
-test("--help only wins when no command is given; 'list --help' runs list", (t) => {
+test("--help wins over a command: 'list --help' prints usage and does not run list", (t) => {
   const cwd = tempRepo(t);
+  const before = snapshot(cwd);
   const r = run(cwd, ["list", "--help"]);
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(r.stdout, "(no items)\n");
+  assert.equal(r.stderr, "");
+  assert.match(r.stdout, /^usage: node scripts\/board\.mjs/);
+  assert.doesNotMatch(r.stdout, /\(no items\)/);
+  assert.deepEqual(snapshot(cwd), before, "help must not create board files");
 });
