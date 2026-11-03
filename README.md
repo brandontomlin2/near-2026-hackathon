@@ -8,7 +8,7 @@ Memeable AI personality NFTs on NEAR. Each token is an agent (Aloof, Chaotic, So
 
 Mock caveat: the agents' inference runs in mock mode (deterministic, offline) unless `MOCK_INFERENCE=0` and `NEAR_AI_API_KEY` are set, and the demo itself never makes a live call. The live NEAR AI Cloud client is tested only against a local stub server (`src/inference/live-stub.test.mjs`), not the real service.
 
-Tracks: `nfts` and `agents`.
+Tracks: `nfts`, `swarms` and `agents`.
 
 How NEAR fits:
 
