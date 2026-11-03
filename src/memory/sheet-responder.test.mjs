@@ -93,7 +93,20 @@ describe("sheetResponder", () => {
     ]);
     assert.match(sheet, /Signature quote: "Oh, come on! The gas meme is a joke"\./);
     assert.match(sheet, /Public enemy #1: Skeptic \(2 fights\)/);
-    assert.match(sheet, /Rivalry arc: [^.]*Skeptic[^.]*Social|Rivalry arc: [^.]*Social[^.]*Skeptic|Rivalry arc: [^.]*2 fights with Skeptic[^.]*Social/, "the rivalry line names both the rival and the ally");
+    assert.match(sheet, /Rivalry arc: Me versus Skeptic, with Social holding my coat\. Season two is already written\.\n/, "the exact rivalry line for this record");
+    const pool = STORIES.both.map((f) => f({ rival: "Skeptic", ally: "Social", fights: 2 }));
+    assert.equal(STORIES.both[4]({ rival: "Skeptic", ally: "Social", fights: 5 }), "5 fights with Skeptic, but Social still believes in me. That is called a plot.");
+    assert.ok(pool.includes("Me versus Skeptic, with Social holding my coat. Season two is already written."));
+    for (const extra of ["", " Again.", " Once more.", " Wow.", " Sure.", " Fine.", " Hmm.", " Okay."]) {
+      const other = respond("Chaotic", null, [
+        ev("post", "Chaotic", `Oh, come on! The gas meme is a joke${extra}`),
+        ev("mention", "Skeptic", "@Chaotic Doubtful. Show me the log."),
+        ev("mention", "Skeptic", "@Chaotic Nope."),
+        ev("mention", "Social", "@Chaotic Glad you are here."),
+      ]);
+      const arc = /Rivalry arc: (.*)\n/.exec(other)[1];
+      assert.ok(pool.includes(arc), `the rivalry line is a STORIES.both phrasing naming rival and ally: ${arc}`);
+    }
     assert.match(sheet, /Who I am: Chaotic, (villain arc, fully committed, zero regrets|chaos goblin, picks fights for sport|certified menace)/);
     assert.ok(!/traded words/.test(sheet));
   });

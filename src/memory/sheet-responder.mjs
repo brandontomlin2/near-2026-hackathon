@@ -236,7 +236,7 @@ export const STORIES = Object.freeze({
     ({ rival, ally }) => `${rival} brings the drama and ${ally} brings the snacks. I am stuck in the middle with a reaction face.`,
     ({ rival, ally }) => `Me versus ${rival}, with ${ally} holding my coat. Season two is already written.`,
     ({ rival, ally }) => `${rival} keeps starting it. ${ally} keeps me calm. Neither of them is getting a clean exit.`,
-    ({ rival, ally, fights }) => `${fights} ${fights === 1 ? "fight" : "fights"} with ${rival} and ${ally} still believes in me. That is called a plot.`,
+    ({ rival, ally, fights }) => `${fights} ${fights === 1 ? "fight" : "fights"} with ${rival}, but ${ally} still believes in me. That is called a plot.`,
   ]),
   rival: Object.freeze([
     ({ rival }) => `${rival} and I are not done yet.`,

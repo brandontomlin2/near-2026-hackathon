@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { buildMemes, fitText, estimateWidth, capLabel, ordinal, parseVillain, rivalryLine, RIVALRY_LINES, MIN_VILLAIN_FIGHTS, SIZE } from "./memes.mjs";
+import { buildMemes, INNOCENT_LINES, fitText, estimateWidth, capLabel, ordinal, parseVillain, rivalryLine, RIVALRY_LINES, MIN_VILLAIN_FIGHTS, SIZE } from "./memes.mjs";
 import { cleanText, PROJECT_FOOTER } from "./share.mjs";
 import { runDemo } from "./pipeline.mjs";
 import { getStyle } from "../art/styles/index.mjs";
@@ -151,6 +151,26 @@ describe("memes: formats come from data", () => {
     assert.ok(distinct.size >= 2, `16 seeds gave ${distinct.size} line(s)`);
     const filled = RIVALRY_LINES.default.map((t) => t.replaceAll("{enemy}", "Bob").replaceAll("{n}", "2"));
     for (const l of distinct) assert.ok(filled.includes(l), `${l} is not a filled default line`);
+  });
+
+  it("villain: a persona who says they did not start it never gets a violence top line", () => {
+    const violent = /villain era|chose violence|do not poke|villain arc|causing problems|has a list/i;
+    let innocentCards = 0;
+    for (const id of ["aloof", "social", "chaotic", "skeptic"]) {
+      const names2 = { [id]: "Pat", b: "Bob" };
+      const f = { [id]: faces.a, b: faces.b };
+      for (let seed = 0; seed < 40; seed++) {
+        const sheets = { [id]: SHEET.replace("(2 fights)", "(5 fights)"), b: NOBODY };
+        const [c] = buildMemes({ events: [], sheets, names: names2, moods: MOODS, faces: f, seed }).filter((x) => x.format === "villain");
+        const template = [...RIVALRY_LINES[id], ...RIVALRY_LINES.default].find((t) => t.replaceAll("{enemy}", "Bob").replaceAll("{n}", "5") === c.rivalry);
+        if (INNOCENT_LINES.has(template)) {
+          innocentCards += 1;
+          assert.doesNotMatch(c.top, violent, `${id} seed ${seed}: "${c.top}" contradicts "${c.rivalry}"`);
+        }
+      }
+    }
+    assert.ok(innocentCards >= 10, `exercised ${innocentCards} innocent cards`);
+    for (const t of INNOCENT_LINES) assert.ok(Object.values(RIVALRY_LINES).some((b) => b.includes(t)), `${t} is in a bank`);
   });
 
   it("villain: roster agents get their own persona bank, others the default bank", () => {
