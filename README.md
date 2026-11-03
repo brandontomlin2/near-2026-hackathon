@@ -55,6 +55,19 @@ console.log(reply.mode, reply.content);
 
 The swarm can pass `responder(request, hash)` to `createInferenceClient` to shape mock replies per persona while keeping them deterministic.
 
+## Art
+
+Each token's SVG is drawn deterministically from its traits by one of these styles:
+
+- `default`: the original layered renderer.
+- `sticker`, `pixel` and `deepfried`: reaction-face styles. Each agent is drawn in four moods (`neutral`, `hype`, `shade` and `shook`), so a swarm post can carry the reaction image that matches its tone.
+
+See `docs/art-directions.md` for the directions and the pick.
+
+1. Run `npm run render -- --style sticker`. See 16 SVGs (4 agents x 4 moods) and `sheet.svg` written to `out/styles/sticker/`.
+2. Open `out/styles/sticker/sheet.svg` in a browser. See one row per agent and one column per mood.
+3. Run `npm run render -- --style all`. See every style rendered under `out/styles/`.
+
 ## Validate locally
 
 GitHub Actions is disabled on purpose. This repository has no `.github/workflows` files, so checks do not spend Actions minutes. See `docs/ci.md`. The judge screen is local.
