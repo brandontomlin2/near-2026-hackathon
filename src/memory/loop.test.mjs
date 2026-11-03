@@ -43,8 +43,26 @@ test("tokenLogs records a mention for the replied-to agent", () => {
     { id: 1, round: 1, turn: 1, agentId: "chaotic", kind: "reply", replyTo: 0, text: "yo" },
   ];
   const logs = tokenLogs(events, AGENTS);
-  assert.deepEqual(logs.aloof.map((e) => [e.kind, e.from]), [["post", "aloof"], ["mention", "chaotic"]]);
-  assert.deepEqual(logs.chaotic.map((e) => [e.kind, e.from]), [["reply", "chaotic"]]);
+  // `from` is the agent's display name, the one the summarizer prompt and the sheet stand-in use (same as npm run demo).
+  assert.deepEqual(logs.aloof.map((e) => [e.kind, e.from]), [["post", "Aloof"], ["mention", "Chaotic"]]);
+  assert.deepEqual(logs.chaotic.map((e) => [e.kind, e.from]), [["reply", "Chaotic"]]);
+});
+
+test("without a client the loop writes sheets with the counting stand-in, the same one npm run demo uses", async () => {
+  const { sheetResponder } = await import("./sheet-responder.mjs");
+  const swarm = await runSwarm({ rounds: 3, seed: 1 });
+  const { tokens } = await runMemoryLoop({ swarm });
+  const standIn = await runMemoryLoop({ swarm, client: createMockClient({ responder: sheetResponder }) });
+  assert.deepEqual(tokens, standIn.tokens);
+  for (const t of tokens) {
+    assert.match(t.sheet.sheet, new RegExp(`^Who I am: ${t.name}, `));
+    assert.match(t.sheet.sheet, /Public enemy #1: .* Ride-or-die: .* Scorecard: .* Receipts: \d+ posts?, \d+ repl(?:y|ies), mentioned \d+ times?\.$/);
+  }
+  // The stand-in reads the channel: a reply from another agent shows up as that agent's row on the scorecard.
+  const chaoticReply = swarm.events.find((e) => e.kind === "reply" && e.agentId === "chaotic");
+  const target = swarm.events.find((e) => e.id === chaoticReply.replyTo);
+  const targetSheet = tokens.find((t) => t.tokenId === target.agentId).sheet.sheet;
+  assert.match(targetSheet, /Scorecard: .*Chaotic: \d+ fights?, \d+ hugs?, \d+ shrugs?/);
 });
 
 test("sheets are written every N rounds plus the final round, one anchor each", async () => {

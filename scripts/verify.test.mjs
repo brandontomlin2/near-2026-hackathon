@@ -198,6 +198,92 @@ test("verify.sh builds every temp path from the resolved absolute tmp_root, neve
   assert.match(text, /^export TMPDIR="\$tmp_root"$/m);
 });
 
+// Loads only resolve_evidence_tx_file from verify.sh and calls it with the given
+// source root, from the given working directory, with EVIDENCE_TX_FILE set as given
+// (or unset). Prints the exported value (or "<unset>") on the last stdout line.
+function runResolveTxFile({ root, cwd, txFile }) {
+  const script = [
+    "set -euo pipefail",
+    'eval "$(sed -n "/^resolve_evidence_tx_file()/,/^}$/p" "$1")"',
+    'resolve_evidence_tx_file "$2"',
+    'printf "%s\\n" "${EVIDENCE_TX_FILE-<unset>}"',
+  ].join("\n");
+  const env = { ...process.env };
+  delete env.EVIDENCE_TX_FILE;
+  if (txFile !== undefined) env.EVIDENCE_TX_FILE = txFile;
+  const r = spawnSync("/bin/bash", ["-c", script, "bash", VERIFY, root], { cwd, encoding: "utf8", env });
+  return { ...r, resolved: r.stdout.trimEnd().split("\n").at(-1) };
+}
+
+// The live evidence stage runs inside the fresh clone, where the gitignored out/
+// does not exist, so the relative path live-proof prints must be made absolute
+// against the source checkout before the cd. Offline: no network, no near CLI.
+test("resolve_evidence_tx_file makes the documented relative path absolute against the source checkout", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "verify-txfile-"));
+  const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), "verify-txfile-cwd-"));
+  t.after(() => { for (const d of [root, elsewhere]) fs.rmSync(d, { recursive: true, force: true }); });
+  const txs = path.join(root, "out", "live-proof", "txs.json");
+  fs.mkdirSync(path.dirname(txs), { recursive: true });
+  fs.writeFileSync(txs, "[]");
+
+  // The path `npm run live-proof` prints, run from a directory that is not the checkout.
+  const relative = runResolveTxFile({ root, cwd: elsewhere, txFile: "out/live-proof/txs.json" });
+  assert.equal(relative.status, 0, relative.stderr);
+  assert.equal(relative.resolved, txs);
+  assert.equal(relative.stderr, "", "an existing file draws no WARN");
+  assert.match(relative.stdout, /^evidence tx file: /m);
+
+  // Unset: the live-proof file in the source checkout is the default.
+  const unset = runResolveTxFile({ root, cwd: elsewhere });
+  assert.equal(unset.status, 0, unset.stderr);
+  assert.equal(unset.resolved, txs);
+
+  // An absolute path is kept as is.
+  const absolute = runResolveTxFile({ root, cwd: elsewhere, txFile: txs });
+  assert.equal(absolute.status, 0, absolute.stderr);
+  assert.equal(absolute.resolved, txs);
+});
+
+test("resolve_evidence_tx_file prefers the invoking directory for a relative path, and leaves nothing set when there is no file", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "verify-txfile-"));
+  // bash's $PWD is the physical path (macOS: /tmp -> /private/tmp), so compare against it.
+  const cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "verify-txfile-cwd-")));
+  t.after(() => { for (const d of [root, cwd]) fs.rmSync(d, { recursive: true, force: true }); });
+  const inRoot = path.join(root, "txs.json");
+  const inCwd = path.join(cwd, "txs.json");
+  fs.writeFileSync(inRoot, "[]");
+  fs.writeFileSync(inCwd, "[]");
+
+  // Plain shell semantics first: a relative path that exists where the user stands wins.
+  const both = runResolveTxFile({ root, cwd, txFile: "txs.json" });
+  assert.equal(both.status, 0, both.stderr);
+  assert.equal(both.resolved, inCwd);
+
+  // A relative path that exists nowhere still resolves (against the checkout) and warns, never fails:
+  // the evidence stage reports the missing file itself.
+  const missing = runResolveTxFile({ root, cwd, txFile: "nope/txs.json" });
+  assert.equal(missing.status, 0, missing.stderr);
+  assert.equal(missing.resolved, path.join(root, "nope/txs.json"));
+  assert.match(missing.stderr, /^WARN: evidence tx file .*nope\/txs\.json does not exist/m);
+
+  // Unset and no default file: leave EVIDENCE_TX_FILE unset and say so.
+  const none = runResolveTxFile({ root, cwd });
+  assert.equal(none.status, 0, none.stderr);
+  assert.equal(none.resolved, "<unset>");
+  assert.match(none.stdout, /^evidence tx file: none \(EVIDENCE_TX_FILE unset, no out\/live-proof\/txs\.json in /m);
+});
+
+test("verify.sh resolves the evidence tx file only with --live and before entering the fresh clone", () => {
+  const text = fs.readFileSync(VERIFY, "utf8");
+  const call = text.indexOf('resolve_evidence_tx_file "$source_root"');
+  const enter = text.indexOf('cd "$work/repo"');
+  assert.ok(call > 0 && enter > 0 && call < enter, "the call must come before cd into the clone");
+  assert.match(text, /if \[\[ "\$LIVE" -eq 1 \]\]; then\n  resolve_evidence_tx_file "\$source_root"\nfi/);
+  const usage = text.slice(text.indexOf("usage() {"), text.indexOf("\nEOF\n"));
+  assert.match(usage, /EVIDENCE_TX_FILE/, "usage documents the variable");
+  assert.match(usage, /out\/live-proof\/txs\.json exists in the\n\s+source checkout, that file is used/);
+});
+
 // Every stage a complete mock run records, in order. The summary only prints
 // result: PASS when each of these has a row, so a run that lost its results file
 // (or skipped a stage by accident) can never look like a clean pass.

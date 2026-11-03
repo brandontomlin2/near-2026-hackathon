@@ -228,6 +228,18 @@ test("audit row 13 opens with the current lock design and keeps the removed bloc
   assert.match(lib, /fn release_lock/);
 });
 
+test("audit doc does not pin a contract unit-test total; the per-audit history it gives is not the total", async () => {
+  // Same rule as the README: `cargo test` prints "N passed" and N changes with
+  // every contract PR, so a pinned total goes stale (row 20 records one such drift).
+  const audit = await readFile(join(root, "docs/audit/personality-nft.md"), "utf8");
+  assert.doesNotMatch(audit, /\b\d+ (unit )?tests?\)/, "no '(..., N tests)' in the method line");
+  assert.doesNotMatch(audit, /\b\d+ pass\b/, "no 'N pass' total under Tests added");
+  assert.match(audit, /does not pin the total/);
+  const lib = await readFile(join(root, "contracts/personality-nft/src/lib.rs"), "utf8");
+  const total = (lib.match(/#\[test\]/g) ?? []).length;
+  assert.ok(total > 66, `the contract has ${total} tests, more than the 66 the doc once pinned`);
+});
+
 test("privacy.md: attest-check prints CONSISTENT, NOT VERIFIED (exit 0) and REJECT with --tamper (exit 1)", async () => {
   const privacy = await doc("privacy.md");
   const ok = await run(process.execPath, [join(root, "scripts/attest-check.mjs")], { env });

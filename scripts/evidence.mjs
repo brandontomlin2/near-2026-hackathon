@@ -19,7 +19,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createMockClient } from "../src/inference/client.mjs";
 import { runMemoryLoop } from "../src/memory/loop.mjs";
 import { runSwarm } from "../src/swarm/runner.mjs";
 import { validateTestnetAccountId } from "./testnet-deploy.mjs";
@@ -98,12 +97,12 @@ function evidenceAnchor(a) {
   };
 }
 
-/** Same code path as `npm run swarm` (5 rounds, seed 1), mock client, dry-run anchors. */
+/** Same code path as `npm run swarm` (5 rounds, seed 1): persona mocks, the sheet stand-in, dry-run anchors. */
 async function mockMemoryLoop(contract) {
   const rounds = 5;
   const seed = 1;
   const swarm = await runSwarm({ rounds, seed });
-  const loop = await runMemoryLoop({ swarm, client: createMockClient(), contractId: contract });
+  const loop = await runMemoryLoop({ swarm, contractId: contract });
   return {
     mock: true,
     label: MOCK_LABEL,

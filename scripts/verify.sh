@@ -18,6 +18,13 @@ when it is unset) and the transaction hashes from EVIDENCE_TX_FILE (an absolute
 path; the script cd's into a fresh clone):
   NEAR_NETWORK=testnet NEAR_CONTRACT_ACCOUNT_ID=<contract-account> EVIDENCE_TX_FILE="$PWD/out/live-proof/txs.json" bash scripts/verify.sh --live
 
+  The live evidence stage includes the transaction hashes in EVIDENCE_TX_FILE
+  (the file npm run live-proof writes). A relative path is resolved against the
+  directory you run this script from, then against the source checkout, before
+  the fresh clone is entered (out/ is gitignored, so it does not exist there).
+  When EVIDENCE_TX_FILE is unset and out/live-proof/txs.json exists in the
+  source checkout, that file is used.
+
 The script clones HEAD into a temp directory, installs dependencies when
 package.json exists, runs node --test on test files that exist, and scans
 with gitleaks when that binary is installed (when it is not, the secret scan
@@ -153,6 +160,37 @@ secret_scan() {
     record FAIL "secret scan" "gitleaks reported findings or failed"
     failed=1
   fi
+}
+
+# The live evidence stage runs `npm run evidence` inside the fresh clone, where out/
+# is gitignored, so the relative EVIDENCE_TX_FILE that live-proof prints
+# (out/live-proof/txs.json) would not resolve there and `transactions` would be [].
+# Called before the cd into the clone: turns a relative path into an absolute one
+# (invoking directory first, then the source checkout), defaults to the live-proof
+# file in the source checkout when unset, and exports the result for the runner.
+# Prints the chosen path; never reads the file (evidence.mjs does, and fails loudly).
+resolve_evidence_tx_file() {
+  local root="$1"
+  local file="${EVIDENCE_TX_FILE:-}"
+  if [[ -z "$file" ]]; then
+    if [[ -f "$root/out/live-proof/txs.json" ]]; then
+      file="$root/out/live-proof/txs.json"
+    else
+      echo "evidence tx file: none (EVIDENCE_TX_FILE unset, no out/live-proof/txs.json in ${root})"
+      return 0
+    fi
+  elif [[ "$file" != /* ]]; then
+    if [[ -f "$PWD/$file" ]]; then
+      file="$PWD/$file"
+    else
+      file="$root/$file"
+    fi
+  fi
+  if [[ ! -f "$file" ]]; then
+    echo "WARN: evidence tx file ${file} does not exist; the evidence stage will fail without transaction hashes." >&2
+  fi
+  export EVIDENCE_TX_FILE="$file"
+  echo "evidence tx file: ${EVIDENCE_TX_FILE}"
 }
 
 cleanup() {
@@ -484,6 +522,10 @@ script_dir=$(cd -- "$script_dir" && pwd)
 source_root=$(git -C "$script_dir" rev-parse --show-toplevel)
 source_head=$(git -C "$source_root" rev-parse HEAD)
 short_head=$(git -C "$source_root" rev-parse --short=12 HEAD)
+
+if [[ "$LIVE" -eq 1 ]]; then
+  resolve_evidence_tx_file "$source_root"
+fi
 
 echo
 echo "==> fresh clone"
