@@ -67,7 +67,14 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     log(USAGE);
     return 0;
   }
-  if (parseMode(env.MOCK_INFERENCE) === "live") {
+  let mode;
+  try {
+    mode = parseMode(env.MOCK_INFERENCE);
+  } catch (error) {
+    console.error(`${name}: ${error.message} (see --help)`);
+    return 2;
+  }
+  if (mode === "live") {
     console.error(`${name}: runs in mock mode only; unset MOCK_INFERENCE or set it to 1`);
     return 2;
   }
