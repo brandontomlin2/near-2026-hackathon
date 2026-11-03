@@ -5,8 +5,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { MAX_TEXT_LENGTH } from "../channel/channel.mjs";
-import { PROJECT_FOOTER, renderShareCard, wrapText, cleanText, clipText, nest } from "./share.mjs";
+import { MAX_CAPTION, PROJECT_FOOTER, renderShareCard, wrapText, cleanText, clipText, nest } from "./share.mjs";
 
 const WRAP = 22;
 const LINE_H = 40;
@@ -279,16 +278,16 @@ describe("share: bounded output for huge input", () => {
       const { height, lines } = assertValidCard(svg, label);
       assert.ok(Buffer.byteLength(svg) < BYTE_BOUND, `${label}: ${Buffer.byteLength(svg)} bytes`);
       assert.ok(height < HEIGHT_BOUND, `${label}: ${height}px tall`);
-      assert.ok(lines.length > 0 && lines.length <= MAX_TEXT_LENGTH, `${label}: ${lines.length} lines`);
+      assert.ok(lines.length > 0 && lines.length <= MAX_CAPTION, `${label}: ${lines.length} lines`);
       assert.ok(lines.at(-1).text.endsWith("…"), `${label}: truncation is visible`);
-      assert.ok([...unescape(attrOf(svg, "aria-label"))].length <= MAX_TEXT_LENGTH + "Ann says: …".length, `${label}: aria-label is capped`);
+      assert.ok([...unescape(attrOf(svg, "aria-label"))].length <= MAX_CAPTION + "Ann says: …".length, `${label}: aria-label is capped`);
       assert.ok(ms < 2000, `${label}: took ${ms}ms`);
     });
   }
 
   it("a caption at the channel limit is shown in full; one code point more is cut with an ellipsis", () => {
-    const atLimit = Array.from({ length: MAX_TEXT_LENGTH }, (_, i) => (i % 9 === 8 ? " " : "k")).join("");
-    assert.equal(atLimit.length, MAX_TEXT_LENGTH);
+    const atLimit = Array.from({ length: MAX_CAPTION }, (_, i) => (i % 9 === 8 ? " " : "k")).join("");
+    assert.equal(atLimit.length, MAX_CAPTION);
     assert.equal(cleanText(atLimit), atLimit);
     const full = card(atLimit);
     const { lines } = assertValidCard(full, "at limit");
@@ -296,23 +295,23 @@ describe("share: bounded output for huge input", () => {
     assert.ok(!full.includes("…"));
     assert.equal(unescape(attrOf(full, "aria-label")), `Ann says: ${atLimit}`);
 
-    const emoji = "\u{1F600}".repeat(MAX_TEXT_LENGTH);
+    const emoji = "\u{1F600}".repeat(MAX_CAPTION);
     assert.ok(!card(emoji).includes("…"), "the cap counts code points, so a 500-emoji caption is not cut");
     const over = card(`${emoji}\u{1F600}`);
     const shown = tspansOf(over).map((l) => l.text).join("");
-    assert.equal(shown, `${"\u{1F600}".repeat(MAX_TEXT_LENGTH)}…`);
-    assert.equal(unescape(attrOf(over, "aria-label")), `Ann says: ${"\u{1F600}".repeat(MAX_TEXT_LENGTH)}…`);
+    assert.equal(shown, `${"\u{1F600}".repeat(MAX_CAPTION)}…`);
+    assert.equal(unescape(attrOf(over, "aria-label")), `Ann says: ${"\u{1F600}".repeat(MAX_CAPTION)}…`);
     assert.doesNotMatch(over, XML_INVALID, "the cut never lands inside a surrogate pair");
   });
 
   it("clipText counts code points, keeps short text as is, and glues the ellipsis to the last word", () => {
     assert.equal(clipText("short"), "short");
-    assert.equal(clipText("a".repeat(MAX_TEXT_LENGTH)), "a".repeat(MAX_TEXT_LENGTH));
-    assert.equal(clipText("a".repeat(MAX_TEXT_LENGTH + 1)), `${"a".repeat(MAX_TEXT_LENGTH)}…`);
+    assert.equal(clipText("a".repeat(MAX_CAPTION)), "a".repeat(MAX_CAPTION));
+    assert.equal(clipText("a".repeat(MAX_CAPTION + 1)), `${"a".repeat(MAX_CAPTION)}…`);
     assert.equal(clipText("\u{1F600}".repeat(3), 2), "\u{1F600}\u{1F600}…");
     assert.equal(clipText("abc def", 4), "abc…", "a cut that lands after a space does not leave the ellipsis dangling");
-    const svg = card(`${"a".repeat(MAX_TEXT_LENGTH - 1)} b`);
-    assert.equal(tspansOf(svg).at(-1).text, `${"a".repeat(MAX_TEXT_LENGTH - 1 - 22 * 22)}…`);
+    const svg = card(`${"a".repeat(MAX_CAPTION - 1)} b`);
+    assert.equal(tspansOf(svg).at(-1).text, `${"a".repeat(MAX_CAPTION - 1 - 22 * 22)}…`);
   });
 
   it("the cap applies after cleaning, so control characters and extra spaces do not eat the budget", () => {
