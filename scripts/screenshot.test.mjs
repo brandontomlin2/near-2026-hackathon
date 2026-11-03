@@ -9,6 +9,8 @@ import { DEFAULT_OUT, DOCS_OUT, findBrowser, parseArgs, run } from "./screenshot
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SCRIPT = fileURLToPath(new URL("./screenshot.mjs", import.meta.url));
+// A source archive (git archive, zip) has no .git; git-state checks cannot run there.
+const NO_GIT = existsSync(join(ROOT, ".git")) ? false : "needs a git work tree (no .git here: source archive); run from a git clone";
 
 test("findBrowser returns null when no candidate exists", () => {
   assert.equal(findBrowser(["/nope/a", "/nope/b"], () => false), null);
@@ -24,9 +26,9 @@ test("run exits 2 with a clear message and writes nothing when no browser is fou
 test("parseArgs: default is the gitignored out/page.png; --update-docs is the tracked docs/img/page.png", () => {
   assert.equal(parseArgs([]).out, DEFAULT_OUT);
   assert.ok(relative(ROOT, DEFAULT_OUT).startsWith("out" + sep), DEFAULT_OUT);
-  assert.equal(execFileSync("git", ["ls-files", "--", DEFAULT_OUT], { cwd: ROOT, encoding: "utf8" }).trim(), "", "default output must not be tracked");
+  if (!NO_GIT) assert.equal(execFileSync("git", ["ls-files", "--", DEFAULT_OUT], { cwd: ROOT, encoding: "utf8" }).trim(), "", "default output must not be tracked");
   assert.equal(parseArgs(["--update-docs"]).out, DOCS_OUT);
-  assert.equal(execFileSync("git", ["ls-files", "--", DOCS_OUT], { cwd: ROOT, encoding: "utf8" }).trim(), "docs/img/page.png");
+  if (!NO_GIT) assert.equal(execFileSync("git", ["ls-files", "--", DOCS_OUT], { cwd: ROOT, encoding: "utf8" }).trim(), "docs/img/page.png");
   assert.equal(parseArgs(["--out", "shots/x.png"]).out, resolve("shots/x.png"));
 });
 
@@ -74,7 +76,7 @@ test("run writes the image, creates the parent dir, and logs the result", { skip
   assert.ok(r.logs.some((l) => /^wrote .* \(\d+ bytes\) using /.test(l)), r.logs.join("\n"));
 });
 
-test("run with no --out writes out/page.png and leaves git-tracked files unchanged", { skip: SKIP_WIN }, async (t) => {
+test("run with no --out writes out/page.png and leaves git-tracked files unchanged", { skip: SKIP_WIN || NO_GIT }, async (t) => {
   const snap = () => execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: ROOT, encoding: "utf8" });
   const before = snap();
   const tracked = readFileSync(DOCS_OUT);
