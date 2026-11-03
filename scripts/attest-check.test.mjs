@@ -38,9 +38,17 @@ test("attest:check --tamper is offline, prints REJECT and exits 1", async () => 
   assert.deepEqual(result.violations, [], `attest:check --tamper touched the network: ${result.violations.join("; ")}`);
   assert.equal(result.code, 1);
   assert.equal(result.stdout.split("\n")[0], NOTICE);
-  assert.match(result.stdout, /^fail {9}node\[0\]\.signing-key: /m);
-  assert.match(result.stdout, /^REJECT: node\[0\]\.signing-key, signature-signer\.$/m);
+  assert.match(result.stdout, /^fail {9}node\[0\]\.quote-binding: /m);
+  assert.match(result.stdout, /^REJECT: node\[0\]\.quote-binding, signature-signer\.$/m);
   assert.doesNotMatch(result.stdout, /^CONSISTENT/m);
+});
+
+test("attest:check --unreadable-quote exits 2, not 0: consistent but the binding is unread", async () => {
+  const result = await runOffline([script, "--unreadable-quote"]);
+  assert.equal(result.code, 2);
+  assert.match(result.stdout, /^unverifiable node\[0\]\.quote-binding: /m);
+  assert.match(result.stdout, /^CONSISTENT, NOT VERIFIED, BINDING UNREAD: /m);
+  assert.doesNotMatch(result.stdout, /^REJECT:/m);
 });
 
 test("docs/privacy.md and the README say attest:check checks a fixture, not a live TEE", async () => {
