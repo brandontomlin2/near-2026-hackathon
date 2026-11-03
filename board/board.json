@@ -123,12 +123,12 @@
   {
     "id": "viewer",
     "title": "viewer",
-    "status": "todo",
-    "owner": "",
+    "status": "review",
+    "owner": "claude",
     "kind": "task",
     "lane": "any",
-    "notes": "",
-    "updated_at": "2026-11-03T00:00:00.000Z",
-    "updated_by": "seed"
+    "notes": "src/viewer (run builder, HTML renderer, hash-chain check) + scripts/viewer.mjs; 15 tests; node --test all green",
+    "updated_at": "2026-11-03T02:35:48.917Z",
+    "updated_by": "claude"
   }
 ]
