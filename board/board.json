@@ -98,6 +98,17 @@
     "updated_by": "claude"
   },
   {
+    "id": "owner-ask-cli",
+    "title": "owner action: npm run ask asks an agent a question from its sheet",
+    "status": "review",
+    "owner": "claude-lead",
+    "kind": "task",
+    "lane": "claude",
+    "notes": "judge screen: the owner can do nothing; add npm run ask -- <agentId> <question> (mock, no keys)\nscripts/ask.mjs + src/owner/ask.mjs: npm run ask -- <agentId> <question>; 54 new tests; verify PASS\nreview fixes: README step 5 (npm run ask) + readme-facts lock, demo-script command status, answer template picked from scorecard counts, main() wrapped, MemoryError label, dead assertion dropped",
+    "updated_at": "2026-11-03T18:51:55.029Z",
+    "updated_by": "claude-lead"
+  },
+  {
     "id": "re-read-live-hackathon-md-and-walk-docs-submission-checklist-md-before-nov-14",
     "title": "re-read live HACKATHON.md and walk docs/submission-checklist.md before Nov 14",
     "status": "todo",
