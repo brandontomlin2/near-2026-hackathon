@@ -52,13 +52,13 @@ test("a NEAR_NETWORK other than testnet is refused with its own message and row"
   assert.match(r.stdout, /^result: FAIL$/m);
 });
 
-test("--live without NEAR_NETWORK=testnet and NEAR_ACCOUNT_ID is refused with a 'live env' row", (t) => {
-  for (const env of [{}, { NEAR_NETWORK: "testnet" }, { NEAR_ACCOUNT_ID: "nft.testnet" }]) {
+test("--live without NEAR_NETWORK=testnet and a contract account (NEAR_CONTRACT_ACCOUNT_ID or NEAR_ACCOUNT_ID) is refused with a 'live env' row", (t) => {
+  for (const env of [{}, { NEAR_NETWORK: "testnet" }, { NEAR_ACCOUNT_ID: "nft.testnet" }, { NEAR_CONTRACT_ACCOUNT_ID: "nft.testnet" }]) {
     const r = runVerify(t, ["--live"], env);
     const label = JSON.stringify(env);
     assert.equal(r.status, 1, label);
-    assert.match(r.stderr, /^error: --live requires NEAR_NETWORK=testnet and NEAR_ACCOUNT_ID\.$/m, label);
-    assert.match(r.stdout, /^FAIL\s+live env\s+--live requires NEAR_NETWORK=testnet and NEAR_ACCOUNT_ID$/m, label);
+    assert.match(r.stderr, /^error: --live requires NEAR_NETWORK=testnet and NEAR_CONTRACT_ACCOUNT_ID \(or NEAR_ACCOUNT_ID\)\.$/m, label);
+    assert.match(r.stdout, /^FAIL\s+live env\s+--live requires NEAR_NETWORK=testnet and NEAR_CONTRACT_ACCOUNT_ID \(or NEAR_ACCOUNT_ID\)$/m, label);
     assert.doesNotMatch(r.stdout, /^mode: live/m, label);
   }
 });

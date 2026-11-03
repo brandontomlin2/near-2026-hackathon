@@ -29,8 +29,8 @@ test("--help and -h print the usage on stdout, exit 0, and do not run the checkl
     const r = cli(t, [flag]);
     assert.equal(r.status, 0, flag);
     assert.equal(r.stderr, "");
-    assert.match(r.stdout, /^Usage: node scripts\/live-check\.mjs\n/);
-    assert.match(r.stdout, /values are never printed/);
+    assert.match(r.stdout, /^Usage: node scripts\/live-check\.mjs \[--offline\]\n/);
+    assert.match(r.stdout, /values are never\s+printed/);
     assert.doesNotMatch(r.stdout, /\[(ok|todo|skip)\]/);
   }
 });
@@ -39,7 +39,7 @@ test("an unknown argument exits 2 with exactly one stderr line, empty stdout and
   const r = cli(t, ["--bogus"]);
   assert.equal(r.status, 2);
   assert.equal(r.stdout, "");
-  assert.equal(r.stderr, 'live-check: unknown argument "--bogus"; this script takes no options (see --help)\n');
+  assert.equal(r.stderr, 'live-check: unknown argument "--bogus"; the only option is --offline (see --help)\n');
   const positional = cli(t, ["stray"]);
   assert.equal(positional.status, 2);
   assert.match(positional.stderr, /unknown argument "stray"/);

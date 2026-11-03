@@ -56,7 +56,8 @@ test("anchor_sheet step: 30 Tgas and 0.01 NEAR agree with the anchor module, sig
   assert.match(step.sheetHash, /^[0-9a-f]{64}$/);
   assert.equal(step.sheetHash, hashSheet("Aloof. Observer. Watches the channel, speaks rarely.\nAllies: none yet.\n"));
   const i = (s) => step.argv.indexOf(s);
-  assert.equal(step.argv[0], "--quiet");
+  assert.equal(step.argv[0], "contract");
+  assert.ok(!step.argv.includes("--quiet"), "no --quiet: near-cli-rs prints the tx id only without it");
   assert.equal(step.argv[i("sign-as") + 1], OWNER);
   assert.equal(step.argv[i("network-config") + 1], "testnet");
   assert.equal(step.argv[i("prepaid-gas") + 1], "30 Tgas");

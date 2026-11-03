@@ -128,7 +128,9 @@ test("--help documents every environment variable, the default output path and t
   const r = cli(["--help"], { cwd: dir });
   assert.equal(r.status, 0);
   assert.equal(r.stderr, "");
-  for (const name of ["EVIDENCE_NETWORK", "NEAR_ACCOUNT_ID", "NEAR_RPC_URL", "EVIDENCE_TX_FILE", "EVIDENCE_OUT"]) assert.match(r.stdout, new RegExp(`^  ${name} `, "m"));
+  for (const name of ["EVIDENCE_NETWORK", "NEAR_RPC_URL", "EVIDENCE_TX_FILE", "EVIDENCE_OUT"]) assert.match(r.stdout, new RegExp(`^  ${name} `, "m"));
+  assert.match(r.stdout, /^  NEAR_CONTRACT_ACCOUNT_ID$/m);
+  assert.match(r.stdout, /Falls back to NEAR_ACCOUNT_ID when unset\./);
   assert.ok(r.stdout.includes(DEFAULT_RPC_URL));
   assert.match(r.stdout, /Exits 0 on success, 1 when a view call failed\./);
   assert.deepEqual(fs.readdirSync(dir), [], "help writes nothing");
@@ -138,7 +140,7 @@ test("a user error exits 2 with '(see --help)'; a runtime failure exits 1 withou
   const dir = tmp(t);
   const user = cli([], { cwd: dir, env: { EVIDENCE_NETWORK: "testnet" } });
   assert.equal(user.status, 2);
-  assert.equal(user.stderr, "evidence: NEAR_ACCOUNT_ID is required for testnet evidence (see --help)\n");
+  assert.equal(user.stderr, "evidence: NEAR_CONTRACT_ACCOUNT_ID (or NEAR_ACCOUNT_ID) is required for testnet evidence (see --help)\n");
   assert.equal(user.stdout, "");
   assert.ok(!fs.existsSync(path.join(dir, "out")));
 
