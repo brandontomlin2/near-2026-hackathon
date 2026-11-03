@@ -13,7 +13,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-import { runSwarm } from "../src/swarm/runner.mjs";
+import { MAX_ROUNDS, runSwarm } from "../src/swarm/runner.mjs";
 import { renderViewer } from "../src/viewer/render.mjs";
 
 const DEFAULT_OUT = "out/viewer/index.html";
@@ -22,7 +22,7 @@ const DEFAULT_ROUNDS = 5;
 const USAGE = `usage: node scripts/viewer.mjs [--input RUN.json] [--rounds N] [--out FILE]
 
   --input FILE   render an existing events.json instead of running the swarm
-  --rounds N     swarm rounds (default ${DEFAULT_ROUNDS}, or SWARM_ROUNDS)
+  --rounds N     swarm rounds, 1 to ${MAX_ROUNDS} (default ${DEFAULT_ROUNDS}, or SWARM_ROUNDS)
   --out FILE     output HTML (default ${DEFAULT_OUT})
 `;
 
@@ -31,7 +31,8 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     const value = () => {
-      if (argv[i + 1] === undefined) throw new Error(`${arg} needs a value`);
+      const next = argv[i + 1];
+      if (next === undefined || next.startsWith("--")) throw new Error(`${arg} needs a value, got ${JSON.stringify(next)}`);
       i += 1;
       return argv[i];
     };
@@ -47,6 +48,7 @@ function parseArgs(argv) {
 function roundsFrom(options) {
   const raw = options.rounds ?? process.env.SWARM_ROUNDS ?? String(DEFAULT_ROUNDS);
   if (!/^[1-9][0-9]*$/.test(raw)) throw new Error(`rounds must be a positive integer, got ${JSON.stringify(raw)}`);
+  if (Number(raw) > MAX_ROUNDS) throw new Error(`rounds must be at most ${MAX_ROUNDS}, got ${raw}`);
   return Number(raw);
 }
 
@@ -55,7 +57,7 @@ async function main() {
   try {
     options = parseArgs(process.argv.slice(2));
   } catch (err) {
-    process.stderr.write(`error: ${err.message}\n${USAGE}`);
+    process.stderr.write(`error: ${err.message} (see --help)\n`);
     return 2;
   }
   if (options.help) {
@@ -63,17 +65,28 @@ async function main() {
     return 0;
   }
 
-  let run;
-  if (options.input !== undefined) {
-    run = JSON.parse(await readFile(options.input, "utf8"));
-  } else {
-    run = await runSwarm({ rounds: roundsFrom(options) });
+  // Everything below fails with one line; the page is rendered before any file is touched.
+  let html;
+  try {
+    let run;
+    if (options.input !== undefined) {
+      run = JSON.parse(await readFile(options.input, "utf8"));
+    } else {
+      run = await runSwarm({ rounds: roundsFrom(options) });
+    }
+    html = renderViewer(run);
+  } catch (err) {
+    process.stderr.write(`error: ${err.message}\n`);
+    return 1;
   }
-
-  const html = renderViewer(run);
   const out = resolve(options.out);
-  await mkdir(dirname(out), { recursive: true });
-  await writeFile(out, html, "utf8");
+  try {
+    await mkdir(dirname(out), { recursive: true });
+    await writeFile(out, html, "utf8");
+  } catch (err) {
+    process.stderr.write(`error: cannot write ${options.out}: ${err.message}\n`);
+    return 1;
+  }
   process.stdout.write(`wrote ${out}\n`);
   return 0;
 }

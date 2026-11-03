@@ -5,6 +5,7 @@
 import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseMode } from "../src/inference/client.mjs";
+import { MAX_ROUNDS } from "../src/swarm/runner.mjs";
 import { DEMO_DEFAULTS, runDemo } from "../src/demo/pipeline.mjs";
 
 const USAGE = `Usage: node scripts/demo.mjs [--rounds N] [--seed N] [--every N] [--out DIR]
@@ -28,6 +29,7 @@ function parseArgs(argv) {
         const kind = flag === "--seed" ? "a non-negative integer" : "a positive integer";
         throw new Error(`${flag} must be ${kind}, got ${JSON.stringify(value)}`);
       }
+      if (flag !== "--seed" && Number(value) > MAX_ROUNDS) throw new Error(`${flag} must be at most ${MAX_ROUNDS}, got ${value}`);
       opts[flag.slice(2)] = Number(value);
       i++;
     } else if (flag === "--out") {

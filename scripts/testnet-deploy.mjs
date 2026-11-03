@@ -343,9 +343,7 @@ export async function run(argv, env = process.env, deps = {}) {
     return 0;
   } catch (err) {
     if (err instanceof UsageError) {
-      errOut(`error: ${err.message}`);
-      errOut("");
-      errOut(USAGE);
+      errOut(`error: ${err.message} (see --help)`);
       return 2;
     }
     throw err;

@@ -118,7 +118,7 @@ function parseArgs(argv) {
     if (a === "--send") opts.send = true;
     else if (a === "--i-approve") opts.approve = true;
     else if (a === "--out") {
-      if (argv[i + 1] === undefined) throw new UsageError("--out needs a value");
+      if (argv[i + 1] === undefined || argv[i + 1].startsWith("-")) throw new UsageError("--out needs a file path");
       opts.out = argv[(i += 1)];
     } else if (a === "-h" || a === "--help") opts.help = true;
     else throw new UsageError(`unknown argument: ${a}`);
@@ -184,7 +184,9 @@ export async function run(argv, env = process.env, deps = {}) {
       errOut(`error: ${err.message}`);
       return 2;
     }
-    throw err;
+    // Filesystem failures on --out and the like: one line, no stack.
+    errOut(`error: ${String(err?.message ?? err).split("\n")[0]}`);
+    return 1;
   }
 }
 

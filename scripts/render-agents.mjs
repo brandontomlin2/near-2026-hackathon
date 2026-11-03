@@ -49,13 +49,22 @@ export function renderStyle(name, outRoot = "out") {
   return paths;
 }
 
+const USAGE = `Usage: node scripts/render-agents.mjs [--style NAME|all] [--out DIR]
+  --style NAME  render one style (${STYLE_NAMES.join(", ")}) or "all" under DIR/styles/
+  --out DIR     output root (default out)
+Offline; nothing is signed or sent.`;
+
 /** @param {string[]} argv @returns {string[]} written paths */
 export function main(argv) {
   const { values } = parseArgs({
     args: argv,
-    options: { style: { type: "string" }, out: { type: "string", default: "out" } },
+    options: { style: { type: "string" }, out: { type: "string", default: "out" }, help: { type: "boolean", short: "h" } },
     strict: true,
   });
+  if (values.help) {
+    console.log(USAGE);
+    return [];
+  }
   if (values.style === undefined) return renderAll(values.out);
   const names = values.style === "all" ? STYLE_NAMES : [getStyle(values.style).name];
   return names.flatMap((n) => renderStyle(n, values.out));
@@ -65,7 +74,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   try {
     for (const p of main(process.argv.slice(2))) console.log(p);
   } catch (err) {
-    console.error(err instanceof Error ? err.message : err);
+    // First line only: node's parseArgs messages carry a long hint after it.
+    console.error(`render: ${String(err instanceof Error ? err.message : err).split("\n")[0]}`);
     process.exit(2);
   }
 }
