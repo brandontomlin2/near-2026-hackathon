@@ -81,6 +81,26 @@ test("README does not pin a contract unit-test count; it claims only 'ok' and '0
   assert.match(contractStep[0], /0 failed/);
 });
 
+test("README names the product, pins the exact Rust toolchain and describes live:check's real output", async () => {
+  assert.match(readme, /^# Personality NFT\n\nNEAR 2026 Hackathon entry\./, "H1 must be the product name, hackathon line under it");
+  const toolchain = await readFile(join(root, "contracts/personality-nft/rust-toolchain.toml"), "utf8");
+  const channel = toolchain.match(/^channel = "([^"]+)"/m)[1];
+  assert.ok(readmeText.includes(`Needs Rust ${channel} (pinned in the crate's \`rust-toolchain.toml\``), `README must say Rust ${channel}`);
+  assert.doesNotMatch(readmeText, /Rust [\d.]+ or newer/);
+  const check = await run(process.execPath, [join(root, "scripts/live-check.mjs")], {
+    env: { ...env, NEAR_ACCOUNT_ID: "", NEAR_CONTRACT_ACCOUNT_ID: "", NEAR_NETWORK: "" },
+  }).then(
+    () => assert.fail("live:check must exit 1 when nothing is configured"),
+    (e) => e,
+  );
+  assert.equal(check.code, 1);
+  const tags = new Set(check.stdout.match(/^\[(todo|ok|skip)\]/gm));
+  assert.deepEqual([...tags].sort(), ["[ok]", "[skip]", "[todo]"]);
+  const ready = check.stdout.match(/^ready: no\..*$/m)[0];
+  assert.ok(readmeText.includes(`\`${ready}\``), `README must quote the final line verbatim: ${ready}`);
+  assert.ok(readmeText.includes("`[ok]`/`[skip]` lines for the rest"));
+});
+
 test("README 'Live on testnet' is one short paragraph after the working sections, with the owner-only command", () => {
   const headings = [...readme.matchAll(/^## (.+)$/gm)].map((m) => m[1]);
   const liveIdx = headings.indexOf("Live on testnet");
