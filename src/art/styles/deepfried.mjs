@@ -85,7 +85,7 @@ const spiralEye = (cx, cy, rx, ry) => {
   return ell(cx, cy, rx, ry, "#fff") + path(`M${pts.join("L")}`, "none", 5);
 };
 
-/** Eyeball with optional heavy lid (frac = share of the eye the lid covers). */
+/** Eyeball with optional heavy lid (lid = share of the eye the lid covers). */
 const eye = (cx, cy, rx, ry, { px = cx, py = cy, pr = 10, lid = 0, skin = "#fff" } = {}) => {
   let s = ell(cx, cy, rx, ry, "#fff") + pupil(px, py, pr);
   if (lid > 0) {
@@ -140,7 +140,7 @@ const modMouth = (voice, inner, cy = 184) => {
 // Each returns { behind, front, over }: behind = before the head (in the tilt
 // group), front = on the head, over = outside the tilt group (flying bits).
 
-const monocle = (cx, cy, r, { glare = false } = {}) =>
+const monocle = (cx, cy, r) =>
   circ(cx, cy, r, "#bff6ff", 0, ' fill-opacity=".35"') +
   cpath(`M${f(cx - r)} ${f(cy)}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`, INK, 14) +
   cpath(`M${f(cx - r)} ${f(cy)}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`, "#ffc400", 7) +
@@ -227,7 +227,7 @@ function trickster(c) {
     front += eye(L[0], L[1], 32, 36, { px: 96, py: 116, pr: 7 });
     front += eye(R[0], R[1], 11, 11, { px: 172, py: 132, pr: 5 });
     front += brows("M52 76Q86 54 124 78", "M150 112L194 120");
-    front += (voice === "loud" ? "" : "") + voiceMouth(voice);
+    front += voiceMouth(voice);
   } else if (mood === "hype") {
     front += eye(L[0], L[1], 32, 36, { pr: 7 });
     front += eye(R[0], R[1], 11, 11, { pr: 5 });
@@ -367,7 +367,6 @@ function auditor(c) {
     front += cpath("M150 98L162 112L152 122L166 136L158 148", INK, 6) + cpath("M150 98L162 112L152 122L166 136L158 148", "#fff", 2);
     front += path("M62 76Q90 56 118 74", "none", 10) + path("M142 70Q170 50 196 74", "none", 10);
     front += modMouth(voice, path("M108 176Q128 168 150 176Q152 208 128 210Q106 208 108 176Z", "#5a0a14", 6) + ell(128, 200, 10, 6, "#ff6a8a", 0), 190);
-    behind += "";
     front += raisedHand([[226, 190, 224, 134, 22], [224, 134, 242, 156, 18]], { nail: false });
     front += drop(46, 100, 1.2);
   }
@@ -377,7 +376,7 @@ function auditor(c) {
 const CHARACTERS = { observer, trickster, connector, auditor };
 
 // ---------- glyph layer (behind the head) ----------
-function glyphLayer(role, mood, pal, id) {
+function glyphLayer(role, mood, pal) {
   if (role === "observer") {
     const bubble =
       ell(56, 50, 42, 26, "#fff", 5) + circ(84, 84, 7, "#fff", 4) + circ(94, 98, 4, "#fff", 3);
@@ -486,7 +485,7 @@ function defsBlock(id, pal, mood, seed) {
   const m = FRY[mood];
   const s1 = (seed % 97) + 1;
   const s2 = ((seed >>> 8) % 97) + 1;
-  const table = (fn) => ["R", "G", "B"].map((c) => `<feFunc${c} type="discrete" tableValues="${m.tbl}"/>`).join("");
+  const table = () => ["R", "G", "B"].map((c) => `<feFunc${c} type="discrete" tableValues="${m.tbl}"/>`).join("");
   const filt = (name, { disp, bloom, scale }) =>
     `<filter id="${id}-${name}" x="0" y="0" width="256" height="256" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">` +
     `<feTurbulence type="fractalNoise" baseFrequency="${scale}" numOctaves="2" seed="${s1}" result="n"/>` +
@@ -538,7 +537,7 @@ function render(traits, { mood: moodIn } = {}) {
     defsBlock(id, pal, mood, seed),
     `<g id="background"><g filter="url(#${id}-bgfry)">${backgroundLayer(t, pal, mood, seed, id)}</g></g>`,
     `<g id="rings"><g filter="url(#${id}-fry)">${ringsLayer(t, pal, seed)}</g></g>`,
-    `<g id="glyph"><g filter="url(#${id}-fry)">${glyphLayer(t.role, mood, pal, id)}</g></g>`,
+    `<g id="glyph"><g filter="url(#${id}-fry)">${glyphLayer(t.role, mood, pal)}</g></g>`,
     `<g id="face"><g filter="url(#${id}-fry)">${body}</g></g>`,
     `</svg>`,
   ].join("\n") + "\n";

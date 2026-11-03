@@ -9,7 +9,7 @@
 // An attacker who can forge JSON can pass every check here. Read
 // docs/privacy.md before claiming anything to a judge.
 
-import { createHash } from "node:crypto";
+import { sha256Hex } from "../anchor/hash.mjs";
 
 export const VERDICT = Object.freeze({
   CONSISTENT: "consistent", // structure and bindings agree; nothing cryptographic checked
@@ -33,10 +33,6 @@ const TDX_REPORT_DATA_LENGTH = 64;
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
-
-export function sha256Hex(input) {
-  return createHash("sha256").update(input).digest("hex");
-}
 
 /**
  * The attestation nonce we send, derived from the exact request body.

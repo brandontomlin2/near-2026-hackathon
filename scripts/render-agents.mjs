@@ -36,24 +36,19 @@ export function renderAll(outDir = "out") {
   return writeAll(AGENTS.map((a) => [join(outDir, `${a.id}.svg`), renderSvg(a.traits)]));
 }
 
-/** @param {string} name @param {string} [outRoot] @returns {Array<[string, string]>} path and svg pairs, not yet written */
-function renderStyleFiles(name, outRoot = "out") {
-  const style = getStyle(name);
-  const dir = join(outRoot, "styles", style.name);
-  const files = AGENTS.flatMap((a) => style.moods.map((mood) => [join(dir, `${a.id}-${mood}.svg`), style.render(a.traits, { mood })]));
-  files.push([join(dir, "sheet.svg"), renderSheet(style, { moods: style.moods })]);
-  return files;
-}
-
 /**
  * Every agent in every mood of one style, plus a contact sheet
  * (rows = agents, columns = moods).
  * @param {string} name
  * @param {string} [outRoot]
- * @returns {string[]} written paths
+ * @returns {Array<[string, string]>} path and svg pairs, not yet written
  */
-export function renderStyle(name, outRoot = "out") {
-  return writeAll(renderStyleFiles(name, outRoot));
+function renderStyleFiles(name, outRoot = "out") {
+  const style = getStyle(name);
+  const dir = join(outRoot, "styles", style.name);
+  const files = AGENTS.flatMap((a) => style.moods.map((mood) => [join(dir, `${a.id}-${mood}.svg`), style.render(a.traits, { mood })]));
+  files.push([join(dir, "sheet.svg"), renderSheet(style)]);
+  return files;
 }
 
 const USAGE = `Usage: node scripts/render-agents.mjs [--style NAME|all] [--out DIR]

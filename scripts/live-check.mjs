@@ -20,8 +20,8 @@ export function wasmMessage(wasm) {
   return `wasm not found at ${wasm}. ${BUILD_HINT}`;
 }
 
-function accountState(name, value, { required }) {
-  if (!value) return required ? { ok: false, note: `${name} is not set` } : { ok: true, note: `${name} not set (optional)`, skip: true };
+function accountState(name, value) {
+  if (!value) return { ok: false, note: `${name} is not set` };
   try {
     validateAccountId(value, name);
     return { ok: true, note: `${name} is set` };
@@ -65,10 +65,10 @@ export async function check(env = process.env, deps = {}) {
     add(false, wasmMessage(wasm));
   }
 
-  const owner = accountState("NEAR_ACCOUNT_ID", env.NEAR_ACCOUNT_ID, { required: true });
+  const owner = accountState("NEAR_ACCOUNT_ID", env.NEAR_ACCOUNT_ID);
   add(owner.ok, owner.note);
   const contractName = "NEAR_CONTRACT_ACCOUNT_ID";
-  const contract = accountState(contractName, env[contractName], { required: true });
+  const contract = accountState(contractName, env[contractName]);
   add(contract.ok, contract.ok ? contract.note : `${contract.note} (deploy --send will not default it to NEAR_ACCOUNT_ID)`);
 
   const net = env.NEAR_NETWORK;
