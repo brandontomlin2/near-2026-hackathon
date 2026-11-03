@@ -374,3 +374,156 @@ test("lane defaults to any and list --lane filters", (t) => {
     ["shared"],
   );
 });
+
+const NO_STACK = /\n\s+at /;
+
+function withRepo(t) {
+  const cwd = tempRepo();
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  return cwd;
+}
+
+test("list without --json prints a tab-separated table, '-' for empty owner, and (no items) when empty", (t) => {
+  const cwd = withRepo(t);
+
+  const empty = run(cwd, ["list"]);
+  assert.equal(empty.status, 0, empty.stderr);
+  assert.equal(empty.stdout, "(no items)\n");
+
+  assert.equal(run(cwd, ["add", "Alpha", "--actor", "ada"]).status, 0);
+  assert.equal(run(cwd, ["add", "Beta", "--owner", "bob", "--lane", "claude", "--actor", "ada"]).status, 0);
+
+  const listed = run(cwd, ["list"]);
+  assert.equal(listed.status, 0, listed.stderr);
+  assert.equal(
+    listed.stdout,
+    [
+      "id\tstatus\tlane\towner\tkind\ttitle",
+      "alpha\ttodo\tany\t-\ttask\tAlpha",
+      "beta\ttodo\tclaude\tbob\ttask\tBeta",
+      "",
+    ].join("\n"),
+  );
+
+  const none = run(cwd, ["list", "--status", "done"]);
+  assert.equal(none.status, 0, none.stderr);
+  assert.equal(none.stdout, "(no items)\n");
+});
+
+test("--help prints usage to stdout and exits 0", (t) => {
+  const cwd = withRepo(t);
+  const res = run(cwd, ["--help"]);
+  assert.equal(res.status, 0);
+  assert.match(res.stdout, /^usage: node scripts\/board\.mjs/);
+  assert.match(res.stdout, /actor: --actor or BOARD_ACTOR/);
+  assert.equal(res.stderr, "");
+  assert.equal(fs.existsSync(boardFile(cwd)), false);
+});
+
+test("no command prints usage to stderr and exits 1", (t) => {
+  const cwd = withRepo(t);
+  const res = run(cwd, []);
+  assert.equal(res.status, 1);
+  assert.equal(res.stdout, "");
+  assert.match(res.stderr, /^usage: node scripts\/board\.mjs/);
+  assert.equal(fs.existsSync(boardFile(cwd)), false);
+});
+
+test("unknown command fails with a clear message and creates no board", (t) => {
+  const cwd = withRepo(t);
+  const res = run(cwd, ["frobnicate", "--actor", "ada"]);
+  assert.equal(res.status, 1);
+  assert.equal(res.stdout, "");
+  assert.equal(res.stderr, "error: unknown command: frobnicate\n");
+  assert.equal(fs.existsSync(boardFile(cwd)), false);
+  assert.equal(fs.existsSync(path.join(cwd, "board")), false);
+});
+
+test("missing actor (no --actor, empty BOARD_ACTOR) fails and writes nothing", (t) => {
+  const cwd = withRepo(t);
+  const res = run(cwd, ["add", "x"], { BOARD_ACTOR: "" });
+  assert.equal(res.status, 1);
+  assert.equal(res.stdout, "");
+  assert.equal(res.stderr, "error: actor required (pass --actor or set BOARD_ACTOR)\n");
+  assert.equal(fs.existsSync(boardFile(cwd)), false);
+  assert.equal(fs.existsSync(eventsFile(cwd)), false);
+});
+
+test("a value flag followed by another flag is rejected and leaves the item unchanged", (t) => {
+  const cwd = withRepo(t);
+  assert.equal(run(cwd, ["add", "Job", "--actor", "ada"]).status, 0);
+  const before = fs.readFileSync(boardFile(cwd), "utf8");
+  const eventsBefore = fs.readFileSync(eventsFile(cwd), "utf8");
+
+  const res = run(cwd, ["claim", "job", "--owner", "--actor", "ada"]);
+  assert.equal(res.status, 1);
+  assert.equal(res.stderr, "error: --owner requires a value\n");
+  assert.equal(fs.readFileSync(boardFile(cwd), "utf8"), before);
+  assert.equal(fs.readFileSync(eventsFile(cwd), "utf8"), eventsBefore);
+  assert.equal(readBoard(cwd)[0].status, "todo");
+});
+
+test("items with the same title get -2 and -3 id suffixes and all survive", (t) => {
+  const cwd = withRepo(t);
+  for (let i = 0; i < 3; i += 1) {
+    const res = run(cwd, ["add", "Same title", "--actor", "ada"]);
+    assert.equal(res.status, 0, res.stderr);
+  }
+  const items = readBoard(cwd);
+  assert.deepEqual(
+    items.map((item) => item.id),
+    ["same-title", "same-title-2", "same-title-3"],
+  );
+  assert.ok(items.every((item) => item.title === "Same title"));
+  assert.equal(readEvents(cwd).length, 3);
+});
+
+test("corrupt board.json fails with one clear line and is left untouched", (t) => {
+  const cwd = withRepo(t);
+  fs.mkdirSync(path.dirname(boardFile(cwd)), { recursive: true });
+
+  fs.writeFileSync(boardFile(cwd), "{");
+  const bad = run(cwd, ["list"]);
+  assert.equal(bad.status, 1);
+  assert.equal(bad.stdout, "");
+  assert.equal(bad.stderr.trim().split("\n").length, 1);
+  assert.match(bad.stderr, /^error: board\/board\.json is not valid JSON/);
+  assert.doesNotMatch(bad.stderr, NO_STACK);
+  assert.equal(fs.readFileSync(boardFile(cwd), "utf8"), "{");
+
+  fs.writeFileSync(boardFile(cwd), "{}");
+  const notList = run(cwd, ["list"]);
+  assert.equal(notList.status, 1);
+  assert.equal(notList.stderr, "error: board/board.json must be a JSON list\n");
+  assert.equal(fs.readFileSync(boardFile(cwd), "utf8"), "{}");
+});
+
+test("accept on a non-suggested item fails and appends no event", (t) => {
+  const cwd = withRepo(t);
+  assert.equal(run(cwd, ["add", "Plain", "--actor", "ada"]).status, 0);
+  const eventsBefore = fs.readFileSync(eventsFile(cwd), "utf8");
+  const boardBefore = fs.readFileSync(boardFile(cwd), "utf8");
+
+  const res = run(cwd, ["accept", "plain", "--actor", "ada"]);
+  assert.equal(res.status, 1);
+  assert.equal(res.stderr, "error: plain is todo, not suggested\n");
+  assert.equal(fs.readFileSync(eventsFile(cwd), "utf8"), eventsBefore);
+  assert.equal(fs.readFileSync(boardFile(cwd), "utf8"), boardBefore);
+});
+
+test("log --since fails on a garbage event line, plain log prints every line verbatim", (t) => {
+  const cwd = withRepo(t);
+  assert.equal(run(cwd, ["add", "One", "--actor", "ada"]).status, 0);
+  fs.appendFileSync(eventsFile(cwd), "this is not json\n");
+  const raw = fs.readFileSync(eventsFile(cwd), "utf8");
+
+  const since = run(cwd, ["log", "--since", "2000-01-01T00:00:00Z"]);
+  assert.equal(since.status, 1);
+  assert.match(since.stderr, /^error: board\/events\.jsonl has a line that is not valid JSON/);
+  assert.doesNotMatch(since.stderr, NO_STACK);
+
+  const plain = run(cwd, ["log"]);
+  assert.equal(plain.status, 0, plain.stderr);
+  assert.equal(plain.stdout, raw);
+  assert.match(plain.stdout, /this is not json\n$/);
+});

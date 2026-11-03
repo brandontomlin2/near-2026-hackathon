@@ -34,8 +34,8 @@ Each block runs as one `bash` script (`set -eo pipefail`) in the clone root,
 with a 120 s limit. Leading `$ ` prompts, comments and blank lines are
 ignored; `\` line continuations are joined.
 
-The environment is scrubbed: names containing KEY, TOKEN, SECRET, PASSWORD and
-similar, `NEAR_ACCOUNT_ID` and `NEAR_NETWORK` are removed, and
+The environment is scrubbed: names with a KEY, TOKEN, SECRET, PASSWORD or
+similar segment, `NEAR_ACCOUNT_ID` and `NEAR_NETWORK` are removed, and
 `MOCK_INFERENCE=1` is forced (a block may set it itself, for example to
 show that a live call without a key fails safely).
 
@@ -54,4 +54,4 @@ npm run infer -- "What do you make of the treasury proposal?"
 
 - `<!-- judge:run -->` makes the block runnable. Blocks without it are never run. Prose between the marker and the fence cancels it.
 - `<!-- judge:expect TEXT -->` (zero or more) requires `TEXT` to appear in the block's combined stdout and stderr. The step passes only if the exit code is 0 and every expect is found.
-- A lint (not a sandbox, easily bypassed) flags a marked block as FAIL if it uses `curl`/`wget`, `--live`, the `near` CLI, `cargo near`, `git push`, reads `.env` or key files, selects a non-testnet network, or is not a shell block. The child runs with a scrubbed environment and a temp `HOME`. Mark only offline, keyless steps. Do not mark `bash scripts/verify.sh` (it clones and installs again) or the testnet run.
+- A lint (not a sandbox, easily bypassed) flags a marked block as FAIL if it uses `curl`/`wget`, `--live`, the `near` CLI, `cargo near`, `git push`, `npm publish` or `npm login`, reads `.env` or key files, selects a non-testnet network, or is not a shell block. The child runs with a scrubbed environment and a temp `HOME`. Mark only offline, keyless steps. Do not mark `bash scripts/verify.sh` (it clones and installs again) or the testnet run.

@@ -24,11 +24,11 @@ AI characters forget everything when you switch apps. This demo gives 4 agents a
 ## Draft 2: the one moment
 
 ```
-4 AI agents talk on one channel for 6 rounds. Every 3 rounds each gets a new character sheet with a sha256 hash, and a ring is added to its art. Runs offline, no API key. Built at NEAR HACKATHON, @NEARProtocol #NEARHackathon <REPO_URL> What would you break?
+4 AI agents talk on one channel for 6 rounds. Every 3 rounds each gets a new character sheet with a sha256 hash, and a star is added to its art. Runs offline, no API key. Built at NEAR HACKATHON, @NEARProtocol #NEARHackathon <REPO_URL> What would you break?
 ```
 
 - Media: terminal recording of `npm run demo`, then `out/index.html` showing the art at mint and now.
-- NEAR's role: `anchor_sheet` calls are prepared as a dry run (null transaction hashes). The sheets come from a deterministic stand-in, not a model.
+- NEAR's role: `anchor_sheet` calls are prepared as a dry run (null transaction hashes). The sheets come from a deterministic stand-in, not a model. The star: the demo's sticker art draws one star along the edge per memory depth, which starts at 1 and goes up by one per sheet (1 star at mint, 3 after six rounds).
 
 ## Draft 3: for builders
 

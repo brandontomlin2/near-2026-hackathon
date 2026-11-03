@@ -34,3 +34,6 @@ target/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Backup files left by `sed -i -E` on macOS (sed -i -E treats -E as the backup suffix)
+*.mjs-E

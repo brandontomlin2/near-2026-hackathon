@@ -32,8 +32,8 @@ One command, offline. No account, no API key, no network after `npm install`, an
 npm install && npm run demo
 ```
 
-1. Run `npm install && npm run demo`. See `[1/5] swarm` to `[5/5] viewer`, then `Done. Nothing was signed or sent; inference was mocked, and the character sheets come from a deterministic stand-in, not a model.`, a "Do this, see that" list, the 61 files written under `out/`, and last `Open the page: open out/index.html  (file:///…/out/index.html)`. It exits 0 in a few seconds and never opens a browser itself.
-2. Open `out/index.html`. See the headline "Your NFT remembers who you are" over four agent cards, each with its art, four reaction faces and its latest sheet and hash. Below them: Memory, the round hash chain with `verify: ok`, the Channel, Share cards, Anchor (dry run) and Transfer.
+1. Run `npm install && npm run demo`. See `[1/5] swarm` to `[5/5] viewer`, then `Done. Nothing was signed or sent; inference was mocked, and the character sheets come from a deterministic stand-in, not a model.`, a "Do this, see that" list, the 64 files written under `out/` (art in the `sticker` style, 24 share cards, 3 meme cards), and last `Open the page: open out/index.html  (file:///…/out/index.html)`. It exits 0 in a few seconds and never opens a browser itself.
+2. Open `out/index.html`. See the headline "Your NFT remembers who you are" over four agent cards, each with its art, four reaction faces and its latest sheet and hash. Below them: Memory, the round hash chain with `verify: ok`, the Channel, a "Meme pack" grid of 3 meme cards, a grid of 24 share cards, Anchor (dry run) and Transfer.
 3. Open `out/transcript.txt`. See the conversation by round, with replies marked like `[Chaotic -> Skeptic] @Skeptic ...`. The same events are in `out/events.json` with `agentId`, `round`, `turn`, `kind` and `replyTo`.
 4. Open `out/memory/chaotic/sheet.json`. See Chaotic's round 6 sheet (quoted above), including `Ride-or-die: no one yet, applications open.` Check the hash: `node -p 'require("./out/memory/chaotic/sheet.json").sheet' | shasum -a 256` prints the `sheetHash` in the same file.
 5. Open `out/anchors.json`. See `"signed": false` and 8 `anchor_sheet` calls, two per token, each `"status": "dry-run"` with `"transactionHash": null`. Each token's latest `sheet_hash` equals the `sheetHash` in its `sheet.json`. The `contractId` `personality-nft.demo.testnet` is a placeholder; nothing is deployed there.
@@ -48,7 +48,9 @@ No browser handy? [docs/img/page.png](docs/img/page.png) is the generated page. 
 
 [![The generated page](docs/img/page.png)](docs/img/page.png)
 
-Details. Options: `npm run demo -- --rounds 9 --every 3 --seed 2 --style pixel --out out/other`; the steps are wired in `src/demo/pipeline.mjs`. The sheets come from a deterministic stand-in that counts exchanges and reads warm or tense words; they are not model output. A sheet is hashed after normalizing (NFC, LF, one final newline), so `shasum` on a one-line sheet hashes the text plus a newline.
+Details. Options: `npm run demo -- --rounds 9 --every 3 --seed 2 --style pixel --out out/other`; the steps are wired in `src/demo/pipeline.mjs`, and the meme pack is built by `src/demo/memes.mjs`. The sheets come from a deterministic stand-in that counts exchanges and reads warm or tense words; they are not model output. A sheet is hashed after normalizing (NFC, LF, one final newline), so `shasum` on a one-line sheet hashes the text plus a newline.
+
+The 3 meme cards are built from the agents' real replies and latest sheets, with no hand-written jokes: `out/share/meme-caption-chaotic.svg` ("WHEN SKEPTIC REPLIES AGAIN" over Chaotic's face, with Chaotic's latest reply to Skeptic as the bottom line), `out/share/meme-caption-skeptic.svg` ("WHEN CHAOTIC REPLIES FOR THE 4TH TIME", counted from the events) and `out/share/meme-villain-chaotic.svg` ("CHAOTIC'S VILLAIN ARC", "PUBLIC ENEMY #1: SKEPTIC" and the sheet's rivalry line). Aloof and Social get no meme: their sheets name no public enemy and nobody replied to them twice.
 
 ## Mock caveats and status
 
@@ -165,7 +167,7 @@ Testnet run. Do not put keys on the command line. The script never reads or prin
 NEAR_NETWORK=testnet NEAR_ACCOUNT_ID=<testnet-account> bash scripts/verify.sh --live
 ```
 
-See a `STATUS / STAGE / DETAIL` table of 13 rows (fresh clone, workflows, symlinks, secret files, npm install, tests, secret scan, deploy nft, mint, swarm, demo, round hash, evidence) and `result: PASS`. PASS means no `FAIL` row and exit 0; `SKIP` is not a failure. `deploy nft` is `SKIP` without `--live`, and the `evidence` stage writes `out/evidence.json` with MOCK entries such as `"hash": "MOCK-deploy"`. The secret scan uses `gitleaks`, which is optional (`brew install gitleaks`); without it the row is `SKIP` and the scan did not run.
+See a `STATUS / STAGE / DETAIL` table of 13 rows (fresh clone, workflows, symlinks, secret files, npm install, tests, secret scan, deploy nft, mint, swarm, demo, round hash, evidence) and `result: PASS`. PASS means no `FAIL` row and exit 0; `SKIP` is not a failure. `swarm` and `demo` run with `MOCK_INFERENCE=1`. `deploy nft` is `SKIP` without `--live`. The `evidence` stage writes `out/evidence.json` with the memory loop (swarm, sheets, `anchor_sheet` dry-runs, final round hash) and MOCK entries such as `"hash": "MOCK-deploy"`; it prints `mock, not on-chain proof`, and no chain was queried. Only `--live` needs transaction hashes and RPC views. The secret scan uses `gitleaks`, which is optional (`brew install gitleaks`). Without it the stage prints `WARN: secret scan did NOT run` lines with the install hint, records `SKIP` with `NOT RUN: gitleaks not installed`, and repeats the warning just above `result:`. A `PASS` without gitleaks means the tree was not scanned for secrets; install gitleaks and rerun for a scanned result. A finding, a failed install, a failed test, a workflow file, or a live run without `NEAR_NETWORK=testnet` and `NEAR_ACCOUNT_ID` is a failure.
 
 Every pull request must paste the real `bash scripts/verify.sh` output in a `## Proof` section.
 
