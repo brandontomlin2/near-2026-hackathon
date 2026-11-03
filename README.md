@@ -42,7 +42,7 @@ On top of the standard, every token carries a *sheet anchor* keyed by token id, 
 | `sheet_anchor(token_id)` | anyone (view) | none | Returns `{ sheet_hash, memory_depth, updated_at }`, or `null` for an unknown token. |
 | `owner_id()` | anyone (view) | none | The minting account. |
 
-Why the hash and not the sheet: the log and the sheet stay off-chain, and the token carries only enough to prove which sheet it claims. A new owner hashes the sheet they received and compares it with `sheet_anchor`.
+Why the hash and not the sheet: the log and the sheet stay off-chain, and the token carries only enough to prove which sheet it claims. A new owner hashes the sheet they received and compares it with `sheet_anchor`. The sheet hash is `hashSheet` in `src/anchor/hash.mjs`: sha256 of the sheet after Unicode NFC, LF line endings, no trailing spaces, no leading or trailing blank lines and one final newline.
 
 Build and test (needs Rust; the crate pins rustc 1.95 through `rust-toolchain.toml`, and `cargo near build` needs [cargo-near](https://github.com/near/cargo-near)):
 

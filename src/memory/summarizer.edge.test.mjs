@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { hashSheet } from "../anchor/hash.mjs";
 import { createMockClient } from "../inference/client.mjs";
 import {
   MAX_EVENT_TEXT_CHARS,
@@ -15,7 +16,6 @@ import {
   createMemoryStore,
   makeEvent,
   maybeSummarize,
-  sheetHash,
   summarize,
   wakeContext,
 } from "./summarizer.mjs";
@@ -48,7 +48,7 @@ test("summarize with a huge log and a runaway reply stays bounded", async () => 
   assert.equal(rec.sheet.split(" ").length, MAX_SHEET_WORDS);
   assert.equal(rec.throughIndex, 5000);
   assert.equal(rec.newEvents, 5000);
-  assert.equal(rec.sheetHash, sheetHash(rec.sheet));
+  assert.equal(rec.sheetHash, hashSheet(rec.sheet));
 });
 
 test("each quoted event is capped, so a huge event cannot blow up the prompt", () => {
@@ -73,8 +73,9 @@ test("unicode text round-trips through the log and the sheet hash", async (t) =>
   await store.appendEvent("1", { round: 1, kind: "post", from: "Aloof", text });
   const [back] = await store.readLog("1");
   assert.equal(back.text, text);
-  assert.equal(sheetHash("世界"), sheetHash("世界"));
-  assert.notEqual(sheetHash("é"), sheetHash("é"));
+  assert.equal(hashSheet("世界"), hashSheet("世界"));
+  // NFC and NFD spellings of the same text hash alike (see hashSheet).
+  assert.equal(hashSheet("\u00e9"), hashSheet("e\u0301"));
 });
 
 test("clampWords handles empty input, unicode and other whitespace", () => {

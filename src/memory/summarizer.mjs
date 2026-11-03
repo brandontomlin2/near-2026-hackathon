@@ -11,9 +11,10 @@
 // full log. The summary call goes through src/inference/client.mjs, so mock
 // mode (the default) stays deterministic and needs no keys.
 
-import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile, appendFile } from "node:fs/promises";
 import { join } from "node:path";
+
+import { hashSheet } from "../anchor/hash.mjs";
 
 export const DEFAULT_SUMMARY_EVERY_N_ROUNDS = 5;
 export const DEFAULT_WAKE_EVENTS = 8;
@@ -106,15 +107,6 @@ export function clampWords(text, max = MAX_SHEET_WORDS) {
   return words.slice(0, max).join(" ");
 }
 
-/**
- * Hash of a sheet's text. This is the value anchored on the token.
- * @param {string} sheet
- * @returns {string} 64-char hex sha256
- */
-export function sheetHash(sheet) {
-  return createHash("sha256").update(sheet, "utf8").digest("hex");
-}
-
 // Cut at MAX_EVENT_TEXT_CHARS without splitting a surrogate pair (emoji).
 function capText(text) {
   let end = MAX_EVENT_TEXT_CHARS;
@@ -203,7 +195,7 @@ export async function summarize({ client, tokenId, name, round, log, previous = 
     tokenId,
     round,
     sheet,
-    sheetHash: sheetHash(sheet),
+    sheetHash: hashSheet(sheet), // the one official sheet hash, see src/anchor/hash.mjs
     throughIndex: log.length,
     newEvents: fresh.length,
     mode: response.mode,
