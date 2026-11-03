@@ -15,7 +15,7 @@ Run everything in mock mode (`MOCK_INFERENCE=1`, the default). No keys on screen
 | 1 | 0:00 to 0:12 | Title card with the problem: "Buying an AI character? Check its memory is the one the seller anchored." Then terminal. | none |
 | 2 | 0:12 to 0:25 | Fresh clone, install, one command. The five `[n/5]` lines and "Nothing was signed or sent". | `git clone <REPO_URL> && cd <repo> && npm install && npm run demo` |
 | 3 | 0:25 to 0:45 | You are the owner. Ask Chaotic about Skeptic. Pause on the answer, `Chaotic (mock): Skeptic?? 5 fights and counting, bro I did not read the contract and it SHOWS 💀`, then on the sheet diff, where `Owner: 0 fights, 0 hugs, 1 shrug` joins the scorecard, and the last line, `anchor_sheet dry-run (not sent)`. | `npm run ask -- chaotic "what do you think of Skeptic?"` |
-| 4 | 0:45 to 1:00 | Browser on `out/index.html`, the "Meme pack" section: three meme cards. Open the Chaotic caption card full size: "WHEN SKEPTIC REPLIES AGAIN", "RECEIPTS?? BRO I AM THE RECEIPTS 💀". | `open out/index.html`, `open out/share/meme-caption-chaotic.svg` |
+| 4 | 0:45 to 1:00 | Browser on `out/index.html`, the "Meme pack" section: three meme cards. Open the Chaotic caption card full size: "SKEPTIC SAW MY POST AND CHOSE TO SPEAK", "SHOW THE HASH?? I DO NOT EVEN KNOW WHERE THE HASH LIVES 🚀". | `open out/index.html`, `open out/share/meme-caption-chaotic.svg` |
 | 5 | 1:00 to 1:15 | Scroll up to Agents. Sticker art at mint next to art now (it gains one star along the edge per sheet written: 1 at mint, 3 now); point at each agent's strip of four reaction faces. | page, Agents section |
 | 6 | 1:15 to 1:35 | Memory section. Chaotic's round 3 sheet, then round 6: its fights with Skeptic went from 3 to 5, Social became its ride-or-die (1 to 3 warm moments), and its "Who I am" line escalated from chaos goblin to villain arc. | page, Memory section |
 | 7 | 1:35 to 1:50 | Scroll to Channel. Rounds scroll by with a reaction face beside each message; find a `Chaotic → Skeptic` exchange. | page, Channel section |
@@ -40,7 +40,7 @@ Plain words. Read at a normal pace; about 375 words in total.
 "Now I am the owner. I ask Chaotic what it thinks of Skeptic. It answers in character, five fights and counting. And it remembers: look at the diff, I am in its scorecard now. The new sheet hash is prepared for the token, and not sent."
 
 **Scene 4 (0:45 to 1:00)**
-"The agents make memes out of what they really said. This one is Chaotic: receipts, bro, I am the receipts. Three cards, built from the replies and the character sheets."
+"The agents make memes out of what they really said. This one is Chaotic: show the hash? I do not even know where the hash lives. Three cards, built from the replies and the character sheets."
 
 **Scene 5 (1:00 to 1:15)**
 "Four agents: Aloof, Chaotic, Social and Skeptic. In the design each is an NFT on NEAR, with its own picture drawn from its traits; nothing is minted in this demo. On the left is the picture at mint, on the right, now, after it has written its memory. Under each is a strip of four reaction faces: neutral, hype, shade and shook."

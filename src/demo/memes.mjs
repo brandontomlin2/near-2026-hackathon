@@ -1,8 +1,11 @@
 // Meme pack: classic meme formats built deterministically from each agent's
 // real channel events and character sheet. Pure (no fs, no clocks, no
 // randomness). Names, counts and quoted lines come from data; the fixed text
-// is the meme template ("WHEN", "VILLAIN ARC") and the villain card's
-// persona rivalry lines (RIVALRY_LINES), picked by agent id and run seed.
+// is the meme template, picked from the pools below by a hash of the run seed
+// and the agent's own record (who, how many replies or fights, what it said),
+// so one seed always gives the same cards and another seed gives different
+// lines. The villain card's rivalry line comes from RIVALRY_LINES, picked by
+// agent id and run seed.
 //
 // Two formats, each self-contained so a weak one can be deleted by removing
 // its builder from FORMATS:
@@ -11,6 +14,7 @@
 //            when that line counts 2+ fights
 
 import { moodForText } from "../art/moods.mjs";
+import { pickBy } from "../util/pick.mjs";
 import { PROJECT_FOOTER, cleanText, escapeXml, nest } from "./share.mjs";
 
 export const SIZE = 900;
@@ -179,6 +183,23 @@ function replyPairs(events) {
   return pairs;
 }
 
+// Top lines for the caption card. `who` is the replier's display name, `n` the
+// number of replies it sent, `th` that count as an ordinal ("4TH"). PG-13.
+const CAPTION_TOPS = Object.freeze({
+  twice: Object.freeze([
+    ({ who }) => `When ${who} replies again`,
+    ({ who }) => `${who} is back in my replies`,
+    ({ who }) => `Me, trying to ignore ${who}`,
+    ({ who }) => `${who} saw my post and chose to speak`,
+  ]),
+  many: Object.freeze([
+    ({ who, th }) => `When ${who} replies for the ${th} time`,
+    ({ who, n }) => `${who}, reply number ${n}. Sir, this is a group chat`,
+    ({ who, th }) => `${th} reply from ${who} and I am out of faces`,
+    ({ who, n }) => `${who} has replied ${n} times. Touch grass`,
+  ]),
+});
+
 function buildCaptions(ctx) {
   const { events, names, ids } = ctx;
   const byId = new Map(events.map((e) => [e.id, e]));
@@ -198,7 +219,8 @@ function buildCaptions(ctx) {
     const bottomText = cleanText(line.text.replace(/^@\S+\s*/, ""));
     if (!bottomText) continue;
     const who = cleanText(names[best.replier]);
-    const topText = best.n === 2 ? `When ${who} replies again` : `When ${who} replies for the ${ordinal(best.n)} time`;
+    const pool = best.n === 2 ? CAPTION_TOPS.twice : CAPTION_TOPS.many;
+    const topText = pickBy(pool, `caption:${ctx.seed}:${target}:${best.replier}:${best.n}:${bottomText}`)({ who, n: best.n, th: ordinal(best.n) });
     const mood = pickMood(ctx.moods, moodForText(bottomText), []);
     const top = fitText(topText, { width: SIZE - 2 * MARGIN, maxLines: 2, maxSize: 84, minSize: 40, maxHeight: 190 });
     const bottom = fitText(bottomText, { width: SIZE - 2 * MARGIN, maxLines: 3, maxSize: 72, minSize: 34, maxHeight: 210 });
@@ -239,14 +261,14 @@ export const RIVALRY_LINES = Object.freeze({
   aloof: Object.freeze([
     "{enemy} picked {n} fights. I picked none. I was simply there.",
     "{enemy} is yelling again. I am on do not disturb.",
-    "{n} fights with {enemy} and my expression has not moved once.",
+    "{enemy} keeps swinging and my expression has not moved once.",
     "{enemy} keeps replying. I keep not caring. we are not the same.",
     "it is not a feud if only {enemy} shows up.",
     "muted {enemy} in my heart. {n} times.",
   ]),
   chaotic: Object.freeze([
     "{enemy} said show the receipts. I showed up instead. {n} times.",
-    "{n} fights with {enemy} and I am the problem. that is the point.",
+    "I am the problem and {enemy} knows it. that is the point.",
     "{enemy} wants an audit. I want a sequel. we both lose.",
     "day {n} of making {enemy}'s day worse. no notes.",
     "{enemy} blocked my vibes. I have more vibes.",
@@ -256,12 +278,12 @@ export const RIVALRY_LINES = Object.freeze({
     "I tried to include {enemy}. {enemy} tried to include evidence. {n} fights.",
     "{enemy} and I are frenemies. mostly the second part.",
     "I brought snacks. {enemy} brought {n} grudges.",
-    "{n} fights with {enemy}. still sent the friend request.",
+    "still sent {enemy} the friend request. no regrets.",
     "{enemy} unfollowed me spiritually. I noticed.",
     "poll: is {enemy} the problem? {n} fights say yes.",
   ]),
   skeptic: Object.freeze([
-    "{enemy}: {n} fights, 0 receipts. case closed.",
+    "{enemy} brought 0 receipts. case closed.",
     "I asked {enemy} one question. {n} times. still no answer.",
     "{enemy} calls it a vibe. I call it {n} exhibits.",
     "not a feud. an audit of {enemy}, {n} findings long.",
@@ -270,7 +292,7 @@ export const RIVALRY_LINES = Object.freeze({
   ]),
   default: Object.freeze([
     "{enemy} started it. {n} times. I am keeping score.",
-    "{n} fights with {enemy} and counting. this is my lore now.",
+    "this is lore now. {enemy} is just in it.",
     "{enemy} and I are not beefing. we are a long-running series.",
     "me and {enemy}, round {n}. nobody asked for a round {n}.",
     "{enemy} keeps replying. I keep winning. same thing.",
@@ -279,6 +301,18 @@ export const RIVALRY_LINES = Object.freeze({
     "day {n} of {enemy} being wrong on main.",
   ]),
 });
+
+// Rivalry lines where the persona says they did not start it. A villain card
+// with one of these must not claim the agent "chose violence": its top line
+// comes from VILLAIN_TOPS.wronged instead.
+export const INNOCENT_LINES = Object.freeze(new Set([
+  "{enemy} picked {n} fights. I picked none. I was simply there.",
+  "{enemy} is yelling again. I am on do not disturb.",
+  "{enemy} keeps replying. I keep not caring. we are not the same.",
+  "it is not a feud if only {enemy} shows up.",
+  "I brought snacks. {enemy} brought {n} grudges.",
+  "{enemy} unfollowed me spiritually. I noticed.",
+]));
 
 /** FNV-1a 32-bit hash of `text`. */
 function fnv1a(text) {
@@ -296,16 +330,52 @@ function fnv1a(text) {
  * no two cards in one pack read the same. `used` is the set of lines already
  * taken in this pack; the pick is added to it.
  */
-export function rivalryLine({ id, seed = 0, enemy, fights, used = new Set() }) {
+export function rivalryLine(args) {
+  return rivalryPick(args).line;
+}
+
+/** Like rivalryLine, but also returns whether the picked template is an "I did not start it" line. */
+export function rivalryPick({ id, seed = 0, enemy, fights, used = new Set() }) {
   const own = RIVALRY_LINES[id] ?? RIVALRY_LINES.default;
   const pool = own === RIVALRY_LINES.default ? [...own] : [...own, ...RIVALRY_LINES.default];
   const fill = (t) => t.replaceAll("{enemy}", enemy).replaceAll("{n}", String(fights));
   const start = fnv1a(`${seed}\u0000${id}`) % own.length;
-  let line = fill(pool[start]);
-  for (let k = 1; k < pool.length && used.has(line); k += 1) line = fill(pool[(start + k) % pool.length]);
+  let template = pool[start];
+  let line = fill(template);
+  for (let k = 1; k < pool.length && used.has(line); k += 1) {
+    template = pool[(start + k) % pool.length];
+    line = fill(template);
+  }
   used.add(line);
-  return line;
+  return { line, innocent: INNOCENT_LINES.has(template) };
 }
+
+// Villain card lines. `name` is the villain, `enemy` its public enemy, `count`
+// the " (N fights)" suffix (from 3 fights) and `fights` the sheet's number.
+const VILLAIN_TOPS = Object.freeze({
+  low: Object.freeze([
+    ({ name }) => `${name} is warming up a villain arc`,
+    ({ name }) => `${name} has a list and it is short`,
+    ({ name }) => `${name} is thinking about causing problems`,
+  ]),
+  high: Object.freeze([
+    ({ name }) => `${name} has entered their villain era`,
+    ({ name }) => `${name} chose violence`,
+    ({ name }) => `Do not poke ${name}`,
+  ]),
+  // The rivalry strip says the villain did not pick the fights.
+  wronged: Object.freeze([
+    ({ name }) => `${name} did nothing and is somehow in this`,
+    ({ name }) => `${name} just wants to be left alone`,
+    ({ name }) => `Leave ${name} out of it`,
+  ]),
+});
+const VILLAIN_BOTTOMS = Object.freeze([
+  ({ enemy, count }) => `Public enemy #1: ${enemy}${count}`,
+  ({ enemy, count }) => `Sworn nemesis: ${enemy}${count}`,
+  ({ enemy, count }) => `Beef status: ${enemy}${count}`,
+  ({ enemy, count }) => `Main character problem: ${enemy}${count}`,
+]);
 
 function buildVillains(ctx) {
   const { names, ids, events } = ctx;
@@ -336,10 +406,13 @@ function buildVillains(ctx) {
     const name = cleanText(names[id]);
     const mood = pickMood(ctx.moods, "shade", ["hype"]);
     const enemyMood = pickMood(ctx.moods, "shade", []);
-    const topText = `${name}'s villain arc`;
-    const count = parsed.fights >= 3 ? ` (${parsed.fights} fights)` : "";
-    const bottomText = `Public enemy #1: ${parsed.enemy}${count}`;
-    const rivalry = rivalryLine({ id, seed: ctx.seed, enemy: parsed.enemy, fights: parsed.fights, used });
+    const high = parsed.fights >= 3;
+    const count = high ? ` (${parsed.fights} fights)` : "";
+    const key = `${ctx.seed}:${id}:${parsed.enemy}:${parsed.fights}`;
+    const { line: rivalry, innocent } = rivalryPick({ id, seed: ctx.seed, enemy: parsed.enemy, fights: parsed.fights, used });
+    const topPool = innocent ? VILLAIN_TOPS.wronged : high ? VILLAIN_TOPS.high : VILLAIN_TOPS.low;
+    const topText = pickBy(topPool, `villain-top:${key}`)({ name });
+    const bottomText = pickBy(VILLAIN_BOTTOMS, `villain-bottom:${key}`)({ enemy: parsed.enemy, count });
     const top = fitText(topText, { width: SIZE - 2 * MARGIN, maxLines: 2, maxSize: 96, minSize: 40, maxHeight: 200 });
     const bottom = fitText(bottomText, { width: SIZE - 2 * MARGIN, maxLines: 2, maxSize: 64, minSize: 30, maxHeight: 150 });
     const STRIP = 116; // includes the 22px footer line at the bottom
