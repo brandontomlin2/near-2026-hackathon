@@ -19,9 +19,33 @@ Numbered "do X, see Y" steps for judges will go here.
 | `CLAUDE.md` | Working rules for the coding agent in this repo. |
 | `.agents/skills/` | NEAR agent skills installed with `npx skills add near/agent-skills`, plus `verify-near-2026`. Claude Code reads them through `.claude/skills/`. |
 | `scripts/verify.sh` | Local judge screen. Replaces GitHub Actions. |
+| `contracts/personality-nft/` | The NEP-171 contract (Rust, near-sdk 5.30). Each token is an agent and carries a character sheet anchor. See [Contract](#contract). |
 | `src/inference/client.mjs` | Inference client. Mock mode by default (deterministic, no keys); live mode calls NEAR AI Cloud. See [Inference](#inference). |
 | `scripts/infer.mjs` | `npm run infer -- "<prompt>"`: one chat turn through the client. |
 | `skills-lock.json` | Pinned versions of the installed agent skills. |
+
+## Contract
+
+`contracts/personality-nft/` is a NEP-171 non-fungible token with NEP-177 metadata, NEP-178 approvals, NEP-181 enumeration and NEP-297 events, built on `near-contract-standards` 5.30. The standard methods (`nft_transfer`, `nft_transfer_call`, `nft_token`, `nft_approve`, `nft_tokens_for_owner`, `nft_metadata`, and so on) delegate to the standard implementation. Trait values live in the standard `TokenMetadata.extra` field as a JSON string, for example `{"temperament":"cool","role":"observer","risk":"low","voice":"dry"}`.
+
+On top of the standard, every token carries a *sheet anchor* keyed by token id, so it travels with the token on transfer:
+
+| Method | Who | Deposit | What it does |
+| --- | --- | --- | --- |
+| `new_default_meta(owner_id)` / `new(owner_id, metadata)` | deployer | none | Initializes. `owner_id` is the only account that can mint. |
+| `nft_mint(token_id, receiver_id, token_metadata)` | contract owner | storage cost, excess refunded | Mints one agent. Stores a `SheetAnchor` with `sheet_hash: null` and `memory_depth: 1`. Emits `nft_mint`. |
+| `anchor_sheet(token_id, sheet_hash)` | current token owner | at least 1 yoctoNEAR; the first anchor also needs storage cost, excess refunded | Records the lowercase hex sha256 of the latest character sheet and adds one to `memory_depth`. Emits `sheet_anchored` (`standard: personality_nft`). |
+| `sheet_anchor(token_id)` | anyone (view) | none | Returns `{ sheet_hash, memory_depth, updated_at }`, or `null` for an unknown token. |
+| `owner_id()` | anyone (view) | none | The minting account. |
+
+Why the hash and not the sheet: the log and the sheet stay off-chain, and the token carries only enough to prove which sheet it claims. A new owner hashes the sheet they received and compares it with `sheet_anchor`.
+
+Build and test (needs Rust; the crate pins rustc 1.95 through `rust-toolchain.toml`, and `cargo near build` needs [cargo-near](https://github.com/near/cargo-near)):
+
+1. Run `npm run test:contract`. See 13 unit tests pass, including mint by a non-owner failing, a non-sha256 hash rejected, and the anchor surviving `nft_transfer` to a new owner.
+2. Run `npm run build:contract`. See `contracts/personality-nft/target/near/personality_nft.wasm` (about 250 KB) and its ABI JSON next to it.
+
+Testnet deploy and the `mint` script are separate board items and are not in this repository yet.
 
 ## Inference
 
