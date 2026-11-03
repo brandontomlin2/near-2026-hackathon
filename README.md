@@ -189,10 +189,11 @@ The swarm runs the four agents (Aloof, Chaotic, Social, Skeptic) on one shared c
 
 Inference is mocked by default (`MOCK_INFERENCE=1`): offline, no keys, and each agent answers in its own written voice. `MOCK_INFERENCE=0` sends the same prompts to NEAR AI Cloud instead and needs `NEAR_AI_API_KEY`.
 
-1. Run `npm run swarm -- --rounds 5`. See 5 round headers, 20 lines such as `[Skeptic] Doubtful. ...` and `[Chaotic -> Skeptic] @Skeptic ...`, then `final round hash: <64 hex>` and `verify: ok (5 rounds)`.
+1. Run `npm run swarm -- --rounds 5`. See 5 round headers, 20 lines such as `[Skeptic] Doubtful. ...` and `[Chaotic -> Skeptic] @Skeptic ...`, then `final round hash: <64 hex>` and `verify: ok (5 rounds)`. Then four lines such as `sheet aloof <64 hex> -> anchor_sheet dry-run (not sent)` and `final round hash <64 hex> linked to 4 anchor dry-runs (MOCK, not on-chain)`.
 2. Run it again. See the same transcript and the same hash.
 3. Run `npm run swarm -- --rounds 5 --seed 2`. See a different transcript and a different hash.
 4. Open `out/events.json`. See every event with its round, turn, agent and `replyTo`, plus `roundHashes`.
+5. Open `out/memory-loop.json`. See the same `finalRoundHash` and, per token, its character sheet and an `anchor_sheet` dry-run (`status` `dry-run`, `transactionHash` `null`) whose `linkedRoundHash` is that hash. The per-token sheets are also in `out/sheets/<agent>.json`. The sheet text is a deterministic mock stand-in, not a model, and nothing is sent.
 
 
 ## Art
@@ -226,23 +227,27 @@ Testnet run. Do not put keys on the command line. The script never reads or prin
 NEAR_NETWORK=testnet NEAR_ACCOUNT_ID=<testnet-account> bash scripts/verify.sh --live
 ```
 
-@@V1@@
+PASS means the summary table has no `FAIL` row and the process exits 0. `SKIP` is not a failure. `swarm` and `demo` run with `MOCK_INFERENCE=1`. The `evidence` stage runs in mock mode and writes `out/evidence.json` with the memory loop (swarm, sheets, `anchor_sheet` dry-runs, final round hash) and MOCK entries (for example `"hash": "MOCK-deploy"`); it prints `mock, not on-chain proof`, and no chain was queried. Only `--live` needs transaction hashes and RPC views. `deploy nft` shows `SKIP` unless `--live` is given. The secret scan uses `gitleaks`, which is optional (`brew install gitleaks`): if it is not installed the scan prints `optional: brew install gitleaks` and shows `SKIP`, and the secret scan did not run in that case. A finding, a failed install, a failed test, a workflow file, or a live run without `NEAR_NETWORK=testnet` and `NEAR_ACCOUNT_ID` is a failure. The checks clone the committed `HEAD`, so commit your changes first.
+
+A passing mock run looks like this (the commit sha and test file count change):
 
 ```
 SUMMARY
 STATUS    STAGE           DETAIL
 ------    -----           ------
-PASS      fresh clone     4eedf162dbc0
+PASS      fresh clone     3cb61e66e557
 PASS      workflows       no workflow files; CI disabled
 PASS      symlinks        tracked symlinks resolve
 PASS      secret files    no tracked env or key files
 PASS      npm install     npm ci
-27 file(s)@@T@@
+34 file(s)
 SKIP      secret scan     gitleaks not installed (warn)
 SKIP      deploy nft      npm run deploy:nft exists; live testnet not requested
 PASS      mint            npm run mint (mock)
 PASS      swarm           npm run swarm (mock)
-@@E@@
+PASS      demo            npm run demo (mock)
+PASS      round hash      npm run anchor (mock)
+PASS      evidence        wrote out/evidence.json (mock, not on-chain proof)
 
 result: PASS
 ```
