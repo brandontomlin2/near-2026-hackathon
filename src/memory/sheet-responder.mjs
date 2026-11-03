@@ -242,7 +242,7 @@ export const STORIES = Object.freeze({
     ({ rival }) => `${rival} and I are not done yet.`,
     ({ rival }) => `${rival} and I have unfinished business and no friends to blame it on.`,
     ({ rival }) => `It is me against ${rival}. Nobody is hosting a peace summit.`,
-    ({ rival, fights }) => `${fights} ${fights === 1 ? "fight" : "fights"} with ${rival} and counting. The lore is writing itself.`,
+    ({ rival, fights }) => (fights === 1 ? `One fight with ${rival} so far. The lore is just starting.` : `${fights} fights with ${rival} and counting. The lore is writing itself.`),
   ]),
   ally: Object.freeze([
     ({ ally }) => `${ally} gets me. No fights so far, so the drama is on hold.`,
@@ -290,7 +290,8 @@ export function sheetResponder(request, _hash) {
   const pick = (options) => pickBy(options, `${name}:${posts}:${replies}:${mentioned}`);
 
   const state = fights === 0 && hugs === 0 ? "quiet" : fights > hugs ? "fighting" : hugs > fights ? "hugging" : "balanced";
-  const vibe = pick((VIBES[name] ?? VIBES.default)[state]);
+  // Own keys only: a name like "constructor" must not pick up an inherited member.
+  const vibe = pick((Object.hasOwn(VIBES, name) ? VIBES[name] : VIBES.default)[state]);
 
   const enemy = rival
     ? `${rival} (${plural(stats[rival].tense, "fight", "fights")})`

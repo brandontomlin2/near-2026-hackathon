@@ -219,7 +219,7 @@ export function personaResponder(agent) {
   return (request, hash) => {
     start ??= Number.parseInt(hash.slice(0, 8), 16);
     const target = replyTargetOf(request);
-    const list = (target && replies[target]) || lines;
+    const list = target && Object.hasOwn(replies, target) ? replies[target] : lines;
     const turn = draws.get(list) ?? 0;
     draws.set(list, turn + 1);
     return list[(start + strideFor(list.length) * turn) % list.length];

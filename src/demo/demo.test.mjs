@@ -19,7 +19,7 @@ const PINNED_FINAL_ROUND_HASH = "4c8e826620ce2fa1c118df19d13f622ade870b0a54dd206
 const IDS = ["aloof", "chaotic", "social", "skeptic"];
 // Pins the sheet writer, summarizer prompt, hashing, art paths and anchors, not just the swarm.
 const PINNED_ALOOF_SHEET_HASH = "c2273f6a921b50d7dc941eac68948e084d7189524df1180c005ff696c765d78a";
-const PINNED_DEMO_JSON_SHA256 = "066002d65f3b9429b48dbb098d94e166179dbb45292aa6175de2aa6113183938";
+const PINNED_DEMO_JSON_SHA256 = "866305cc9f16cf1e0fcbc9cc31e6c91bad6b7826abf15a3975eec1df65db8cb8";
 
 const tmp = [];
 function mkTmp() {
@@ -128,8 +128,9 @@ describe("demo: memory payoff in the default run", () => {
     }
   });
 
-  it("every agent gets a meme card", () => {
-    assert.deepEqual([...new Set(resultA.manifest.memes.map((m) => m.agentId))].sort(), [...IDS].sort());
+  it("the feuding agents get meme cards; a one-fight enemy earns no villain card", () => {
+    assert.deepEqual([...new Set(resultA.manifest.memes.map((m) => m.agentId))].sort(), ["chaotic", "skeptic"]);
+    assert.deepEqual(resultA.manifest.memes.filter((m) => m.format === "villain").map((m) => m.agentId), ["chaotic"]);
   });
 });
 
@@ -412,7 +413,7 @@ describe("demo: styles", () => {
     const shareFiles = walk(dir).filter((f) => f.startsWith("share/"));
     assert.equal(shareFiles.filter((f) => !f.startsWith("share/meme-")).length, 24);
     assert.equal(shareFiles.filter((f) => f.startsWith("share/meme-")).length, manifest.memes.length);
-    assert.equal(manifest.memes.length, 5);
+    assert.equal(manifest.memes.length, 3);
     assert.ok(!fs.existsSync(path.join(dir, "art/aloof.hype.svg")));
     for (const f of walk(dir).filter((x) => x.startsWith("share/"))) {
       assert.ok(fs.readFileSync(path.join(dir, f), "utf8").includes("<svg"));
