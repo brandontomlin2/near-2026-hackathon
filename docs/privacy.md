@@ -36,8 +36,8 @@ repository has been run against one.
 Each check is `pass`, `fail`, `skip` or `unverifiable`. Only `fail` rejects.
 Result is `consistent` or `reject`, never `verified`. The CLI prints
 `CONSISTENT, NOT VERIFIED` and exits 0, `REJECT` and exits 1, or
-`CONSISTENT, NOT VERIFIED, BINDING UNREAD` and exits 2 (a check was
-`unverifiable`; `-- --unreadable-quote` shows it). It always lists what was not
+`CONSISTENT, NOT VERIFIED, BINDING UNREAD` and exits 2 (a quote was
+truncated hex; `-- --unreadable-quote` shows it with a 2-byte quote). It always lists what was not
 verified, so "offline fields agree" never hides a field that could not be read.
 
 ### The quote layout assumption behind `quote-binding`
@@ -57,19 +57,22 @@ appear somewhere inside those 64 bytes.
 
 How `quote-binding` reports, given that:
 
-- `pass` only when every part of the assumption is confirmed byte for byte:
-  hex, at least 632 bytes, a v4/TDX header, and both raw values found in
-  `report_data`. The detail still says the quote itself is unauthenticated.
-- `unverifiable`, with the reason, when the quote cannot be read under that
-  layout: not hex, too short, or a header that is not version 4 / TDX (a v5
-  quote, say). A genuine report with a different layout lands here, so the
-  check does not call it forged. The result stays `consistent`, but the
-  summary says `BINDING UNREAD`, the result lists the ids in `unverifiable`,
-  and `npm run attest:check` exits 2 instead of 0.
-- `fail` for a quote that IS readable as v4/TDX but whose `report_data` lacks
-  our nonce or the signing address (stale, replayed or another node's quote).
-  A genuine report that hashes the binding would also fail here; we accept
+- `pass` when `intel_quote` is hex, at least 632 bytes, and both raw values
+  are found in bytes 568..632. The header is not required to be v4: a quote
+  with another header that holds both values passes, as it did before, and the
+  detail names the header it saw. The detail always says the quote is
+  unauthenticated.
+- `fail` when `intel_quote` is not hex (the report claims a quote we cannot even
+  read as bytes), or when it is 632+ bytes and bytes 568..632 lack our nonce or
+  the signing address, whatever the header says (stale, replayed, another
+  node's quote, or a v5 quote we have no layout for). A genuine report that
+  hashes the binding, or a genuine v5 quote, would also fail here; we accept
   that rather than let a replayed quote through.
+- `unverifiable`, with the reason, only when `intel_quote` is valid hex but
+  shorter than 632 bytes (a truncated quote). That is the one input that
+  reaches `BINDING UNREAD` / exit 2. The result is still `consistent` only if
+  the report echoes our nonce; the summary says `BINDING UNREAD` and the result
+  lists the ids in `unverifiable`.
 - Request binding needs one of two things: the report echoes our nonce
   (`nonce-echo`), or `quote-binding` passes. A report with a top-level nonce
   absent and no passing quote binding fails `request-binding`. Nothing else in
@@ -97,7 +100,7 @@ would take; it is not evidence that NEAR AI binds the values that way.
 - The synthetic fixture (`src/privacy/fixture.mjs`) is hand made. Passing it
   proves our code path only. The quote layout and the raw-byte binding it
   encodes are our assumptions (see above), to confirm against a real report;
-  until then a real report may well come back `quote-binding: unverifiable`.
+  until then a real report may well come back `quote-binding: fail` and `REJECT`.
 
 ## Does it qualify for the privacy track?
 

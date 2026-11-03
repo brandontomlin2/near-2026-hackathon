@@ -34,10 +34,22 @@ export const NOT_VERIFIED = Object.freeze([
 // What NEAR AI puts in those 64 bytes is NOT documented. The vendored docs
 // (.agents/skills/near-ai-cloud) only say the signing address and the nonce
 // are "bound" in the report data, not how. We look for the raw nonce and the
-// raw 20-byte address. If the quote cannot be read under that layout (not hex,
-// too short, header not v4/TDX), the binding is "unverifiable": a v5 quote
-// would look exactly like that. If the quote IS readable as v4/TDX but its
-// REPORTDATA lacks our nonce or the address, that is a mismatch and fails.
+// raw 20-byte address.
+//
+// Outcomes, never weaker than origin/main:
+//  - not hex                      -> FAIL (as on main; never "unverifiable")
+//  - hex, >= 632 bytes            -> checked at offset 568 whatever the header
+//                                    says (as on main): FAIL if the nonce or
+//                                    address is missing, PASS if both found.
+//                                    The header only decides the wording.
+//  - hex, < 632 bytes             -> "unverifiable" (as on main, where it was
+//                                    silently counted as OK). This is the ONLY
+//                                    input that reaches BINDING UNREAD / exit 2:
+//                                    a well-formed hex quote too short to hold
+//                                    a v4 report body, e.g. a truncated quote.
+//                                    A caller only gets CONSISTENT then if the
+//                                    report also echoes our nonce
+//                                    (see request-binding in checkAttestation).
 // (A genuine report that hashes the binding would fail too; we accept that
 // rather than let a replayed quote through.)
 const TDX_QUOTE_VERSION = 4;
@@ -74,20 +86,14 @@ function toBytes(hex) {
 // Returns ["pass" | "fail" | "unverifiable", detail]: see the layout note.
 function checkQuoteReportData(quote, nonce, signingAddress) {
   const bytes = toBytes(quote);
-  if (!bytes) {
-    return ["unverifiable", "intel_quote is not hex; the docs do not state its encoding, so the report data cannot be located"];
-  }
+  if (!bytes) return ["fail", "intel_quote is not hex"];
   if (bytes.length < TDX_V4_QUOTE_MIN_LENGTH) {
     return ["unverifiable", `intel_quote is ${bytes.length} bytes, too short to hold TDX report data`];
   }
   const version = bytes.readUInt16LE(0);
   const teeType = bytes.readUInt32LE(4);
-  if (version !== TDX_QUOTE_VERSION || teeType !== TDX_TEE_TYPE) {
-    return [
-      "unverifiable",
-      `intel_quote header is version ${version}, tee_type 0x${teeType.toString(16)}, not the assumed TDX v4 (version 4, tee_type 0x81); report data offset unknown, binding not checked`,
-    ];
-  }
+  const isV4 = version === TDX_QUOTE_VERSION && teeType === TDX_TEE_TYPE;
+  const kind = isV4 ? "TDX v4 quote" : `quote header version ${version}, tee_type 0x${teeType.toString(16)} (not TDX v4)`;
   const reportData = bytes.subarray(
     TDX_REPORT_DATA_OFFSET,
     TDX_REPORT_DATA_OFFSET + TDX_REPORT_DATA_LENGTH,
@@ -96,10 +102,10 @@ function checkQuoteReportData(quote, nonce, signingAddress) {
   const addr = toBytes(signingAddress);
   const hasAddress = addr !== null && reportData.includes(addr);
   if (hasNonce && hasAddress) {
-    return ["pass", "TDX v4 quote; report data holds our nonce and the signing address as raw bytes (quote itself unauthenticated)"];
+    return ["pass", `${kind}; bytes 568..632 hold our nonce and the signing address as raw bytes (quote itself unauthenticated)`];
   }
   const missing = [!hasNonce && "nonce", !hasAddress && "signing address"].filter(Boolean).join(" and ");
-  return ["fail", `TDX v4 report data does not hold the raw ${missing} (stale, replayed or another node's quote)`];
+  return ["fail", `${kind}; bytes 568..632 do not hold the raw ${missing} (stale, replayed or another node's quote)`];
 }
 
 /**

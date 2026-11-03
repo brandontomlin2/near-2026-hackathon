@@ -165,16 +165,15 @@ test("nonce-format rejects 63 hex chars and a 0x prefix", () => {
 // 6. Quote binding. The layout (v4 header, REPORTDATA at 568..632, raw nonce
 // and raw address inside it) is OUR assumption; the docs only say the two are
 // "bound". So the check passes when the assumption is confirmed byte for byte
-// and is "unverifiable" when the quote cannot be read under it (not hex, too
-// short, header not v4/TDX). A readable v4/TDX quote with the wrong values fails.
+// and is "unverifiable" ONLY when the quote is hex but too short to hold a v4
+// report body. A non-hex quote, or a 632+ byte quote without our values (any
+// header), fails, exactly as on origin/main.
 const binding = (hex) => find(withQuote(hex), "node[0].quote-binding");
 
-test("quote binding, unreadable quote: unverifiable, not rejected, and the summary says the binding is unread", () => {
+test("quote binding, truncated hex quote: unverifiable, not rejected, and the summary says the binding is unread", () => {
   const shapes = {
-    "not hex": "zz",
-    "odd length": node0(good().report).intel_quote.slice(0, -1),
     "too short": quoteWith({ len: 631, nonceAt: 568, addrAt: 600 }).slice(0, 631 * 2),
-    "no header": quoteWith({ header: false, nonceAt: 600, addrAt: 568 }),
+    "tiny": "abcd",
   };
   for (const [label, hex] of Object.entries(shapes)) {
     const r = withQuote(hex);
@@ -196,7 +195,7 @@ test("quote binding, unreadable quote: unverifiable, not rejected, and the summa
 test("quote binding, v4 with raw bytes: passes, says so, and says the quote is unauthenticated", () => {
   const c = binding(quoteWith({ nonceAt: 600, addrAt: 568 }));
   assert.equal(c.status, "pass");
-  assert.match(c.detail, /^TDX v4 quote; report data holds our nonce and the signing address as raw bytes/);
+  assert.match(c.detail, /^TDX v4 quote; bytes 568\.\.632 hold our nonce and the signing address as raw bytes/);
   assert.match(c.detail, /quote itself unauthenticated/);
   // 0x prefix and upper case hex are the same bytes.
   const hex = quoteWith({ nonceAt: 600, addrAt: 568 });
@@ -211,7 +210,7 @@ test("quote binding, readable v4 quote with the wrong values: fails and rejects,
   const both = binding(quoteWith({}));
   assert.equal(both.status, "fail");
   assert.equal(both.detail,
-    "TDX v4 report data does not hold the raw nonce and signing address (stale, replayed or another node's quote)");
+    "TDX v4 quote; bytes 568..632 do not hold the raw nonce and signing address (stale, replayed or another node's quote)");
   assert.equal(withQuote(quoteWith({})).verdict, VERDICT.REJECT);
   const noAddr = binding(quoteWith({ nonceAt: 568, addrAt: 568 + 60 })); // address runs past byte 632
   assert.equal(noAddr.status, "fail");
@@ -242,10 +241,10 @@ test("no top-level nonce: a v4 quote bound to a different nonce or address REJEC
   assert.equal(b.verdict, VERDICT.REJECT);
 });
 
-test("no top-level nonce and an unreadable quote: zero request binding, so REJECT", () => {
+test("no top-level nonce and a truncated quote: zero request binding, so REJECT", () => {
   const { report } = good();
   delete report.nonce;
-  node0(report).intel_quote = "zz";
+  node0(report).intel_quote = "abcd";
   const r = run(report);
   assert.equal(status(r, "nonce-echo"), "skip");
   assert.equal(status(r, "node[0].quote-binding"), "unverifiable");
@@ -254,26 +253,71 @@ test("no top-level nonce and an unreadable quote: zero request binding, so REJEC
   assert.equal(r.summary, "REJECT: request-binding.");
 });
 
-test("quote binding, non-v4 shape: too short, or a header that is not version 4 / TDX, is unverifiable with the reason", () => {
+test("quote binding, short hex quote: unverifiable with the reason (the only input that reaches BINDING UNREAD)", () => {
   const short = binding(quoteWith({ nonceAt: 568, addrAt: 600 }).slice(0, 631 * 2));
   assert.equal(short.status, "unverifiable");
   assert.equal(short.detail, "intel_quote is 631 bytes, too short to hold TDX report data");
   assert.equal(binding("abcd").detail, "intel_quote is 2 bytes, too short to hold TDX report data");
-  // Right length and the raw bytes in place, but a v5 header: the offsets are not ours to assume.
+});
+
+test("quote binding, 632+ bytes with a non-v4 header: judged at offset 568 exactly as on main", () => {
+  // Raw values in place under a v5 header: main passed this (it never read the header); so do we, and say what header it was.
   const v5 = Buffer.from(quoteWith({ nonceAt: 600, addrAt: 568 }), "hex");
   v5.writeUInt16LE(5, 0);
   const c5 = binding(v5.toString("hex"));
-  assert.equal(c5.status, "unverifiable");
-  assert.equal(c5.detail, "intel_quote header is version 5, tee_type 0x81, not the assumed TDX v4 (version 4, tee_type 0x81); report data offset unknown, binding not checked");
-  // v4 header but an SGX TEE type.
-  const sgx = Buffer.from(quoteWith({ nonceAt: 600, addrAt: 568 }), "hex");
+  assert.equal(c5.status, "pass");
+  assert.match(c5.detail, /^quote header version 5, tee_type 0x81 \(not TDX v4\); bytes 568\.\.632 hold our nonce/);
+  // The same header without our values fails; it is never "unverifiable".
+  const stale = Buffer.from(quoteWith({}), "hex");
+  stale.writeUInt16LE(5, 0);
+  const s5 = binding(stale.toString("hex"));
+  assert.equal(s5.status, "fail");
+  assert.match(s5.detail, /^quote header version 5, tee_type 0x81 \(not TDX v4\); bytes 568\.\.632 do not hold the raw nonce and signing address/);
+  // SGX tee type and no header at all behave the same way.
+  const sgx = Buffer.from(quoteWith({}), "hex");
   sgx.writeUInt32LE(0, 4);
-  assert.match(binding(sgx.toString("hex")).detail, /^intel_quote header is version 4, tee_type 0x0, not the assumed TDX v4/);
-  // No header at all (all zero), as an older fixture would have produced.
-  assert.match(binding(quoteWith({ header: false, nonceAt: 600, addrAt: 568 })).detail, /^intel_quote header is version 0, tee_type 0x0/);
-  const odd = binding("abc");
-  assert.equal(odd.status, "unverifiable");
-  assert.match(odd.detail, /^intel_quote is not hex; /);
+  assert.equal(binding(sgx.toString("hex")).status, "fail");
+  assert.equal(binding(quoteWith({ header: false })).status, "fail");
+  assert.equal(binding(quoteWith({ header: false, nonceAt: 600, addrAt: 568 })).status, "pass", "as on main");
+});
+
+test("quote binding, non-hex quote: FAIL (as on main), never unverifiable", () => {
+  for (const q of ["zz", "abc", "0xzz", "not a quote at all", "00".repeat(700) + "g"]) {
+    const c = binding(q);
+    assert.equal(c.status, "fail", q.slice(0, 20));
+    assert.equal(c.detail, "intel_quote is not hex");
+  }
+});
+
+// Replay cases: the report echoes the CORRECT top-level nonce (so nonce-echo
+// passes) but the quote is garbage or stale. These must REJECT, never CONSISTENT.
+test("replay (a): correct nonce echoed, garbage quote -> REJECT, exit-1 verdict, no unverifiable", () => {
+  for (const q of ["zz", "this is not hex", "abc", "0x" + "zz".repeat(400)]) {
+    const r = withQuote(q);
+    assert.equal(status(r, "nonce-echo"), "pass");
+    assert.equal(status(r, "node[0].quote-binding"), "fail", q);
+    assert.equal(r.verdict, VERDICT.REJECT, q);
+    assert.deepEqual(r.unverifiable, [], q);
+    assert.match(r.summary, /^REJECT: node\[0\]\.quote-binding\.$/, q);
+  }
+});
+
+test("replay (b): correct nonce echoed, stale non-v4 quote of 632+ bytes -> REJECT", () => {
+  const other = Buffer.from(sha256Hex("an earlier request"), "hex");
+  for (const [version, teeType] of [[5, 0x81], [3, 0x81], [4, 0], [0, 0], [0xffff, 0xffffffff]]) {
+    for (const len of [632, 700, 5000]) {
+      const q = Buffer.alloc(len);
+      q.writeUInt16LE(version, 0);
+      q.writeUInt32LE(teeType, 4);
+      other.copy(q, 568 + 32); // someone else's nonce
+      ADDR.copy(q, 568);
+      const r = withQuote(q.toString("hex"));
+      assert.equal(status(r, "nonce-echo"), "pass");
+      assert.equal(status(r, "node[0].quote-binding"), "fail", `v${version} t${teeType} len ${len}`);
+      assert.equal(r.verdict, VERDICT.REJECT, `v${version} t${teeType} len ${len}`);
+      assert.deepEqual(r.unverifiable, []);
+    }
+  }
 });
 
 test("tampered fixture (attest:check --tamper, a well-formed wrong address): REJECTed through the quote binding", () => {

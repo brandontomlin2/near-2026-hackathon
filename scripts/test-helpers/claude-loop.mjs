@@ -53,13 +53,28 @@ export function baseEnv(home, extra = {}) {
   return env;
 }
 
-export function runLoop(cwd, home, extra = {}, timeout = 20000) {
-  return spawnSync("/bin/bash", [LOOP], {
+// One loop invocation runs about 25 node and 15 git subprocesses: 1.5 s on an
+// idle machine, over 20 s with two full suites running alongside. The guard
+// only has to catch a loop that hangs, so it is sized for a loaded machine.
+// spawnSync kills the loop with SIGTERM when it fires, which the loop's TERM
+// trap turns into exit 143, so a tripped guard is reported as such instead.
+export const LOOP_RUN_TIMEOUT_MS = 120_000;
+
+export function loopTimeout(runs) {
+  return runs * LOOP_RUN_TIMEOUT_MS + 10_000;
+}
+
+export function runLoop(cwd, home, extra = {}, timeout = LOOP_RUN_TIMEOUT_MS) {
+  const result = spawnSync("/bin/bash", [LOOP], {
     cwd,
     env: baseEnv(home, extra),
     encoding: "utf8",
     timeout,
   });
+  if (result.error) {
+    throw new Error(`claude-loop.sh did not finish within ${timeout} ms (${result.error.code})\n${result.stdout}\n${result.stderr}`);
+  }
+  return result;
 }
 
 export function git(cwd, args, env) {

@@ -8,6 +8,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  LOOP_RUN_TIMEOUT_MS,
   PASS_VERIFY,
   SWARM,
   claudeRuns,
@@ -15,6 +16,7 @@ import {
   itemById,
   lockNames,
   loopEnv,
+  loopTimeout,
   readItemStatus,
   readStatus,
   runLoop,
@@ -24,7 +26,7 @@ import {
   waitFor,
 } from "./test-helpers/claude-loop.mjs";
 
-test("two concurrent runs take different items and the summary lists both", { timeout: 40000 }, async (t) => {
+test("two concurrent runs take different items and the summary lists both", { timeout: loopTimeout(3) }, async (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "hold",
@@ -87,7 +89,7 @@ test("two concurrent runs take different items and the summary lists both", { ti
   assert.equal(readItemStatus(fixture.home, "par-b").last_result, "review");
 });
 
-test("claude-swarm launches one run per id and logs to logs/<id>.log", { timeout: 40000 }, (t) => {
+test("claude-swarm launches one run per id and logs to logs/<id>.log", { timeout: loopTimeout(1) }, (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "success",
@@ -97,7 +99,7 @@ test("claude-swarm launches one run per id and logs to logs/<id>.log", { timeout
     cwd: fixture.repo,
     env: loopEnv(fixture, { CLAUDE_LOOP_MAX_PARALLEL: "2", CLAUDE_SWARM_STAGGER_SEC: "0" }),
     encoding: "utf8",
-    timeout: 35000,
+    timeout: LOOP_RUN_TIMEOUT_MS,
   });
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stderr, /skipping: sw-a/);

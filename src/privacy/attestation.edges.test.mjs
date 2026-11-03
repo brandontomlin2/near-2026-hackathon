@@ -104,7 +104,7 @@ test("every node is checked under its own index and one bad node rejects the who
   assert.match(r.summary, /^REJECT: node\[1\]\.signing-key, node\[1\]\.intel-quote\.$/);
 });
 
-test("quote binding reads only REPORTDATA at bytes 568..632 of a v4 quote; a readable quote without them fails, an unreadable one is unverifiable", () => {
+test("quote binding reads only REPORTDATA at bytes 568..632 of a v4 quote; a 632+ byte quote without them fails, only a short hex quote is unverifiable", () => {
   const nonce = requestHash(requestBody);
   const withQuote = (quote) => {
     const { report } = good();
@@ -124,20 +124,20 @@ test("quote binding reads only REPORTDATA at bytes 568..632 of a v4 quote; a rea
   assert.equal(withQuote("0x" + place(REPORT_DATA_OFFSET, REPORT_DATA_OFFSET + 32).toString("hex").toUpperCase()).status, "pass", "0x and upper case hex");
   const outside = withQuote(place(100, 200).toString("hex"));
   assert.equal(outside.status, "fail", "nonce and address outside REPORTDATA do not count");
-  assert.equal(outside.detail, "TDX v4 report data does not hold the raw nonce and signing address (stale, replayed or another node's quote)");
+  assert.equal(outside.detail, "TDX v4 quote; bytes 568..632 do not hold the raw nonce and signing address (stale, replayed or another node's quote)");
   const nonceOnly = withQuote(place(REPORT_DATA_OFFSET, 100).toString("hex"));
   assert.equal(nonceOnly.status, "fail");
-  assert.match(nonceOnly.detail, /^TDX v4 report data does not hold the raw signing address \(/);
+  assert.match(nonceOnly.detail, /^TDX v4 quote; bytes 568\.\.632 do not hold the raw signing address \(/);
   const addrOnly = withQuote(place(100, REPORT_DATA_OFFSET).toString("hex"));
   assert.equal(addrOnly.status, "fail");
-  assert.match(addrOnly.detail, /^TDX v4 report data does not hold the raw nonce \(/);
+  assert.match(addrOnly.detail, /^TDX v4 quote; bytes 568\.\.632 do not hold the raw nonce \(/);
   const straddle = withQuote(place(REPORT_DATA_OFFSET + 40, REPORT_DATA_OFFSET).toString("hex"));
   assert.equal(straddle.status, "fail", "a nonce that runs past byte 632 is not inside REPORTDATA");
   const noHeader = place(REPORT_DATA_OFFSET, REPORT_DATA_OFFSET + 32); noHeader.fill(0, 0, 48);
-  assert.equal(withQuote(noHeader.toString("hex")).status, "unverifiable", "raw bytes in place but no v4 header: offsets unknown");
-  assert.match(withQuote(noHeader.toString("hex")).detail, /not the assumed TDX v4/);
-  assert.equal(withQuote("abc").status, "unverifiable", "odd length");
-  assert.match(withQuote("abc").detail, /^intel_quote is not hex; /);
+  assert.equal(withQuote(noHeader.toString("hex")).status, "pass", "raw bytes in place, no v4 header: judged at offset 568 as on main");
+  assert.match(withQuote(noHeader.toString("hex")).detail, /not TDX v4/);
+  assert.equal(withQuote("abc").status, "fail", "odd length is not hex");
+  assert.equal(withQuote("abc").detail, "intel_quote is not hex");
   assert.equal(withQuote("0x" + "00".repeat(631)).status, "unverifiable");
   assert.equal(withQuote("00".repeat(631)).detail, "intel_quote is 631 bytes, too short to hold TDX report data");
 });

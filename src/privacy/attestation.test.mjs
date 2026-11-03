@@ -102,15 +102,14 @@ test("nvidia_payload: parsed object passes; null or number fails", () => {
   assert.equal(status(set(7), "node[0].nvidia-payload"), "fail");
 });
 
-test("non-hex intel_quote is unverifiable with 'not hex' (the docs do not state the encoding)", () => {
+test("non-hex intel_quote FAILS and rejects, as on main (never unverifiable)", () => {
   const { report } = good();
   report.model_attestations[0].intel_quote = "zz";
   const r = run(report);
   const c = r.checks.find((x) => x.id === "node[0].quote-binding");
-  assert.equal(c.status, "unverifiable");
+  assert.equal(c.status, "fail");
   assert.match(c.detail, /not hex/);
-  assert.equal(r.verdict, VERDICT.CONSISTENT);
-  assert.match(r.summary, /Unverifiable, not counted either way: node\[0\]\.quote-binding\.$/);
+  assert.equal(r.verdict, VERDICT.REJECT);
 });
 
 test("quote with the nonce but not the signing address names only the address, as a fail", () => {
@@ -120,7 +119,7 @@ test("quote with the nonce but not the signing address names only the address, a
   report.model_attestations[0].intel_quote = quote.toString("hex");
   const c = run(report).checks.find((x) => x.id === "node[0].quote-binding");
   assert.equal(c.status, "fail");
-  assert.match(c.detail, /does not hold the raw signing address \(/);
+  assert.match(c.detail, /do not hold the raw signing address \(/);
   assert.doesNotMatch(c.detail, /raw nonce/);
 });
 
