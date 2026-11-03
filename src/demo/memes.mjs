@@ -11,8 +11,6 @@
 import { moodForText } from "../art/moods.mjs";
 import { cleanText, escapeXml, nest } from "./share.mjs";
 
-export { cleanText };
-
 export const SIZE = 900;
 const MARGIN = 30;
 const IMPACT = "Impact,'Anton','Arial Black',sans-serif";
@@ -23,8 +21,22 @@ const IMPACT_EM = 0.66;
 const SANS_EM = 0.62;
 const WIDE_EM = 1.2;
 const LINE_HEIGHT = 1.08;
+// Hard input bounds. No card shows more than a few dozen characters per line
+// and three lines, so anything past these caps could never be visible. Capping
+// first keeps wrapping cost bounded no matter how long a hostile string is.
+const MAX_FIT_CHARS = 400;
+const MAX_SHEET_CHARS = 4000;
 
-// --- text safety -----------------------------------------------------------
+/** Cap `text` at `max` code points, ending with an ellipsis. Linear in `max`, not in text length. */
+function capChars(text, max) {
+  if (text.length <= max) return text; // UTF-16 length >= code point count, so this is a safe fast path
+  const chars = [];
+  for (const ch of text) {
+    if (chars.length === max) return `${chars.slice(0, max - 1).join("").trimEnd()}…`;
+    chars.push(ch);
+  }
+  return text;
+}
 
 // --- deterministic fit -----------------------------------------------------
 
@@ -81,7 +93,7 @@ function ellipsize(line, size, width, em) {
  * @returns {{ lines: string[], size: number, truncated: boolean }}
  */
 export function fitText(text, { width, maxLines, maxSize, minSize, maxHeight = Infinity, em = IMPACT_EM, upper = true }) {
-  const clean = cleanText(text);
+  const clean = capChars(cleanText(text), MAX_FIT_CHARS);
   const source = upper ? clean.toUpperCase() : clean;
   const sizes = [];
   for (let s = maxSize; s > minSize; s -= 2) sizes.push(s);
@@ -204,7 +216,7 @@ const LABELS = "Who I am|Public enemy #1|Ride-or-die|Rivalry arc|Scorecard|Signa
 
 /** Parse the Public enemy and Rivalry lines from a one-line sheet. */
 export function parseVillain(sheet) {
-  const text = cleanText(sheet);
+  const text = capChars(cleanText(sheet), MAX_SHEET_CHARS);
   const enemyLine = new RegExp(`Public enemy #1:\\s*(.+?)(?=\\s(?:${LABELS}):|$)`).exec(text)?.[1];
   if (!enemyLine || NO_ENEMY.test(enemyLine.trim())) return null;
   const counted = /^([^()|]+?)\s*\((\d+)\s+fights?\)/i.exec(enemyLine);

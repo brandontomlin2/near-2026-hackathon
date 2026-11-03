@@ -181,7 +181,7 @@ export async function runDemo({
   }
 
   // Meme pack: caption and villain-arc cards from the real events
-  // and each agent'"'"'s latest sheet.
+  // and each agent's latest sheet.
   const memeCards = buildMemes({
     events: result.events,
     sheets: Object.fromEntries(agents.map((a) => [a.id, a.sheets.at(-1)?.sheet ?? ""])),

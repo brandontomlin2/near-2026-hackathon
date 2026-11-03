@@ -4,7 +4,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { buildMemes, fitText, estimateWidth, cleanText, capLabel, ordinal, parseVillain, SIZE } from "./memes.mjs";
+import { buildMemes, fitText, estimateWidth, capLabel, ordinal, parseVillain, SIZE } from "./memes.mjs";
+import { cleanText } from "./share.mjs";
 import { runDemo } from "./pipeline.mjs";
 import { getStyle } from "../art/styles/index.mjs";
 import { AGENTS } from "../traits/agents.mjs";
@@ -299,4 +300,31 @@ describe("memes: default demo run", () => {
       fs.rmSync(d2, { recursive: true, force: true });
     }
   });
+});
+
+it("hostile text is bounded: 10k unbreakable and bidi/control strings render fast", () => {
+  const started = Date.now();
+  for (const text of ["A".repeat(10_000), "😀".repeat(10_000), "‮⁦\u0000\u0007​".repeat(2_000) + "x", ("word ".repeat(5000))]) {
+    const fit = fitText(text, { width: 840, maxLines: 3, maxSize: 72, minSize: 34, maxHeight: 210 });
+    assert.ok(fit.lines.length <= 3);
+    assert.ok(fit.lines.join("").length < 500);
+  }
+  const long = "B".repeat(10_000);
+  const names = { a: "Alpha", b: "Beta" };
+  const sheet = (n) => `Who I am: x. Public enemy #1: ${n} (3 fights). Rivalry arc: ${long}`;
+  const events = [
+    { id: 1, round: 1, agentId: "a", kind: "post", replyTo: null, text: "hi" },
+    { id: 2, round: 1, agentId: "b", kind: "reply", replyTo: 1, text: long },
+    { id: 3, round: 2, agentId: "b", kind: "reply", replyTo: 1, text: "x" },
+    { id: 4, round: 2, agentId: "a", kind: "reply", replyTo: 2, text: "‮\u0000" + long },
+  ];
+  const face = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>';
+  const faces = { a: { neutral: face, shade: face }, b: { neutral: face, shade: face } };
+  const out = buildMemes({ events, sheets: { a: sheet("Beta"), b: sheet(long) }, names, moods: ["neutral", "shade"], faces });
+  assert.ok(out.length > 0);
+  for (const m of out) {
+    assert.ok(m.svg.length < 20_000);
+    assert.doesNotMatch(m.svg, /[\u0000-\u0008\u202a-\u202e\u2066-\u2069]/);
+  }
+  assert.ok(Date.now() - started < 2000, `took ${Date.now() - started}ms`);
 });
