@@ -210,7 +210,7 @@ node -p 'require("./memory/aloof/sheet.json").sheetHash'</pre>
 <p>Genesis: <span class="hash">${GENESIS}</span></p>
 <table><tr><th>Round</th><th>Hash</th></tr>
 ${chain}</table>
-<p>verify: <span class="ok">ok</span> · final round hash <span class="hash">${esc(manifest.finalRoundHash)}</span></p>
+<p><span class="ok">verify: ok</span> · final round hash <span class="hash">${esc(manifest.finalRoundHash)}</span></p>
 
 <details class="fold">
 <summary>${esc(shareCount)} share card${shareCount === 1 ? "" : "s"}</summary>
