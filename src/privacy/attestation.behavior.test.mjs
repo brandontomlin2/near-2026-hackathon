@@ -260,25 +260,44 @@ test("quote binding, short hex quote: unverifiable with the reason (the only inp
   assert.equal(binding("abcd").detail, "intel_quote is 2 bytes, too short to hold TDX report data");
 });
 
-test("quote binding, 632+ bytes with a non-v4 header: judged at offset 568 exactly as on main", () => {
-  // Raw values in place under a v5 header: main passed this (it never read the header); so do we, and say what header it was.
+test("quote binding, 632+ bytes with a non-v4 header: FAIL before report data is read", () => {
+  // Correct raw values at 568..632 under a v5 header: rejected on the header alone.
   const v5 = Buffer.from(quoteWith({ nonceAt: 600, addrAt: 568 }), "hex");
   v5.writeUInt16LE(5, 0);
   const c5 = binding(v5.toString("hex"));
-  assert.equal(c5.status, "pass");
-  assert.match(c5.detail, /^quote header version 5, tee_type 0x81 \(not TDX v4\); bytes 568\.\.632 hold our nonce/);
+  assert.equal(c5.status, "fail");
+  assert.match(c5.detail, /^intel_quote header says version 5, tee_type 0x81, not a TDX v4 quote .*report data not read$/);
   // The same header without our values fails; it is never "unverifiable".
   const stale = Buffer.from(quoteWith({}), "hex");
   stale.writeUInt16LE(5, 0);
   const s5 = binding(stale.toString("hex"));
   assert.equal(s5.status, "fail");
-  assert.match(s5.detail, /^quote header version 5, tee_type 0x81 \(not TDX v4\); bytes 568\.\.632 do not hold the raw nonce and signing address/);
+  assert.match(s5.detail, /^intel_quote header says version 5, tee_type 0x81, not a TDX v4 quote/);
   // SGX tee type and no header at all behave the same way.
   const sgx = Buffer.from(quoteWith({}), "hex");
   sgx.writeUInt32LE(0, 4);
   assert.equal(binding(sgx.toString("hex")).status, "fail");
   assert.equal(binding(quoteWith({ header: false })).status, "fail");
-  assert.equal(binding(quoteWith({ header: false, nonceAt: 600, addrAt: 568 })).status, "pass", "as on main");
+  const sgxGood = Buffer.from(quoteWith({ nonceAt: 600, addrAt: 568 }), "hex");
+  sgxGood.writeUInt32LE(0, 4);
+  assert.equal(binding(sgxGood.toString("hex")).status, "fail", "wrong tee_type with correct bytes");
+  const noHdr = binding(quoteWith({ header: false, nonceAt: 600, addrAt: 568 }));
+  assert.equal(noHdr.status, "fail", "no header, correct bytes");
+  assert.match(noHdr.detail, /version 0, tee_type 0x0, not a TDX v4 quote/);
+});
+
+test("a crafted non-v4 quote with correct bytes at 568..632 makes the whole verdict REJECT (the CLI's exit 1)", () => {
+  for (const [version, teeType] of [[3, 0x81], [5, 0x81], [4, 0], [4, 2]]) {
+    const q = Buffer.from(quoteWith({ nonceAt: 600, addrAt: 568 }), "hex");
+    q.writeUInt16LE(version, 0);
+    q.writeUInt32LE(teeType, 4);
+    const { report, chatSignature } = good();
+    node0(report).intel_quote = q.toString("hex");
+    const r = run(report, { chatSignature });
+    assert.equal(r.checks.find((c) => c.id.endsWith(".quote-binding")).status, "fail", `v${version}/0x${teeType.toString(16)}`);
+    assert.equal(r.verdict, VERDICT.REJECT);
+    assert.deepEqual(r.unverifiable, []);
+  }
 });
 
 test("quote binding, non-hex quote: FAIL (as on main), never unverifiable", () => {
