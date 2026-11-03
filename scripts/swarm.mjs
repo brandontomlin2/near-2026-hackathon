@@ -20,7 +20,7 @@ import { assertSafeOutDir, clearOwnedFiles } from "../src/util/outdir.mjs";
 const USAGE = `Usage: node scripts/swarm.mjs [--rounds N] [--seed N] [--every N] [--out DIR]
   --rounds N  swarm rounds, 1 to ${MAX_ROUNDS} (default 5)
   --seed N    swarm seed, a positive integer (default 1)
-  --every N   write a sheet every N rounds (default ${DEFAULT_LOOP_EVERY}, or SUMMARY_EVERY_N_ROUNDS)
+  --every N   write a sheet every N rounds, 1 to ${MAX_ROUNDS} (default ${DEFAULT_LOOP_EVERY}, or SUMMARY_EVERY_N_ROUNDS)
   --out DIR   output directory (default out/swarm)
 Mock inference by default: offline, nothing is signed or sent.`;
 
@@ -35,7 +35,7 @@ function parseArgs(argv) {
       if (value === undefined || !/^[1-9][0-9]*$/.test(value) || !Number.isSafeInteger(Number(value))) {
         throw new Error(`${flag} must be a positive integer, got ${JSON.stringify(value)}`);
       }
-      if (flag === "--rounds" && Number(value) > MAX_ROUNDS) throw new Error(`--rounds must be at most ${MAX_ROUNDS}, got ${value}`);
+      if (flag !== "--seed" && Number(value) > MAX_ROUNDS) throw new Error(`${flag} must be at most ${MAX_ROUNDS}, got ${value}`);
       opts[flag.slice(2)] = Number(value);
       i++;
     } else if (flag === "--out") {
@@ -56,7 +56,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     // parseSummaryEvery throws on a bad SUMMARY_EVERY_N_ROUNDS; unset gives its own default (5), so only read it when set.
     opts.every ??= env.SUMMARY_EVERY_N_ROUNDS?.trim() ? parseSummaryEvery(env.SUMMARY_EVERY_N_ROUNDS) : DEFAULT_LOOP_EVERY;
   } catch (error) {
-    console.error(`swarm: ${error.message}`);
+    console.error(`swarm: ${error.message} (see --help)`);
     return 2;
   }
   if (opts.help) {
