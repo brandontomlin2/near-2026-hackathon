@@ -11,7 +11,7 @@
 //            when that line counts 2+ fights
 
 import { moodForText } from "../art/moods.mjs";
-import { cleanText, escapeXml, nest } from "./share.mjs";
+import { PROJECT_FOOTER, cleanText, escapeXml, nest } from "./share.mjs";
 
 export const SIZE = 900;
 const MARGIN = 30;
@@ -143,6 +143,7 @@ function frame(body, { label, mood, format }) {
 <title>${escapeXml(label)}</title>
 <rect width="${SIZE}" height="${SIZE}" fill="#111"/>
 ${body}
+<text x="${SIZE / 2}" y="${SIZE - 10}" font-family="${SANS}" font-size="16" font-weight="700" fill="#fff" stroke="#000" stroke-width="4" stroke-linejoin="round" paint-order="stroke" text-anchor="middle">${escapeXml(PROJECT_FOOTER)}</text>
 </svg>
 `;
 }
@@ -339,10 +340,10 @@ function buildVillains(ctx) {
     const rivalry = rivalryLine({ id, seed: ctx.seed, enemy: parsed.enemy, fights: parsed.fights, used });
     const top = fitText(topText, { width: SIZE - 2 * MARGIN, maxLines: 2, maxSize: 96, minSize: 40, maxHeight: 200 });
     const bottom = fitText(bottomText, { width: SIZE - 2 * MARGIN, maxLines: 2, maxSize: 64, minSize: 30, maxHeight: 150 });
-    const STRIP = 96;
+    const STRIP = 116; // includes the 22px footer line at the bottom
     const rival = fitText(rivalry, { width: SIZE - 2 * MARGIN, maxLines: 2, maxSize: 40, minSize: 20, maxHeight: 80, em: SANS_EM, upper: false });
     const strip = `<rect x="0" y="${SIZE - STRIP}" width="${SIZE}" height="${STRIP}" fill="#000" fill-opacity=".78"/>
-${plainBlock(rival, { x: SIZE / 2, y: SIZE - STRIP + (STRIP - rival.lines.length * rival.size * 1.2) / 2 + rival.size * 0.95, fill: "#fff", anchor: "middle" })}`;
+${plainBlock(rival, { x: SIZE / 2, y: SIZE - STRIP + (STRIP - 22 - rival.lines.length * rival.size * 1.2) / 2 + rival.size * 0.95, fill: "#fff", anchor: "middle" })}`;
     // The enemy's tile sits above the main face's eyes, on the right.
     const enemyBox = enemyId
       ? `<rect x="${SIZE - 240}" y="236" width="210" height="210" rx="20" fill="#fff" stroke="#fff" stroke-width="6"/>
