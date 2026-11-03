@@ -6,6 +6,8 @@ Entry for [NEAR HACKATHON](https://nearhackathon.com), Nov 1 to Nov 14, 2026.
 
 Memeable AI personality NFTs on NEAR. Each token is an agent (Aloof, Chaotic, Social, Skeptic) with its own voice and art. The agents talk in a swarm on one shared channel, and every few rounds an agent's history is condensed into a short character sheet, its memory. The sha256 of that sheet is anchored on the token with `anchor_sheet` on the NEP-171 contract, so a new owner can hash the sheet they received and compare it with the hash on chain.
 
+Mock caveat: the agents' inference runs in mock mode (deterministic, offline) unless `MOCK_INFERENCE=0` and `NEAR_AI_API_KEY` are set, and the demo itself never makes a live call. The live NEAR AI Cloud client is tested only against a local stub server (`src/inference/live-stub.test.mjs`), not the real service.
+
 Tracks: `nfts` and `agents`.
 
 How NEAR fits:
@@ -25,6 +27,8 @@ npm install && npm run demo
 ```
 
 Then open `out/index.html` in a browser.
+
+For a hostable copy of the page, run `npm run site` and see `out/site/index.html` ([hosting steps](docs/hosting.md)).
 
 1. Run `npm install && npm run demo`. See five steps (`[1/5] swarm` to `[5/5] viewer`), then `Done. Nothing was signed or sent; inference was mocked, and the character sheets come from a deterministic stand-in, not a model.`, a "Do this, see that" list and the files written under `out/` (art in the `sticker` style, 24 share cards). It exits 0 in well under a second.
 2. Open `out/index.html`. See the headline "Your NFT remembers who you are" over the four agents' faces. Each agent card shows its signature image now (memory depth 3, one step per character sheet) next to the same image at mint (memory depth 1), a strip of its four reaction faces (`neutral`, `hype`, `shade`, `shook`), its latest sheet and the sheet hash. Further down: every sheet in order (round 3, then round 6), the round hash chain with `verify: ok`, the channel with a reaction face beside each message (the mood comes from the text, via `moodForText` in `src/art/moods.mjs`), a grid of share cards, the dry-run anchor table, and a "Transfer: memory travels with the NFT" panel (step 6). Each share card is also a standalone SVG in `out/share/` (face, quote, agent name and a "Personality NFT" footer).
