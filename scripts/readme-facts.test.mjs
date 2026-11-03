@@ -101,7 +101,7 @@ test("README names the product, pins the exact Rust toolchain and describes live
   assert.ok(readmeText.includes("`[ok]`/`[skip]` lines for the rest"));
 });
 
-test("README 'Live on testnet' is one short paragraph after the working sections, with the owner-only command", () => {
+test("README 'Live on testnet' is one short paragraph after the working sections, with the owner-only command", async () => {
   const headings = [...readme.matchAll(/^## (.+)$/gm)].map((m) => m[1]);
   const liveIdx = headings.indexOf("Live on testnet");
   assert.ok(liveIdx >= 0, "README must have a 'Live on testnet' section");
@@ -113,8 +113,23 @@ test("README 'Live on testnet' is one short paragraph after the working sections
   assert.doesNotMatch(body, /^\|/m, "section must not contain a table");
   assert.doesNotMatch(body, /TBD/);
   assert.match(body, /^Not run yet\./);
-  assert.ok(body.includes("`npm run live-proof -- --send --i-approve`"), "must name the exact owner-approved command");
+  const { SEND_COMMAND } = await import("./live-proof.mjs");
+  assert.ok(body.includes(`\`${SEND_COMMAND}\``), `must name the complete owner-approved command: ${SEND_COMMAND}`);
+  assert.doesNotMatch(body, /--i-approve`/, "an owner command that stops at --i-approve is incomplete: mint --send needs --media-base");
   assert.ok(body.includes("`out/evidence.json`"), "must say where the evidence will appear");
+});
+
+test("the submission checklist and live:check name the complete owner command, with --media-base", async () => {
+  const { SEND_COMMAND } = await import("./live-proof.mjs");
+  const checklist = await readFile(join(root, "docs/submission-checklist.md"), "utf8");
+  assert.ok(checklist.includes(`\`${SEND_COMMAND}\``), `docs/submission-checklist.md must quote ${SEND_COMMAND}`);
+  assert.doesNotMatch(checklist, /--i-approve`/);
+  const { check } = await import("./live-check.mjs");
+  const r = await check({ NEAR_ACCOUNT_ID: "alice.testnet", NEAR_CONTRACT_ACCOUNT_ID: "nft.alice.testnet" }, {
+    statWasm: () => 1, fetch: async () => ({ json: async () => ({ result: { amount: "1" } }) }), wasm: "/w.wasm",
+  });
+  assert.equal(r.ready, true);
+  assert.match(r.lines.at(-1), /^ready: yes\. .*--send --i-approve --media-base <url>/);
 });
 
 test("README and the submission checklist quote the evidence command live-proof --send prints, with the tx file it writes", async () => {

@@ -3,9 +3,12 @@
 //
 //   npm run live-proof                 dry run (default): prints the three steps and
 //                                      writes out/live-proof/evidence.example.json ("example": true)
-//   npm run live-proof -- --send --i-approve
+//   npm run live-proof -- --send --i-approve --media-base <url>
 //                                      really sends. Refused unless NEAR_ACCOUNT_ID and
-//                                      NEAR_CONTRACT_ACCOUNT_ID are set AND --i-approve is given.
+//                                      NEAR_CONTRACT_ACCOUNT_ID are set AND --i-approve is given
+//                                      AND --media-base names where the four SVGs are hosted
+//                                      (testnet-deploy's mint --send refuses to run without it, so
+//                                      the gate is here, before deploy, not after it).
 //                                      Collects the transaction hashes the near CLI prints into
 //                                      out/live-proof/txs.json and prints the exact
 //                                      `npm run evidence` command that reads them.
@@ -19,7 +22,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { prepareAnchor } from "../src/anchor/anchor.mjs";
-import { AGENTS, run as deployRun, shellQuote, validateAccountId, UsageError, NETWORK } from "./testnet-deploy.mjs";
+import { AGENTS, run as deployRun, shellQuote, validateAccountId, validateMediaBase, UsageError, NETWORK } from "./testnet-deploy.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Dry runs write under out/ (gitignored) so a judge's tree stays clean. The tracked
@@ -32,6 +35,8 @@ export const TESTNET_DEPLOY = path.join(HERE, "testnet-deploy.mjs");
 // from the package root), so the printed command is the same on every machine.
 export const TX_FILE_LABEL = "out/live-proof/txs.json";
 export const TX_FILE = path.join(HERE, "..", ...TX_FILE_LABEL.split("/"));
+/** The complete owner command, as the docs quote it. mint --send needs --media-base, so it is not optional. */
+export const SEND_COMMAND = "npm run live-proof -- --send --i-approve --media-base <url>";
 /** The exact `npm run evidence` invocation that turns the collected hashes into out/evidence.json. */
 export const evidenceCommand = (contract) => `EVIDENCE_NETWORK=${NETWORK} NEAR_ACCOUNT_ID=${contract} EVIDENCE_TX_FILE=${TX_FILE_LABEL} npm run evidence`;
 // The labels evidence.mjs will show, one per transaction, in send order.
@@ -51,15 +56,18 @@ const ANCHOR_TOKEN = "aloof";
 const PLACEHOLDER_CONTRACT = "<NEAR_CONTRACT_ACCOUNT_ID>";
 const PLACEHOLDER_OWNER = "<NEAR_ACCOUNT_ID>";
 
-const USAGE = `Usage: node scripts/live-proof.mjs [--send --i-approve] [--out <file>] [--update-example]
+const USAGE = `Usage: node scripts/live-proof.mjs [--send --i-approve --media-base <url>] [--out <file>] [--update-example]
 
 Default is a dry run: prints the deploy, mint (4 tokens) and anchor_sheet steps and writes
 an example evidence file. Nothing is signed or sent.
 
   --send         really send all steps on testnet (needs NEAR_ACCOUNT_ID,
-                 NEAR_CONTRACT_ACCOUNT_ID and --i-approve); writes the transaction
-                 hashes to ${TX_FILE_LABEL} and prints the npm run evidence command
+                 NEAR_CONTRACT_ACCOUNT_ID, --i-approve and --media-base); writes the
+                 transaction hashes to ${TX_FILE_LABEL} and prints the npm run evidence command
   --i-approve    explicit human approval for --send
+  --media-base <url>  base URL where <token_id>.svg is hosted; passed to the mint step.
+                 Required with --send (mint --send refuses the placeholder); in a dry run
+                 it replaces the labelled placeholder media URL
   --out <file>   where the dry run writes the example (default out/live-proof/evidence.example.json)
   --update-example  write the tracked docs/evidence.example.json instead (maintainers only)
 `;
@@ -81,8 +89,11 @@ export function buildAnchorStep({ contract, owner }) {
   return { name: "anchor_sheet", signer: owner, receiver_id: contract, method: p.methodName, args: p.args, deposit, gas: gasTgas, sheetHash: p.sheetHash, argv };
 }
 
+/** The mint arguments live-proof hands to testnet-deploy, dry run and send alike. */
+const mintArgs = (mediaBase) => (mediaBase ? ["--media-base", mediaBase] : []);
+
 /** The three steps, in order. Pure: same inputs, same plan. */
-export async function buildPlan({ contract, owner, env }) {
+export async function buildPlan({ contract, owner, env, mediaBase = null }) {
   const capture = async (cmd, extra = []) => {
     const lines = [];
     const code = await deployRun([cmd, "--json", ...extra], env, { out: (l) => lines.push(l), err: (l) => lines.push(l) });
@@ -90,7 +101,7 @@ export async function buildPlan({ contract, owner, env }) {
     return JSON.parse(lines.join("\n")).steps;
   };
   const [deploy] = await capture("deploy", ["--wasm", RELATIVE_WASM]); // relative, so the output is the same on every machine
-  const mints = await capture("mint");
+  const mints = await capture("mint", mintArgs(mediaBase));
   return [deploy, ...mints, buildAnchorStep({ contract, owner })];
 }
 
@@ -143,7 +154,7 @@ export function exampleEvidence({ contract, owner, steps }) {
 const OUT_LABELS = { default: "out/live-proof/evidence.example.json", tracked: "docs/evidence.example.json", custom: "the --out file" };
 
 function parseArgs(argv) {
-  const opts = { send: false, approve: false, out: DEFAULT_OUT, outLabel: OUT_LABELS.default, help: false };
+  const opts = { send: false, approve: false, mediaBase: null, out: DEFAULT_OUT, outLabel: OUT_LABELS.default, help: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === "--send") opts.send = true;
@@ -156,6 +167,11 @@ function parseArgs(argv) {
       opts.outLabel = OUT_LABELS.custom;
       i += 1;
       opts.outGiven = true;
+    } else if (a === "--media-base") {
+      const value = argv[i + 1];
+      if (!value || value.startsWith("-")) throw new UsageError(`--media-base needs a value, got ${JSON.stringify(value)}`);
+      opts.mediaBase = validateMediaBase(value);
+      i += 1;
     } else if (a === "-h" || a === "--help") opts.help = true;
     else throw new UsageError(`unknown argument: ${a}`);
   }
@@ -204,13 +220,18 @@ export async function run(argv, env = process.env, deps = {}) {
     if (opts.send) {
       // Every gate runs before the first spawn.
       if (!opts.approve) throw new UsageError("--send needs --i-approve (explicit human approval). Nothing was sent.");
+      // mint --send (scripts/testnet-deploy.mjs) refuses to run without --media-base. Gated here,
+      // so a send never gets as far as deploying and then stopping at the mint step.
+      if (!opts.mediaBase) {
+        throw new UsageError("--send needs --media-base <url>: the base URL where the four <token_id>.svg files are hosted, which mint --send requires. Nothing was sent.");
+      }
       const owner = validateAccountId(env.NEAR_ACCOUNT_ID, "NEAR_ACCOUNT_ID");
       const contract = validateAccountId(env.NEAR_CONTRACT_ACCOUNT_ID, "NEAR_CONTRACT_ACCOUNT_ID");
       out(`send: deploy, mint x4, anchor_sheet on ${NETWORK} as ${owner}, contract ${contract}`);
       const anchor = buildAnchorStep({ contract, owner });
       const stages = [
         ["deploy", "node", [TESTNET_DEPLOY, "deploy", "--send"]],
-        ["mint", "node", [TESTNET_DEPLOY, "mint", "--send"]],
+        ["mint", "node", [TESTNET_DEPLOY, "mint", "--send", ...mintArgs(opts.mediaBase)]],
         ["anchor_sheet", "near", anchor.argv],
       ];
       const transactions = [];
@@ -240,7 +261,7 @@ export async function run(argv, env = process.env, deps = {}) {
     const owner = env.NEAR_ACCOUNT_ID ? validateAccountId(env.NEAR_ACCOUNT_ID, "NEAR_ACCOUNT_ID") : PLACEHOLDER_OWNER;
     const contract = env.NEAR_CONTRACT_ACCOUNT_ID ? validateAccountId(env.NEAR_CONTRACT_ACCOUNT_ID, "NEAR_CONTRACT_ACCOUNT_ID") : PLACEHOLDER_CONTRACT;
     const planEnv = { NEAR_ACCOUNT_ID: owner === PLACEHOLDER_OWNER ? "" : owner, NEAR_CONTRACT_ACCOUNT_ID: contract === PLACEHOLDER_CONTRACT ? "" : contract };
-    const steps = await buildPlan({ contract, owner, env: planEnv });
+    const steps = await buildPlan({ contract, owner, env: planEnv, mediaBase: opts.mediaBase });
     out(`dry-run: nothing is signed or sent. Add --send --i-approve to broadcast on ${NETWORK}.`);
     out(`network: ${NETWORK}   owner: ${owner}   contract: ${contract}`);
     out("");
