@@ -9,8 +9,12 @@
 // npm run swarm and npm run demo write). Without --input it runs that same
 // swarm offline with the persona mocks: no keys, no network. The output is
 // self-contained HTML with no scripts or network calls.
+//
+// Exit codes: 0 wrote the page; 2 a user mistake (unknown argument, bad value,
+// unreadable or invalid --input), reported as one line ending "(see --help)";
+// 1 a runtime failure such as an unwritable --out.
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 import { MAX_ROUNDS, runSwarm } from "../src/swarm/runner.mjs";
@@ -26,66 +30,111 @@ const USAGE = `usage: node scripts/viewer.mjs [--input RUN.json] [--rounds N] [-
   --out FILE     output HTML (default ${DEFAULT_OUT})
 `;
 
+/** A user mistake: reported as one line with "(see --help)" and exit 2. */
+class UsageError extends Error {}
+
 function parseArgs(argv) {
   const options = { input: undefined, rounds: undefined, out: DEFAULT_OUT, help: false };
+  if (argv.some((a) => a === "--help" || a === "-h")) return { ...options, help: true }; // help wins over any other argument
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     const value = () => {
       const next = argv[i + 1];
-      if (next === undefined || next.startsWith("--")) throw new Error(`${arg} needs a value, got ${JSON.stringify(next)}`);
+      if (next === undefined || next.startsWith("--")) throw new UsageError(`${arg} needs a value, got ${JSON.stringify(next)}`);
       i += 1;
       return argv[i];
     };
-    if (arg === "--help" || arg === "-h") options.help = true;
-    else if (arg === "--input") options.input = value();
+    if (arg === "--input") options.input = value();
     else if (arg === "--rounds") options.rounds = value();
     else if (arg === "--out") options.out = value();
-    else throw new Error(`unknown argument ${arg}`);
+    else throw new UsageError(`unknown argument ${JSON.stringify(arg)}`);
   }
+  if (options.input !== undefined && options.rounds !== undefined) {
+    throw new UsageError("--rounds cannot be combined with --input (the file already holds its rounds)");
+  }
+  if (options.out === "") throw new UsageError('--out must not be empty, got ""');
   return options;
 }
 
 function roundsFrom(options) {
   const raw = options.rounds ?? process.env.SWARM_ROUNDS ?? String(DEFAULT_ROUNDS);
-  if (!/^[1-9][0-9]*$/.test(raw)) throw new Error(`rounds must be a positive integer, got ${JSON.stringify(raw)}`);
-  if (Number(raw) > MAX_ROUNDS) throw new Error(`rounds must be at most ${MAX_ROUNDS}, got ${raw}`);
+  if (!/^[1-9][0-9]*$/.test(raw)) throw new UsageError(`rounds must be a positive integer, got ${JSON.stringify(raw)}`);
+  if (Number(raw) > MAX_ROUNDS) throw new UsageError(`rounds must be at most ${MAX_ROUNDS}, got ${raw}`);
   return Number(raw);
 }
 
-async function main() {
-  let options;
+/** Refuse an --out that is an existing directory before any work is done. A missing path is fine. */
+async function assertOutIsNotDir(out) {
+  let info;
   try {
-    options = parseArgs(process.argv.slice(2));
+    info = await stat(out);
+  } catch {
+    return;
+  }
+  if (info.isDirectory()) throw new UsageError(`--out ${out} is a directory; give a file path`);
+}
+
+/** Read and parse --input. Every failure names the flag and the file. */
+async function loadInput(input) {
+  let text;
+  try {
+    text = await readFile(input, "utf8");
   } catch (err) {
-    process.stderr.write(`error: ${err.message} (see --help)\n`);
+    throw new UsageError(`cannot read --input ${input}: ${err.message}`);
+  }
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new UsageError(`--input ${input} is not JSON: ${err.message}`);
+  }
+}
+
+/** Render the page from --input or a fresh offline swarm. An invalid --input is the user's mistake; an invalid fresh run is a bug. */
+async function renderPage({ input, rounds }) {
+  if (input !== undefined) {
+    const run = await loadInput(input);
+    try {
+      return renderViewer(run);
+    } catch (err) {
+      throw new UsageError(`--input ${input}: ${err.message}`);
+    }
+  }
+  return renderViewer(await runSwarm({ rounds }));
+}
+
+function report(err) {
+  const message = err instanceof Error ? err.message : String(err);
+  if (err instanceof UsageError) {
+    process.stderr.write(`viewer: ${message} (see --help)\n`);
     return 2;
   }
-  if (options.help) {
-    process.stdout.write(USAGE);
-    return 0;
-  }
+  process.stderr.write(`viewer: ${message}\n`);
+  return 1;
+}
 
-  // Everything below fails with one line; the page is rendered before any file is touched.
+async function main() {
+  // Everything before the write fails with one line; the page is rendered before any file is touched.
+  let options;
   let html;
   try {
-    let run;
-    if (options.input !== undefined) {
-      run = JSON.parse(await readFile(options.input, "utf8"));
-    } else {
-      run = await runSwarm({ rounds: roundsFrom(options) });
+    options = parseArgs(process.argv.slice(2));
+    if (options.help) {
+      process.stdout.write(USAGE);
+      return 0;
     }
-    html = renderViewer(run);
+    // Validate --rounds / SWARM_ROUNDS and --out before running anything.
+    const rounds = options.input === undefined ? roundsFrom(options) : undefined;
+    await assertOutIsNotDir(options.out);
+    html = await renderPage({ input: options.input, rounds });
   } catch (err) {
-    process.stderr.write(`error: ${err.message}\n`);
-    return 1;
+    return report(err);
   }
   const out = resolve(options.out);
   try {
     await mkdir(dirname(out), { recursive: true });
     await writeFile(out, html, "utf8");
   } catch (err) {
-    process.stderr.write(`error: cannot write ${options.out}: ${err.message}\n`);
-    return 1;
+    return report(new Error(`cannot write ${options.out}: ${err.message}`));
   }
   process.stdout.write(`wrote ${out}\n`);
   return 0;
@@ -93,8 +142,5 @@ async function main() {
 
 main().then(
   (code) => process.exit(code),
-  (err) => {
-    process.stderr.write(`error: ${err.message}\n`);
-    process.exit(1);
-  },
+  (err) => process.exit(report(err)),
 );

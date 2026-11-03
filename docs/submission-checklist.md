@@ -26,13 +26,13 @@ Status key: **done** (evidence given), **missing** (agent-doable work not finish
 | What the product is, the problem, how NEAR fits; no marketing | done | README "What this is", "How NEAR fits". |
 | Numbered "do X, see Y" steps from a fresh clone | done | README "Try it (judge path)" steps 1-9. Re-check each command exists in `package.json` before submit. |
 | Works with no keys (`MOCK_INFERENCE=1`); live env vars documented | done | README "Inference" table. |
-| Track ids named in README | done | README top: `nfts`, `swarms`, `agents` (fixed 2026-11-03; it said only `nfts` and `agents`). "Hackathon context" lists all 13 valid ids. |
+| Track ids named in README | done | README top: `nfts`, `swarms`, `agents` (fixed 2026-11-03; it said only `nfts` and `agents`). `docs/HACKATHON.md` lists all 13 valid ids. |
 | Libraries, templates, AI-generated code listed (Q-005) | done | `docs/DISCLOSURE.md`, linked from README "Disclosure". |
 | Pre-hackathon code disclosed (Q-002, Q-003) | done | README "What this is" and "Disclosure": none. `docs/DISCLOSURE.md` names first commit `992acee`. |
-| Planned features not described as shipped | done | README "Status" and "Live on testnet" say nothing is deployed; evidence is `TBD`. Re-check after any live run. |
+| Planned features not described as shipped | done | README "Mock caveats and status" and "Live on testnet" say nothing is deployed and there are no hashes to show. Re-check after any live run. |
 | Second project named in README (Q-015) | needs Brandon | Ask if the lead is submitting another project. If yes, add a README line naming it (not done, none known). If no, record "one project only" in section 5. |
 | Hosted demo up (Q-012, optional but a plus) | needs Brandon | `npm run site` builds `out/site/`; `docs/hosting.md`. Hosting needs the human's account. Keep up to 2026-11-18, ideally 2026-11-25. |
-| Live testnet evidence section filled | missing | README "Live on testnet" is `TBD`. Fill only after the human approves `npm run live-proof -- --send --i-approve` and sees real hashes. Never invent hashes. |
+| Live testnet evidence section filled | missing | README "Live on testnet" says "Not run yet". Fill only after the human approves `npm run live-proof -- --send --i-approve` and sees real hashes. Never invent hashes. |
 
 ## 3. Pre-hackathon baseline (Q-001 to Q-004)
 
