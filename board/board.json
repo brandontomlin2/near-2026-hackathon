@@ -182,6 +182,17 @@
     "updated_by": "seed"
   },
   {
+    "id": "swarm-and-evidence-mock-sheets-use-the-demo-s-counting-stand-in-fix-1-rounds-plural",
+    "title": "swarm and evidence mock sheets use the demo's counting stand-in; fix '1 rounds' plural",
+    "status": "doing",
+    "owner": "claude",
+    "kind": "task",
+    "lane": "claude",
+    "notes": "",
+    "updated_at": "2026-11-03T16:55:29.132Z",
+    "updated_by": "claude"
+  },
+  {
     "id": "testnet-deploy-mint-3-agents",
     "title": "testnet deploy + mint 3 agents",
     "status": "review",
