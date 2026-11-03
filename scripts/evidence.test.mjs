@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { runSwarm } from "../src/swarm/runner.mjs";
 import { AGENTS, EvidenceError, loadTransactions, main, mockEvidence } from "./evidence.mjs";
 
 const HASH = "9RQvQyNqF3Jb4cX1hHq7yZkVwP2mT8uLs5aDnEoGfBxC";
@@ -33,7 +34,7 @@ test("mock mode writes labeled placeholders and no real-looking hashes", async (
   assert.equal(code, 0);
   const ev = JSON.parse(fs.readFileSync(path.join(dir, "out/evidence.json"), "utf8"));
   assert.equal(ev.mock, true);
-  assert.deepEqual(ev, mockEvidence());
+  assert.deepEqual(ev, await mockEvidence());
   for (const tx of ev.transactions) {
     assert.equal(tx.mock, true);
     assert.match(tx.hash, /^MOCK-/);
@@ -41,6 +42,44 @@ test("mock mode writes labeled placeholders and no real-looking hashes", async (
   }
   assert.equal(ev.views.length, 8);
   assert.ok(ev.views.every((v) => v.mock === true));
+});
+
+test("mock evidence carries the full memory loop, linked to the swarm final hash", async () => {
+  const ev = await mockEvidence();
+  const loop = ev.memory_loop;
+  assert.equal(loop.mock, true);
+  assert.match(loop.label, /^MOCK/);
+  assert.deepEqual(loop.flow, ["swarm", "summary sheet hash", "anchor_sheet dry-run per token", "final round hash"]);
+  const expected = (await runSwarm({ rounds: 5, seed: 1 })).roundHashes.at(-1);
+  assert.equal(loop.swarm.final_round_hash, expected);
+  assert.equal(loop.tokens.length, 4);
+  for (const t of loop.tokens) {
+    assert.equal(t.anchor.status, "dry-run");
+    assert.equal(t.anchor.transaction_hash, null);
+    assert.equal(t.anchor.args.sheet_hash, t.sheet.sheet_hash);
+    assert.equal(t.anchor.linked_round_hash, expected);
+  }
+  assert.deepEqual(ev.views.filter((v) => v.method === "sheet_anchor").map((v) => v.args.token_id), loop.tokens.map((t) => t.token_id));
+});
+
+test("mock runs are byte-identical, print the MOCK banner and never fetch", async () => {
+  const lines = [];
+  const origLog = console.log;
+  console.log = (...a) => lines.push(a.join(" "));
+  const outs = [];
+  try {
+    for (let i = 0; i < 2; i++) {
+      const dir = tmp();
+      assert.equal(await main({}, { cwd: dir, fetchImpl: () => assert.fail("no network in mock") }), 0);
+      outs.push(fs.readFileSync(path.join(dir, "out/evidence.json"), "utf8"));
+    }
+  } finally {
+    console.log = origLog;
+  }
+  assert.equal(outs[0], outs[1]);
+  const printed = lines.join("\n");
+  assert.match(printed, /MOCK EVIDENCE - NOT ON-CHAIN PROOF/);
+  assert.match(printed, /dry-run only: nothing signed, nothing sent, no chain queried/);
 });
 
 test("testnet mode makes only view calls and records responses and tx hashes", async () => {

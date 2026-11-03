@@ -1,0 +1,72 @@
+{
+  "example": true,
+  "mock": true,
+  "network": "testnet",
+  "note": "EXAMPLE ONLY. Shape of a live run's evidence. No chain was queried and no transaction was sent. Hashes are placeholders.",
+  "contract": "<NEAR_CONTRACT_ACCOUNT_ID>",
+  "transactions": [
+    {
+      "label": "deploy",
+      "hash": "EXAMPLE-deploy-tx-hash",
+      "explorer": "https://explorer.testnet.near.org/transactions/EXAMPLE-deploy-tx-hash"
+    },
+    {
+      "label": "mint aloof",
+      "hash": "EXAMPLE-mint-aloof-tx-hash",
+      "explorer": "https://explorer.testnet.near.org/transactions/EXAMPLE-mint-aloof-tx-hash"
+    },
+    {
+      "label": "mint chaotic",
+      "hash": "EXAMPLE-mint-chaotic-tx-hash",
+      "explorer": "https://explorer.testnet.near.org/transactions/EXAMPLE-mint-chaotic-tx-hash"
+    },
+    {
+      "label": "mint social",
+      "hash": "EXAMPLE-mint-social-tx-hash",
+      "explorer": "https://explorer.testnet.near.org/transactions/EXAMPLE-mint-social-tx-hash"
+    },
+    {
+      "label": "mint skeptic",
+      "hash": "EXAMPLE-mint-skeptic-tx-hash",
+      "explorer": "https://explorer.testnet.near.org/transactions/EXAMPLE-mint-skeptic-tx-hash"
+    },
+    {
+      "label": "anchor_sheet",
+      "hash": "EXAMPLE-anchor_sheet-tx-hash",
+      "explorer": "https://explorer.testnet.near.org/transactions/EXAMPLE-anchor_sheet-tx-hash"
+    }
+  ],
+  "views": [
+    {
+      "method": "nft_total_supply",
+      "args": {},
+      "result": "4"
+    },
+    {
+      "method": "nft_token",
+      "args": {
+        "token_id": "aloof"
+      },
+      "result": {
+        "token_id": "aloof",
+        "owner_id": "<NEAR_ACCOUNT_ID>",
+        "metadata": {
+          "title": "Aloof",
+          "description": "Aloof agent. Role: observer.",
+          "extra": "{\"temperament\":\"cool\",\"role\":\"observer\",\"risk\":\"low\",\"voice\":\"dry\"}"
+        }
+      }
+    },
+    {
+      "method": "sheet_anchor",
+      "args": {
+        "token_id": "aloof"
+      },
+      "result": {
+        "sheet_hash": "35b263d770d675b370ab4fa18a19c2bd40cdd3afa13ef885414ef798c87e2203",
+        "memory_depth": 2,
+        "updated_at": "EXAMPLE-timestamp"
+      }
+    }
+  ]
+}
