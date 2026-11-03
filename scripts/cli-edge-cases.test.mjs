@@ -178,6 +178,12 @@ add("live-proof.mjs", [
   ["--out is under a file", ["--out", "afile/x.json"]],
   ["--out is a directory", ["--out", "."]],
   ["--out with --update-example", ["--update-example", "--out", "x.json"]],
+  // Dry-run cases only: a --send case here would spawn a real deploy if the gate regressed.
+  ["--media-base missing value", ["--media-base"]],
+  ["--media-base empty", ["--media-base", ""]],
+  ["--media-base is a flag", ["--media-base", "--send"]],
+  ["--media-base not a url", ["--media-base", "not a url"]],
+  ["--media-base data uri", ["--media-base", "data:text/plain,x"]],
   ["bad NEAR_ACCOUNT_ID", [], { NEAR_ACCOUNT_ID: "NOT VALID!" }],
   ["bad NEAR_CONTRACT_ACCOUNT_ID", [], { NEAR_CONTRACT_ACCOUNT_ID: "NOT VALID!" }],
   ["--i-approve alone is not a send", ["--i-approve", "--bogus"]],

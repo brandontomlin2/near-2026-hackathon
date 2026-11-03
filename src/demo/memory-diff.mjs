@@ -5,7 +5,9 @@
 // to a terminal: control characters are dropped and values are clipped.
 
 const MAX_VALUE_CHARS = 80;
-const NONE = /^(?:none|nobody|no one|no-one|nothing|n\/a|-|\(none\))\b/i;
+// A placeholder must end the value or be followed by a non-word character: "none yet"
+// is none, "nonetheless" is a value. `\b` would never let "-" or "(none)" match.
+const NONE = /^(?:none|nobody|no one|no-one|nothing|n\/a|-|\(none\))(?!\w)/i;
 
 // A section runs from its label to the next ". Label:" (a sentence end followed
 // by a capitalised label) or to the end of the sheet, so renamed or reordered
