@@ -48,7 +48,7 @@ npm install && npm run demo
 
 Everything below this section is reference for the pieces the demo ran.
 
-No browser handy? [docs/img/page.png](docs/img/page.png) is the generated page. For a hostable copy, run `npm run site` and see `out/site/index.html` ([hosting steps](docs/hosting.md)).
+No browser handy? [docs/img/page.png](docs/img/page.png) is the generated page. `npm run screenshot` renders your own copy to `out/page.png` (needs a local Chrome/Chromium, exits 2 without one) and leaves tracked files untouched. For a hostable copy, run `npm run site` and see `out/site/index.html` ([hosting steps](docs/hosting.md)).
 
 [![The generated page](docs/img/page.png)](docs/img/page.png)
 
