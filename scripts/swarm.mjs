@@ -19,21 +19,23 @@ import { assertSafeOutDir, clearOwnedFiles } from "../src/util/outdir.mjs";
 
 const USAGE = `Usage: node scripts/swarm.mjs [--rounds N] [--seed N] [--every N] [--out DIR]
   --rounds N  swarm rounds, 1 to ${MAX_ROUNDS} (default 5)
-  --seed N    swarm seed, a positive integer (default 1)
+  --seed N    swarm seed, a non-negative integer (default 1)
   --every N   write a sheet every N rounds, 1 to ${MAX_ROUNDS} (default ${DEFAULT_LOOP_EVERY}, or SUMMARY_EVERY_N_ROUNDS)
   --out DIR   output directory (default out/swarm)
 Mock inference by default: offline, nothing is signed or sent.`;
 
 function parseArgs(argv) {
   const opts = { rounds: 5, seed: 1, every: undefined, out: "out/swarm", help: false };
+  if (argv.some((a) => a === "--help" || a === "-h")) return { ...opts, help: true }; // help wins over any other argument
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     const value = argv[i + 1];
-    if (flag === "--help" || flag === "-h") {
-      opts.help = true;
-    } else if (flag === "--rounds" || flag === "--seed" || flag === "--every") {
-      if (value === undefined || !/^[1-9][0-9]*$/.test(value) || !Number.isSafeInteger(Number(value))) {
-        throw new Error(`${flag} must be a positive integer, got ${JSON.stringify(value)}`);
+    if (flag === "--rounds" || flag === "--seed" || flag === "--every") {
+      // A seed may be 0 (same rule as scripts/demo.mjs); rounds and every must be at least 1.
+      const pattern = flag === "--seed" ? /^(0|[1-9][0-9]*)$/ : /^[1-9][0-9]*$/;
+      if (value === undefined || !pattern.test(value) || !Number.isSafeInteger(Number(value))) {
+        const kind = flag === "--seed" ? "a non-negative integer" : "a positive integer";
+        throw new Error(`${flag} must be ${kind}, got ${JSON.stringify(value)}`);
       }
       if (flag !== "--seed" && Number(value) > MAX_ROUNDS) throw new Error(`${flag} must be at most ${MAX_ROUNDS}, got ${value}`);
       opts[flag.slice(2)] = Number(value);

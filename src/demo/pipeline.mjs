@@ -6,7 +6,7 @@
 
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { runSwarm, verifyRounds, GENESIS_HASH } from "../swarm/runner.mjs";
+import { runSwarm, verifyRounds } from "../swarm/runner.mjs";
 import { AGENTS } from "../traits/agents.mjs";
 import { createMemoryStore, maybeSummarize } from "../memory/summarizer.mjs";
 import { createMockClient } from "../inference/client.mjs";
@@ -235,7 +235,7 @@ export async function runDemo({
   await writeFile(join(outDir, "demo.json"), json(manifest));
   await writeFile(
     join(outDir, "index.html"),
-    renderDemoPage(manifest, { events: result.events, anchors, genesisHash: GENESIS_HASH }),
+    renderDemoPage(manifest, { events: result.events, anchors }),
   );
 
   return { outDir, files: manifest.files, finalRoundHash, verified: true, manifest };

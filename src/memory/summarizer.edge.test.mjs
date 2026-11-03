@@ -17,7 +17,6 @@ import {
   makeEvent,
   maybeSummarize,
   summarize,
-  wakeContext,
 } from "./summarizer.mjs";
 
 async function tempDir(t) {
@@ -112,11 +111,10 @@ test("makeEvent rejects bad shapes with a coded error", () => {
   }
 });
 
-test("a token with no files reads as an empty log, no sheet, and an empty wake context", async (t) => {
+test("a token with no files reads as an empty log and no sheet", async (t) => {
   const store = createMemoryStore(join(await tempDir(t), "does", "not", "exist"));
   assert.deepEqual(await store.readLog("7"), []);
   assert.equal(await store.readSheet("7"), null);
-  assert.deepEqual(wakeContext({ sheet: await store.readSheet("7"), log: await store.readLog("7") }), { sheet: "", events: [] });
 });
 
 test("maybeSummarize on a token with no files writes a first sheet", async (t) => {
@@ -174,10 +172,4 @@ test("appends from many writers keep every line whole", async (t) => {
   const log = await store.readLog("1");
   assert.equal(log.length, 200);
   assert.equal(new Set(log.map((e) => e.text)).size, 200);
-});
-
-test("wakeContext never returns more than k events, even for a huge log", () => {
-  const log = Array.from({ length: 100_000 }, (_, i) => ev(i));
-  const ctx = wakeContext({ sheet: "s", log, k: 3 });
-  assert.deepEqual(ctx.events.map((e) => e.round), [99_997, 99_998, 99_999]);
 });

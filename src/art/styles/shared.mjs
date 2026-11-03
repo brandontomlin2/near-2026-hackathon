@@ -28,8 +28,6 @@ export function rarityTier(depth) {
   return "common";
 }
 
-export const TIERS = Object.freeze(["common", "rare", "epic", "legendary"]);
-
 /**
  * 32-bit FNV-1a over the canonical trait string. Deterministic seed for
  * micro-variation (feTurbulence seeds, jitter) that must stay stable per token.
