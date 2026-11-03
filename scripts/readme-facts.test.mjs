@@ -240,7 +240,7 @@ test("README hash normalisation summary matches normalizeSheet, and the TEE badg
   assert.doesNotMatch(readmeText, /\(NFC, LF, one final newline\)/);
   const { normalizeSheet } = await import("../src/anchor/hash.mjs");
   assert.equal(normalizeSheet("\n\n  é one  \r\n\r\ntwo \t\n\n"), "é one\n\ntwo\n");
-  assert.ok(readmeText.includes('the "NEAR AI Cloud (TEE) in live mode" badge says `mocked`. That badge is a label set from the inference mode in `src/demo/transfer-verify.mjs`, not an attestation check: nothing in the demo or in `verify.sh` verifies a TEE.'));
+  assert.ok(readmeText.includes('the "NEAR AI Cloud (TEE) in live mode" badge says `mocked` in grey (not the green used for a passing hash check). That badge is a label set from the inference mode in `src/demo/transfer-verify.mjs`, not an attestation check: nothing in the demo or in `verify.sh` verifies a TEE.'));
   assert.ok(readmeText.includes("The offline attestation checker, `node scripts/attest-check.mjs`, runs only on a hand-built fixture"));
   const { buildTransfer } = await import("../src/demo/transfer-verify.mjs");
   const mock = buildTransfer([], { calls: [] }, { contractId: "x.testnet", mode: "mock" });
