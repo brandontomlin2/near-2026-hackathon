@@ -155,7 +155,7 @@ test("demo-script.md: page facts (verify: ok, Chaotic's enemy, one shook per age
     if (moodForText(e.text) === "shook") shook[e.agentId] = (shook[e.agentId] ?? 0) + 1;
   }
   assert.deepEqual(shook, { aloof: 1, chaotic: 1, skeptic: 1, social: 1 }, "each agent is caught off guard once");
-  const order = ["Agents", "Memory", "Round hash chain", "Channel", "Share cards", "Anchor (dry run)", "Transfer: memory travels with the NFT"];
+  const order = ["Agents", "Memory", "Meme pack", "Transfer: memory travels with the NFT", "Channel", "Anchor (dry run)", "Round hash chain", `${demo.shares.length} share cards`, "Files"];
   const positions = order.map((h) => page.indexOf(` ${h} `));
   assert.deepEqual([...positions].sort((a, b) => a - b), positions, "section order on the page");
   assert.ok(positions.every((p) => p > 0));
