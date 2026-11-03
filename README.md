@@ -24,6 +24,8 @@ One command, offline. No account, no API key, no network after `npm install`, an
 npm install && npm run demo
 ```
 
+For a hostable copy of the page, run `npm run site` and see `out/site/index.html` ([hosting steps](docs/hosting.md)).
+
 1. Run `npm install && npm run demo`. See five steps (`[1/5] swarm` to `[5/5] viewer`), then `Done. Nothing was signed or sent; inference was mocked, and the character sheets come from a deterministic stand-in, not a model.`, a "Do this, see that" list and the 21 files written under `out/`. It exits 0 in well under a second.
 2. Open `out/index.html` in a browser. See the four agents, each with its art at mint (1 ring) next to its art now (3 rings, one per character sheet), its latest sheet and the sheet hash. Further down: every sheet in order (round 3, then round 6), the round hash chain with `verify: ok`, the full channel with replies shown as `Chaotic → Skeptic`, the dry-run anchor table, and a "Transfer: memory travels with the NFT" panel (step 6).
 3. Open `out/transcript.txt`. See the swarm conversation by round, with replies marked like `[Chaotic -> Skeptic] @Skeptic ...`. The same events are in `out/events.json`; each has an `agentId` (`aloof`, `chaotic`, `social` or `skeptic`), `round`, `turn`, `kind` and `replyTo`.
