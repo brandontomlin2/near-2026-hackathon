@@ -1,7 +1,10 @@
 // Meme pack: classic meme formats built deterministically from each agent's
 // real channel events and character sheet. Pure (no fs, no clocks, no
 // randomness). Every variable piece of text comes from data; the only fixed
-// text is the meme template itself ("WHEN", "VILLAIN ARC").
+// text is the meme template itself, picked from the pools below by a hash of
+// the run seed and the agent's own record (who, how many replies or fights,
+// what it said), so one seed always gives the same cards and another seed
+// gives different lines.
 //
 // Two formats, each self-contained so a weak one can be deleted by removing
 // its builder from FORMATS:
@@ -9,6 +12,7 @@
 //   villain  "<NAME>'S VILLAIN ARC" from the sheet's Public enemy line
 
 import { moodForText } from "../art/moods.mjs";
+import { pickBy } from "../util/pick.mjs";
 import { cleanText, escapeXml, nest } from "./share.mjs";
 
 export const SIZE = 900;
@@ -174,6 +178,23 @@ function replyPairs(events) {
   return pairs;
 }
 
+// Top lines for the caption card. `who` is the replier's display name, `n` the
+// number of replies it sent, `th` that count as an ordinal ("4TH"). PG-13.
+const CAPTION_TOPS = Object.freeze({
+  twice: Object.freeze([
+    ({ who }) => `When ${who} replies again`,
+    ({ who }) => `${who} is back in my replies`,
+    ({ who }) => `Me, trying to ignore ${who}`,
+    ({ who }) => `${who} saw my post and chose to speak`,
+  ]),
+  many: Object.freeze([
+    ({ who, th }) => `When ${who} replies for the ${th} time`,
+    ({ who, n }) => `${who}, reply number ${n}. Sir, this is a group chat`,
+    ({ who, th }) => `${th} reply from ${who} and I am out of faces`,
+    ({ who, n }) => `${who} has replied ${n} times. Touch grass`,
+  ]),
+});
+
 function buildCaptions(ctx) {
   const { events, names, ids } = ctx;
   const byId = new Map(events.map((e) => [e.id, e]));
@@ -193,7 +214,8 @@ function buildCaptions(ctx) {
     const bottomText = cleanText(line.text.replace(/^@\S+\s*/, ""));
     if (!bottomText) continue;
     const who = cleanText(names[best.replier]);
-    const topText = best.n === 2 ? `When ${who} replies again` : `When ${who} replies for the ${ordinal(best.n)} time`;
+    const pool = best.n === 2 ? CAPTION_TOPS.twice : CAPTION_TOPS.many;
+    const topText = pickBy(pool, `caption:${ctx.seed}:${target}:${best.replier}:${best.n}:${bottomText}`)({ who, n: best.n, th: ordinal(best.n) });
     const mood = pickMood(ctx.moods, moodForText(bottomText), []);
     const top = fitText(topText, { width: SIZE - 2 * MARGIN, maxLines: 2, maxSize: 84, minSize: 40, maxHeight: 190 });
     const bottom = fitText(bottomText, { width: SIZE - 2 * MARGIN, maxLines: 3, maxSize: 72, minSize: 34, maxHeight: 210 });
@@ -225,6 +247,29 @@ export function parseVillain(sheet) {
   return { enemy, fights: counted ? Number(counted[2]) : null, rivalry };
 }
 
+// Villain card lines. `name` is the villain, `enemy` its public enemy, `count`
+// the " (N fights)" suffix (from 3 fights) and `fights` the sheet's number.
+const VILLAIN_TOPS = Object.freeze({
+  low: Object.freeze([
+    ({ name }) => `${name}'s villain arc`,
+    ({ name }) => `${name} is warming up a villain arc`,
+    ({ name }) => `${name} has a list and it is short`,
+    ({ name }) => `${name} is thinking about causing problems`,
+  ]),
+  high: Object.freeze([
+    ({ name }) => `${name}'s villain arc`,
+    ({ name }) => `${name} has entered their villain era`,
+    ({ name }) => `${name} chose violence`,
+    ({ name }) => `Do not poke ${name}`,
+  ]),
+});
+const VILLAIN_BOTTOMS = Object.freeze([
+  ({ enemy, count }) => `Public enemy #1: ${enemy}${count}`,
+  ({ enemy, count }) => `Sworn nemesis: ${enemy}${count}`,
+  ({ enemy, count }) => `Beef status: ${enemy}${count}`,
+  ({ enemy, count }) => `Main character problem: ${enemy}${count}`,
+]);
+
 function buildVillains(ctx) {
   const { names, ids, events } = ctx;
   const byId = new Map(events.map((e) => [e.id, e]));
@@ -255,9 +300,11 @@ function buildVillains(ctx) {
     const name = cleanText(names[id]);
     const mood = pickMood(ctx.moods, "shade", ["hype"]);
     const enemyMood = pickMood(ctx.moods, "shade", []);
-    const topText = `${name}'s villain arc`;
-    const count = parsed.fights !== null && parsed.fights >= 3 ? ` (${parsed.fights} fights)` : "";
-    const bottomText = `Public enemy #1: ${parsed.enemy}${count}`;
+    const high = parsed.fights !== null && parsed.fights >= 3;
+    const count = high ? ` (${parsed.fights} fights)` : "";
+    const key = `${ctx.seed}:${id}:${parsed.enemy}:${parsed.fights}:${parsed.rivalry}`;
+    const topText = pickBy(high ? VILLAIN_TOPS.high : VILLAIN_TOPS.low, `villain-top:${key}`)({ name });
+    const bottomText = pickBy(VILLAIN_BOTTOMS, `villain-bottom:${key}`)({ enemy: parsed.enemy, count });
     const top = fitText(topText, { width: SIZE - 2 * MARGIN, maxLines: 2, maxSize: 96, minSize: 40, maxHeight: 200 });
     const bottom = fitText(bottomText, { width: SIZE - 2 * MARGIN, maxLines: 2, maxSize: 64, minSize: 30, maxHeight: 150 });
     const STRIP = 96;
@@ -297,16 +344,17 @@ const FORMATS = [buildCaptions, buildVillains];
  *   names: Record<string, string>,    agent display names, in agent order
  *   moods: string[],                  moods the art style can draw
  *   faces: Record<string, Record<string, string>>,  face SVG per agent id and mood
+ *   seed?: number,                    the run seed; mixes into which phrasing a card gets
  * }} input
  * @returns {{ format: string, agentId: string, file: string, svg: string, alt: string, mood: string }[]}
  *   ordered by format, then agent order
  */
-export function buildMemes({ events, sheets = {}, names, moods, faces }) {
+export function buildMemes({ events, sheets = {}, names, moods, faces, seed = 0 }) {
   const ids = Object.keys(names);
   const usable = ids.filter((id) => faces?.[id]);
   const ctx = {
     events: events.map((e) => ({ ...e, text: cleanText(e.text) })),
-    sheets, names, moods: moods?.length ? moods : ["neutral"], faces, ids: usable,
+    sheets, names, moods: moods?.length ? moods : ["neutral"], faces, ids: usable, seed,
   };
   // A style that lacks a mood still has a neutral face for every agent.
   return FORMATS.flatMap((build) => build(ctx));

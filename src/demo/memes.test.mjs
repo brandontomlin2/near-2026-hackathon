@@ -33,11 +33,10 @@ describe("memes: formats come from data", () => {
     const c = by(build(), "caption", "a");
     assert.equal(c.replierId, "b");
     assert.equal(c.count, 2);
-    assert.equal(c.top, "When Bob replies again");
+    assert.ok(c.top.includes("Bob") && !/\d/.test(c.top), `top names the replier and shows no count for 2 replies: ${c.top}`);
     assert.equal(c.bottom, "fine. whatever.");
     assert.equal(c.mood, "shade");
-    assert.ok(c.svg.includes("WHEN BOB"));
-    assert.ok(c.svg.includes("REPLIES AGAIN"));
+    assert.ok(c.svg.includes("BOB"));
     assert.equal(c.file, "share/meme-caption-a.svg");
     assert.equal(by(build(), "caption", "b"), undefined, "Bob has one incoming reply only");
   });
@@ -52,12 +51,36 @@ describe("memes: formats come from data", () => {
       ev(6, 3, "b", "reply", 5, "@Ann three"),
     ];
     const c = by(build({ events: more }), "caption", "a");
-    assert.equal(c.top, "When Bob replies for the 3RD time");
+    assert.ok(c.top.includes("Bob") && /\b3(RD)?\b/.test(c.top), `top names the replier and the count 3: ${c.top}`);
     assert.equal(c.bottom, "I doubt it.", "latest non-neutral, not the latest");
     assert.equal(c.mood, "shade");
     const flat = more.map((e) => (e.id === 3 ? { ...e, text: "@Bob plain too" } : e));
     assert.equal(by(build({ events: flat }), "caption", "a").bottom, "plain words");
     assert.equal(by(build({ events: flat }), "caption", "a").mood, "neutral");
+  });
+
+  it("lines are deterministic per seed and vary across seeds", () => {
+    const sheets = { a: SHEET.replace("(2 fights)", "(4 fights)"), b: NOBODY };
+    const lines = (seed) => build({ seed, sheets }).map((c) => `${c.top} | ${c.bottom}`);
+    assert.deepEqual(lines(7), lines(7), "same seed, same lines");
+    assert.equal(JSON.stringify(build({ seed: 7, sheets })), JSON.stringify(build({ seed: 7, sheets })), "byte-identical cards");
+    const seeds = Array.from({ length: 24 }, (_, i) => i);
+    const tops = (format) => new Set(seeds.flatMap((seed) => build({ seed, sheets }).filter((c) => c.format === format).map((c) => c.top)));
+    const bottoms = new Set(seeds.flatMap((seed) => build({ seed, sheets }).filter((c) => c.format === "villain").map((c) => c.bottom)));
+    assert.ok(tops("caption").size >= 3, `caption tops vary: ${[...tops("caption")]}`);
+    assert.ok(tops("villain").size >= 3, `villain tops vary: ${[...tops("villain")]}`);
+    assert.ok(bottoms.size >= 3, `villain bottoms vary: ${[...bottoms]}`);
+    for (const b of bottoms) assert.ok(b.endsWith("Bob (4 fights)"), `the enemy and the real fight count survive every phrasing: ${b}`);
+  });
+
+  it("lines follow the agent's memory: a different record can pick a different line", () => {
+    const tops = new Set();
+    for (let fights = 3; fights <= 30; fights++) {
+      const c = by(build({ sheets: { a: SHEET.replace("(2 fights)", `(${fights} fights)`), b: NOBODY } }), "villain", "a");
+      assert.ok(c.bottom.endsWith(`Bob (${fights} fights)`), c.bottom);
+      tops.add(c.top);
+    }
+    assert.ok(tops.size >= 2, "the same seed with other fight counts reaches other phrasings");
   });
 
   it("caption: needs the target to have answered that replier", () => {
@@ -91,8 +114,8 @@ describe("memes: formats come from data", () => {
     const c = by(build(), "villain", "a");
     assert.equal(c.enemy, "Bob");
     assert.equal(c.fights, 2);
-    assert.equal(c.top, "Ann's villain arc");
-    assert.equal(c.bottom, "Public enemy #1: Bob", "fight count hidden below 3");
+    assert.ok(c.top.includes("Ann"), c.top);
+    assert.ok(c.bottom.includes("Bob") && !/\d|fight/.test(c.bottom), `fight count hidden below 3: ${c.bottom}`);
     assert.equal(c.rivalry, "Bob and I are not done yet.");
     assert.ok(c.svg.includes("ANN&#39;S"));
     assert.ok(c.svg.includes("Bob and I are not done yet."));
@@ -102,7 +125,7 @@ describe("memes: formats come from data", () => {
 
   it("villain: shows the fight count from 3 fights", () => {
     const c = by(build({ sheets: { a: SHEET.replace("(2 fights)", "(3 fights)"), b: NOBODY } }), "villain", "a");
-    assert.equal(c.bottom, "Public enemy #1: Bob (3 fights)");
+    assert.ok(c.bottom.endsWith("Bob (3 fights)"), c.bottom);
   });
 
   it("villain: a mirrored rivalry gets one card (fights, then replies, then agent order)", () => {
@@ -280,7 +303,8 @@ describe("memes: default demo run", () => {
     const events = JSON.parse(fs.readFileSync(path.join(dir, "events.json"), "utf8")).events;
     const skeptic = fs.readFileSync(path.join(dir, "share/meme-caption-skeptic.svg"), "utf8");
     const n = events.filter((e) => e.kind === "reply" && e.agentId === "chaotic" && events.find((x) => x.id === e.replyTo)?.agentId === "skeptic").length;
-    assert.ok(skeptic.includes(`FOR THE ${ordinal(n)} TIME`));
+    assert.ok(n >= 3);
+    assert.ok(new RegExp(`\\b${n}(${ordinal(n).slice(String(n).length)})?\\b`).test(skeptic.replace(/<[^>]*>/g, " ").toUpperCase()), `the caption shows the counted ${n}`);
   });
 
   it("the page shows the Meme pack above the share cards and stays small", () => {

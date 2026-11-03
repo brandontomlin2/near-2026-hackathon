@@ -15,11 +15,11 @@ import { getStyle } from "../art/styles/index.mjs";
 import { moodForText, MOODS } from "../art/moods.mjs";
 import { renderShareCard, wrapText, nest, cleanText } from "./share.mjs";
 
-const PINNED_FINAL_ROUND_HASH = "3dd1440b3ee005665ee0674dcf25e462d29b458b5fbc37a8795243960d05cc6f";
+const PINNED_FINAL_ROUND_HASH = "4c8e826620ce2fa1c118df19d13f622ade870b0a54dd206e2c93157df9c6ff52";
 const IDS = ["aloof", "chaotic", "social", "skeptic"];
 // Pins the sheet writer, summarizer prompt, hashing, art paths and anchors, not just the swarm.
-const PINNED_ALOOF_SHEET_HASH = "685c3c71764322636ddf22dc0463afd6dda0dacf3ef5ea5591772d028d92d355";
-const PINNED_DEMO_JSON_SHA256 = "c5c19d12279bdb258987ad67c7bcf91309ad2d634944dde140ed844344b9d287";
+const PINNED_ALOOF_SHEET_HASH = "c2273f6a921b50d7dc941eac68948e084d7189524df1180c005ff696c765d78a";
+const PINNED_DEMO_JSON_SHA256 = "066002d65f3b9429b48dbb098d94e166179dbb45292aa6175de2aa6113183938";
 
 const tmp = [];
 function mkTmp() {

@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { sheetResponder, VIBES } from "./sheet-responder.mjs";
+import { sheetResponder, VIBES, STORIES } from "./sheet-responder.mjs";
 import { buildSummaryMessages, MAX_SHEET_WORDS } from "./summarizer.mjs";
 
 const ev = (kind, from, text, round = 1) => ({ round, kind, from, text });
@@ -86,9 +86,33 @@ describe("sheetResponder", () => {
     ]);
     assert.match(sheet, /Signature quote: "Oh, come on! The gas meme is a joke"\./);
     assert.match(sheet, /Public enemy #1: Skeptic \(2 fights\)/);
-    assert.match(sheet, /Rivalry arc: Skeptic and I keep clashing\. Social keeps the peace/);
+    assert.match(sheet, /Rivalry arc: [^.]*Skeptic[^.]*Social|Rivalry arc: [^.]*Social[^.]*Skeptic|Rivalry arc: [^.]*2 fights with Skeptic[^.]*Social/, "the rivalry line names both the rival and the ally");
     assert.match(sheet, /Who I am: Chaotic, (villain arc, fully committed, zero regrets|chaos goblin, picks fights for sport|certified menace)/);
     assert.ok(!/traded words/.test(sheet));
+  });
+
+  it("rivalry lines come from the agent's own record: same record same line, other records other lines", () => {
+    const record = (rival, fights, quote) => [
+      ev("post", "Chaotic", quote),
+      ...Array.from({ length: fights }, () => ev("mention", rival, "@Chaotic Nope.")),
+    ];
+    const arc = (events) => /^Rivalry arc: (.*)$/m.exec(respond("Chaotic", null, events))[1];
+    assert.equal(arc(record("Skeptic", 2, "gm")), arc(record("Skeptic", 2, "gm")));
+    const arcs = new Set();
+    for (let i = 0; i < 20; i++) arcs.add(arc(record(i % 2 ? "Skeptic" : "Aloof", 1 + (i % 5), `post number ${i}`)));
+    assert.ok(arcs.size >= 4, `rivalry lines vary with the record: ${[...arcs].join(" / ")}`);
+    for (const a of arcs) assert.doesNotMatch(a, /["\n]|: /, a);
+  });
+
+  it("every rivalry phrasing names the rival or the ally it is given", () => {
+    for (const [kind, list] of Object.entries(STORIES)) {
+      assert.ok(list.length >= 4, `${kind} pool size`);
+      for (const line of list) {
+        const text = line({ rival: "RIVALX", ally: "ALLYX", fights: 3 });
+        if (kind !== "none") assert.ok(text.includes(kind === "ally" ? "ALLYX" : "RIVALX"), text);
+        if (kind === "both") assert.ok(text.includes("ALLYX"), text);
+      }
+    }
   });
 
   it("reads the widened warm and tense words", () => {

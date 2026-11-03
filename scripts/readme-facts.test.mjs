@@ -125,8 +125,8 @@ test("README persona line counts match src/swarm/personas.mjs, and the mock read
   assert.ok(readmeText.includes(`${sizes[0]} or ${sizes[1]} post lines per persona`), `README must say "${sizes[0]} or ${sizes[1]} post lines per persona"`);
   const perAgent = Object.entries(counts).map(([id, n]) => `${id[0].toUpperCase()}${id.slice(1)} ${n}`).join(", ");
   assert.ok(readmeText.includes(`(${perAgent})`), `README must list "(${perAgent})"`);
-  for (const replies of Object.values(REPLY_LINES)) for (const list of Object.values(replies)) assert.equal(list.length, 3);
-  assert.ok(readmeText.includes("3 reply lines per agent it answers"));
+  for (const replies of Object.values(REPLY_LINES)) for (const list of Object.values(replies)) assert.equal(list.length, 4);
+  assert.ok(readmeText.includes("4 reply lines per agent it answers"));
   assert.ok(readmeText.includes("The mock ignores the prompt's content"));
   // Same hash, different prompt text: same line. Only the "Reply to event #N from X." marker changes the list.
   const a = personaResponder({ id: "aloof" })({ messages: [{ role: "user", content: "about gas" }] }, "ab".repeat(32));
