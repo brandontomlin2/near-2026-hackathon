@@ -485,7 +485,7 @@ fi
 echo
 echo "==> secret scan"
 if ! command -v gitleaks >/dev/null 2>&1; then
-  echo "WARN: gitleaks is not installed; secret scan skipped. Install gitleaks so leaked secrets fail this script." >&2
+  echo "WARN: secret scan did NOT run (gitleaks not found). optional: brew install gitleaks" >&2
   record SKIP "secret scan" "gitleaks not installed (warn)"
 else
   gitleaks_args=(detect --source . --redact --no-banner --verbose)
