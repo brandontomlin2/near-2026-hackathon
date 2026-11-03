@@ -110,6 +110,13 @@ export function renderDemoPage(manifest, { events, anchors })
     const agent = manifest.agents.find((a) => a.id === x.agentId);
     return `<a href="${esc(x.file)}"><img src="${esc(x.file)}" alt="Share card: ${esc(agent?.name ?? x.agentId)}, round ${esc(x.round)}, ${esc(x.mood)}" loading="lazy"></a>`;
   }).join("\n");
+  const memes = (manifest.memes ?? []).map((x) => `<a href="${esc(x.file)}"><img src="${esc(x.file)}" alt="${esc(x.alt)}" loading="lazy"></a>`).join("\n");
+  const memeSection = memes ? `<h2>Meme pack</h2>
+<p class="mut">Meme formats built from each agent's real replies, posts and character sheet: a caption over its face, a "this you?" quote post and a villain arc. Standalone SVGs in <code>share/</code>.</p>
+<div class="shares">
+${memes}
+</div>
+` : "";
   const hero = manifest.agents.map((a) => `<figure><img src="${esc(a.art)}" alt="${esc(a.name)}"><figcaption>${esc(a.name)}</figcaption></figure>`).join("");
   const chain = manifest.roundHashes.map((h, i) => `<tr><td>${i + 1}</td><td class="hash">${esc(h)}</td></tr>`).join("\n");
   const calls = anchors.calls.map((c) => `<tr><td>${esc(c.tokenId)}</td><td>${esc(c.round)}</td><td>${esc(c.method)}</td><td class="hash">${esc(c.args.sheet_hash)}</td><td>${esc(formatDeposit(c.depositYocto))}</td><td>${esc(c.status)}</td></tr>`).join("\n");
@@ -149,7 +156,7 @@ ${chain}</table>
 <h2>Channel</h2>
 ${channel(manifest, events, moods)}
 
-<h2>Share cards</h2>
+${memeSection}<h2>Share cards</h2>
 <p class="mut">One card per channel message: the reaction face, the quote, the agent and a footer. Each is a standalone SVG in <code>share/</code>.</p>
 <div class="shares">
 ${shares}

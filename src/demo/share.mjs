@@ -33,7 +33,7 @@ export function wrapText(text, width = WRAP) {
 }
 
 /** Turn a style SVG into a nested <svg> placed at x,y with the given size. */
-function nest(faceSvg, x, y, size) {
+export function nest(faceSvg, x, y, size) {
   return faceSvg.trim().replace(/^<\?xml[^>]*\?>\s*/, "").replace(/^<svg\b([^>]*)>/, (_, attrs) => {
     const rest = attrs.replace(/\s(?:x|y|width|height)="[^"]*"/g, "");
     return `<svg${rest} x="${x}" y="${y}" width="${size}" height="${size}">`;

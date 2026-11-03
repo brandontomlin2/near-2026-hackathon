@@ -19,7 +19,7 @@ const PINNED_FINAL_ROUND_HASH = "ed0b0c82315a4a04b81026fb90429ff0c7f292ede27a992
 const IDS = ["aloof", "chaotic", "social", "skeptic"];
 // Pins the sheet writer, summarizer prompt, hashing, art paths and anchors, not just the swarm.
 const PINNED_ALOOF_SHEET_HASH = "db3158b78dd0de587426fe2d272950caec99825ce8b2695502b7e7675e4130fb";
-const PINNED_DEMO_JSON_SHA256 = "6a375777cc1a7f537dec9fff169fd797105f07dca55a0aef467e05629f79a31b";
+const PINNED_DEMO_JSON_SHA256 = "636cedc5fcfaac82576f9c29da6e532d9d0b3869c61ffb96ad5106a8567d0c91";
 
 const tmp = [];
 function mkTmp() {
@@ -304,7 +304,10 @@ describe("demo: styles", () => {
     const manifest = readJson(dir, "demo.json");
     assert.equal(manifest.style, "default");
     assert.deepEqual(manifest.moods, ["neutral"]);
-    assert.equal(walk(dir).filter((f) => f.startsWith("share/")).length, 24);
+    const shareFiles = walk(dir).filter((f) => f.startsWith("share/"));
+    assert.equal(shareFiles.filter((f) => !f.startsWith("share/meme-")).length, 24);
+    assert.equal(shareFiles.filter((f) => f.startsWith("share/meme-")).length, manifest.memes.length);
+    assert.equal(manifest.memes.length, 8);
     assert.ok(!fs.existsSync(path.join(dir, "art/aloof.hype.svg")));
     for (const f of walk(dir).filter((x) => x.startsWith("share/"))) {
       assert.ok(fs.readFileSync(path.join(dir, f), "utf8").includes("<svg"));
