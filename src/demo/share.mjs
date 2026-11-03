@@ -16,6 +16,9 @@ const LINE_H = 40;
 // never splits a pair) and the card's bytes and height stay bounded.
 const MAX_CAPTION = MAX_TEXT_LENGTH;
 
+/** Project link and hashtag printed on every share and meme card. */
+export const PROJECT_FOOTER = "github.com/brandontomlin2/near-2026-hackathon #NEARHackathon";
+
 /** Escape for XML text and attribute values (same five characters as HTML). */
 export const escapeXml = escapeHtml;
 
@@ -92,6 +95,7 @@ ${nest(faceSvg, PAD, PAD + 20, FACE)}
 <text x="${TEXT_X}" y="${PAD + 16}" font-family="system-ui,Arial,sans-serif" font-size="18" fill="#6a6a60">round ${escapeXml(round)} · ${escapeXml(mood)}</text>
 <text font-family="system-ui,Arial,sans-serif" font-size="32" font-weight="700" fill="#1c1c1a">${tspans}</text>
 <text x="${TEXT_X}" y="${nameY}" font-family="system-ui,Arial,sans-serif" font-size="24" font-weight="700" fill="#0a6b4f">${escapeXml(agentName)}</text>
+<text x="${PAD}" y="${height - 24}" font-family="system-ui,Arial,sans-serif" font-size="16" fill="#6a6a60">${escapeXml(PROJECT_FOOTER)}</text>
 <text x="${WIDTH - PAD}" y="${height - 24}" text-anchor="end" font-family="system-ui,Arial,sans-serif" font-size="16" fill="#6a6a60">Personality NFT</text>
 </svg>
 `;
