@@ -450,7 +450,7 @@ describe("memes: default demo run", () => {
 });
 
 it("hostile text is bounded: 10k unbreakable and bidi/control strings render fast", () => {
-  const started = Date.now();
+  const started = process.cpuUsage(); // CPU time, so machine load cannot fail the bound
   for (const text of ["A".repeat(10_000), "😀".repeat(10_000), "‮⁦\u0000\u0007​".repeat(2_000) + "x", ("word ".repeat(5000))]) {
     const fit = fitText(text, { width: 840, maxLines: 3, maxSize: 72, minSize: 34, maxHeight: 210 });
     assert.ok(fit.lines.length <= 3);
@@ -473,5 +473,7 @@ it("hostile text is bounded: 10k unbreakable and bidi/control strings render fas
     assert.ok(m.svg.length < 20_000);
     assert.doesNotMatch(m.svg, /[\u0000-\u0008\u202a-\u202e\u2066-\u2069]/);
   }
-  assert.ok(Date.now() - started < 2000, `took ${Date.now() - started}ms`);
+  const cpu = process.cpuUsage(started);
+  const cpuMs = (cpu.user + cpu.system) / 1000;
+  assert.ok(cpuMs < 2000, `took ${cpuMs}ms of CPU`);
 });

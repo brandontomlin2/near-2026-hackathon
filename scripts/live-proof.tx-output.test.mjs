@@ -21,7 +21,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { TX_FILE, TX_FILE_LABEL, TX_LABELS, defaultExec, evidenceCommand, extractTransactionHashes, run } from "./live-proof.mjs";
+import { TX_FILE_LABEL, TX_LABELS, defaultExec, evidenceCommand, extractTransactionHashes, run } from "./live-proof.mjs";
 
 const OWNER = "agent-owner.testnet";
 const CONTRACT = "agent-nft.testnet";
@@ -87,12 +87,16 @@ const interactiveDeploy = (hash) => [
 const quietMint = (tokenId) => mintReturnValue(tokenId);
 const quietDeploy = () => "";
 
+// This file runs in parallel with live-proof.test.mjs, which owns the real
+// out/live-proof/txs.json. Write the --send record to a private file instead.
+const TX_FILE = path.join(mkdtempSync(path.join(tmpdir(), "live-proof-tx-output-")), "txs.json");
 const removeTxFile = () => rmSync(TX_FILE, { force: true });
 
 async function send(output) {
   const lines = [];
   const errs = [];
   const code = await run(SEND, APPROVED_ENV, {
+    txFile: TX_FILE,
     out: (l) => lines.push(l),
     err: (l) => errs.push(l),
     exec: (bin, args) => ({ code: 0, output: output(bin, args) }),
@@ -255,6 +259,7 @@ test("a step that prints a Transaction ID but exits non-zero is reported as fail
       const errs = [];
       const env = { ...APPROVED_ENV, PATH: `${dir}${path.delimiter}${process.env.PATH}`, STUB_NEAR_EXIT: String(exit) };
       const code = await run(SEND, env, {
+        txFile: TX_FILE,
         out: (l) => lines.push(l),
         err: (l) => errs.push(l),
         exec: (bin, args, opts) => (bin === "near" ? defaultExec(bin, args, opts) : { code: 0, output: canned(args) }),
