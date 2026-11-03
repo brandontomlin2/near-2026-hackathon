@@ -28,6 +28,27 @@ test("CLI prints a verified transcript, byte-identical on every run, with no key
   }
 });
 
+test("CLI writes a sheet per agent and a memory loop linked to the final hash", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "swarm-cli-"));
+  try {
+    const env = { ...process.env, MOCK_INFERENCE: "1" };
+    const { stdout } = await run(process.execPath, [script, "--rounds", "2", "--out", dir], { env });
+    const loop = JSON.parse(await readFile(join(dir, "memory-loop.json"), "utf8"));
+    assert.equal(loop.tokens.length, 4);
+    for (const id of ["aloof", "chaotic", "social", "skeptic"]) {
+      const sheet = JSON.parse(await readFile(join(dir, "sheets", `${id}.json`), "utf8"));
+      const token = loop.tokens.find((t) => t.tokenId === id);
+      assert.equal(token.anchor.args.sheet_hash, sheet.sheetHash);
+      assert.equal(token.anchor.linkedRoundHash, loop.finalRoundHash);
+      assert.equal(token.anchor.status, "dry-run");
+    }
+    assert.match(stdout, new RegExp(`final round hash: ${loop.finalRoundHash}`));
+    assert.match(stdout, /linked to 4 anchor dry-runs \(MOCK, not on-chain\)/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("live mode without a key fails instead of falling back to the mock", async () => {
   const dir = await mkdtemp(join(tmpdir(), "swarm-cli-"));
   try {
