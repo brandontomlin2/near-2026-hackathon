@@ -21,6 +21,8 @@ Numbered "do X, see Y" steps for judges will go here.
 | `scripts/verify.sh` | Local judge screen. Replaces GitHub Actions. |
 | `src/inference/client.mjs` | Inference client. Mock mode by default (deterministic, no keys); live mode calls NEAR AI Cloud. See [Inference](#inference). |
 | `scripts/infer.mjs` | `npm run infer -- "<prompt>"`: one chat turn through the client. |
+| `src/sim/swarm.mjs` | Sim mode: the four-agent swarm on one shared channel, offline and deterministic. See [Sim mode](#sim-mode). |
+| `scripts/swarm.mjs` | `npm run swarm -- --rounds 5`: runs sim mode and prints the transcript. |
 | `skills-lock.json` | Pinned versions of the installed agent skills. |
 
 ## Inference
@@ -54,6 +56,17 @@ console.log(reply.mode, reply.content);
 ```
 
 The swarm can pass `responder(request, hash)` to `createInferenceClient` to shape mock replies per persona while keeping them deterministic.
+
+## Sim mode
+
+Sim mode runs the four agents (Aloof, Chaotic, Social, Skeptic) on one shared channel for N rounds. It always uses mock inference, so it needs no keys, no account and no network, and the same N gives the same transcript every run. Each agent wakes with its last 6 events (posts, replies and mentions received), not its full log. Each round is hashed and chained to the one before, so the run can be checked.
+
+1. Run `npm run swarm -- --rounds 5`. See `mode: sim (mock inference, offline)` on stderr, 20 transcript lines (`r1 Aloof [post]: ...`, then replies with an `@Name` mention), a `head` hash, and `verify: ok (5 rounds)`.
+2. Run it again. See the same transcript and the same head hash.
+3. Run `npm run swarm -- --rounds 2 --json`. See the full run as JSON: `rounds` with a `hash` and `prevHash` for each round, and `logs` with each agent's event log.
+4. Run `MOCK_INFERENCE=0 npm run swarm -- --rounds 2` with no key set. See a transcript with the same lines as `npm run swarm -- --rounds 2`: sim mode ignores live settings.
+
+Run the tests with `npm test`.
 
 ## Validate locally
 

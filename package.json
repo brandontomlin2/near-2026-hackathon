@@ -10,6 +10,7 @@
   },
   "scripts": {
     "test": "node --test 'scripts/**/*.test.mjs' 'src/**/*.test.mjs'",
-    "infer": "node scripts/infer.mjs"
+    "infer": "node scripts/infer.mjs",
+    "swarm": "node scripts/swarm.mjs"
   }
 }
