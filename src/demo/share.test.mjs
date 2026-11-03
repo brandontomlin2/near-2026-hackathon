@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { MAX_TEXT_LENGTH } from "../channel/channel.mjs";
-import { renderShareCard, wrapText, cleanText, clipText, nest } from "./share.mjs";
+import { PROJECT_FOOTER, renderShareCard, wrapText, cleanText, clipText, nest } from "./share.mjs";
 
 const WRAP = 22;
 const LINE_H = 40;
@@ -71,6 +71,23 @@ function assertValidCard(svg, label = "card") {
   assert.ok(height >= 420, `${label}: shorter than the face needs`);
   return { height, lines };
 }
+
+describe("share: project footer", () => {
+  it("carries the repo link and tag at bottom-left, clear of the Personality NFT label and the name", () => {
+    assert.match(PROJECT_FOOTER, /github\.com\/brandontomlin2\/near-2026-hackathon/);
+    assert.match(PROJECT_FOOTER, /#NEARHackathon/);
+    for (const text of ["", "short", "a much longer caption ".repeat(8)]) {
+      const svg = card(text);
+      const { height } = assertValidCard(svg, "footer");
+      const m = svg.match(/<text x="40" y="(\d+)"[^>]*font-size="16"[^>]*>([^<]*)<\/text>/);
+      assert.equal(+m[1], height - 24);
+      assert.equal(m[2], PROJECT_FOOTER);
+      // ~0.62em per char at 16px, from x=40, must end before the right label starts (~x=730).
+      assert.ok(40 + PROJECT_FOOTER.length * 16 * 0.62 < 730, "footer clear of the right label");
+      assert.ok(svg.includes(">Personality NFT</text>"));
+    }
+  });
+});
 
 describe("share: degenerate captions", () => {
   for (const [label, text] of [["empty string", ""], ["whitespace only", " \t\n\r   "], ["undefined", undefined], ["null", null], ["only control chars", "\u0000\u0001\u001F\u007F\u009F￾"]]) {
@@ -321,7 +338,7 @@ describe("share: determinism", () => {
     const svg = renderShareCard({ agentName: "Pinned <&> name", text: "gas is free? \"I\" doubt it & so should you \u{1F680} <script>", mood: "shade", round: 2, faceSvg: FACE });
     assertValidCard(svg, "pinned");
     const sha = createHash("sha256").update(svg).digest("hex");
-    assert.equal(sha, "8ae67c8f4ec2dda8f25c9d54bf09aa3b1cb9f48f7ae4df623493d127bd84e8e4", "share card layout changed: re-pin if intended");
+    assert.equal(sha, "0be03f6b1a706be325b08f2da2f288bca5d7419fe5cb9ea5395f832e3d4fa243", "share card layout changed: re-pin if intended");
   });
 });
 

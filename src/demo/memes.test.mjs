@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { buildMemes, fitText, estimateWidth, capLabel, ordinal, parseVillain, rivalryLine, RIVALRY_LINES, MIN_VILLAIN_FIGHTS, SIZE } from "./memes.mjs";
-import { cleanText } from "./share.mjs";
+import { cleanText, PROJECT_FOOTER } from "./share.mjs";
 import { runDemo } from "./pipeline.mjs";
 import { getStyle } from "../art/styles/index.mjs";
 import { AGENTS } from "../traits/agents.mjs";
@@ -343,6 +343,26 @@ describe("memes: default demo run", () => {
     for (const [file, sha] of Object.entries(pins)) {
       assert.ok(result.manifest.files.includes(file));
       assert.equal(createHash("sha256").update(fs.readFileSync(path.join(dir, file))).digest("hex"), sha, `${file} changed: re-pin if intended`);
+    }
+  });
+
+  it("every meme card carries the project link and tag, escaped, inside the card", () => {
+    assert.match(PROJECT_FOOTER, /github\.com\/brandontomlin2\/near-2026-hackathon/);
+    assert.match(PROJECT_FOOTER, /#NEARHackathon/);
+    for (const m of result.manifest.memes) {
+      const svg = fs.readFileSync(path.join(dir, m.file), "utf8");
+      assert.ok(svg.includes(`>${PROJECT_FOOTER}</text>`), `${m.file} lacks the footer`);
+      const y = +svg.match(/<text x="450" y="(\d+)"[^>]*>github\.com/)[1];
+      assert.ok(y <= SIZE - 6 && y >= SIZE - 20, `${m.file}: footer y ${y} inside the card`);
+      assert.ok(estimateWidth(PROJECT_FOOTER, 16, 0.62) < SIZE - 60, "footer fits the width");
+      // Every Impact caption line, descenders and outline included, ends clear of the
+      // footer's cap height (16px text: about 12px above its baseline).
+      for (const t of svg.matchAll(/<text font-family="[^"]*Impact[^"]*" font-size="(\d+)"[^>]*>(.*?)<\/text>/g)) {
+        const size = +t[1];
+        for (const [, ty] of t[2].matchAll(/<tspan x="\d+" y="(-?\d+)">/g)) {
+          assert.ok(+ty + size * 0.25 < y - 12, `${m.file}: caption line at y ${ty} (size ${size}) crowds the footer at ${y}`);
+        }
+      }
     }
   });
 
