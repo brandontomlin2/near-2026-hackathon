@@ -112,13 +112,13 @@
   {
     "id": "testnet-deploy-mint-3-agents",
     "title": "testnet deploy + mint 3 agents",
-    "status": "todo",
-    "owner": "",
+    "status": "review",
+    "owner": "claude",
     "kind": "task",
     "lane": "any",
-    "notes": "",
-    "updated_at": "2026-11-03T00:00:00.000Z",
-    "updated_by": "seed"
+    "notes": "scripts/testnet-deploy.mjs: dry-run default, --send gated; npm run deploy:nft and mint; 20 tests; README Deploy to testnet. Not sent to testnet.",
+    "updated_at": "2026-11-03T02:45:36.144Z",
+    "updated_by": "claude"
   },
   {
     "id": "viewer",
