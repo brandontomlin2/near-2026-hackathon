@@ -66,11 +66,12 @@ test("mock evidence carries the full memory loop, linked to the swarm final hash
 
 test("mock evidence hashes the same stand-in sheets npm run swarm writes, so the two agree hash for hash", async () => {
   const { execFile } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
   const { promisify } = await import("node:util");
   const dir = tmp();
   const env = { ...process.env, MOCK_INFERENCE: "1" };
   delete env.NEAR_AI_API_KEY;
-  await promisify(execFile)(process.execPath, [path.join(path.dirname(new URL(import.meta.url).pathname), "swarm.mjs"), "--rounds", "5", "--seed", "1", "--out", dir], { env });
+  await promisify(execFile)(process.execPath, [fileURLToPath(new URL("./swarm.mjs", import.meta.url)), "--rounds", "5", "--seed", "1", "--out", dir], { env });
   const ev = await mockEvidence();
   for (const t of ev.memory_loop.tokens) {
     const written = JSON.parse(fs.readFileSync(path.join(dir, "sheets", `${t.token_id}.json`), "utf8"));
