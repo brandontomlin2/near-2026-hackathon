@@ -13,6 +13,24 @@ import { runSwarm, verifyRounds } from "../src/swarm/runner.mjs";
 
 const MOCK_SHEET = "Aloof. Observer. Watches the channel, speaks rarely.\nAllies: none yet.\n";
 
+const USAGE = `usage: npm run anchor -- --dry-run [--check]  (dry run only; this CLI never signs)
+  --dry-run   required: build the fixed mock run and print its round hashes and the anchor_sheet payload
+  --check     build the mock run twice and fail if any hash differs
+Offline: no keys, no network, nothing signed or sent.`;
+
+/** A user mistake on the command line. Reported as one line with "(see --help)" and exit 2. */
+export class UsageError extends Error {}
+
+/** Returns { help } or { help: false, check }. Throws UsageError on anything unexpected. */
+export function parseArgs(argv) {
+  if (argv.some((a) => a === "--help" || a === "-h")) return { help: true };
+  const known = new Set(["--dry-run", "--check"]);
+  const bad = argv.find((a) => !known.has(a));
+  if (bad !== undefined) throw new UsageError(`unknown argument ${JSON.stringify(bad)}`);
+  if (!argv.includes("--dry-run")) throw new UsageError("--dry-run is required; this CLI never signs");
+  return { help: false, check: argv.includes("--check") };
+}
+
 /** A fixed offline swarm run (persona mocks, fixed seed). No clock, no randomness. */
 export function buildMockRun() {
   return runSwarm({ rounds: 3, seed: 1 });
@@ -40,18 +58,20 @@ export async function mockReport() {
 }
 
 export async function main(argv = process.argv.slice(2), out = console.log) {
-  if (argv.includes("--help") || argv.includes("-h")) {
-    out("usage: npm run anchor -- --dry-run [--check]  (dry run only; this CLI never signs)");
-    return 0;
-  }
-  const known = new Set(["--dry-run", "--check"]);
-  const bad = argv.filter((a) => !known.has(a));
-  if (bad.length > 0 || !argv.includes("--dry-run")) {
-    console.error("usage: npm run anchor -- --dry-run [--check]  (dry run only; this CLI never signs)");
+  let opts;
+  try {
+    opts = parseArgs(argv);
+  } catch (err) {
+    if (!(err instanceof UsageError)) throw err;
+    console.error(`anchor: ${err.message} (see --help)`);
     return 2;
   }
+  if (opts.help) {
+    out(USAGE);
+    return 0;
+  }
   const first = await mockReport();
-  if (argv.includes("--check")) {
+  if (opts.check) {
     const second = await mockReport();
     if (JSON.stringify(first) !== JSON.stringify(second)) {
       console.error("FAIL: the same mock run gave different hashes");
@@ -65,7 +85,7 @@ export async function main(argv = process.argv.slice(2), out = console.log) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().then((code) => process.exit(code), (err) => {
-    console.error(err.message);
+    console.error(`anchor: ${err instanceof Error ? err.message : err}`);
     process.exit(1);
   });
 }

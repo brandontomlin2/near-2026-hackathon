@@ -148,8 +148,8 @@ test("CLI exits nonzero and writes no page for a missing, non-JSON or invalid in
     for (const input of [join(dir, "nope.json"), notJson, invalid]) {
       const out = join(dir, "x.html");
       const r = await cli(["--input", input, "--out", out]);
-      assert.equal(r.code, 1, input);
-      assert.match(r.stderr, /error/);
+      assert.equal(r.code, 2, input);
+      assert.match(r.stderr, /^viewer: .*--input .*\(see --help\)\n$/);
       await assert.rejects(access(out));
     }
   } finally {
@@ -162,15 +162,15 @@ test("CLI rejects bad flags and bad round counts, and honours SWARM_ROUNDS", asy
   assert.equal((await cli(["--out"])).code, 2);
   for (const rounds of ["0", "-1", "1.5", "abc", ""]) {
     const r = await cli(["--rounds", rounds, "--out", join(tmpdir(), "never-written.html")]);
-    assert.equal(r.code, 1, `--rounds ${JSON.stringify(rounds)}`);
-    assert.match(r.stderr, /rounds must be a positive integer/);
+    assert.equal(r.code, 2, `--rounds ${JSON.stringify(rounds)}`);
+    assert.match(r.stderr, /rounds must be a positive integer.*\(see --help\)/);
   }
   const dir = await mkdtemp(join(tmpdir(), "viewer-test-"));
   try {
     const out = join(dir, "x.html");
     assert.equal((await cli(["--out", out], { SWARM_ROUNDS: "1" })).code, 0);
     assert.equal(count(await readFile(out, "utf8"), /class="round"/g), 1);
-    assert.equal((await cli(["--out", join(dir, "y.html")], { SWARM_ROUNDS: "zero" })).code, 1);
+    assert.equal((await cli(["--out", join(dir, "y.html")], { SWARM_ROUNDS: "zero" })).code, 2);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

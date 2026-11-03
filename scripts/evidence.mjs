@@ -236,20 +236,44 @@ export async function main(env = process.env, { fetchImpl = globalThis.fetch, cw
     throw new EvidenceError(`EVIDENCE_NETWORK must be mock or testnet, got ${network}`);
   }
   const outFile = path.resolve(cwd, env.EVIDENCE_OUT || "out/evidence.json");
-  fs.mkdirSync(path.dirname(outFile), { recursive: true });
-  fs.writeFileSync(outFile, `${JSON.stringify(evidence, null, 2)}\n`);
+  try {
+    fs.mkdirSync(path.dirname(outFile), { recursive: true });
+    fs.writeFileSync(outFile, `${JSON.stringify(evidence, null, 2)}\n`);
+  } catch (err) {
+    throw new Error(`cannot write ${outFile}: ${err.message}`);
+  }
   const failed = evidence.views.filter((v) => v.error);
   console.log(`wrote ${outFile} (${evidence.mock ? "mock" : evidence.network})`);
   for (const v of failed) console.error(`view failed: ${v.method}: ${v.error}`);
   return failed.length ? 1 : 0;
 }
 
+const USAGE = `Usage: node scripts/evidence.mjs
+Writes out/evidence.json. Takes no options; it is configured by the environment:
+  EVIDENCE_NETWORK   mock (default) or testnet
+  NEAR_ACCOUNT_ID    contract account to query (testnet only)
+  NEAR_RPC_URL       RPC endpoint (default ${DEFAULT_RPC_URL})
+  EVIDENCE_TX_FILE   JSON file of transaction hashes to include (testnet only)
+  EVIDENCE_OUT       output file (default out/evidence.json)
+Mock mode never touches the network. Testnet mode makes read-only view calls only:
+nothing is signed, nothing is sent. Exits 0 on success, 1 when a view call failed.`;
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const argv = process.argv.slice(2);
+  if (argv.some((a) => a === "--help" || a === "-h")) {
+    console.log(USAGE);
+    process.exit(0);
+  } else if (argv.length > 0) {
+    console.error(`evidence: unknown argument ${JSON.stringify(argv[0])}; this script takes no options (see --help)`);
+    process.exit(2);
+  }
   main().then(
     (code) => process.exit(code),
     (err) => {
-      console.error(`error: ${err.message}`);
-      process.exit(1);
+      // EvidenceError: a bad environment value or tx file, the user's to fix. Anything else is a runtime failure.
+      const usage = err instanceof EvidenceError;
+      console.error(`evidence: ${err instanceof Error ? err.message : err}${usage ? " (see --help)" : ""}`);
+      process.exit(usage ? 2 : 1);
     },
   );
 }
