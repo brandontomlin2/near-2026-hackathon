@@ -7,10 +7,12 @@
 //   live (MOCK_INFERENCE "0" or "false"): NEAR AI Cloud, which speaks the
 //     OpenAI chat-completions protocol at https://cloud-api.near.ai/v1.
 //     Reads NEAR_AI_API_KEY and NEAR_AI_MODEL. NEAR_AI_BASE_URL overrides the
-//     endpoint, which the tests use to point at a local server.
+//     endpoint, which the tests use to point at a local server. It must be https
+//     unless the host is loopback (localhost, 127.0.0.1, ::1).
 //
 // The key never appears in errors, logs or returned objects. Neither does the
-// base URL's userinfo: a URL with credentials is refused when the client is made.
+// base URL: one with credentials or a plain-http remote host is refused when the
+// client is made, and the message does not echo it.
 //
 // Reply text is bounded: control and bidi characters become U+FFFD and the text
 // is cut at MAX_CONTENT_BYTES, both with the helpers in src/util/text.mjs, so a
@@ -232,12 +234,15 @@ function boundLabel(value, fallback) {
   return typeof value === "string" ? capUtf8Bytes(replaceUnsafeChars(value), MAX_LABEL_BYTES) : fallback;
 }
 
+// Plain http is for the local stub servers in the tests only. Anywhere else it would send
+// the bearer key and the prompt in cleartext, so only these loopback hosts may use it.
+// (URL.hostname keeps the brackets around an IPv6 literal.)
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 /**
  * Validate the endpoint. A URL carrying userinfo (http://user:secret@host) is refused
- * outright, and the message never echoes the value, so credentials cannot leak into
- * the "request to <url> failed" errors or logs.
+ * outright, and plain http is accepted only for loopback hosts. No message echoes the
+ * value, so credentials cannot leak into the "request to <url> failed" errors or logs.
  * @param {string} raw
  * @returns {string} the base URL without a trailing slash
  */
@@ -251,10 +256,10 @@ function checkBaseUrl(raw) {
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new InferenceError("NEAR_AI_BASE_URL must be an absolute http(s) URL", { code: "bad_config" });
   }
-  // Plain http would send the bearer key and the prompt in cleartext. It is only allowed to a
-  // loopback host (the local test stub). The message never echoes the URL.
   if (parsed.protocol === "http:" && !LOOPBACK_HOSTS.has(parsed.hostname)) {
-    throw new InferenceError("NEAR_AI_BASE_URL must use https:// unless the host is loopback (localhost, 127.0.0.1, ::1)", { code: "bad_config" });
+    throw new InferenceError("NEAR_AI_BASE_URL must use https; plain http is accepted only for localhost, 127.0.0.1 and ::1", {
+      code: "bad_config",
+    });
   }
   if (parsed.username !== "" || parsed.password !== "") {
     throw new InferenceError("NEAR_AI_BASE_URL must not contain credentials (user:password@host); the key goes in NEAR_AI_API_KEY", {

@@ -247,7 +247,7 @@ test("README meme paragraph: templates not jokes, caption bottom line is a scrip
   });
 });
 
-test("README hash normalisation summary matches normalizeSheet, and the TEE badge is a mode label with no attestation check wired in", async () => {
+test("README hash normalisation summary matches normalizeSheet, and the Inference badge is a mode label with no attestation check wired in", async () => {
   assert.ok(readmeText.includes("after normalizing (Unicode NFC, LF line endings, trailing spaces trimmed from each line, leading and trailing blank lines dropped, one final newline)"));
   assert.doesNotMatch(readmeText, /\(NFC, LF, one final newline\)/);
   const { normalizeSheet } = await import("../src/anchor/hash.mjs");
