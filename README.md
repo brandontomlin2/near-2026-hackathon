@@ -32,7 +32,7 @@ npm install && npm run demo
 
 Then open `out/index.html` in a browser.
 
-No browser handy? See [docs/img/page.png](docs/img/page.png) (regenerate with `npm run screenshot`; needs a local Chrome/Chromium, exits 2 without one).
+No browser handy? See [docs/img/page.png](docs/img/page.png), a committed render of the page. `npm run screenshot` renders your own copy to `out/page.png` (needs a local Chrome/Chromium, exits 2 without one) and leaves the tracked files untouched.
 
 [![The generated page](docs/img/page.png)](docs/img/page.png)
 

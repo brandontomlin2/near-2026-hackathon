@@ -1,9 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { findBrowser, run } from "./screenshot.mjs";
+import { join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+import { DEFAULT_OUT, DOCS_OUT, findBrowser, parseArgs, run } from "./screenshot.mjs";
+
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
+const SCRIPT = fileURLToPath(new URL("./screenshot.mjs", import.meta.url));
 
 test("findBrowser returns null when no candidate exists", () => {
   assert.equal(findBrowser(["/nope/a", "/nope/b"], () => false), null);
@@ -16,6 +21,29 @@ test("run exits 2 with a clear message and writes nothing when no browser is fou
   assert.match(errs.join("\n"), /no headless Chrome\/Chromium found/);
 });
 
+test("parseArgs: default is the gitignored out/page.png; --update-docs is the tracked docs/img/page.png", () => {
+  assert.equal(parseArgs([]).out, DEFAULT_OUT);
+  assert.ok(relative(ROOT, DEFAULT_OUT).startsWith("out" + sep), DEFAULT_OUT);
+  assert.equal(execFileSync("git", ["ls-files", "--", DEFAULT_OUT], { cwd: ROOT, encoding: "utf8" }).trim(), "", "default output must not be tracked");
+  assert.equal(parseArgs(["--update-docs"]).out, DOCS_OUT);
+  assert.equal(execFileSync("git", ["ls-files", "--", DOCS_OUT], { cwd: ROOT, encoding: "utf8" }).trim(), "docs/img/page.png");
+  assert.equal(parseArgs(["--out", "shots/x.png"]).out, resolve("shots/x.png"));
+});
+
+test("parseArgs rejects unknown flags, a missing --out value, and --out with --update-docs", () => {
+  assert.throws(() => parseArgs(["--bogus"]), /unknown argument --bogus/);
+  assert.throws(() => parseArgs(["--out"]), /--out needs a file path/);
+  assert.throws(() => parseArgs(["--out", "--update-docs"]), /--out needs a file path/);
+  assert.throws(() => parseArgs(["--out", "x.png", "--update-docs"]), /not both/);
+});
+
+test("CLI: a bad flag exits 1 with a one-line error plus usage, before looking for a browser", () => {
+  const r = spawnSync(process.execPath, [SCRIPT, "--bogus"], { cwd: ROOT, encoding: "utf8" });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /^screenshot: unknown argument --bogus\nUsage: /);
+  assert.doesNotMatch(r.stderr, /Chrome/);
+});
+
 const SKIP_WIN = process.platform === "win32";
 
 function fakeBrowser(dir, body) {
@@ -25,7 +53,7 @@ function fakeBrowser(dir, body) {
   return p;
 }
 
-async function shotCase(t, body) {
+async function shotCase(t, body, opts = {}) {
   const dir = mkdtempSync(join(tmpdir(), "shot-test-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const out = join(dir, "nested", "deeper", "page.png");
@@ -34,6 +62,7 @@ async function shotCase(t, body) {
   const code = run({
     candidates: [fakeBrowser(dir, body)], out,
     log: (m) => logs.push(m), err: (m) => errs.push(m),
+    ...opts,
   });
   return { code, out, logs, errs };
 }
@@ -43,6 +72,20 @@ test("run writes the image, creates the parent dir, and logs the result", { skip
   assert.equal(r.code, 0, r.errs.join("\n"));
   assert.ok(statSync(r.out).size > 0);
   assert.ok(r.logs.some((l) => /^wrote .* \(\d+ bytes\) using /.test(l)), r.logs.join("\n"));
+});
+
+test("run with no --out writes out/page.png and leaves git-tracked files unchanged", { skip: SKIP_WIN }, async (t) => {
+  const snap = () => execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: ROOT, encoding: "utf8" });
+  const before = snap();
+  const tracked = readFileSync(DOCS_OUT);
+  const had = existsSync(DEFAULT_OUT) ? readFileSync(DEFAULT_OUT) : null;
+  t.after(() => { if (had) writeFileSync(DEFAULT_OUT, had); else rmSync(DEFAULT_OUT, { force: true }); });
+  const r = await shotCase(t, 'printf "PNGDATA" > "$OUT"', { out: undefined });
+  assert.equal(r.code, 0, r.errs.join("\n"));
+  assert.equal(readFileSync(DEFAULT_OUT, "utf8"), "PNGDATA");
+  assert.ok(r.logs.some((l) => l.startsWith(`wrote ${DEFAULT_OUT} (`)), r.logs.join("\n"));
+  assert.equal(snap(), before);
+  assert.deepEqual(readFileSync(DOCS_OUT), tracked, "docs/img/page.png must not change without --update-docs");
 });
 
 test("run returns 1 when the browser exits 0 but writes nothing", { skip: SKIP_WIN }, async (t) => {

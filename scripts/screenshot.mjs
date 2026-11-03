@@ -1,6 +1,9 @@
-// Usage: node scripts/screenshot.mjs [--out FILE]
-// Runs the demo into a temp dir and renders its index.html to docs/img/page.png
-// with a headless Chrome/Chromium already on this machine. No browser: exit 2.
+// Usage: node scripts/screenshot.mjs [--out FILE | --update-docs]
+// Runs the demo into a temp dir and renders its index.html with a headless
+// Chrome/Chromium already on this machine. Writes out/page.png (gitignored) by
+// default, so a judge's git tree stays clean. --update-docs refreshes the tracked
+// docs/img/page.png instead (maintainers; the bytes depend on the local browser
+// and fonts). No browser: exit 2.
 import { existsSync, mkdtempSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -8,6 +11,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+export const DEFAULT_OUT = join(ROOT, "out", "page.png");
+export const DOCS_OUT = join(ROOT, "docs", "img", "page.png");
+const USAGE = `Usage: node scripts/screenshot.mjs [--out FILE | --update-docs]
+  --out FILE      where to write the PNG (default out/page.png, gitignored)
+  --update-docs   refresh the tracked docs/img/page.png the README embeds`;
+
 export const BROWSER_CANDIDATES = [
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "/Applications/Chromium.app/Contents/MacOS/Chromium",
@@ -21,7 +30,25 @@ export function findBrowser(candidates = BROWSER_CANDIDATES, exists = existsSync
   return candidates.find((p) => exists(p)) ?? null;
 }
 
-export function run({ candidates = BROWSER_CANDIDATES, exists = existsSync, out = join(ROOT, "docs/img/page.png"), log = console.log, err = console.error } = {}) {
+/** CLI flags -> { out }. Throws an Error with a one-line message on bad input. */
+export function parseArgs(argv) {
+  let out = null;
+  let docs = false;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--update-docs") docs = true;
+    else if (a === "--out") {
+      const v = argv[i + 1];
+      if (v === undefined || v.startsWith("-")) throw new Error("--out needs a file path");
+      out = resolve(v);
+      i++;
+    } else throw new Error(`unknown argument ${a}`);
+  }
+  if (out && docs) throw new Error("use --out or --update-docs, not both");
+  return { out: docs ? DOCS_OUT : out ?? DEFAULT_OUT };
+}
+
+export function run({ candidates = BROWSER_CANDIDATES, exists = existsSync, out = DEFAULT_OUT, log = console.log, err = console.error } = {}) {
   const browser = findBrowser(candidates, exists);
   if (!browser) {
     err("screenshot: no headless Chrome/Chromium found (looked for Google Chrome, Chromium, Brave). Install one and re-run `npm run screenshot`.");
@@ -47,6 +74,12 @@ export function run({ candidates = BROWSER_CANDIDATES, exists = existsSync, out 
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const i = process.argv.indexOf("--out");
-  process.exitCode = run(i > 0 ? { out: resolve(process.argv[i + 1]) } : {});
+  let opts;
+  try {
+    opts = parseArgs(process.argv.slice(2));
+  } catch (e) {
+    console.error(`screenshot: ${e.message}\n${USAGE}`);
+    process.exitCode = 1;
+  }
+  if (opts) process.exitCode = run(opts);
 }
