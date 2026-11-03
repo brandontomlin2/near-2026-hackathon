@@ -769,7 +769,10 @@ mod tests {
         assert!(event.contains(&format!(r#""sheet_hash":"{HASH_A}""#)));
         assert!(event.contains(r#""memory_depth":2"#));
 
-        // A second summary, once storage exists, only needs 1 yoctoNEAR.
+        // A second summary overwrites the hash slot in place but still writes a
+        // new seen-hash record, so 1 yoctoNEAR alone is not enough (see
+        // second_anchor_with_one_yocto_cannot_cover_its_seen_hash_record).
+        // Attach the mint deposit again; the excess is refunded to the caller.
         testing_env!(context(accounts(2), MINT_DEPOSIT).build());
         let second = contract.anchor_sheet("aloof".to_string(), HASH_B.to_string());
         assert_eq!(second.sheet_hash.as_deref(), Some(HASH_B));

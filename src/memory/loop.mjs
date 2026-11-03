@@ -1,10 +1,13 @@
-// Memory loop, dry-run only: swarm events -> per-token character sheet ->
-// anchor_sheet dry-run -> each anchor linked to the swarm's final round hash.
+// Memory loop, dry-run only: swarm events -> per-token character sheets ->
+// one anchor_sheet dry-run per sheet -> each anchor linked to the hash of the
+// round its sheet was written at.
 //
 // The contract has no round-hash method, only anchor_sheet(token_id,
-// sheet_hash). The final round hash is linked by recording it as
-// linkedRoundHash on each dry-run record. Nothing is signed or sent: this
-// module never takes a `send` function and never passes `live`.
+// sheet_hash). The link is off-chain: each dry-run record carries the round
+// hash as linkedRoundHash (swarm.roundHashes[round - 1]); only a token whose
+// last sheet lands in the last round links to the final round hash. Nothing is
+// signed or sent: this module never takes a `send` function and never passes
+// `live`.
 
 import { AGENTS } from "../traits/agents.mjs";
 import { prepareAnchor, submitAnchor } from "../anchor/anchor.mjs";
