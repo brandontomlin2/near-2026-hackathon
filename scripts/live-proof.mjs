@@ -9,10 +9,14 @@
 //                                      AND --media-base names where the four SVGs are hosted
 //                                      (testnet-deploy's mint --send refuses to run without it, so
 //                                      the gate is here, before deploy, not after it).
-//                                      Collects the transaction hashes the near CLI prints into
-//                                      out/live-proof/txs.json and prints the exact
-//                                      `npm run evidence` command that reads them.
+//                                      Passes --i-approve on to the deploy and mint children,
+//                                      which refuse --send without it. Collects the transaction
+//                                      hashes the near CLI prints into out/live-proof/txs.json
+//                                      and prints the exact `npm run evidence` command that
+//                                      reads them. --out, --force and --update-example belong
+//                                      to the dry run and are refused with --send.
 //
+// Both modes refuse any NEAR_NETWORK other than unset or testnet before doing anything.
 // No key handling here. Signing is done by the near CLI with the system keychain, through
 // scripts/testnet-deploy.mjs (deploy, mint) and a near-cli-rs call built below (anchor_sheet).
 // The dry run never spawns anything and never touches the network.
@@ -64,13 +68,19 @@ an example evidence file. Nothing is signed or sent.
   --send         really send all steps on testnet (needs NEAR_ACCOUNT_ID,
                  NEAR_CONTRACT_ACCOUNT_ID, --i-approve and --media-base); writes the
                  transaction hashes to ${TX_FILE_LABEL} and prints the npm run evidence command
-  --i-approve    explicit human approval for --send
+  --i-approve    explicit human approval for --send; handed on to the deploy and mint
+                 steps (scripts/testnet-deploy.mjs), which refuse --send without it
   --media-base <url>  base URL where <token_id>.svg is hosted; passed to the mint step.
                  Required with --send (mint --send refuses the placeholder); in a dry run
                  it replaces the labelled placeholder media URL
-  --out <file>   where the dry run writes the example (default out/live-proof/evidence.example.json)
-  --force        replace an existing --out that is not an example file this tool wrote
-  --update-example  write the tracked docs/evidence.example.json instead (maintainers only)
+  --out <file>   dry run only: where the example is written (default out/live-proof/evidence.example.json)
+  --force        dry run only: replace an existing --out that is not an example file this tool wrote
+  --update-example  dry run only: write the tracked docs/evidence.example.json instead (maintainers only)
+
+Environment:
+  NEAR_ACCOUNT_ID           owner and signer (required with --send)
+  NEAR_CONTRACT_ACCOUNT_ID  account the contract lives on (required with --send)
+  NEAR_NETWORK              unset or testnet; anything else is refused, in both modes
 `;
 
 /** An earlier file from this tool: JSON with "example": true. Anything else is someone's file. */
@@ -202,8 +212,20 @@ function parseArgs(argv) {
     else throw new UsageError(`unknown argument: ${a}`);
   }
   if (opts.updateExample && opts.outGiven) throw new UsageError("--update-example and --out cannot be combined");
+  // Review L-6: these three name the dry run's example file, which --send never writes.
+  // Refused rather than ignored, so nobody expects a record that was not made.
+  if (opts.send && (opts.outGiven || opts.force || opts.updateExample)) {
+    throw new UsageError(`--out, --force and --update-example apply to the dry run only; --send writes its record to ${TX_FILE_LABEL}`);
+  }
   if (opts.updateExample) { opts.out = TRACKED_EXAMPLE; opts.outLabel = OUT_LABELS.tracked; }
   return opts;
+}
+
+/** Review L-2: refuse any network but testnet here, before a child is spawned or a file written. */
+function assertTestnet(env) {
+  if (env.NEAR_NETWORK !== undefined && env.NEAR_NETWORK !== "" && env.NEAR_NETWORK !== NETWORK) {
+    throw new UsageError(`NEAR_NETWORK must be unset or ${NETWORK}; this script refuses other networks`);
+  }
 }
 
 // Runs a step, streaming its stdout and stderr to the terminal as they arrive while also
@@ -242,6 +264,7 @@ export async function run(argv, env = process.env, deps = {}) {
   try {
     const opts = parseArgs(argv);
     if (opts.help) { out(USAGE); return 0; }
+    assertTestnet(env);
 
     if (opts.send) {
       // Every gate runs before the first spawn.
@@ -255,9 +278,13 @@ export async function run(argv, env = process.env, deps = {}) {
       const contract = validateAccountId(env.NEAR_CONTRACT_ACCOUNT_ID, "NEAR_CONTRACT_ACCOUNT_ID");
       out(`send: deploy, mint x4, anchor_sheet on ${NETWORK} as ${owner}, contract ${contract}`);
       const anchor = buildAnchorStep({ contract, owner });
+      // The human's --i-approve (checked above) is handed on to the two testnet-deploy
+      // children, which refuse --send without it. The anchor step calls near-cli-rs
+      // directly; it has no such flag, and the approval was already given here.
+      const approval = ["--send", "--i-approve"];
       const stages = [
-        ["deploy", "node", [TESTNET_DEPLOY, "deploy", "--send"]],
-        ["mint", "node", [TESTNET_DEPLOY, "mint", "--send", ...mintArgs(opts.mediaBase)]],
+        ["deploy", "node", [TESTNET_DEPLOY, "deploy", ...approval]],
+        ["mint", "node", [TESTNET_DEPLOY, "mint", ...approval, ...mintArgs(opts.mediaBase)]],
         ["anchor_sheet", "near", anchor.argv],
       ];
       const transactions = [];

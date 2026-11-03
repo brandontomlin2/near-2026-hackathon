@@ -211,7 +211,9 @@ test("the submission checklist and live:check name the complete owner command, w
   const { SEND_COMMAND } = await import("./live-proof.mjs");
   const checklist = await readFile(join(root, "docs/submission-checklist.md"), "utf8");
   assert.ok(checklist.includes(`\`${SEND_COMMAND}\``), `docs/submission-checklist.md must quote ${SEND_COMMAND}`);
-  assert.doesNotMatch(checklist, /--i-approve`/);
+  // A quoted command that stops at --i-approve is incomplete (mint --send needs --media-base).
+  // Naming the flag on its own (`--i-approve`) is fine: it is what the low-level tools require.
+  assert.doesNotMatch(checklist, /--send --i-approve`/, "an owner command that stops at --i-approve is incomplete: mint --send needs --media-base");
   const { check } = await import("./live-check.mjs");
   const r = await check({ NEAR_ACCOUNT_ID: "alice.testnet", NEAR_CONTRACT_ACCOUNT_ID: "nft.alice.testnet" }, {
     statWasm: () => 1, fetch: async () => ({ json: async () => ({ result: { amount: "1" } }) }), wasm: "/w.wasm",

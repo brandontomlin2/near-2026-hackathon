@@ -186,6 +186,7 @@ add("live-proof.mjs", [
   ["--media-base data uri", ["--media-base", "data:text/plain,x"]],
   ["bad NEAR_ACCOUNT_ID", [], { NEAR_ACCOUNT_ID: "NOT VALID!" }],
   ["bad NEAR_CONTRACT_ACCOUNT_ID", [], { NEAR_CONTRACT_ACCOUNT_ID: "NOT VALID!" }],
+  ["bad NEAR_NETWORK", [], { NEAR_NETWORK: "mainnet" }],
   ["--i-approve alone is not a send", ["--i-approve", "--bogus"]],
 ]);
 add("anchor.mjs", [
