@@ -62,8 +62,10 @@ describe("memory diff line: edge cases", () => {
     assert.equal(memoryDiffLine(undefined), "agent: no sheet yet");
   });
 
-  it("cleans control characters and clips a long id", () => {
-    assert.equal(memoryDiffLine({ id: "al\u001b[0m\u0007oof\n", sheets: [] }), "al [0m oof: no sheet yet");
+  it("replaces control and bidi characters with U+FFFD like every other model-text path, and clips a long id", () => {
+    assert.equal(memoryDiffLine({ id: "al\u001b[0m\u0007oof\n", sheets: [] }), "al�[0m�oof: no sheet yet");
+    assert.equal(memoryDiffLine({ id: "al‮oof", sheets: [] }), "al�oof: no sheet yet");
+    assert.equal(sheetFacts("Public enemy #1: Sk⁦eptic. Receipts: 1.").enemy, "Sk�eptic");
     const line = memoryDiffLine({ id: "x".repeat(200), sheets: [] });
     assert.equal(line, `${"x".repeat(77)}...: no sheet yet`);
   });

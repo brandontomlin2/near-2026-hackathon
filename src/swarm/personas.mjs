@@ -15,7 +15,7 @@
 // lines carry a shade word, Chaotic lines carry an emoji that forces hype,
 // Social lines are warm and exclaim, and Aloof lines stay flat. Reply lines
 // keep the same mood words. They also carry the warm or tense words the sheet
-// stand-in (src/demo/sheet-responder.mjs) reads, so hugs and fights in a
+// stand-in (src/memory/sheet-responder.mjs) reads, so hugs and fights in a
 // character sheet match what a reader sees in the channel.
 
 import { createMockClient } from "../inference/client.mjs";
@@ -207,7 +207,7 @@ export function personaResponder(agent) {
   return (request, hash) => {
     start ??= Number.parseInt(hash.slice(0, 8), 16);
     const target = replyTargetOf(request);
-    const list = (target && replies[target]) || lines;
+    const list = target && Object.hasOwn(replies, target) ? replies[target] : lines;
     const turn = draws.get(list) ?? 0;
     draws.set(list, turn + 1);
     return list[(start + strideFor(list.length) * turn) % list.length];

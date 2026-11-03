@@ -177,17 +177,181 @@ test("--send --i-approve --media-base runs deploy, mint, anchor in order and pas
   removeTxFile();
 });
 
-test("the mint argv live-proof sends is accepted by testnet-deploy's own parser", async () => {
-  // The two scripts must agree: what live-proof passes is exactly what mint --send requires.
+test("the deploy and mint argv live-proof sends are accepted by testnet-deploy's own parser, approval included", async () => {
+  // The two scripts must agree: what live-proof passes is exactly what deploy --send and
+  // mint --send require. testnet-deploy refuses --send without --i-approve (review L-1), so
+  // live-proof must hand its own approval on, or a real run stops at the deploy step.
   const { parseArgs } = await import("./testnet-deploy.mjs");
   const r = await go(SEND, APPROVED_ENV);
   assert.equal(r.code, 0);
-  const mintArgv = r.spawned[1][1].slice(1); // drop the script path
-  const opts = parseArgs(mintArgv);
-  assert.equal(opts.command, "mint");
-  assert.equal(opts.send, true);
-  assert.equal(opts.mediaBase, MEDIA_BASE);
+  const [deployArgv, mintArgv] = r.spawned.slice(0, 2).map(([, args]) => args.slice(1)); // drop the script path
+  const deploy = parseArgs(deployArgv);
+  assert.equal(deploy.command, "deploy");
+  assert.equal(deploy.send, true);
+  assert.equal(deploy.approve, true, `deploy argv must carry --i-approve: ${JSON.stringify(deployArgv)}`);
+  const mint = parseArgs(mintArgv);
+  assert.equal(mint.command, "mint");
+  assert.equal(mint.send, true);
+  assert.equal(mint.approve, true, `mint argv must carry --i-approve: ${JSON.stringify(mintArgv)}`);
+  assert.equal(mint.mediaBase, MEDIA_BASE);
   removeTxFile();
+});
+
+test("every child argv live-proof sends passes all of testnet-deploy's send gates (near and the keychain stubbed)", async () => {
+  // Stronger than parsing: run each spawned argv through testnet-deploy's run() with the
+  // near binary, the keychain probe and the wasm check stubbed, so every gate that would
+  // stop a real child (approval, media base, env, network) is evaluated here, offline.
+  const { run: deployRun } = await import("./testnet-deploy.mjs");
+  const r = await go(SEND, APPROVED_ENV);
+  assert.equal(r.code, 0);
+  for (const [bin, args] of r.spawned.filter(([b]) => b === "node")) {
+    assert.equal(bin, "node");
+    const lines = [];
+    const errs = [];
+    const nearCalls = [];
+    const code = await deployRun(args.slice(1), APPROVED_ENV, {
+      out: (l) => lines.push(l),
+      err: (l) => errs.push(l),
+      exec: (b, argv) => { nearCalls.push([b, argv]); return 0; },
+      hasNear: () => true,
+      wasmExists: () => true,
+    });
+    assert.equal(code, 0, `${args[1]}: ${errs.join("\n")}`);
+    assert.equal(errs.join("\n"), "", args[1]);
+    assert.match(lines.join("\n"), /^send: \d+ transaction\(s\) on testnet/m, args[1]);
+    assert.ok(nearCalls.every(([b]) => b === "near"), "the stub only ever stands in for near");
+  }
+  removeTxFile();
+});
+
+test("no near command live-proof sends carries --quiet: quiet near-cli-rs prints no Transaction ID, so no hash could be recorded", async () => {
+  const { run: deployRun } = await import("./testnet-deploy.mjs");
+  const dry = await go([], APPROVED_ENV);
+  assert.equal(dry.code, 0);
+  assert.ok(!dry.text.includes("--quiet"), "the dry-run plan prints the commands a live run sends");
+  const r = await go(SEND, APPROVED_ENV);
+  assert.equal(r.code, 0);
+  const sentNear = [];
+  for (const [bin, args] of r.spawned) {
+    if (bin === "near") { sentNear.push(args); continue; }
+    // The two testnet-deploy children: collect the near argv each would send.
+    const nearCalls = [];
+    const code = await deployRun(args.slice(1), APPROVED_ENV, {
+      out: () => {}, err: () => {}, hasNear: () => true, wasmExists: () => true,
+      exec: (b, argv) => { nearCalls.push(argv); return 0; },
+    });
+    assert.equal(code, 0);
+    sentNear.push(...nearCalls.filter((argv) => argv.at(-1) === "send"));
+  }
+  assert.equal(sentNear.length, TX_LABELS.length, "deploy, four mints, anchor_sheet");
+  for (const argv of sentNear) {
+    assert.ok(!argv.includes("--quiet"), JSON.stringify(argv));
+    assert.equal(argv[0], "contract");
+  }
+  removeTxFile();
+});
+
+test("--i-approve is never put on the anchor_sheet near argv (near-cli-rs would reject it)", async () => {
+  const r = await go(SEND, APPROVED_ENV);
+  assert.equal(r.code, 0);
+  const anchor = r.spawned[2];
+  assert.equal(anchor[0], "near");
+  assert.ok(!anchor[1].includes("--i-approve"), JSON.stringify(anchor[1]));
+  assert.ok(anchor[1].includes("network-config") && anchor[1][anchor[1].indexOf("network-config") + 1] === "testnet", "the anchor call pins testnet");
+  removeTxFile();
+});
+
+// Review L-2: live-proof used to rely on the first child refusing a non-testnet NEAR_NETWORK.
+// It must refuse itself, in both modes, before anything is spawned or written.
+test("--send --i-approve with NEAR_NETWORK other than testnet exits 2 and spawns nothing", async () => {
+  removeTxFile();
+  for (const network of ["mainnet", "betanet", "localnet", "Testnet", "testnet "]) {
+    const r = await go(SEND, { ...APPROVED_ENV, NEAR_NETWORK: network });
+    assert.equal(r.code, 2, network);
+    assert.equal(r.spawned.length, 0, `${network}: nothing may be spawned`);
+    assert.equal(r.errs, "error: NEAR_NETWORK must be unset or testnet; this script refuses other networks (see --help)", network);
+    assert.doesNotMatch(r.text, /^send:/m, network);
+    assert.ok(!existsSync(TX_FILE), `${network}: no transaction file for a run that sent nothing`);
+  }
+});
+
+// Review L-b: the evidence step refuses any contract that is not a named .testnet account.
+// live-proof must refuse the same ids before deploying, so a run is never sent and then
+// refused at the evidence step. The owner (signer) keeps the general account-id check.
+test("--send --i-approve with a mainnet-looking or implicit NEAR_CONTRACT_ACCOUNT_ID exits 2 and spawns nothing", async () => {
+  removeTxFile();
+  for (const contract of ["agent-nft.near", "a".repeat(64), "near", "agent-nft.testnet.near"]) {
+    const r = await go(SEND, { ...APPROVED_ENV, NEAR_CONTRACT_ACCOUNT_ID: contract });
+    assert.equal(r.code, 2, contract);
+    assert.equal(r.spawned.length, 0, `${contract}: nothing may be spawned`);
+    assert.equal(r.errs, "error: NEAR_CONTRACT_ACCOUNT_ID must be a named .testnet account (value not shown); mainnet and implicit accounts are refused (see --help)", contract);
+    assert.equal(r.text, "", `${contract}: nothing printed before the refusal`);
+    assert.ok(!existsSync(TX_FILE), `${contract}: no transaction file for a run that sent nothing`);
+  }
+  // The dry run keeps the looser check: it prints a plan and signs nothing.
+  const dry = await go([], { ...APPROVED_ENV, NEAR_CONTRACT_ACCOUNT_ID: "agent-nft.near" });
+  assert.equal(dry.code, 0, dry.errs);
+});
+
+test("dry run with NEAR_NETWORK other than testnet exits 2 and writes nothing", async () => {
+  for (const network of ["mainnet", "betanet"]) {
+    const r = await go([], { ...APPROVED_ENV, NEAR_NETWORK: network });
+    assert.equal(r.code, 2, network);
+    assert.equal(r.spawned.length, 0, network);
+    assert.equal(r.text, "", `${network}: nothing printed before the refusal`);
+    assert.match(r.errs, /^error: NEAR_NETWORK must be unset or testnet/, network);
+    assert.ok(!existsSync(r.file), `${network}: no example file was written`);
+  }
+});
+
+test("NEAR_NETWORK=testnet, empty or unset is accepted in both modes", async () => {
+  for (const env of [{ NEAR_NETWORK: "testnet" }, { NEAR_NETWORK: "" }, {}]) {
+    const dry = await go([], { ...APPROVED_ENV, ...env });
+    assert.equal(dry.code, 0, dry.errs);
+    assert.ok(existsSync(dry.file));
+    const sent = await go(SEND, { ...APPROVED_ENV, ...env });
+    assert.equal(sent.code, 0, sent.errs);
+    assert.equal(sent.spawned.length, 3);
+    removeTxFile();
+  }
+});
+
+// Review L-6: --out, --force and --update-example describe the dry run's example file,
+// which --send never writes. Accepting them silently misled; now they are refused.
+test("--send refuses --out, --force and --update-example before any spawn", async () => {
+  removeTxFile();
+  const cases = [
+    ["--out", ["--out", "record.json"]],
+    ["--force", ["--force"]],
+    ["--update-example", ["--update-example"]],
+    ["--out and --force", ["--out", "record.json", "--force"]],
+  ];
+  for (const [label, extra] of cases) {
+    const lines = [];
+    const errs = [];
+    const spawned = [];
+    const code = await run([...SEND, ...extra], APPROVED_ENV, {
+      out: (l) => lines.push(l),
+      err: (l) => errs.push(l),
+      exec: (bin, args) => { spawned.push([bin, args]); return { code: 0, output: "" }; },
+    });
+    assert.equal(code, 2, label);
+    assert.equal(spawned.length, 0, `${label}: nothing may be spawned`);
+    assert.equal(lines.join("\n"), "", `${label}: nothing printed before the refusal`);
+    assert.equal(errs.join("\n"), `error: --out, --force and --update-example apply to the dry run only; --send writes its record to ${TX_FILE_LABEL} (see --help)`, label);
+    assert.ok(!existsSync(TX_FILE), `${label}: no transaction file`);
+    assert.ok(!existsSync("record.json"), `${label}: no --out file`);
+  }
+});
+
+test("--help says --out, --force and --update-example are dry-run only and NEAR_NETWORK is testnet only", async () => {
+  const lines = [];
+  assert.equal(await run(["--help"], {}, { out: (l) => lines.push(l), err: () => {}, exec: () => { throw new Error("no spawn"); } }), 0);
+  const usage = lines.join("\n");
+  assert.match(usage, /--out <file>\s+dry run only/);
+  assert.match(usage, /--force\s+dry run only/);
+  assert.match(usage, /--update-example\s+dry run only/);
+  assert.match(usage, /NEAR_NETWORK\s+unset or testnet; anything else is refused/);
 });
 
 test("dry run with --media-base shows the hosted media URLs, without it the labelled placeholder", async () => {
@@ -226,7 +390,9 @@ test("a failing step stops the run", async () => {
 
 test("the evidence command is exactly what scripts/evidence.mjs reads", () => {
   assert.equal(TX_FILE_LABEL, "out/live-proof/txs.json");
-  assert.equal(evidenceCommand(CONTRACT), "EVIDENCE_NETWORK=testnet NEAR_ACCOUNT_ID=agent-nft.testnet EVIDENCE_TX_FILE=out/live-proof/txs.json npm run evidence");
+  // Review L-d: the contract goes in NEAR_CONTRACT_ACCOUNT_ID, the variable evidence.mjs reads
+  // first (NEAR_ACCOUNT_ID is only its fallback), so the printed command matches the deploy step.
+  assert.equal(evidenceCommand(CONTRACT), "EVIDENCE_NETWORK=testnet NEAR_CONTRACT_ACCOUNT_ID=agent-nft.testnet EVIDENCE_TX_FILE=out/live-proof/txs.json npm run evidence");
   assert.deepEqual(TX_LABELS, ["deploy", "mint aloof", "mint chaotic", "mint social", "mint skeptic", "anchor_sheet"]);
 });
 
@@ -294,7 +460,9 @@ test("--send with hashes missing from the CLI output warns, names them, and stil
   }
 });
 
-test("a failed step still saves the hashes sent before it and names the step", async () => {
+test("a failed step keeps the hashes of the steps before it, records none of its own, and is reported as failed", async () => {
+  // near-cli-rs prints a Transaction ID for a transaction that was executed and failed too, so a
+  // hash in a failed step's output is not a success: it must never be labelled as one.
   removeTxFile();
   const r = await go(SEND, APPROVED_ENV, { output: stageOutput, fail: (bin, args) => args.includes("mint") });
   try {
@@ -302,8 +470,12 @@ test("a failed step still saves the hashes sent before it and names the step", a
     assert.equal(r.spawned.length, 2);
     assert.match(r.errs, /^error: mint failed with exit 1; stopping\. Earlier transactions were not rolled back\.$/m);
     const txs = JSON.parse(readFileSync(TX_FILE, "utf8")).transactions;
-    assert.deepEqual(txs.map((t) => t.label), ["deploy", "mint aloof", "mint chaotic", "mint social", "mint skeptic"]);
-    assert.match(r.text, /WARN: no hash found in the near CLI output for: anchor_sheet\./);
+    assert.deepEqual(txs, [{ label: "deploy", hash: HASHES[0] }], "only the step that exited 0 is recorded");
+    for (const h of HASHES.slice(1)) assert.ok(!r.text.includes(h) && !r.errs.includes(h), "a failed step's id is never shown as a result");
+    assert.match(r.text, new RegExp(`^wrote 1 of ${TX_LABELS.length} transaction hashes to ${TX_FILE_LABEL}$`, "m"));
+    assert.match(r.text, /^FAILED: mint exited 1\. Not recorded \(not sent, or sent and failed\): mint aloof, mint chaotic, mint social, mint skeptic, anchor_sheet\./m);
+    assert.doesNotMatch(r.text, /WARN: no hash found/, "a failed step is not a success whose hash went missing");
+    assert.doesNotMatch(r.text, /^done/m);
     assert.equal(r.text.split("\n").at(-1), `  ${evidenceCommand(CONTRACT)}`);
   } finally {
     removeTxFile();
@@ -374,5 +546,5 @@ test("--help documents --force", async () => {
   const lines = [];
   const code = await run(["--help"], {}, { out: (l) => lines.push(l), err: () => {} });
   assert.equal(code, 0);
-  assert.match(lines.join("\n"), /--force\s+replace an existing --out/);
+  assert.match(lines.join("\n"), /--force\s+dry run only: replace an existing --out/);
 });

@@ -88,6 +88,49 @@ test("run with no --out writes out/page.png and leaves git-tracked files unchang
   assert.deepEqual(readFileSync(DOCS_OUT), tracked, "docs/img/page.png must not change without --update-docs");
 });
 
+test("parseArgs accepts --force", () => {
+  assert.equal(parseArgs([]).force, false);
+  assert.equal(parseArgs(["--force"]).force, true);
+  assert.equal(parseArgs(["--out", "x.png", "--force"]).out, resolve("x.png"));
+});
+
+const PNG_HEADER = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
+
+test("run refuses to overwrite an existing --out that is not a PNG, before the browser runs; --force replaces it", { skip: SKIP_WIN }, async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "shot-test-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const out = join(dir, "notes.txt");
+  writeFileSync(out, "someone's notes\n");
+  const marker = join(dir, "browser-ran");
+  const browser = fakeBrowser(dir, `touch "${marker}"; printf "PNGDATA" > "$OUT"`);
+  const errs = [];
+  const code = run({ candidates: [browser], out, log: () => {}, err: (m) => errs.push(m) });
+  assert.equal(code, 1);
+  assert.equal(errs.length, 1);
+  assert.match(errs[0], /^screenshot: --out .*notes\.txt exists and is not a PNG image this tool wrote; pass --force to replace it$/);
+  assert.equal(readFileSync(out, "utf8"), "someone's notes\n");
+  assert.equal(existsSync(marker), false, "the browser must not run");
+
+  const forced = run({ candidates: [browser], out, force: true, log: () => {}, err: (m) => errs.push(m) });
+  assert.equal(forced, 0, errs.join("\n"));
+  assert.equal(readFileSync(out, "utf8"), "PNGDATA");
+
+  const asDir = run({ candidates: [browser], out: dir, log: () => {}, err: (m) => errs.push(m) });
+  assert.equal(asDir, 1);
+  assert.match(errs.at(-1), /^screenshot: --out .* is a directory; give a file path$/);
+});
+
+test("run replaces an existing PNG (an earlier screenshot) without --force", { skip: SKIP_WIN }, async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "shot-test-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const out = join(dir, "page.png");
+  writeFileSync(out, PNG_HEADER);
+  const errs = [];
+  const code = run({ candidates: [fakeBrowser(dir, 'printf "PNGDATA" > "$OUT"')], out, log: () => {}, err: (m) => errs.push(m) });
+  assert.equal(code, 0, errs.join("\n"));
+  assert.equal(readFileSync(out, "utf8"), "PNGDATA");
+});
+
 test("run returns 1 when the browser exits 0 but writes nothing", { skip: SKIP_WIN }, async (t) => {
   const r = await shotCase(t, "exit 0");
   assert.equal(r.code, 1);

@@ -4,7 +4,6 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { hashSheet } from "../src/anchor/hash.mjs";
-import { createMockClient } from "../src/inference/client.mjs";
 import { runMemoryLoop } from "../src/memory/loop.mjs";
 import { runSwarm } from "../src/swarm/runner.mjs";
 import { AGENTS, EvidenceError, loadTransactions, main, mockEvidence } from "./evidence.mjs";
@@ -65,6 +64,25 @@ test("mock evidence carries the full memory loop, linked to the swarm final hash
   assert.deepEqual(ev.views.filter((v) => v.method === "sheet_anchor").map((v) => v.args.token_id), loop.tokens.map((t) => t.token_id));
 });
 
+test("mock evidence hashes the same stand-in sheets npm run swarm writes, so the two agree hash for hash", async () => {
+  const { execFile } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const { promisify } = await import("node:util");
+  const dir = tmp();
+  const env = { ...process.env, MOCK_INFERENCE: "1" };
+  delete env.NEAR_AI_API_KEY;
+  await promisify(execFile)(process.execPath, [fileURLToPath(new URL("./swarm.mjs", import.meta.url)), "--rounds", "5", "--seed", "1", "--out", dir], { env });
+  const ev = await mockEvidence();
+  for (const t of ev.memory_loop.tokens) {
+    const written = JSON.parse(fs.readFileSync(path.join(dir, "sheets", `${t.token_id}.json`), "utf8"));
+    assert.equal(t.sheet.sheet_hash, written.sheetHash, `${t.token_id}: evidence and npm run swarm anchor different sheets`);
+    assert.equal(t.sheet.sheet_hash, hashSheet(written.sheet));
+    assert.match(written.sheet, /Public enemy #1:/, `${t.token_id}: the evidence sheet is a character sheet, not a generic mock line`);
+    assert.deepEqual(t.sheets.map((s) => s.sheet_hash), (await Promise.all(t.sheets.map(async (s) =>
+      JSON.parse(fs.readFileSync(path.join(dir, "sheets", `${t.token_id}.round-${s.round}.json`), "utf8")).sheetHash))));
+  }
+});
+
 test("mock runs are byte-identical, print the MOCK banner and never fetch", async () => {
   const lines = [];
   const origLog = console.log;
@@ -105,6 +123,100 @@ test("testnet mode makes only view calls and records responses and tx hashes", a
   assert.equal(ev.views[1].result.memory_depth, 2);
   assert.equal(ev.views[1].block_height, 7);
   assert.ok(ev.views[1].response.result.result.length > 0);
+});
+
+test("RPC URL credentials, path, query and fragment never reach evidence.json; only the origin is recorded", async () => {
+  const dir = tmp();
+  const calls = [];
+  // Review M-2: the key sits in the path for the common paid providers (Alchemy /v2/<key>,
+  // Infura /v3/<key>, QuickNode /<token>/), so the path must go too, not only userinfo and query.
+  const secretUrl = "https://user:hunter2@near-testnet.rpc.example:8443/v2/PATH-KEY/?apiKey=SECRET-KEY#frag";
+  const code = await main(
+    { EVIDENCE_NETWORK: "testnet", NEAR_ACCOUNT_ID: "dev.testnet", NEAR_RPC_URL: secretUrl },
+    { cwd: dir, fetchImpl: stubFetch(calls) },
+  );
+  assert.equal(code, 0);
+  assert.equal(calls.length, 5);
+  assert.ok(calls.every((c) => c.url === secretUrl), "the request itself still goes to the full URL");
+  const raw = fs.readFileSync(path.join(dir, "out/evidence.json"), "utf8");
+  for (const secret of ["hunter2", "PATH-KEY", "/v2", "SECRET-KEY", "apiKey", "frag", "user:"]) {
+    assert.ok(!raw.includes(secret), `${secret} leaked into evidence.json`);
+  }
+  const ev = JSON.parse(raw);
+  assert.equal(ev.rpc_url, "https://near-testnet.rpc.example:8443", "origin only: scheme, host and a non-default port");
+  assert.ok(ev.views.every((v) => v.request.rpc_url === "https://near-testnet.rpc.example:8443"));
+});
+
+test("provider-style URLs with the key in the path record the origin only", async () => {
+  const cases = [
+    ["https://near-testnet.g.alchemy.com/v2/ALCHEMY-KEY", "https://near-testnet.g.alchemy.com"],
+    ["https://near-testnet.infura.example/v3/INFURA-KEY", "https://near-testnet.infura.example"],
+    ["https://cool-name.near-testnet.quiknode.example/QUICK-TOKEN/", "https://cool-name.near-testnet.quiknode.example"],
+  ];
+  for (const [url, origin] of cases) {
+    const dir = tmp();
+    const calls = [];
+    const code = await main({ EVIDENCE_NETWORK: "testnet", NEAR_ACCOUNT_ID: "dev.testnet", NEAR_RPC_URL: url }, { cwd: dir, fetchImpl: stubFetch(calls) });
+    assert.equal(code, 0, url);
+    assert.ok(calls.every((c) => c.url === url), `${url}: the request goes to the full URL`);
+    const raw = fs.readFileSync(path.join(dir, "out/evidence.json"), "utf8");
+    assert.ok(!/KEY|TOKEN/.test(raw), `${url}: the path key leaked into evidence.json`);
+    assert.equal(JSON.parse(raw).rpc_url, origin, url);
+  }
+});
+
+test("the contract account comes from NEAR_CONTRACT_ACCOUNT_ID, with NEAR_ACCOUNT_ID as the fallback", async () => {
+  // Review (judge screen 12, item 4): deploy treats NEAR_ACCOUNT_ID as the signer and
+  // NEAR_CONTRACT_ACCOUNT_ID as the contract; evidence must query the same account.
+  const split = tmp();
+  const splitCalls = [];
+  let code = await main(
+    { EVIDENCE_NETWORK: "testnet", NEAR_ACCOUNT_ID: "owner.testnet", NEAR_CONTRACT_ACCOUNT_ID: "nft.owner.testnet" },
+    { cwd: split, fetchImpl: stubFetch(splitCalls) },
+  );
+  assert.equal(code, 0);
+  assert.ok(splitCalls.every((c) => c.account === "nft.owner.testnet"), "every view queries the contract account, never the signer");
+  assert.equal(JSON.parse(fs.readFileSync(path.join(split, "out/evidence.json"), "utf8")).contract, "nft.owner.testnet");
+
+  const fallback = tmp();
+  const fallbackCalls = [];
+  code = await main({ EVIDENCE_NETWORK: "testnet", NEAR_ACCOUNT_ID: "owner.testnet", NEAR_CONTRACT_ACCOUNT_ID: "" }, { cwd: fallback, fetchImpl: stubFetch(fallbackCalls) });
+  assert.equal(code, 0);
+  assert.ok(fallbackCalls.every((c) => c.account === "owner.testnet"), "unset or empty NEAR_CONTRACT_ACCOUNT_ID falls back to NEAR_ACCOUNT_ID");
+  assert.equal(JSON.parse(fs.readFileSync(path.join(fallback, "out/evidence.json"), "utf8")).contract, "owner.testnet");
+
+  // The error names the variable the value came from; the signer being valid does not rescue a bad contract.
+  const noFetch = () => assert.fail("must refuse before fetching");
+  await assert.rejects(
+    main({ EVIDENCE_NETWORK: "testnet", NEAR_ACCOUNT_ID: "owner.testnet", NEAR_CONTRACT_ACCOUNT_ID: "nft.near" }, { cwd: tmp(), fetchImpl: noFetch }),
+    (err) => err instanceof EvidenceError && /^NEAR_CONTRACT_ACCOUNT_ID must be a named \.testnet account/.test(err.message) && !err.message.includes("nft.near"),
+  );
+  await assert.rejects(
+    main({ EVIDENCE_NETWORK: "testnet" }, { cwd: tmp(), fetchImpl: noFetch }),
+    (err) => err instanceof EvidenceError && err.message === "NEAR_CONTRACT_ACCOUNT_ID (or NEAR_ACCOUNT_ID) is required for testnet evidence",
+  );
+});
+
+test("testnet mode refuses non-testnet RPC endpoints and account ids before any fetch, without echoing them", async () => {
+  const dir = tmp();
+  const noFetch = () => assert.fail("must refuse before fetching");
+  const base = { EVIDENCE_NETWORK: "testnet", NEAR_ACCOUNT_ID: "dev.testnet" };
+  const refused = (value) => (err) => err instanceof EvidenceError && !err.message.includes(value);
+  for (const url of [
+    "https://rpc.mainnet.near.org",
+    "https://rpc.near.org",
+    "http://rpc.testnet.near.org",
+    "https://rpc.testnet.near.org.mainnet.example",
+    "https://mainnet-testnet.example",
+    "not a url",
+  ]) {
+    await assert.rejects(main({ ...base, NEAR_RPC_URL: url }, { cwd: dir, fetchImpl: noFetch }), refused(url), `url ${JSON.stringify(url)}`);
+  }
+  for (const id of ["x.near", "dev.testnet.near", "ab".repeat(32), "dev.testnet ", "DEV.testnet", "dev.testnet.evil"]) {
+    await assert.rejects(main({ ...base, NEAR_ACCOUNT_ID: id }, { cwd: dir, fetchImpl: noFetch }), refused(id), `id ${JSON.stringify(id)}`);
+  }
+  // The bare top-level account is refused too (the word "testnet" legitimately appears in the message).
+  await assert.rejects(main({ ...base, NEAR_ACCOUNT_ID: "testnet" }, { cwd: dir, fetchImpl: noFetch }), EvidenceError);
 });
 
 test("a failing view is recorded and exits nonzero", async () => {
@@ -150,7 +262,8 @@ test("evidence covers every sheet, each with its own anchor dry-run", async () =
 
 test("one sheet hash: sheet record, anchor_sheet dry-run args and evidence.json agree", async () => {
   const swarm = await runSwarm({ rounds: 5, seed: 1 });
-  const loop = await runMemoryLoop({ swarm, client: createMockClient() });
+  // No client: the loop's default sheet writer (the counting stand-in), which is what mock evidence uses.
+  const loop = await runMemoryLoop({ swarm });
   const ev = await mockEvidence();
   assert.equal(ev.memory_loop.tokens.length, loop.tokens.length);
   for (const [i, t] of loop.tokens.entries()) {

@@ -9,10 +9,16 @@
 //                                      AND --media-base names where the four SVGs are hosted
 //                                      (testnet-deploy's mint --send refuses to run without it, so
 //                                      the gate is here, before deploy, not after it).
-//                                      Collects the transaction hashes the near CLI prints into
-//                                      out/live-proof/txs.json and prints the exact
-//                                      `npm run evidence` command that reads them.
+//                                      Passes --i-approve on to the deploy and mint children,
+//                                      which refuse --send without it. Collects the transaction
+//                                      hashes the near CLI prints for every step that exited 0
+//                                      into out/live-proof/txs.json and prints the exact
+//                                      `npm run evidence` command that reads them. A failed
+//                                      step is reported as failed; its id, if one was printed,
+//                                      is never recorded. --out, --force and --update-example belong
+//                                      to the dry run and are refused with --send.
 //
+// Both modes refuse any NEAR_NETWORK other than unset or testnet before doing anything.
 // No key handling here. Signing is done by the near CLI with the system keychain, through
 // scripts/testnet-deploy.mjs (deploy, mint) and a near-cli-rs call built below (anchor_sheet).
 // The dry run never spawns anything and never touches the network.
@@ -22,7 +28,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { prepareAnchor } from "../src/anchor/anchor.mjs";
-import { AGENTS, run as deployRun, shellQuote, validateAccountId, validateMediaBase, UsageError, NETWORK } from "./testnet-deploy.mjs";
+import { AGENTS, assertTestnetNetwork, run as deployRun, shellQuote, validateAccountId, validateMediaBase, validateTestnetAccountId, UsageError, NETWORK } from "./testnet-deploy.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Dry runs write under out/ (gitignored) so a judge's tree stays clean. The tracked
@@ -37,18 +43,31 @@ export const TX_FILE_LABEL = "out/live-proof/txs.json";
 export const TX_FILE = path.join(HERE, "..", ...TX_FILE_LABEL.split("/"));
 /** The complete owner command, as the docs quote it. mint --send needs --media-base, so it is not optional. */
 export const SEND_COMMAND = "npm run live-proof -- --send --i-approve --media-base <url>";
-/** The exact `npm run evidence` invocation that turns the collected hashes into out/evidence.json. */
-export const evidenceCommand = (contract) => `EVIDENCE_NETWORK=${NETWORK} NEAR_ACCOUNT_ID=${contract} EVIDENCE_TX_FILE=${TX_FILE_LABEL} npm run evidence`;
+/**
+ * The exact `npm run evidence` invocation that turns the collected hashes into out/evidence.json.
+ * The contract goes in NEAR_CONTRACT_ACCOUNT_ID, the variable scripts/evidence.mjs reads first
+ * (NEAR_ACCOUNT_ID is only its fallback), the same variable the deploy step used for it.
+ */
+export const evidenceCommand = (contract) => `EVIDENCE_NETWORK=${NETWORK} NEAR_CONTRACT_ACCOUNT_ID=${contract} EVIDENCE_TX_FILE=${TX_FILE_LABEL} npm run evidence`;
 // The labels evidence.mjs will show, one per transaction, in send order.
 export const TX_LABELS = ["deploy", ...AGENTS.map((a) => `mint ${a.token_id}`), "anchor_sheet"];
-// near-cli-rs reports a sent transaction as "Transaction ID: <hash>" and as an explorer link
-// ending in /transactions/<hash>. Only those two contexts count: a bare base58 scan would also
-// pick up account ids and the base64 media_hash echoed in the printed args.
-const TX_HASH_RE = /(?:Transaction ID:\s*|\/transactions\/)([1-9A-HJ-NP-Za-km-z]{32,64})\b/g;
+// near-cli-rs (src/common.rs print_transaction_status) reports a sent transaction as
+// "Transaction ID: <hash>" followed by explorer_transaction_url + hash: by default
+// https://explorer.testnet.near.org/transactions/<hash>, or .../txns/<hash> when the user's
+// config.toml points at nearblocks. Only those contexts count: a bare base58 scan would also
+// pick up account ids and the base64 media_hash echoed in the console-command line and the
+// return value. The block goes to stderr through the tracing layer, which prefixes "├  ",
+// indents with "│    " and ends each event with an ANSI reset; colour codes are stripped and
+// CR line endings normalised before matching. In --quiet mode near-cli-rs installs no tracing
+// subscriber and prints only the raw return value, so no hash can be found at all: that is why
+// no command sent here or by scripts/testnet-deploy.mjs carries --quiet.
+const ANSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
+const TX_HASH_RE = /(?:Transaction ID:\s*|\/(?:transactions|txns)\/)([1-9A-HJ-NP-Za-km-z]{32,64})\b/g;
 
 /** Unique transaction hashes in the order the near CLI printed them. Pure. */
 export function extractTransactionHashes(output) {
-  return [...new Set([...String(output).matchAll(TX_HASH_RE)].map((m) => m[1]))];
+  const text = String(output).replace(ANSI_RE, "").replace(/\r\n?/g, "\n");
+  return [...new Set([...text.matchAll(TX_HASH_RE)].map((m) => m[1]))];
 }
 const RELATIVE_WASM = "contracts/personality-nft/target/near/personality_nft.wasm";
 const SHEET = "Aloof. Observer. Watches the channel, speaks rarely.\nAllies: none yet.\n";
@@ -64,13 +83,20 @@ an example evidence file. Nothing is signed or sent.
   --send         really send all steps on testnet (needs NEAR_ACCOUNT_ID,
                  NEAR_CONTRACT_ACCOUNT_ID, --i-approve and --media-base); writes the
                  transaction hashes to ${TX_FILE_LABEL} and prints the npm run evidence command
-  --i-approve    explicit human approval for --send
+  --i-approve    explicit human approval for --send; handed on to the deploy and mint
+                 steps (scripts/testnet-deploy.mjs), which refuse --send without it
   --media-base <url>  base URL where <token_id>.svg is hosted; passed to the mint step.
                  Required with --send (mint --send refuses the placeholder); in a dry run
                  it replaces the labelled placeholder media URL
-  --out <file>   where the dry run writes the example (default out/live-proof/evidence.example.json)
-  --force        replace an existing --out that is not an example file this tool wrote
-  --update-example  write the tracked docs/evidence.example.json instead (maintainers only)
+  --out <file>   dry run only: where the example is written (default out/live-proof/evidence.example.json)
+  --force        dry run only: replace an existing --out that is not an example file this tool wrote
+  --update-example  dry run only: write the tracked docs/evidence.example.json instead (maintainers only)
+
+Environment:
+  NEAR_ACCOUNT_ID           owner and signer (required with --send)
+  NEAR_CONTRACT_ACCOUNT_ID  account the contract lives on (required with --send; must be
+                            a named .testnet account)
+  NEAR_NETWORK              unset or testnet; anything else is refused, in both modes
 `;
 
 /** An earlier file from this tool: JSON with "example": true. Anything else is someone's file. */
@@ -103,7 +129,7 @@ export function buildAnchorStep({ contract, owner }) {
   const gasTgas = `${Number(BigInt(p.gas) / 10n ** 12n)} Tgas`;
   const deposit = "0.01 NEAR";
   const argv = [
-    "--quiet", "contract", "call-function", "as-transaction", contract, p.methodName,
+    "contract", "call-function", "as-transaction", contract, p.methodName,
     "json-args", JSON.stringify(p.args),
     "prepaid-gas", gasTgas,
     "attached-deposit", deposit,
@@ -202,16 +228,24 @@ function parseArgs(argv) {
     else throw new UsageError(`unknown argument: ${a}`);
   }
   if (opts.updateExample && opts.outGiven) throw new UsageError("--update-example and --out cannot be combined");
+  // Review L-6: these three name the dry run's example file, which --send never writes.
+  // Refused rather than ignored, so nobody expects a record that was not made.
+  if (opts.send && (opts.outGiven || opts.force || opts.updateExample)) {
+    throw new UsageError(`--out, --force and --update-example apply to the dry run only; --send writes its record to ${TX_FILE_LABEL}`);
+  }
   if (opts.updateExample) { opts.out = TRACKED_EXAMPLE; opts.outLabel = OUT_LABELS.tracked; }
   return opts;
 }
 
 // Runs a step, streaming its stdout and stderr to the terminal as they arrive while also
-// keeping a copy: near-cli-rs prints the transaction hash to either stream.
-function defaultExec(bin, argv) {
+// keeping a copy: near-cli-rs prints the transaction block to stderr (its tracing layer)
+// and a call's return value to stdout, so both streams are kept. The child gets the env the
+// run was given (the CLI passes process.env), so the testnet-deploy children read the same
+// NEAR_* variables and `near` is resolved from the same PATH. Exported for the tests only.
+export function defaultExec(bin, argv, { env = process.env } = {}) {
   return new Promise((resolve) => {
     const chunks = [];
-    const child = spawn(bin, argv, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(bin, argv, { stdio: ["ignore", "pipe", "pipe"], env });
     child.stdout.on("data", (d) => { chunks.push(d); process.stdout.write(d); });
     child.stderr.on("data", (d) => { chunks.push(d); process.stderr.write(d); });
     child.on("error", () => resolve({ code: 127, output: Buffer.concat(chunks).toString("utf8") }));
@@ -219,10 +253,12 @@ function defaultExec(bin, argv) {
   });
 }
 
-// Pairs the hashes found in one stage's output with the labels that stage was expected to
-// produce (deploy: 1, mint: one per agent, anchor_sheet: 1). Extra hashes keep the stage name.
+// The labels one stage is expected to produce (deploy: 1, mint: one per agent, anchor_sheet: 1).
+const stageLabels = (stage) => TX_LABELS.filter((l) => (stage === "mint" ? l.startsWith("mint ") : l === stage));
+
+// Pairs the hashes found in one stage's output with that stage's labels. Extra hashes keep the stage name.
 function labelHashes(stage, hashes) {
-  const expected = TX_LABELS.filter((l) => (stage === "mint" ? l.startsWith("mint ") : l === stage));
+  const expected = stageLabels(stage);
   return hashes.map((hash, i) => ({ label: expected[i] ?? stage, hash }));
 }
 
@@ -232,8 +268,8 @@ function writeTxFile({ contract, owner, transactions }) {
 }
 
 /**
- * deps.exec(bin, argv) -> { code, output } (or a promise of it). Injected in tests so nothing
- * is spawned; `output` is what the step printed, scanned for transaction hashes.
+ * deps.exec(bin, argv, { env }) -> { code, output } (or a promise of it). Injected in tests so
+ * nothing is spawned; `output` is what the step printed, scanned for transaction hashes.
  */
 export async function run(argv, env = process.env, deps = {}) {
   const out = deps.out ?? ((l) => process.stdout.write(`${l}\n`));
@@ -242,6 +278,8 @@ export async function run(argv, env = process.env, deps = {}) {
   try {
     const opts = parseArgs(argv);
     if (opts.help) { out(USAGE); return 0; }
+    // Review L-2: refuse any network but testnet here, before a child is spawned or a file written.
+    assertTestnetNetwork(env);
 
     if (opts.send) {
       // Every gate runs before the first spawn.
@@ -252,34 +290,53 @@ export async function run(argv, env = process.env, deps = {}) {
         throw new UsageError("--send needs --media-base <url>: the base URL where the four <token_id>.svg files are hosted, which mint --send requires. Nothing was sent.");
       }
       const owner = validateAccountId(env.NEAR_ACCOUNT_ID, "NEAR_ACCOUNT_ID");
-      const contract = validateAccountId(env.NEAR_CONTRACT_ACCOUNT_ID, "NEAR_CONTRACT_ACCOUNT_ID");
+      // Review L-b: the contract must be a named .testnet account, the rule the evidence
+      // script applies, so a run is never sent and then refused at the evidence step.
+      const contract = validateTestnetAccountId(env.NEAR_CONTRACT_ACCOUNT_ID, "NEAR_CONTRACT_ACCOUNT_ID");
       out(`send: deploy, mint x4, anchor_sheet on ${NETWORK} as ${owner}, contract ${contract}`);
       const anchor = buildAnchorStep({ contract, owner });
+      // The human's --i-approve (checked above) is handed on to the two testnet-deploy
+      // children, which refuse --send without it. The anchor step calls near-cli-rs
+      // directly; it has no such flag, and the approval was already given here.
+      const approval = ["--send", "--i-approve"];
       const stages = [
-        ["deploy", "node", [TESTNET_DEPLOY, "deploy", "--send"]],
-        ["mint", "node", [TESTNET_DEPLOY, "mint", "--send", ...mintArgs(opts.mediaBase)]],
+        ["deploy", "node", [TESTNET_DEPLOY, "deploy", ...approval]],
+        ["mint", "node", [TESTNET_DEPLOY, "mint", ...approval, ...mintArgs(opts.mediaBase)]],
         ["anchor_sheet", "near", anchor.argv],
       ];
       const transactions = [];
-      const finish = (code) => {
+      const completed = []; // stages that exited 0, in order
+      const finish = (code, failed = null) => {
         // Written even after a failed step: the earlier transactions are real and stay on chain.
         writeTxFile({ contract, owner, transactions });
-        const missing = TX_LABELS.filter((l) => !transactions.some((t) => t.label === l));
         out(`wrote ${transactions.length} of ${TX_LABELS.length} transaction hashes to ${TX_FILE_LABEL}`);
+        // A step that exited 0 but whose output held no id block: the transaction exists and
+        // its hash has to be looked up by hand.
+        const done = completed.flatMap(stageLabels);
+        const missing = done.filter((l) => !transactions.some((t) => t.label === l));
         if (missing.length) {
           out(`WARN: no hash found in the near CLI output for: ${missing.join(", ")}. Add each as {"label": ..., "hash": ...} to the transactions array in ${TX_FILE_LABEL} before running evidence.`);
         }
-        out(code === 0 ? "done. Next, with read-only RPC views (nothing signed):" : "Next, once every hash is in the file (read-only RPC views, nothing signed):");
+        if (failed) {
+          // The failed step and every step after it. near-cli-rs can print the Transaction ID of
+          // a transaction that executed and failed before it exits non-zero, so an id in a
+          // failed step's output is not a success and was not recorded.
+          const notRecorded = TX_LABELS.filter((l) => !done.includes(l));
+          out(`FAILED: ${failed} exited ${code}. Not recorded (not sent, or sent and failed): ${notRecorded.join(", ")}.`);
+        }
+        out(code === 0 ? "done. Next, with read-only RPC views (nothing signed):" : "Next, once the failed step has been redone and every hash is in the file (read-only RPC views, nothing signed):");
         out(`  ${evidenceCommand(contract)}`);
         return code;
       };
       for (const [stage, bin, args] of stages) {
-        const { code, output } = await exec(bin, args);
-        transactions.push(...labelHashes(stage, extractTransactionHashes(output)));
+        const { code, output } = await exec(bin, args, { env });
         if (code !== 0) {
           errOut(`error: ${stage} failed with exit ${code}; stopping. Earlier transactions were not rolled back.`);
-          return finish(code);
+          return finish(code, stage);
         }
+        // Only a step that exited 0 contributes hashes; see finish() for the failed case.
+        transactions.push(...labelHashes(stage, extractTransactionHashes(output)));
+        completed.push(stage);
       }
       return finish(0);
     }

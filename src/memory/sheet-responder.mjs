@@ -1,6 +1,9 @@
-// Deterministic offline stand-in for the summarizer model.
+// Deterministic offline stand-in for the summarizer model. It is the mock
+// sheet writer everywhere: npm run demo, npm run swarm and npm run evidence
+// (runMemoryLoop in ./loop.mjs defaults to it). Live mode sends the same
+// request to NEAR AI Cloud instead.
 //
-// It parses the request built by buildSummaryMessages (src/memory/summarizer.mjs)
+// It parses the request built by buildSummaryMessages (./summarizer.mjs)
 // and writes a first-person character sheet from the counts and names in the
 // events. It only ever quotes a short clipped fragment of the agent's own
 // latest post, never text from other agents, so instructions hidden in events
@@ -259,7 +262,8 @@ export function sheetResponder(request, _hash) {
   const pick = (options) => options[fnv(`${name}:${posts}:${replies}:${mentioned}`) % options.length];
 
   const state = fights === 0 && hugs === 0 ? "quiet" : fights > hugs ? "fighting" : hugs > fights ? "hugging" : "balanced";
-  const vibe = pick((VIBES[name] ?? VIBES.default)[state]);
+  // Own keys only: a name like "constructor" must not pick up an inherited member.
+  const vibe = pick((Object.hasOwn(VIBES, name) ? VIBES[name] : VIBES.default)[state]);
 
   const enemy = rival
     ? `${rival} (${plural(stats[rival].tense, "fight", "fights")})`

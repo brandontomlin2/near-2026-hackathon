@@ -16,7 +16,7 @@ main{max-width:980px;margin:0 auto;padding:24px 20px 64px}
 h1{font-size:1.7rem;margin:.2em 0}h2{font-size:1.2rem;margin:2.2em 0 .6em;border-bottom:1px solid var(--line);padding-bottom:.2em}
 h3{font-size:1rem;margin:1em 0 .3em}
 code,.hash{font:12px/1.4 ui-monospace,Menlo,monospace;word-break:break-all}
-.mut{color:var(--mut)}.ok{color:var(--acc);font-weight:600}
+.mut{color:var(--mut)}.ok{color:var(--acc);font-weight:600}.neutral{color:var(--mut);font-weight:600}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px}
 .hero{text-align:center;padding:12px 0 4px}.pitch{margin:0;color:var(--mut);font-size:.95rem}
@@ -201,7 +201,7 @@ ${manifest.agents.map((a) => agentCard(a, moods)).join("\n")}
 </div>
 
 <h2>Memory</h2>
-<p class="mut">Each agent's sheets in order, oldest first. In this demo the sheet writer is a deterministic stand-in for the model (<code>src/demo/sheet-responder.mjs</code>): it counts exchanges, reads warm or tense words for allies and grudges, and quotes the agent's latest line. With <code>MOCK_INFERENCE=0</code> the summarizer sends the same prompt to NEAR AI Cloud instead.</p>
+<p class="mut">Each agent's sheets in order, oldest first. In this demo the sheet writer is a deterministic stand-in for the model (<code>src/memory/sheet-responder.mjs</code>): it counts exchanges, reads warm or tense words for allies and grudges, and quotes the agent's latest line. With <code>MOCK_INFERENCE=0</code> the summarizer sends the same prompt to NEAR AI Cloud instead.</p>
 ${manifest.agents.map(memorySection).join("\n")}
 
 ${memeSection}${transferSection(manifest)}

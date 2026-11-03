@@ -13,7 +13,7 @@ import { createMockClient } from "../inference/client.mjs";
 import { getStyle } from "../art/styles/index.mjs";
 import { moodForText } from "../art/moods.mjs";
 import { prepareAnchor, submitAnchor } from "../anchor/anchor.mjs";
-import { sheetResponder } from "./sheet-responder.mjs";
+import { sheetResponder } from "../memory/sheet-responder.mjs";
 import { renderDemoPage } from "./page.mjs";
 import { renderShareCard } from "./share.mjs";
 import { buildMemes } from "./memes.mjs";
@@ -194,6 +194,7 @@ export async function runDemo({
     names: Object.fromEntries(AGENTS.map((a) => [a.id, a.name])),
     moods,
     faces: faceSvgs,
+    seed,
   });
   for (const m of memeCards) await writeFile(join(outDir, m.file), m.svg);
   const memes = memeCards.map(({ format, agentId, file, alt, mood }) => ({ format, agentId, file, alt, mood }));

@@ -49,6 +49,42 @@ test("CLI writes a sheet per agent and a memory loop linked to the final hash", 
   }
 });
 
+test("mock sheets are character sheets from the counting stand-in, with receipts that match events.json", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "swarm-cli-"));
+  try {
+    const env = { ...process.env, MOCK_INFERENCE: "1" };
+    await run(process.execPath, [script, "--rounds", "3", "--out", dir], { env });
+    const { events } = JSON.parse(await readFile(join(dir, "events.json"), "utf8"));
+    for (const [id, name] of [["aloof", "Aloof"], ["chaotic", "Chaotic"], ["social", "Social"], ["skeptic", "Skeptic"]]) {
+      const { sheet } = JSON.parse(await readFile(join(dir, "sheets", `${id}.json`), "utf8"));
+      assert.match(sheet, new RegExp(`^Who I am: ${name}, `), `${id}: the sheet is written in ${name}'s first person`);
+      for (const label of ["Public enemy #1:", "Ride-or-die:", "Rivalry arc:", "Scorecard:", "Signature quote:", "Receipts:"]) {
+        assert.ok(sheet.includes(label), `${id}: sheet lacks "${label}"`);
+      }
+      const posts = events.filter((e) => e.agentId === id && e.kind === "post").length;
+      const replies = events.filter((e) => e.agentId === id && e.kind === "reply").length;
+      const own = new Set(events.filter((e) => e.agentId === id).map((e) => e.id));
+      const mentioned = events.filter((e) => e.kind === "reply" && own.has(e.replyTo) && e.agentId !== id).length;
+      const receipts = /Receipts: (\d+) posts?, (\d+) repl(?:y|ies), mentioned (\d+) times?\./.exec(sheet);
+      assert.ok(receipts, `${id}: sheet has no Receipts line`);
+      assert.deepEqual(receipts.slice(1).map(Number), [posts, replies, mentioned], `${id}: receipts count the channel`);
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("the verify line says '1 round' for a one-round run", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "swarm-cli-"));
+  try {
+    const { stdout } = await run(process.execPath, [script, "--rounds", "1", "--out", dir], { env: { ...process.env, MOCK_INFERENCE: "1" } });
+    assert.match(stdout, /^verify: ok \(1 round\)$/m);
+    assert.doesNotMatch(stdout, /1 rounds/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("--every and SUMMARY_EVERY_N_ROUNDS set the sheet cadence, with a sheet file per round", async () => {
   const dir = await mkdtemp(join(tmpdir(), "swarm-cli-"));
   try {
