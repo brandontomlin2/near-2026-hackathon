@@ -94,3 +94,18 @@ test("diffSheets lists added and removed sentences", () => {
   assert.equal(diffSheets(null, next).changed, true);
   assert.equal(diffSheets({ ...next }, { ...next }).changed, false);
 });
+
+test("cadence: N=1 matches the default when the run is one round, N=2 writes even rounds only", async () => {
+  const one = await runSwarm({ rounds: 1, seed: 1 });
+  const byDefault = await runMemoryLoop({ swarm: one, client: createMockClient() });
+  const everyOne = await runMemoryLoop({ swarm: one, client: createMockClient(), every: 1 });
+  assert.deepEqual({ ...everyOne, every: undefined }, { ...byDefault, every: undefined });
+
+  const six = await runSwarm({ rounds: 6, seed: 1 });
+  const unset = await runMemoryLoop({ swarm: six, client: createMockClient() });
+  assert.deepEqual(unset, await runMemoryLoop({ swarm: six, client: createMockClient(), every: 3 }));
+  const twos = await runMemoryLoop({ swarm: six, client: createMockClient(), every: 2 });
+  for (const t of twos.tokens) assert.deepEqual(t.sheets.map((s) => s.round), [2, 4, 6]);
+  const ones = await runMemoryLoop({ swarm: six, client: createMockClient(), every: 1 });
+  for (const t of ones.tokens) assert.deepEqual(t.sheets.map((s) => s.round), [1, 2, 3, 4, 5, 6]);
+});
