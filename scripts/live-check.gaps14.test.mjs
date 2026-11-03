@@ -30,7 +30,7 @@ test("--help and -h print the usage on stdout, exit 0, and do not run the checkl
     assert.equal(r.status, 0, flag);
     assert.equal(r.stderr, "");
     assert.match(r.stdout, /^Usage: node scripts\/live-check\.mjs \[--offline\]\n/);
-    assert.match(r.stdout, /values are never\s+printed/);
+    assert.match(r.stdout, /account ids are never\s+printed/);
     assert.doesNotMatch(r.stdout, /\[(ok|todo|skip)\]/);
   }
 });
