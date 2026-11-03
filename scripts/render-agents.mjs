@@ -58,12 +58,11 @@ Offline; nothing is signed or sent.`;
 
 function parseArgs(argv) {
   const opts = { style: undefined, out: "out", help: false };
+  if (argv.some((a) => a === "--help" || a === "-h")) return { ...opts, help: true }; // help wins over any other argument
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     const value = argv[i + 1];
-    if (flag === "--help" || flag === "-h") {
-      opts.help = true;
-    } else if (flag === "--style") {
+    if (flag === "--style") {
       if (!value || value.startsWith("-")) throw new Error(`--style needs a name, got ${JSON.stringify(value)}`);
       if (value !== "all") getStyle(value); // throws "unknown style" with the valid names
       opts.style = value;

@@ -420,7 +420,7 @@ function cmdLog(positionals, flags) {
 
 function main() {
   const { positionals, flags } = parseArgs(process.argv.slice(2));
-  if (flags.help === true && positionals.length === 0) {
+  if (flags.help === true) {
     out(USAGE);
     return;
   }

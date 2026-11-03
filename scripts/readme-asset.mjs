@@ -70,5 +70,13 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.error(`readme-asset: ${e.message}\n${USAGE}`);
     process.exitCode = 1;
   }
-  if (opts) writeAssets(await generateAssets(), opts.dir);
+  if (opts) {
+    try {
+      writeAssets(await generateAssets(), opts.dir);
+    } catch (e) {
+      // An unwritable --out is a runtime failure: one line, no stack trace, exit 1.
+      console.error(`readme-asset: cannot write ${opts.dir}: ${e.message}`);
+      process.exitCode = 1;
+    }
+  }
 }

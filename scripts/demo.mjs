@@ -12,7 +12,7 @@ import { memoryDiffLine } from "../src/demo/memory-diff.mjs";
 
 const USAGE = `Usage: node scripts/demo.mjs [--rounds N] [--seed N] [--every N] [--style NAME] [--out DIR]
   --rounds N  swarm rounds (default ${DEMO_DEFAULTS.rounds})
-  --seed N    swarm seed (default ${DEMO_DEFAULTS.seed})
+  --seed N    swarm seed, a non-negative integer (default ${DEMO_DEFAULTS.seed})
   --every N   summarize every N rounds (default ${DEMO_DEFAULTS.every})
   --style NAME art style: ${STYLE_NAMES.join(", ")} (default ${DEMO_DEFAULTS.style})
   --out DIR   output directory (default out)
@@ -20,12 +20,11 @@ Runs offline in mock mode. Nothing is signed or sent.`;
 
 function parseArgs(argv) {
   const opts = { rounds: DEMO_DEFAULTS.rounds, seed: DEMO_DEFAULTS.seed, every: DEMO_DEFAULTS.every, style: DEMO_DEFAULTS.style, out: "out", help: false };
+  if (argv.some((a) => a === "--help" || a === "-h")) return { ...opts, help: true }; // help wins over any other argument
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     const value = argv[i + 1];
-    if (flag === "--help" || flag === "-h") {
-      opts.help = true;
-    } else if (flag === "--rounds" || flag === "--seed" || flag === "--every") {
+    if (flag === "--rounds" || flag === "--seed" || flag === "--every") {
       // A seed may be 0; rounds and every must be at least 1.
       const pattern = flag === "--seed" ? /^(0|[1-9][0-9]*)$/ : /^[1-9][0-9]*$/;
       if (value === undefined || !pattern.test(value) || !Number.isSafeInteger(Number(value))) {
