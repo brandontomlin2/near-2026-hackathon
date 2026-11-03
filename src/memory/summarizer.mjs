@@ -115,6 +115,16 @@ export function sheetHash(sheet) {
   return createHash("sha256").update(sheet, "utf8").digest("hex");
 }
 
+// Cut at MAX_EVENT_TEXT_CHARS without splitting a surrogate pair (emoji).
+function capText(text) {
+  let end = MAX_EVENT_TEXT_CHARS;
+  if (text.length > end) {
+    const last = text.charCodeAt(end - 1);
+    if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  }
+  return text.slice(0, end);
+}
+
 /**
  * Prompt for the summarizer. The previous sheet is included so the rewrite
  * keeps what still holds, and only the new events are shown in full.
@@ -135,7 +145,7 @@ export function buildSummaryMessages({ name, previous, events }) {
     round: e.round,
     kind: e.kind,
     from: e.from,
-    text: e.text.slice(0, MAX_EVENT_TEXT_CHARS),
+    text: capText(e.text),
   }));
   const user = [
     "Previous sheet:",
@@ -269,7 +279,11 @@ export function createMemoryStore(root) {
         if (err && err.code === "ENOENT") return null;
         throw new MemoryError("could not read the sheet", { code: "io_error", cause: err });
       }
-      return JSON.parse(raw);
+      try {
+        return JSON.parse(raw);
+      } catch (err) {
+        throw new MemoryError("the sheet file is malformed", { code: "bad_sheet", cause: err });
+      }
     },
 
     /** @param {string} tokenId @param {{ tokenId: string, round: number, sheet: string, sheetHash: string, throughIndex: number }} record */
