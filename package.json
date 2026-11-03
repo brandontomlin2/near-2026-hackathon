@@ -28,6 +28,7 @@
     "deploy:nft": "node scripts/testnet-deploy.mjs deploy",
     "mint": "node scripts/testnet-deploy.mjs mint",
     "live:check": "node scripts/live-check.mjs",
-    "live-proof": "node scripts/live-proof.mjs"
+    "live-proof": "node scripts/live-proof.mjs",
+    "check-sheet": "node scripts/check-sheet.mjs"
   }
 }

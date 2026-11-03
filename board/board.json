@@ -1,5 +1,16 @@
 [
   {
+    "id": "check-sheet-buyer-command-sheet-handoff-and-costs-docs-judge-screen-17-findings-11-13",
+    "title": "check-sheet buyer command, sheet handoff and costs docs (judge screen 17 findings 11-13)",
+    "status": "review",
+    "owner": "claude",
+    "kind": "task",
+    "lane": "claude",
+    "notes": "npm run check-sheet (testnet read-only views + --mock), docs/check-sheet.md with seller-to-buyer handoff, docs/costs.md",
+    "updated_at": "2026-11-03T22:30:22.100Z",
+    "updated_by": "claude"
+  },
+  {
     "id": "contract-audit",
     "title": "contract audit",
     "status": "todo",
