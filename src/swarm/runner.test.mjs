@@ -4,17 +4,18 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runSwarm, hashRound, GENESIS_HASH, personaPrompt } from "./runner.mjs";
+import { runSwarm, hashRound, verifyRounds, GENESIS_HASH, personaPrompt } from "./runner.mjs";
+import { PERSONA_LINES, TOPICS } from "./personas.mjs";
 import { AGENTS } from "../traits/agents.mjs";
 import { main } from "../../scripts/swarm.mjs";
 
 const nameOf = (id) => AGENTS.find((a) => a.id === id).name;
 
 const GOLDEN_ROUND_1 = `== Round 1 ==
-[Skeptic] Hm. I can connect two of you on choosing if that helps. That is all for now.
-[Chaotic -> Skeptic] Skeptic, Noted. On choosing, I would rather watch than commit. Reply if you disagree.
-[Aloof] Fine. I have a question about choosing: who checked it?
-[Social] Interesting. I have a question about choosing: who checked it? Logging it.
+[Skeptic] Doubtful. The relay fee is unproven until someone shows the log.
+[Chaotic -> Skeptic] @Skeptic Brilliant, truly! Mix up the mint schedule and see who panics!
+[Aloof] For the record. I will wait on the new charter before I say more.
+[Social] Happy to help. I will introduce the two who disagree about the treasury proposal.
 `;
 
 test("same seed is byte-identical, different seed differs", async () => {
@@ -73,6 +74,36 @@ test("round hash chain is verifiable by recomputation", async () => {
   const manual = createHash("sha256")
     .update(GENESIS_HASH).update("\n").update(JSON.stringify(r1)).digest("hex");
   assert.equal(roundHashes[0], manual);
+});
+
+test("verifyRounds accepts a run and rejects a tampered one", async () => {
+  const run = await runSwarm({ seed: 5, rounds: 3 });
+  assert.ok(verifyRounds(run));
+  const edited = run.events.map((e, i) => (i === 5 ? { ...e, text: `${e.text}!` } : e));
+  assert.ok(!verifyRounds({ ...run, events: edited }));
+  assert.ok(!verifyRounds({ ...run, roundHashes: run.roundHashes.slice(0, 2) }));
+});
+
+test("default mock speaks each agent's own persona lines, one voice per agent", async () => {
+  const { events } = await runSwarm({ seed: 9, rounds: 6 });
+  assert.deepEqual(Object.keys(PERSONA_LINES).sort(), AGENTS.map((a) => a.id).sort());
+  for (const e of events) {
+    const { openers, bodies } = PERSONA_LINES[e.agentId];
+    const text = e.text.replace(/^@\w+ /, "");
+    const opener = openers.find((o) => text.startsWith(`${o} `));
+    assert.ok(opener, `${e.agentId}: unexpected opener in ${JSON.stringify(e.text)}`);
+    const rest = text.slice(opener.length + 1);
+    const fits = bodies.some((body) => TOPICS.some((topic) => {
+      const line = body.replace("{topic}", topic);
+      return rest === line[0].toUpperCase() + line.slice(1);
+    }));
+    assert.ok(fits, `${e.agentId}: unexpected body in ${JSON.stringify(e.text)}`);
+  }
+});
+
+test("a shared client overrides the persona mock", async () => {
+  const { events } = await runSwarm({ rounds: 1, client: { async chat() { return { content: "same" }; } } });
+  assert.ok(events.every((e) => e.text.endsWith("same")));
 });
 
 test("golden first round for seed 1", async () => {

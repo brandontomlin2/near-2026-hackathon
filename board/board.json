@@ -104,16 +104,16 @@
   {
     "id": "sim-mode",
     "title": "sim mode",
-    "status": "todo",
-    "owner": "",
+    "status": "review",
+    "owner": "claude",
     "kind": "task",
     "lane": "any",
     "depends_on": [
       "inference-client-mock-mode"
     ],
-    "notes": "",
-    "updated_at": "2026-11-03T00:00:00.000Z",
-    "updated_by": "seed"
+    "notes": "src/sim/swarm.mjs: four personas on a shared channel, offline, mock inference only; per-agent last-6 event windows; hash-chained rounds. scripts/swarm.mjs: npm run swarm -- --rounds N. README section. 16 tests; verify.sh PASS (tests 5 files, swarm PASS) on isolated clone with isolated HOME\nverify=PASS",
+    "updated_at": "2026-11-03T02:43:31.390Z",
+    "updated_by": "claude"
   },
   {
     "id": "submission-buffer-nov-14",
