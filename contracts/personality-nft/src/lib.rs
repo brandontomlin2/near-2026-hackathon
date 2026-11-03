@@ -2457,7 +2457,10 @@ mod tests {
     fn first_anchor_cost_is_below_one_hundredth_of_a_near() {
         let cost = first_anchor_cost();
         assert!(cost > 0);
-        assert!(cost < 10u128.pow(22), "first anchor costs {cost} yocto, README promises 0.01 NEAR is plenty");
+        assert!(
+            cost < 10u128.pow(22),
+            "first anchor costs {cost} yocto, README promises 0.01 NEAR is plenty"
+        );
     }
 
     #[test]
@@ -2927,5 +2930,39 @@ mod tests {
         transfer_call_env(accounts(3));
         let _ = contract.nft_transfer_call(accounts(4), "aloof".to_string(), None, None, "".into());
         assert_eq!(contract.in_flight.get("aloof").unwrap().nonce, 0);
+    }
+
+    /// README and the audit docs state the in-flight lock's storage, which the
+    /// contract account pays while a transfer call is pending: 53 bytes plus
+    /// the token id's length (1-byte prefix, 4-byte length, the id, the 8-byte
+    /// nonce and the runtime's 40-byte per-record overhead). Measured as what
+    /// `release_lock` frees, for the shortest and the longest token id.
+    #[test]
+    fn in_flight_lock_storage_is_53_bytes_plus_the_token_id() {
+        for token_id in ["a".to_string(), "x".repeat(MAX_TOKEN_ID_LEN)] {
+            testing_env!(context(accounts(1), MINT_DEPOSIT).build());
+            let mut contract = Contract::new_default_meta(accounts(1));
+            contract.nft_mint(token_id.clone(), accounts(2), aloof_metadata());
+            testing_env!(context(accounts(2), ONE_YOCTO)
+                .prepaid_gas(near_sdk::Gas::from_tgas(100))
+                .build());
+            let _ =
+                contract.nft_transfer_call(accounts(3), token_id.clone(), None, None, "".into());
+            let before_lock = env::storage_usage();
+            contract.in_flight.flush();
+            let locked = env::storage_usage();
+            assert_eq!(
+                locked - before_lock,
+                53 + token_id.len() as u64,
+                "write {token_id:?}"
+            );
+            callback_env(b"true".to_vec(), 0);
+            let locked = env::storage_usage();
+            assert!(contract.release_lock(token_id.clone(), U64(0)));
+            contract.in_flight.flush();
+            assert!(!contract.nft_in_flight(token_id.clone()));
+            let freed = locked - env::storage_usage();
+            assert_eq!(freed, 53 + token_id.len() as u64, "lock for {token_id:?}");
+        }
     }
 }
