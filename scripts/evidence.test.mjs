@@ -3,6 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { hashSheet } from "../src/anchor/hash.mjs";
+import { createMockClient } from "../src/inference/client.mjs";
+import { runMemoryLoop } from "../src/memory/loop.mjs";
 import { runSwarm } from "../src/swarm/runner.mjs";
 import { AGENTS, EvidenceError, loadTransactions, main, mockEvidence } from "./evidence.mjs";
 
@@ -128,4 +131,18 @@ test("rejects bad input", async () => {
   await assert.rejects(main({ EVIDENCE_NETWORK: "testnet" }, { cwd: dir }), /NEAR_ACCOUNT_ID/);
   await assert.rejects(main({ EVIDENCE_NETWORK: "testnet", NEAR_ACCOUNT_ID: "x.near" }, { cwd: dir }), /mainnet/);
   await assert.rejects(main({ EVIDENCE_NETWORK: "mainnet" }, { cwd: dir }), /must be mock or testnet/);
+});
+
+test("one sheet hash: sheet record, anchor_sheet dry-run args and evidence.json agree", async () => {
+  const swarm = await runSwarm({ rounds: 5, seed: 1 });
+  const loop = await runMemoryLoop({ swarm, client: createMockClient() });
+  const ev = await mockEvidence();
+  assert.equal(ev.memory_loop.tokens.length, loop.tokens.length);
+  for (const [i, t] of loop.tokens.entries()) {
+    const e = ev.memory_loop.tokens[i];
+    assert.equal(t.sheet.sheetHash, hashSheet(t.sheet.sheet));
+    assert.equal(t.anchor.args.sheet_hash, t.sheet.sheetHash);
+    assert.equal(e.anchor.args.sheet_hash, t.sheet.sheetHash);
+    assert.equal(e.sheet.sheet_hash, t.sheet.sheetHash);
+  }
 });

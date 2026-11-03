@@ -107,18 +107,6 @@ export function clampWords(text, max = MAX_SHEET_WORDS) {
   return words.slice(0, max).join(" ");
 }
 
-/**
- * Hash of a sheet's text. This is the value anchored on the token, so it is
- * the anchor module's hashSheet (sha256 of the normalized sheet: NFC, LF, one
- * final newline). A new owner who hashes the sheet they received gets the same
- * value that sheet.json records and that anchor_sheet stores.
- * @param {string} sheet
- * @returns {string} 64-char hex sha256
- */
-export function sheetHash(sheet) {
-  return hashSheet(sheet);
-}
-
 // Cut at MAX_EVENT_TEXT_CHARS without splitting a surrogate pair (emoji).
 function capText(text) {
   let end = MAX_EVENT_TEXT_CHARS;
@@ -207,7 +195,7 @@ export async function summarize({ client, tokenId, name, round, log, previous = 
     tokenId,
     round,
     sheet,
-    sheetHash: sheetHash(sheet),
+    sheetHash: hashSheet(sheet), // the one official sheet hash, see src/anchor/hash.mjs
     throughIndex: log.length,
     newEvents: fresh.length,
     mode: response.mode,

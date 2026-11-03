@@ -40,12 +40,11 @@ export async function runMemoryLoop({ swarm, agents = AGENTS, client, contractId
       log: logs[agent.id],
       previous: null,
     });
-    // Pass sheetHash, never sheet: the summarizer hashes the raw sheet, while
-    // prepareAnchor would normalize it first and produce a different hash.
+    // Both sides use hashSheet (src/anchor/hash.mjs), so this equals sheet.sheetHash.
     const prepared = prepareAnchor({
       contractId,
       tokenId: agent.id,
-      sheetHash: sheet.sheetHash,
+      sheet: sheet.sheet,
       network: "testnet",
     });
     const result = await submitAnchor(prepared);

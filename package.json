@@ -20,7 +20,6 @@
     "demo": "node scripts/demo.mjs",
     "evidence": "node scripts/evidence.mjs",
     "viewer": "node scripts/viewer.mjs",
-    "verify": "bash scripts/verify.sh",
     "deploy:nft": "node scripts/testnet-deploy.mjs deploy",
     "mint": "node scripts/testnet-deploy.mjs mint",
     "live-proof": "node scripts/live-proof.mjs"
