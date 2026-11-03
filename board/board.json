@@ -27,8 +27,8 @@
   {
     "id": "fresh-clone-test-demo-video",
     "title": "fresh-clone test + demo video",
-    "status": "todo",
-    "owner": "",
+    "status": "doing",
+    "owner": "claude-lead",
     "kind": "task",
     "lane": "human",
     "depends_on": [
@@ -36,8 +36,8 @@
       "viewer"
     ],
     "notes": "",
-    "updated_at": "2026-11-03T00:00:00.000Z",
-    "updated_by": "seed"
+    "updated_at": "2026-11-03T03:59:51.278Z",
+    "updated_by": "claude-lead"
   },
   {
     "id": "inference-client-mock-mode",
