@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 // Write a static HTML page for a swarm run.
 //
-//   node scripts/viewer.mjs                      # demo run, 5 rounds, mock
+//   node scripts/viewer.mjs                      # canonical swarm, 5 rounds, mock
 //   node scripts/viewer.mjs --rounds 3 --out out/viewer/three.html
-//   node scripts/viewer.mjs --input out/swarm.json
+//   node scripts/viewer.mjs --input out/events.json   # from npm run swarm / demo
 //
-// Without --input, builds a demo run through the inference client. That is
-// mock by default (MOCK_INFERENCE unset or 1). Never prints keys. The output
-// is self-contained HTML with no scripts or network calls.
+// Renders canonical swarm output (src/swarm/runner.mjs, the events.json that
+// npm run swarm and npm run demo write). Without --input it runs that same
+// swarm offline with the persona mocks: no keys, no network. The output is
+// self-contained HTML with no scripts or network calls.
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-import { InferenceError, createInferenceClient } from "../src/inference/client.mjs";
-import { buildDemoRun } from "../src/viewer/run.mjs";
+import { runSwarm } from "../src/swarm/runner.mjs";
 import { renderViewer } from "../src/viewer/render.mjs";
 
 const DEFAULT_OUT = "out/viewer/index.html";
@@ -21,8 +21,8 @@ const DEFAULT_ROUNDS = 5;
 
 const USAGE = `usage: node scripts/viewer.mjs [--input RUN.json] [--rounds N] [--out FILE]
 
-  --input FILE   render an existing run document instead of a demo
-  --rounds N     demo rounds (default ${DEFAULT_ROUNDS}, or SWARM_ROUNDS)
+  --input FILE   render an existing events.json instead of running the swarm
+  --rounds N     swarm rounds (default ${DEFAULT_ROUNDS}, or SWARM_ROUNDS)
   --out FILE     output HTML (default ${DEFAULT_OUT})
 `;
 
@@ -67,9 +67,7 @@ async function main() {
   if (options.input !== undefined) {
     run = JSON.parse(await readFile(options.input, "utf8"));
   } else {
-    const client = createInferenceClient();
-    process.stderr.write(`mode: ${client.mode} model: ${client.model}\n`);
-    run = await buildDemoRun({ rounds: roundsFrom(options), client });
+    run = await runSwarm({ rounds: roundsFrom(options) });
   }
 
   const html = renderViewer(run);
@@ -83,8 +81,7 @@ async function main() {
 main().then(
   (code) => process.exit(code),
   (err) => {
-    const label = err instanceof InferenceError ? `inference error (${err.code})` : "error";
-    process.stderr.write(`${label}: ${err.message}\n`);
+    process.stderr.write(`error: ${err.message}\n`);
     process.exit(1);
   },
 );
