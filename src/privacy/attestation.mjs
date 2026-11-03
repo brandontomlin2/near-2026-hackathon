@@ -113,8 +113,9 @@ export function checkAttestation(report, expected) {
     add(checks, "nonce-echo", "skip", "report carries no top-level nonce field");
   }
 
-  // Judge the report by its best node: every node's problems are listed, but
-  // one fully consistent node is enough, since we only talk to one node.
+  // Check every node and list every problem. Any failing check on any node
+  // rejects the whole report (see finish): a report that attests a bad node
+  // is not one we trust, even if we only talk to one node.
   entries.forEach((e, i) => {
     const tag = `node[${i}]`;
     const addrOk = typeof e?.signing_address === "string" && ADDRESS.test(e.signing_address);
@@ -127,7 +128,10 @@ export function checkAttestation(report, expected) {
     const nv = e?.nvidia_payload;
     let nvOk = false;
     if (typeof nv === "string") {
-      try { nvOk = typeof JSON.parse(nv) === "object"; } catch { nvOk = false; }
+      try {
+        const parsed = JSON.parse(nv);
+        nvOk = parsed !== null && typeof parsed === "object";
+      } catch { nvOk = false; }
     } else nvOk = nv !== null && typeof nv === "object";
     add(checks, `${tag}.nvidia-payload`, nvOk ? "pass" : "fail",
       nvOk ? "present and parses as an object (not sent to NRAS)" : "nvidia_payload missing or not JSON");

@@ -334,3 +334,45 @@ test("default dry run leaves git-tracked files unchanged and writes under out/",
   assert.ok(path.relative(root, DEFAULT_OUT).startsWith("out" + path.sep));
   rmSync(DEFAULT_OUT);
 });
+
+// Audit L-5: --out used to overwrite any existing file. Now it only replaces an example
+// evidence file this tool wrote earlier; anything else needs --force.
+test("--out that holds someone else's file is refused with exit 2 and left untouched; --force replaces it; own output is replaced freely", async () => {
+  const { writeFileSync } = await import("node:fs");
+  const file = path.join(mkdtempSync(path.join(tmpdir(), "live-proof-")), "notes.json");
+  writeFileSync(file, '{"example": false, "mine": true}\n');
+  const go2 = async (argv) => {
+    const lines = [];
+    const errs = [];
+    const code = await run(argv, {}, { out: (l) => lines.push(l), err: (l) => errs.push(l), exec: () => { throw new Error("must not spawn"); } });
+    return { code, text: lines.join("\n"), errs: errs.join("\n") };
+  };
+  const refused = await go2(["--out", file]);
+  assert.equal(refused.code, 2);
+  assert.equal(refused.text, "", "nothing printed before the refusal");
+  assert.equal(refused.errs, `error: --out ${file} exists and is not an example evidence file this tool wrote; pass --force to replace it (see --help)`);
+  assert.equal(readFileSync(file, "utf8"), '{"example": false, "mine": true}\n', "the foreign file is untouched");
+
+  for (const content of ["not json at all", "[]", "null", '{"transactions": []}']) {
+    writeFileSync(file, content);
+    assert.equal((await go2(["--out", file])).code, 2, content);
+    assert.equal(readFileSync(file, "utf8"), content);
+  }
+
+  const forced = await go2(["--out", file, "--force"]);
+  assert.equal(forced.code, 0, forced.errs);
+  const written = JSON.parse(readFileSync(file, "utf8"));
+  assert.equal(written.example, true);
+
+  // Now it is ours: a plain re-run replaces it.
+  const again = await go2(["--out", file]);
+  assert.equal(again.code, 0, again.errs);
+  assert.match(again.text, /wrote example evidence \(example: true\) to the --out file/);
+});
+
+test("--help documents --force", async () => {
+  const lines = [];
+  const code = await run(["--help"], {}, { out: (l) => lines.push(l), err: () => {} });
+  assert.equal(code, 0);
+  assert.match(lines.join("\n"), /--force\s+replace an existing --out/);
+});

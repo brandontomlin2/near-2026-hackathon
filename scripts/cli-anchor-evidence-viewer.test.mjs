@@ -129,7 +129,7 @@ test("viewer.mjs: unwritable --out is a runtime failure: one line naming the pat
 const HELP = [
   ["anchor.mjs", ["--dry-run", "--check"]],
   ["evidence.mjs", ["EVIDENCE_NETWORK", "NEAR_ACCOUNT_ID", "EVIDENCE_TX_FILE", "EVIDENCE_OUT"]],
-  ["viewer.mjs", ["--input", "--rounds", "--out", "SWARM_ROUNDS"]],
+  ["viewer.mjs", ["--input", "--rounds", "--out", "--force", "SWARM_ROUNDS"]],
 ];
 for (const [file, mentions] of HELP) {
   for (const flag of ["--help", "-h"]) {
@@ -204,6 +204,39 @@ test("good path is unchanged: viewer prints exactly 'wrote <abs path>'", () => {
     assert.equal(r.stderr, "");
     assert.equal(r.stdout, `wrote ${resolve(dir, "v/index.html")}\n`);
     assert.match(readFileSync(join(dir, "v/index.html"), "utf8"), /<html/i);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Audit L-5: --out used to overwrite any existing file. Now it only replaces a page this
+// tool wrote earlier (so re-running is fine); anything else needs --force.
+test("viewer.mjs: --out that holds someone else's file is refused with exit 2 and left untouched; --force replaces it; own output is replaced freely", () => {
+  const dir = scratch();
+  try {
+    const target = join(dir, "afile");
+    const refused = run("viewer.mjs", ["--rounds", "1", "--out", "afile"], { cwd: dir });
+    assert.equal(refused.code, 2, refused.stderr);
+    assert.equal(refused.stdout, "");
+    assert.match(refused.stderr, /^viewer: --out afile exists and is not a page this tool wrote; pass --force to replace it \(see --help\)\n$/);
+    assert.equal(readFileSync(target, "utf8"), "x", "the foreign file is untouched");
+
+    const forced = run("viewer.mjs", ["--rounds", "1", "--out", "afile", "--force"], { cwd: dir });
+    assert.equal(forced.code, 0, forced.stderr);
+    assert.equal(forced.stdout, `wrote ${target}\n`);
+    const page = readFileSync(target, "utf8");
+    assert.match(page, /<title>Swarm viewer<\/title>/);
+
+    // The page is now ours: a plain re-run overwrites it without --force.
+    const again = run("viewer.mjs", ["--rounds", "2", "--out", "afile"], { cwd: dir });
+    assert.equal(again.code, 0, again.stderr);
+    assert.notEqual(readFileSync(target, "utf8"), page, "the page was rewritten with two rounds");
+
+    // A file that merely mentions the title in the middle is not ours.
+    writeFileSync(target, `notes\n<title>Swarm viewer</title>\n`);
+    const notOurs = run("viewer.mjs", ["--rounds", "1", "--out", "afile"], { cwd: dir });
+    assert.equal(notOurs.code, 2, notOurs.stderr);
+    assert.equal(readFileSync(target, "utf8"), `notes\n<title>Swarm viewer</title>\n`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

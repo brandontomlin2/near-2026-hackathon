@@ -127,3 +127,36 @@ test("swarm default output directory is out/swarm, distinct from the demo's out/
   const src = await readFile(script, "utf8");
   assert.match(src, /out: "out\/swarm"/);
 });
+
+// Audit L-2: in live mode the model's text reaches transcript.txt and stdout; control, OSC
+// and bidi characters must not survive into either. Local stub server, no real service.
+test("live mode: control characters in replies never reach transcript.txt, events.json, the sheets or stdout", async () => {
+  const { createServer } = await import("node:http");
+  const hostile = "\u001b[2J\u001b]0;pwned\u0007\u001b]8;;http://evil.example\u0007link\u001b]8;;\u0007 \u202ereversed\u202c ok";
+  const server = createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ id: "c1", model: "stub", choices: [{ message: { content: hostile } }] }));
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const dir = await mkdtemp(join(tmpdir(), "swarm-cli-"));
+  const unsafe = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/;
+  try {
+    const env = { ...process.env, MOCK_INFERENCE: "0", NEAR_AI_API_KEY: "stub-key-not-real", NEAR_AI_MODEL: "stub", NEAR_AI_BASE_URL: `http://127.0.0.1:${server.address().port}/v1` };
+    const { stdout, stderr } = await run(process.execPath, [script, "--rounds", "2", "--out", dir], { env });
+    assert.doesNotMatch(stdout, unsafe);
+    assert.doesNotMatch(stderr, unsafe);
+    assert.match(stdout, /link\uFFFD/);
+    for (const file of ["transcript.txt", "events.json", "memory-loop.json", "sheets/aloof.json"]) {
+      const text = await readFile(join(dir, file), "utf8");
+      assert.doesNotMatch(text, unsafe, file);
+      assert.doesNotMatch(text, /\\u001b|\\u0007|\\u202e/i, `${file}: control character stored as a JSON escape`);
+    }
+  } finally {
+    server.closeAllConnections?.();
+    await new Promise((resolve) => server.close(resolve));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
