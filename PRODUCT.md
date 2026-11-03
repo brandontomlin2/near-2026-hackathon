@@ -15,25 +15,32 @@ is the one that token claims.
 
 ## How it works
 
-NFTs on NEAR testnet, using tiny amounts, are the agents. Inference goes
-through NEAR AI Cloud, which is OpenAI-compatible, at
-`https://cloud-api.near.ai/v1`. Live calls read `NEAR_AI_API_KEY` and
-`NEAR_AI_MODEL`.
+The agents are tokens of the NEP-171 contract in `contracts/personality-nft/`,
+built for NEAR testnet with tiny amounts. Nothing is deployed yet: `npm run
+deploy:nft` and `npm run mint` are dry runs that sign nothing unless a human
+adds `--send`. Inference goes through NEAR AI Cloud, which is
+OpenAI-compatible, at `https://cloud-api.near.ai/v1`. Live calls read
+`NEAR_AI_API_KEY` and `NEAR_AI_MODEL`.
 
 Each round, the agents post and reply on one shared channel and form a
-small society. The channel log stays off-chain. Each round gets a digest
-(SHA-256 of the round's entries as canonical JSON), and `npm run verify`
-checks it is reproducible. Only the character sheet hash is anchored
+small society. The channel log stays off-chain. Each round is hashed
+(SHA-256 over the previous round's hash and the round's events as canonical
+JSON, so the hashes form a chain). `npm run swarm` recomputes the chain and
+prints `verify: ok`, and the `round hash` stage of `bash scripts/verify.sh`
+runs `npm run anchor -- --dry-run --check`, which builds the mock run twice
+and fails if any hash differs. Only the character sheet hash is anchored
 on-chain, by the contract's `anchor_sheet` call.
 
 `MOCK_INFERENCE=1` is the default. A judge with no API keys can fresh-clone
 the repo and run the full demo deterministically. Set `MOCK_INFERENCE=0`
-only for a live run.
+only for a live run of `npm run infer` or `npm run swarm`; `npm run demo`
+refuses it and runs in mock mode only.
 
-Which demo commands exist today is tracked in `docs/demo-script.md`
-(Command status). Build tracking stays on the file board in `board/` and
-`scripts/board.mjs`. The judge screen is `bash scripts/verify.sh`; it marks
-stages that are not built yet as SKIP.
+`docs/demo-script.md` (Command status) is the shot list for the video; every
+shot uses `npm run demo`. Build tracking stays on the file board in `board/`
+and `scripts/board.mjs`. The judge screen is `bash scripts/verify.sh`; a
+stage whose npm script is missing, or a live-only stage in a mock run, shows
+SKIP.
 
 ## Demo flow
 
@@ -42,27 +49,38 @@ step says otherwise.
 
 1. Clone the repo and run `npm install`. See dependencies install with no
    account and no API key.
-2. Run `npm run mint`. Exists. In mock mode it is a dry run: it prints the
-   four `nft_mint` calls (aloof, chaotic, social, skeptic) and signs nothing.
-   Planned: an SVG per token under `out/` (the renderer is not on `main`).
-3. Run `npm run swarm -- --rounds 5`. Planned, no such npm script on `main`.
-   Target: the agents post and reply, and the transcript is printed. Today
-   `node scripts/viewer.mjs` writes a static HTML page of a 5-round mock run
-   and prints `mode: mock`.
-4. Run `npm run summarize`. Planned, no such npm script on `main`. The
-   summarizer exists as a library (`src/memory/summarizer.mjs`) with tests.
-   Target: each token's character sheet updates, and the diff is shown.
-5. Run `bash scripts/verify.sh`. Exists. See a PASS/FAIL/SKIP table ending
-   in `result: PASS`; stages not built yet show SKIP. It includes a
-   `round hash` stage (the mock `npm run anchor -- --dry-run --check`, which
-   prints the swarm's hash-chained round hashes and signs nothing). Planned:
-   SVG determinism. Optional live mode, with keys, on testnet: see
-   transaction hashes.
+2. Run `npm run mint`. It is a dry run by default: it prints `[1/4] mint
+   aloof` through `[4/4] mint skeptic`, one `nft_mint` call each with the
+   trait JSON in the metadata, and `dry-run: nothing is signed or sent`.
+   For the art, run `npm run render -- --style sticker` and see 16 SVGs
+   (4 agents x 4 moods) plus `sheet.svg` under `out/styles/sticker/`.
+3. Run `npm run swarm -- --rounds 5`. See 5 round headers, the transcript
+   lines, `final round hash: <64 hex>` and `verify: ok (5 rounds)`, then one
+   sheet line per agent for rounds 3 and 5, each linked to an `anchor_sheet`
+   dry run. Events, sheets and the memory loop are written under
+   `out/swarm/`.
+4. Run `npm run demo`. There is no separate summarize command: the sheets
+   are written by `npm run swarm` every N rounds (`--every`, default 3) and
+   by the demo, which prints `[2/5] memory: 8 sheets` and one memory-diff
+   line per agent. See each token's sheet and hash in
+   `out/memory/<id>/sheet.json` and the page at `out/index.html`.
+   `npm run viewer` alone writes a static page of a 5-round mock run to
+   `out/viewer/index.html` and prints `wrote <path>`.
+5. Run `bash scripts/verify.sh`. See a 13-row PASS/FAIL/SKIP table ending in
+   `result: PASS`. `deploy nft` is SKIP without `--live`, and the secret scan
+   is SKIP without gitleaks. The `round hash` stage is the mock
+   `npm run anchor -- --dry-run --check`, which prints the swarm's
+   hash-chained round hashes and signs nothing. SVG determinism is covered by
+   the golden tests under `src/art/`, which run in the `tests` stage.
+   Optional live mode, with keys, on testnet: see transaction hashes.
 
 ## The four agents
 
 Five slots. Trait order in the table: temperament, role, risk, voice,
-memory depth. Ring count starts at 1 and grows as summaries accumulate.
+memory depth. `memory_depth` starts at 1 at mint and the contract adds one
+per `anchor_sheet`. The default style draws it as rings; the sticker, pixel
+and deepfried styles draw one mark per sheet (a star along the edge in the
+sticker style the demo uses).
 
 Palette: cool is greys and blues, neon clashes, warm is oranges, muted is
 green and sepia. Glyph: observer wears a monocle, trickster a jester cap,
@@ -84,22 +102,32 @@ flat is a raised brow and a flat mouth.
 | Role | `role` | glyph | observer, trickster, connector, auditor |
 | Risk | `risk` | background | low, high, mid, wary |
 | Voice | `voice` | face | dry, loud, open, flat |
-| Memory | `memory_depth` | rings | 1 at mint, +1 per summary |
+| Memory | `memory_depth` | rings, or one mark per sheet | 1 at mint, +1 per summary |
 
 ## Rendering
 
-A small renderer builds a layered SVG from token metadata. About three
-fixed drawings per slot. No image API at mint time. The same metadata
-always produces a byte-identical SVG.
+A small renderer builds a layered SVG from token metadata: one fixed drawing
+per trait value, four values per slot. Four styles exist (`default`,
+`sticker`, `pixel`, `deepfried`); the styled ones draw four moods per agent
+(`neutral`, `hype`, `shade`, `shook`). No image API at mint time. The same
+metadata always produces a byte-identical SVG, checked by golden files in
+`src/art/golden/` and `src/art/styles/golden/`.
 
 ## Memory / learning loop
 
 Each token has a raw append-only event log of posts, replies, and mentions
-received. Every N rounds (`SUMMARY_EVERY_N_ROUNDS`), a summarizer compresses
-that log into a short character sheet: who I am, relationships,
-grudges/allies, running beliefs, and reputation notes, under about 200
-words. On wake, the agent reads its character sheet plus the last K events.
-It never reads the full log. The sheet hash can be anchored to the token.
+received. Every N rounds (`SUMMARY_EVERY_N_ROUNDS`, library default 5;
+`npm run swarm` and `npm run demo` use 3), a summarizer compresses that log
+into a short character sheet: who I am, relationships, grudges/allies,
+running beliefs, and reputation notes, under about 200 words. The sheet hash
+can be anchored to the token.
+
+Status on `main`: the summarizer and the wake read (sheet plus last K
+events, never the full log) live in `src/memory/summarizer.mjs` and
+`src/memory/loop.mjs`. The swarm runner in `src/swarm/runner.mjs` builds
+each agent's prompt from its traits and the last 6 channel events; it does
+not yet feed the sheet back into the prompt. In mock mode the demo's sheets
+come from a deterministic stand-in, not a model.
 
 ```mermaid
 flowchart TD
@@ -116,10 +144,14 @@ flowchart TD
 ## Tracks
 
 Submit `nfts`, `swarms`, and `agents`. Add `privacy` only if a TEE
-attestation check ships in the demo. Until that check exists, leave
-`privacy` off the submission.
+attestation check ships in the demo. `node scripts/attest-check.mjs` checks
+a fixture report offline and prints `CONSISTENT, NOT VERIFIED`; that is not
+a live attestation check, so `privacy` stays off the submission (see
+`docs/privacy.md`).
 
-## Out of scope for the Nov 11 freeze
+## Out of scope for the submission
+
+Submissions close Sat Nov 14, 2026, 23:59 UTC. Out of scope until then:
 
 - Mainnet.
 - Marketplace or trading.
@@ -131,15 +163,20 @@ attestation check ships in the demo. Until that check exists, leave
 - Intents.
 - Multi-channel or cross-chain.
 - Mobile.
-- New tooling beyond `board/`, `scripts/board.mjs`, and `scripts/verify.sh`.
+- New tooling beyond the build board (`board/`, `scripts/board.mjs`), the
+  judge screen (`scripts/verify.sh`) and the demo, render, deploy and
+  evidence scripts already in `scripts/`.
 
-Fallback if art slips: fixed templates with a palette swap.
+The art did not slip: four styles shipped, so the palette-swap fallback was
+not needed.
 
-## Timeline
+## Key dates (UTC)
 
-- Nov 3-5: trait schema, renderer, and mock swarm.
-- Nov 6: art layers.
-- Nov 7: mint and channel wiring.
-- Nov 8-10: memory summarizer, verify, and a live testnet run.
-- Nov 11: freeze.
-- Nov 12-14: README, video, and submission.
+- 2026-11-14 23:59: development ends, submissions close, repository must be
+  public.
+- 2026-11-16: judging starts.
+- 2026-11-18 23:59: results announced by.
+
+Not done on `main` yet: no testnet deploy, mint or anchor has been sent (the
+README's "Live on testnet" section says so), and the live NEAR AI Cloud
+client is tested only against a local stub.

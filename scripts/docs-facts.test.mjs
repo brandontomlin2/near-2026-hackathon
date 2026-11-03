@@ -1,9 +1,9 @@
 // Locks claims in docs/x-post.md, docs/demo-script.md, docs/demo-video.md,
-// docs/hosting.md and docs/privacy.md to the real output of the commands they
-// reference. One mock `npm run demo` is shared by the tests below.
+// docs/hosting.md, docs/privacy.md and PRODUCT.md to the real output of the
+// commands they reference. One mock `npm run demo` is shared by the tests below.
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -210,6 +210,20 @@ test("hosting.md: npm run site prints 'Site ready' and every link on the page is
   const html = await readFile(join(site, "index.html"), "utf8");
   for (const [, url] of html.matchAll(/\b(?:href|src)="([^"#]+)"/g)) {
     assert.doesNotMatch(url, /^(\/|[a-z]+:)/i, `absolute link on the hosted page: ${url}`);
+  }
+});
+
+test("PRODUCT.md: every `npm run X` is a package.json script and every repo path it names exists", async () => {
+  const product = await readFile(join(root, "PRODUCT.md"), "utf8");
+  const { scripts } = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+  const commands = [...product.matchAll(/npm run\s+([\w:-]+)/g)].map((m) => m[1]);
+  assert.ok(commands.includes("swarm") && commands.includes("demo") && commands.includes("mint"));
+  for (const name of commands) assert.ok(name in scripts, `PRODUCT.md names npm run ${name}, which is not in package.json`);
+  assert.doesNotMatch(product, /npm run summarize|Planned, no such npm script|Nov 11/);
+  const paths = [...product.matchAll(/`((?:scripts|src|docs|contracts|board)\/[^`\s]+)`/g)].map((m) => m[1]);
+  assert.ok(paths.includes("scripts/verify.sh"));
+  for (const p of paths) {
+    await assert.doesNotReject(stat(join(root, p)), `PRODUCT.md names ${p}, which does not exist`);
   }
 });
 
