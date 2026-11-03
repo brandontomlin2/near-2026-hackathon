@@ -35,12 +35,12 @@
   {
     "id": "inference-client-mock-mode",
     "title": "inference client + mock mode",
-    "status": "doing",
+    "status": "review",
     "owner": "claude",
     "kind": "task",
     "lane": "any",
-    "notes": "src/inference/client.mjs: mock (default, deterministic) + live NEAR AI Cloud client; scripts/infer.mjs CLI; package.json with npm test; 41 tests pass\nsession_id=66491c6e-4771-4550-9deb-c7c0ff895bd5\ntotal_cost_usd=2.855098\nsubtype=success",
-    "updated_at": "2026-11-03T02:16:48.446Z",
+    "notes": "src/inference/client.mjs: mock (default, deterministic) + live NEAR AI Cloud client; scripts/infer.mjs CLI; package.json with npm test; 41 tests pass\nsession_id=66491c6e-4771-4550-9deb-c7c0ff895bd5\ntotal_cost_usd=2.855098\nsubtype=success\nverify=PASS",
+    "updated_at": "2026-11-03T02:17:18.849Z",
     "updated_by": "claude"
   },
   {
