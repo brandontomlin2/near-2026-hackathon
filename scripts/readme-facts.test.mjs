@@ -467,7 +467,7 @@ test("README states exactly what the contract enforces on transfer", async () =>
   assert.doesNotMatch(readmeText, /the contract enforces it on transfer/);
 });
 
-test("README swarm step 6 says how many anchor dry-runs the run prints", async () => {
+test("README swarm step 5 says how many anchor dry-runs the run prints", async () => {
   await withTmp(async (dir) => {
     const { stdout } = await run(process.execPath, [join(root, "scripts/swarm.mjs"), "--rounds", "7", "--every", "3", "--out", dir], { env });
     const m = stdout.match(/^(\d+) anchor dry-runs, each linked to its round hash; final round hash /m);
@@ -490,4 +490,20 @@ test("README says the first contract test and build runs download crates", () =>
 
 test("README says the transfer anchor check is opt-in", () => {
   assert.ok(readmeText.includes("a plain `nft_transfer` ignores it, and only `nft_transfer_expecting_anchor` enforces it"));
+});
+
+test("README swarm steps read out/swarm before the seed 2 run overwrites it, and anchoring wording and verify.sh timing are true", () => {
+  const sec = readmeText.split("\n## Swarm\n")[1].split("\n## ")[0];
+  const steps = [...sec.matchAll(/^(\d+)\. (.*)$/gm)].map((m) => ({ n: Number(m[1]), text: m[2] }));
+  assert.deepEqual(steps.map((s) => s.n), steps.map((_, i) => i + 1), "swarm steps are numbered in order");
+  const seed2 = steps.findIndex((s) => s.text.includes("--seed 2"));
+  const reads = steps.map((s, i) => [s, i]).filter(([s]) => /^Open `out\/swarm\//.test(s.text));
+  assert.ok(seed2 >= 0 && reads.length >= 2);
+  for (const [s, i] of reads) assert.ok(i < seed2, `step ${s.n} reads out/swarm and must come before the --seed 2 run`);
+  assert.ok(steps[seed2].text.includes("overwrites `out/swarm/`"));
+  assert.ok(readmeText.includes("`npm run anchor` never signs"));
+  assert.ok(!readmeText.includes("deploy, mint and anchor are dry runs"));
+  assert.ok(readmeText.includes("about 1 to 2 minutes measured"));
+  assert.ok(!readmeText.includes("about 20 to 30 seconds"));
+  assert.ok(readmeText.includes("the fifth diff makes the Owner public enemy #1") && readmeText.includes("the sixth only raises the count"));
 });
