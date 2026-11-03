@@ -50,6 +50,17 @@ test("personaResponder ignores inherited keys such as toString and constructor",
   }
 });
 
+test("a reply target that is an Object.prototype key falls back to the agent's own lines", async () => {
+  // REPLY_LINES.aloof has no "constructor" entry; plain indexing found Object's own
+  // constructor function there, and the mock client then threw bad_responder.
+  for (const target of ["constructor", "toString", "hasOwnProperty", "valueOf"]) {
+    const reply = await createPersonaMockClient({ id: "aloof" }).chat({
+      messages: [{ role: "user", content: `Recent channel events:\n#1 [${target}] hi\n\nReply to event #1 from ${target}. Address ${target} by name.` }],
+    });
+    assert.ok(PERSONA_LINES.aloof.includes(reply.content), `${target}: ${reply.content}`);
+  }
+});
+
 test("createPersonaMockClient speaks the agent's lines and falls back to the default mock", async () => {
   const req = { messages: [{ role: "user", content: "hello there" }] };
   const aloof = await createPersonaMockClient({ id: "aloof" }).chat(req);

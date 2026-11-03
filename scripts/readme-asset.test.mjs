@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -53,6 +53,33 @@ test("default run writes under out/ and leaves git-tracked files unchanged", asy
   }
   assert.equal(snap(), before);
   for (const [name, text] of Object.entries(tracked)) assert.equal(fs.readFileSync(path.join(ASSET_DIR, name), "utf8"), text, `${name} must not change without --update-docs`);
+});
+
+test("parseArgs accepts --force", () => {
+  assert.equal(parseArgs([]).force, false);
+  assert.equal(parseArgs(["--force"]).force, true);
+  assert.equal(parseArgs(["--out", "x", "--force"]).dir, path.resolve("x"));
+});
+
+test("CLI: --out DIR refuses to overwrite a file this tool did not write unless --force, and writes nothing", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "readme-asset-cli-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const stray = path.join(dir, SHEET_NAME);
+  fs.writeFileSync(stray, "my own notes\n");
+  const r = spawnSync(process.execPath, [SCRIPT, "--out", dir], { cwd: ROOT, encoding: "utf8" });
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /^readme-asset: .*chaotic-sheet\.txt exists and is not an asset this tool wrote; pass --force to replace it\n$/);
+  assert.equal(r.stdout, "");
+  assert.equal(fs.readFileSync(stray, "utf8"), "my own notes\n");
+  assert.equal(fs.existsSync(path.join(dir, SHARE_NAME)), false, "no asset may be written when one is refused");
+
+  const forced = spawnSync(process.execPath, [SCRIPT, "--out", dir, "--force"], { cwd: ROOT, encoding: "utf8" });
+  assert.equal(forced.status, 0, forced.stderr);
+  assert.equal(fs.readFileSync(stray, "utf8"), (await assets)[SHEET_NAME]);
+
+  // Its own earlier output is replaced without --force.
+  const again = spawnSync(process.execPath, [SCRIPT, "--out", dir], { cwd: ROOT, encoding: "utf8" });
+  assert.equal(again.status, 0, again.stderr);
 });
 
 test("CLI: --out DIR writes both assets there and prints where", async (t) => {
