@@ -490,7 +490,10 @@ test("a dry run never writes the transaction file", async () => {
   assert.doesNotMatch(r.text, /txs\.json|npm run evidence/);
 });
 
-test("default dry run leaves git-tracked files unchanged and writes under out/", async () => {
+// A source archive (git archive, zip) has no .git; git-state checks cannot run there.
+const NO_GIT = existsSync(new URL("../.git", import.meta.url)) ? false : "needs a git work tree (no .git here: source archive); run from a git clone";
+
+test("default dry run leaves git-tracked files unchanged and writes under out/", { skip: NO_GIT }, async () => {
   const { execFileSync } = await import("node:child_process");
   const { existsSync, rmSync } = await import("node:fs");
   const { DEFAULT_OUT, TRACKED_EXAMPLE } = await import("./live-proof.mjs");

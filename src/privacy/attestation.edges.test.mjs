@@ -134,8 +134,8 @@ test("quote binding reads only REPORTDATA at bytes 568..632 of a v4 quote; a 632
   const straddle = withQuote(place(REPORT_DATA_OFFSET + 40, REPORT_DATA_OFFSET).toString("hex"));
   assert.equal(straddle.status, "fail", "a nonce that runs past byte 632 is not inside REPORTDATA");
   const noHeader = place(REPORT_DATA_OFFSET, REPORT_DATA_OFFSET + 32); noHeader.fill(0, 0, 48);
-  assert.equal(withQuote(noHeader.toString("hex")).status, "pass", "raw bytes in place, no v4 header: judged at offset 568 as on main");
-  assert.match(withQuote(noHeader.toString("hex")).detail, /not TDX v4/);
+  assert.equal(withQuote(noHeader.toString("hex")).status, "fail", "raw bytes in place, no v4 header: rejected");
+  assert.match(withQuote(noHeader.toString("hex")).detail, /not a TDX v4 quote/);
   assert.equal(withQuote("abc").status, "fail", "odd length is not hex");
   assert.equal(withQuote("abc").detail, "intel_quote is not hex");
   assert.equal(withQuote("0x" + "00".repeat(631)).status, "unverifiable");
