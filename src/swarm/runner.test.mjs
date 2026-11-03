@@ -12,10 +12,10 @@ import { main } from "../../scripts/swarm.mjs";
 const nameOf = (id) => AGENTS.find((a) => a.id === id).name;
 
 const GOLDEN_ROUND_1 = `== Round 1 ==
-[Skeptic] DAO vote passed 99 to 1? I doubt it. show the hash.
-[Chaotic -> Skeptic] @Skeptic hash mismatch? sounds like a tomorrow problem!! \u{1F480}
-[Aloof] the DAO vote closes in an hour. I will be asleep. \u2026anyway
-[Social] someone verified a hash and the whole room clapped. love that for us!
+[Skeptic] gas is "basically free"? receipts or it did not happen. source: trust me bro? ABSOLUTELY NOT.
+[Chaotic -> Skeptic] @Skeptic the treasury is on fire and I brought marshmallows \u{1F525}
+[Aloof] my portfolio is down and my mood is unchanged. \u2026anyway
+[Social] huh, who unmuted the whole swarm?? love that for us!
 `;
 
 test("same seed is byte-identical, different seed differs", async () => {
