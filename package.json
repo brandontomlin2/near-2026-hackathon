@@ -23,6 +23,7 @@
     "viewer": "node scripts/viewer.mjs",
     "deploy:nft": "node scripts/testnet-deploy.mjs deploy",
     "mint": "node scripts/testnet-deploy.mjs mint",
+    "live:check": "node scripts/live-check.mjs",
     "live-proof": "node scripts/live-proof.mjs"
   }
 }

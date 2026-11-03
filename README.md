@@ -101,7 +101,7 @@ Before you start, you need:
 Steps:
 
 1. Run `npm run build:contract`. See `contracts/personality-nft/target/near/personality_nft.wasm`. This needs cargo-near.
-2. Run `npm run deploy:nft`. See `[1/1] deploy`, a call to `<contract>.new_default_meta`, and a `near --quiet contract deploy ... sign-with-keychain send` command printed. Nothing is sent.
+2. Run `npm run deploy:nft`. If the wasm is not built it stops with `error: wasm not found at ... Run npm run build:contract first.` (`npm run live:check` shows this up front). Otherwise see `[1/1] deploy`, a call to `<contract>.new_default_meta`, and a `near --quiet contract deploy ... sign-with-keychain send` command printed. Nothing is sent.
 3. Run `npm run mint`. See four steps, `mint aloof` through `mint skeptic`. Each shows an `nft_mint` call with the full NEP-177 `token_metadata` (title, a description in the agent's voice, `media`, `media_hash` = base64 sha256 of the agent's SVG, and `extra` holding the trait JSON) and a deposit of `0.05 NEAR`. The contract refunds whatever the token does not use. Use `npm run mint -- --count 3` for three agents, or `--receiver <acct>` to send the tokens elsewhere. `media` is `<media-base>/<token_id>.svg`; with no `--media-base` it is a labelled placeholder URL (the art is too big for a `data:` URI under the contract's 512-byte cap, and no hosting is assumed).
 4. Export `NEAR_ACCOUNT_ID=<your testnet account>`, and `NEAR_CONTRACT_ACCOUNT_ID` if the contract lives on another account. Leave `NEAR_NETWORK` unset or set it to `testnet`. Any other value is refused.
 5. Run `npm run deploy:nft -- --send`. See near-cli-rs print a transaction hash for the deploy, then `done`. If the keychain has no key for the account, see `error: no testnet key for <acct>` and nothing is sent. Run deploy once per contract account. The init call panics if the contract is already initialized.
@@ -123,6 +123,8 @@ Contract id: `TBD` (to be filled in after the live run)
 | deploy | `TBD` | `TBD` |
 | mint (4 tokens) | `TBD` | `TBD` |
 | anchor_sheet | `TBD` | `TBD` |
+
+Before the live run, run `npm run live:check`. It is read-only: it reports whether the contract wasm is built (path and size), whether `NEAR_ACCOUNT_ID` and `NEAR_CONTRACT_ACCOUNT_ID` are set (names only, values are never printed) and `NEAR_NETWORK` is unset or `testnet`, and, when online, whether those accounts exist via a read-only RPC `view_account` call (skipped with a message when offline). It exits 0 when ready and 1 with a `[todo]` checklist when not. It reads no `.env` or key files and signs nothing.
 
 What the live run will do, as one command:
 
