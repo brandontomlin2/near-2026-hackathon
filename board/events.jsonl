@@ -10,3 +10,7 @@
 {"ts":"2026-11-03T00:00:00.000Z","actor":"seed","item_id":"fresh-clone-test-demo-video","action":"add","from":null,"to":"todo","note":""}
 {"ts":"2026-11-03T00:00:00.000Z","actor":"seed","item_id":"readme-x-post-draft","action":"add","from":null,"to":"todo","note":""}
 {"ts":"2026-11-03T00:00:00.000Z","actor":"seed","item_id":"submission-buffer-nov-14","action":"add","from":null,"to":"todo","note":""}
+{"ts":"2026-11-03T02:07:35.166Z","actor":"claude","item_id":"inference-client-mock-mode","action":"claim","from":"todo","to":"doing","note":""}
+{"ts":"2026-11-03T02:15:41.642Z","actor":"claude","item_id":"inference-client-mock-mode","action":"changed","from":"doing","to":"doing","note":"src/inference/client.mjs: mock (default, deterministic) + live NEAR AI Cloud client; scripts/infer.mjs CLI; package.json with npm test; 41 tests pass"}
+{"ts":"2026-11-03T02:16:48.446Z","actor":"claude","item_id":"inference-client-mock-mode","action":"changed","from":"doing","to":"doing","note":"session_id=66491c6e-4771-4550-9deb-c7c0ff895bd5\ntotal_cost_usd=2.855098\nsubtype=success"}
+{"ts":"2026-11-03T02:17:18.849Z","actor":"claude","item_id":"inference-client-mock-mode","action":"set","from":"doing","to":"review","note":"verify=PASS"}

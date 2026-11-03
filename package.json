@@ -1,0 +1,15 @@
+{
+  "name": "near-2026-hackathon",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Own an AI personality as an NFT on NEAR: it thinks with NEAR AI and lives in a swarm with other tokens.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test 'scripts/**/*.test.mjs' 'src/**/*.test.mjs'",
+    "infer": "node scripts/infer.mjs"
+  }
+}
