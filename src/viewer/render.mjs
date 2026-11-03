@@ -89,7 +89,6 @@ export function chainStatus(result) {
   for (const [i, hash] of result.roundHashes.entries()) {
     prev = hashRound(prev, result.events.filter((e) => e.round === i + 1));
     if (prev !== hash) return { ok: false, brokenRound: i + 1 };
-    prev = hash;
   }
   return { ok: false, brokenRound: null };
 }

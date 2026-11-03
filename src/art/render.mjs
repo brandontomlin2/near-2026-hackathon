@@ -2,6 +2,7 @@
 // Integers only, no randomness, no timestamps: same traits => same bytes.
 
 import { assertTraits } from "../traits/validate.mjs";
+import { range } from "./styles/shared.mjs";
 
 const PALETTES = Object.freeze({
   cool: { bg: "#e4e8ee", line: "#5b6b82", ring: "#8fa3bf", accent: "#3b6ea8", ink: "#2a3140" },
@@ -9,8 +10,6 @@ const PALETTES = Object.freeze({
   warm: { bg: "#ffe9cf", line: "#e8741a", ring: "#f5a65b", accent: "#c4410c", ink: "#5a2208" },
   muted: { bg: "#e9e2cf", line: "#6f8a5f", ring: "#a39a7c", accent: "#8a6a3f", ink: "#3d3524" },
 });
-
-const range = (n) => Array.from({ length: n }, (_, i) => i);
 
 function background(risk, p) {
   const s = `stroke="${p.line}" stroke-opacity="0.5" fill="none"`;

@@ -5,7 +5,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { NOT_VERIFIED, VERDICT, checkAttestation, requestHash, sha256Hex } from "./attestation.mjs";
+import { NOT_VERIFIED, VERDICT, checkAttestation, requestHash } from "./attestation.mjs";
+import { sha256Hex } from "../anchor/hash.mjs";
 import { MOCK_MODEL, MOCK_SIGNING_ADDRESS, mockAttestation } from "./fixture.mjs";
 
 const requestBody = JSON.stringify({ model: MOCK_MODEL, messages: [{ role: "user", content: "hi" }] });

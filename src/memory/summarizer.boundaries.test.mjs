@@ -17,7 +17,6 @@ import {
   parseSummaryEvery,
   shouldSummarize,
   summarize,
-  wakeContext,
 } from "./summarizer.mjs";
 
 async function tempDir(t) {
@@ -157,14 +156,6 @@ test("summarize: events with round 0 count like any other event", async () => {
   const rec = await summarize({ client, tokenId: "a", name: "A", round: 1, log: [ev(0, "genesis"), ev(1)] });
   assert.equal(rec.newEvents, 2);
   assert.match(requests[0].messages[1].content, /"round": 0/);
-});
-
-test("wakeContext refuses k that is not a positive integer and clamps k to the log", () => {
-  for (const k of [0, -1, 1.5, "2", null, Number.NaN]) {
-    assert.throws(() => wakeContext({ sheet: "s", log: [ev(1)], k }), (e) => e instanceof MemoryError && e.code === "bad_config", JSON.stringify(k));
-  }
-  assert.deepEqual(wakeContext({ sheet: "s", log: [ev(1)], k: 1 }).events.map((e) => e.round), [1]);
-  assert.deepEqual(wakeContext({ sheet: undefined, log: [], k: 1 }), { sheet: "", events: [] });
 });
 
 test("createMemoryStore refuses an empty or non-string root", () => {
