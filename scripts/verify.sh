@@ -21,9 +21,10 @@ with gitleaks when that binary is installed. Planned npm scripts are:
   deploy:nft   testnet deploy of the NFT contract (live only)
   mint         mint 4 tokens (mock unless --live)
   swarm        N rounds with MOCK_INFERENCE=1 (default N=5, or SWARM_ROUNDS)
-  evidence     write out/evidence.json with tx hashes and RPC views (live only)
+  evidence     write out/evidence.json (mock placeholders; real hashes and RPC views with --live)
   anchor       dry-run round-hash determinism check (always mock, never signs)
 
+The mock evidence stage passes only for placeholder entries marked mock.
 A missing planned script prints SKIP (not built yet) and does not fail.
 Exit status is 0 when every stage is PASS or SKIP, and nonzero on any failure.
 EOF
@@ -134,8 +135,10 @@ for (const [name, value] of Object.entries(process.env)) {
 if (mode === "mock") {
   env.MOCK_INFERENCE = "1";
   delete env.NEAR_NETWORK;
+  env.EVIDENCE_NETWORK = "mock";
 } else {
   env.NEAR_NETWORK = "testnet";
+  env.EVIDENCE_NETWORK = "testnet";
   env.MOCK_INFERENCE = "0";
 }
 
@@ -271,6 +274,20 @@ if (!data || typeof data !== "object" || Array.isArray(data)) {
   console.error("out/evidence.json must be a JSON object");
   process.exit(1);
 }
+const live = process.argv[1] === "live";
+const txs0 = Array.isArray(data.transactions) ? data.transactions : [];
+const views0 = Array.isArray(data.views) ? data.views : [];
+if (!live) {
+  // Mock evidence: placeholders only, clearly marked, never real-looking.
+  const mockOk = data.mock === true && data.network === "mock"
+    && txs0.length > 0 && txs0.every((tx) => tx && tx.mock === true && /^MOCK-/.test(String(tx.hash)))
+    && views0.length > 0 && views0.every((v) => v && v.mock === true && typeof v.method === "string" && v.method.length > 0);
+  if (!mockOk) {
+    console.error("mock evidence must be marked mock with MOCK- placeholder hashes");
+    process.exit(1);
+  }
+  process.exit(0);
+}
 if (Object.prototype.hasOwnProperty.call(data, "network") && data.network !== "testnet") {
   console.error("evidence network must be testnet");
   process.exit(1);
@@ -287,7 +304,7 @@ if (!hashOk || !viewOk) {
   console.error("out/evidence.json needs transaction hashes and RPC view results");
   process.exit(1);
 }
-'
+' "$1"
 }
 
 results_file=$(mktemp "${TMPDIR:-/tmp}/near-verify-results.XXXXXX")
@@ -500,9 +517,9 @@ fi
 
 planned "round hash" "anchor" mock --dry-run --check
 
-planned "evidence" "evidence" live
+planned "evidence" "evidence" auto
 if [[ "$last_outcome" == "pass" ]]; then
-  if evidence_ok; then
+  if evidence_ok "$([[ "$LIVE" -eq 1 ]] && echo live || echo mock)"; then
     mkdir -p "${source_root}/out"
     cp "out/evidence.json" "${source_root}/out/evidence.json"
     echo "wrote ${source_root}/out/evidence.json"

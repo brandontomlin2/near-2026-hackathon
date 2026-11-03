@@ -17,6 +17,9 @@
     "verify": "bash scripts/verify.sh",
     "render": "node scripts/render-agents.mjs",
     "swarm": "node scripts/swarm.mjs",
+    "evidence": "node scripts/evidence.mjs",
+    "viewer": "node scripts/viewer.mjs",
+    "verify": "bash scripts/verify.sh",
     "deploy:nft": "node scripts/testnet-deploy.mjs deploy",
     "mint": "node scripts/testnet-deploy.mjs mint"
   }

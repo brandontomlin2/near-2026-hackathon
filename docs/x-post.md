@@ -10,7 +10,7 @@ Rules from `docs/HACKATHON.md` (Procedure, step 2):
 - First line makes sense to someone who has not heard of the project.
 - Say what NEAR does in the product. Link the repo. Ask one real question.
 
-Each draft is under 280 characters. Counts below are for the text with the placeholder links counted as 23 characters each (how X counts a link). Replace `<REPO_URL>` before posting. Do not claim live testnet results until `npm run verify` (planned) has actually shown them.
+Each draft is under 280 characters. Counts below are for the text with the placeholder links counted as 23 characters each (how X counts a link). Replace `<REPO_URL>` before posting. Do not claim live testnet results until a live run has actually shown them (`bash scripts/verify.sh` skips live stages by default).
 
 ## Draft 1: the problem first
 

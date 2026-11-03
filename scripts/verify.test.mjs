@@ -49,3 +49,45 @@ test("two write_runner calls get distinct runner files that both exist", (t) => 
   assert.ok(fs.existsSync(a) && fs.existsSync(b));
   assert.match(fs.readFileSync(a, "utf8"), /spawnSync\("npm"/);
 });
+
+// Loads only evidence_ok from verify.sh and runs it in a dir holding out/evidence.json.
+function runEvidenceOk(evidence, mode) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "verify-evidence-"));
+  try {
+    fs.mkdirSync(path.join(dir, "out"));
+    fs.writeFileSync(path.join(dir, "out", "evidence.json"), JSON.stringify(evidence));
+    const script = [
+      "set -euo pipefail",
+      'eval "$(sed -n "/^evidence_ok()/,/^results_file=/p" "$1" | sed "\\$d")"',
+      'evidence_ok "$2"',
+    ].join("\n");
+    return spawnSync("/bin/bash", ["-c", script, "bash", VERIFY, mode], { cwd: dir, encoding: "utf8" });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("evidence_ok accepts the mock evidence file in mock mode", async () => {
+  const { mockEvidence } = await import("./evidence.mjs");
+  assert.equal(runEvidenceOk(mockEvidence(), "mock").status, 0);
+});
+
+test("evidence_ok rejects mock evidence in live mode", async () => {
+  const { mockEvidence } = await import("./evidence.mjs");
+  assert.notEqual(runEvidenceOk(mockEvidence(), "live").status, 0);
+});
+
+test("evidence_ok rejects real-looking or unmarked entries in mock mode", async () => {
+  const { mockEvidence } = await import("./evidence.mjs");
+  const real = mockEvidence();
+  real.transactions[0].hash = "9".repeat(44);
+  assert.notEqual(runEvidenceOk(real, "mock").status, 0);
+  const unmarked = mockEvidence();
+  delete unmarked.mock;
+  assert.notEqual(runEvidenceOk(unmarked, "mock").status, 0);
+});
+
+test("package.json exposes evidence, viewer and verify scripts", () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package.json"), "utf8"));
+  for (const name of ["evidence", "viewer", "verify"]) assert.ok(pkg.scripts[name], name);
+});
