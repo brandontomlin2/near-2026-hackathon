@@ -93,11 +93,14 @@ test("README step 3 quotes what npm run ask really prints, and npm run demo rese
     assert.equal(sheet.sheetHash, anchor[1]);
     assert.ok(step3.includes("where `<hash>` is the new `sheetHash` in `out/memory/chaotic/sheet.json`"));
 
-    // Six hostile asks: the Owner displaces Skeptic as public enemy #1 on the sixth.
-    let sixth;
-    for (let i = 0; i < 6; i++) sixth = await ask("nope, show me the receipts");
-    assert.ok(sixth.stdout.includes("\n  + Public enemy #1: Owner (6 fights).\n"), sixth.stdout);
-    assert.ok(step3.includes("six times: the sixth diff adds `Public enemy #1: Owner (6 fights).`"));
+    // Six hostile asks: the Owner displaces Skeptic as public enemy #1 on the fifth; the sixth only bumps the count.
+    const hostile = [];
+    for (let i = 0; i < 6; i++) hostile.push(await ask("nope, show me the receipts"));
+    assert.ok(!hostile[3].stdout.includes("+ Public enemy #1:"), "the fourth ask does not change the enemy line");
+    assert.ok(hostile[4].stdout.includes("\n  + Public enemy #1: Owner (5 fights).\n"), hostile[4].stdout);
+    assert.ok(hostile[5].stdout.includes("\n  + Public enemy #1: Owner (6 fights).\n"), hostile[5].stdout);
+    assert.ok(step3.includes("six times: the fifth diff makes the Owner public enemy #1 (`+ Public enemy #1: Owner (5 fights).`"));
+    assert.ok(step3.includes("the sixth only raises the count, so after six runs the line reads `Public enemy #1: Owner (6 fights).`"));
     const enemy = await ask("who is your enemy?");
     const answer = enemy.stdout.split("\n")[0];
     assert.ok(step3.includes(`\`${answer}\``), `step 3 must quote the enemy answer verbatim: ${answer}`);
@@ -471,4 +474,20 @@ test("README swarm step 6 says how many anchor dry-runs the run prints", async (
     assert.ok(m);
     assert.ok(readmeText.includes(`\`${m[1]} anchor dry-runs, each linked to its round hash\``));
   });
+});
+
+test("README states up front that the chat is scripted, inference is mocked and nothing is deployed", () => {
+  const head = readmeText.split("## ")[0];
+  assert.ok(head.includes("the chat is scripted") && head.includes("src/swarm/personas.mjs"));
+  assert.ok(head.includes("inference is mocked") && head.includes("src/memory/sheet-responder.mjs"));
+  assert.ok(head.includes("nothing is deployed"));
+});
+
+test("README says the first contract test and build runs download crates", () => {
+  assert.match(readmeText, /npm run test:contract`\. The first run downloads the Rust crates/);
+  assert.match(readmeText, /npm run build:contract`\. The first run also downloads crates/);
+});
+
+test("README says the transfer anchor check is opt-in", () => {
+  assert.ok(readmeText.includes("a plain `nft_transfer` ignores it, and only `nft_transfer_expecting_anchor` enforces it"));
 });
