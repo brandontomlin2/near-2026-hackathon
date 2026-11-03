@@ -18,6 +18,7 @@ import { renderDemoPage } from "./page.mjs";
 import { renderShareCard } from "./share.mjs";
 import { buildMemes } from "./memes.mjs";
 import { buildTransfer } from "./transfer-verify.mjs";
+import { assertSafeOutDir, clearOwnedFiles } from "../util/outdir.mjs";
 
 export const DEMO_DEFAULTS = Object.freeze({
   rounds: 6,
@@ -52,6 +53,7 @@ export async function runDemo({
   }
 
   const style = getStyle(styleName); // throws on an unknown style before anything is written
+  assertSafeOutDir(outDir);
 
   // 1. Swarm, with the persona mocks, then re-check the hash chain.
   const result = await runSwarm({ rounds, seed, client: swarmClient });
@@ -127,6 +129,10 @@ export async function runDemo({
   const shareDir = join(outDir, "share");
   await mkdir(artDir, { recursive: true });
   await mkdir(shareDir, { recursive: true });
+  // This run owns its art and share cards: drop files a run with other rounds/style left behind.
+  const ids = AGENTS.map((a) => a.id).join("|");
+  await clearOwnedFiles(outDir, "art", new RegExp(`^(${ids})(\\.[a-z0-9-]+)?\\.svg$`));
+  await clearOwnedFiles(outDir, "share", new RegExp(`^(${ids})-\\d+\\.svg$`));
   const moods = [...style.moods];
   const faceSvgs = {};
   const agents = [];

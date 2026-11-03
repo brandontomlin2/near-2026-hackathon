@@ -263,7 +263,9 @@ test("board json stays sorted and list --json is stable", (t) => {
     seeded.map((item) => item.id),
     [...seeded.map((item) => item.id)].sort(),
   );
-  assert.deepEqual(seeded.map((item) => item.title).sort(), [...SEED_TITLES].sort());
+  // The board grows after seeding; every seeded item must still be present.
+  const titles = seeded.map((item) => item.title);
+  for (const title of SEED_TITLES) assert.ok(titles.includes(title), `seed item missing: ${title}`);
   const statuses = ["suggested", "todo", "doing", "review", "done", "dropped"];
   for (const item of seeded) {
     assert.ok(statuses.includes(item.status), `${item.id} status ${item.status}`);

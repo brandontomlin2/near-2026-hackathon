@@ -2,8 +2,8 @@
 // Usage: node scripts/demo.mjs [--rounds N] [--seed N] [--every N] [--style NAME] [--out DIR]
 // Mock mode only: no keys, no network, nothing signed.
 
-import { isAbsolute, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { isAbsolute, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseMode } from "../src/inference/client.mjs";
 import { getStyle, STYLE_NAMES } from "../src/art/styles/index.mjs";
 import { MAX_ROUNDS } from "../src/swarm/runner.mjs";
@@ -101,6 +101,10 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     log("");
     log(`Files written (${run.files.length}):`);
     for (const f of run.files) log(`  ${at(f)}`);
+    // Keep this the very last line: the one-click way to the page. Never auto-opens.
+    const page = at("index.html");
+    const shown = /[^\w./@:+-]/.test(page) ? JSON.stringify(page) : page;
+    log(`Open the page: open ${shown}  (${pathToFileURL(resolve(page)).href})`);
   } catch (error) {
     console.error(`demo: ${error.message}`);
     return 1;

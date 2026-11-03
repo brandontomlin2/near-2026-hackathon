@@ -4,7 +4,7 @@
 // relative paths, never inlined, so the page stays small and no SVG ids clash.
 
 import { GENESIS_HASH as GENESIS } from "../swarm/runner.mjs";
-import { escapeHtml as esc } from "../viewer/render.mjs";
+import { escapeHtml as esc, securityMetaTags } from "../viewer/render.mjs";
 import { moodForText } from "../art/moods.mjs";
 import { transferSection } from "./transfer-section.mjs";
 
@@ -130,6 +130,7 @@ ${memes}
   const files = manifest.files.filter((f) => f !== "index.html").map((f) => `<li><a href="${esc(f)}">${esc(f)}</a></li>`).join("\n");
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+${securityMetaTags(CSS)}
 <title>Your NFT remembers who you are</title>
 <style>${CSS}</style></head><body><main>
 <header class="hero">
