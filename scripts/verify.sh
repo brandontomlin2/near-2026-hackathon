@@ -12,9 +12,11 @@ Mock run (no keys, no chain writes):
   bash scripts/verify.sh
 
 Testnet run (never mainnet; do not put keys on the command line). The evidence
-stage reads NEAR_ACCOUNT_ID as the contract account to query and the transaction
-hashes from EVIDENCE_TX_FILE (an absolute path; the script cd's into a fresh clone):
-  NEAR_NETWORK=testnet NEAR_ACCOUNT_ID=<contract-account> EVIDENCE_TX_FILE="$PWD/out/live-proof/txs.json" bash scripts/verify.sh --live
+stage reads NEAR_CONTRACT_ACCOUNT_ID as the contract account to query (the same
+variable the deploy step uses; NEAR_ACCOUNT_ID, the signer there, is the fallback
+when it is unset) and the transaction hashes from EVIDENCE_TX_FILE (an absolute
+path; the script cd's into a fresh clone):
+  NEAR_NETWORK=testnet NEAR_CONTRACT_ACCOUNT_ID=<contract-account> EVIDENCE_TX_FILE="$PWD/out/live-proof/txs.json" bash scripts/verify.sh --live
 
   The live evidence stage includes the transaction hashes in EVIDENCE_TX_FILE
   (the file npm run live-proof writes). A relative path is resolved against the
@@ -246,7 +248,7 @@ if (process.env.NEAR_NETWORK === "mainnet") {
 
 const env = {};
 for (const [name, value] of Object.entries(process.env)) {
-  if (mode === "mock" && (isSecretName(name) || name === "NEAR_ACCOUNT_ID")) {
+  if (mode === "mock" && (isSecretName(name) || name === "NEAR_ACCOUNT_ID" || name === "NEAR_CONTRACT_ACCOUNT_ID")) {
     continue;
   }
   env[name] = value;
@@ -479,13 +481,18 @@ if [[ -n "${NEAR_NETWORK:-}" && "${NEAR_NETWORK}" != "testnet" ]]; then
 fi
 
 if [[ "$LIVE" -eq 1 ]]; then
-  if [[ "${NEAR_NETWORK:-}" != "testnet" || -z "${NEAR_ACCOUNT_ID:-}" ]]; then
-    echo "error: --live requires NEAR_NETWORK=testnet and NEAR_ACCOUNT_ID." >&2
-    record FAIL "live env" "--live requires NEAR_NETWORK=testnet and NEAR_ACCOUNT_ID"
+  # The evidence stage queries NEAR_CONTRACT_ACCOUNT_ID, falling back to NEAR_ACCOUNT_ID.
+  if [[ "${NEAR_NETWORK:-}" != "testnet" || ( -z "${NEAR_CONTRACT_ACCOUNT_ID:-}" && -z "${NEAR_ACCOUNT_ID:-}" ) ]]; then
+    echo "error: --live requires NEAR_NETWORK=testnet and NEAR_CONTRACT_ACCOUNT_ID (or NEAR_ACCOUNT_ID)." >&2
+    record FAIL "live env" "--live requires NEAR_NETWORK=testnet and NEAR_CONTRACT_ACCOUNT_ID (or NEAR_ACCOUNT_ID)"
     failed=1
     exit 1
   fi
-  echo "mode: live (testnet, account id set, keys not printed)"
+  if [[ -n "${NEAR_CONTRACT_ACCOUNT_ID:-}" ]]; then
+    echo "mode: live (testnet, contract account NEAR_CONTRACT_ACCOUNT_ID set, keys not printed)"
+  else
+    echo "mode: live (testnet, contract account from NEAR_ACCOUNT_ID, keys not printed)"
+  fi
 else
   echo "mode: mock (no keys)"
 fi

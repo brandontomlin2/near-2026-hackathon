@@ -24,7 +24,7 @@ Status key: **done** (evidence given), **missing** (agent-doable work not finish
 | Requirement | Status | Evidence / next step |
 | --- | --- | --- |
 | What the product is, the problem, how NEAR fits; no marketing | done | README "What this is", "How NEAR fits". |
-| Numbered "do X, see Y" steps from a fresh clone | done | README "Try it (judge path)" steps 1-9. Re-check each command exists in `package.json` before submit. |
+| Numbered "do X, see Y" steps from a fresh clone | done | README "Try it (judge path)" steps 1-10. Re-check each command exists in `package.json` before submit. |
 | Works with no keys (`MOCK_INFERENCE=1`); live env vars documented | done | README "Inference" table. |
 | Track ids named in README | done | README top: `nfts`, `swarms`, `agents` (fixed 2026-11-03; it said only `nfts` and `agents`). `docs/HACKATHON.md` lists all 13 valid ids. |
 | Libraries, templates, AI-generated code listed (Q-005) | done | `docs/DISCLOSURE.md`, linked from README "Disclosure". |
@@ -32,7 +32,7 @@ Status key: **done** (evidence given), **missing** (agent-doable work not finish
 | Planned features not described as shipped | done | README "Mock caveats and status" and "Live on testnet" say nothing is deployed and there are no hashes to show. Re-check after any live run. |
 | Second project named in README (Q-015) | needs Brandon | Ask if the lead is submitting another project. If yes, add a README line naming it (not done, none known). If no, record "one project only" in section 5. |
 | Hosted demo up (Q-012, optional but a plus) | needs Brandon | `npm run site` builds `out/site/`; `docs/hosting.md`. Hosting needs the human's account. Keep up to 2026-11-18, ideally 2026-11-25. |
-| Live testnet evidence section filled | missing | README "Live on testnet" says "Not run yet". Fill only after the human hosts the four SVGs, approves `npm run live-proof -- --send --i-approve --media-base <url>` and sees real hashes. That run writes them to `out/live-proof/txs.json`; then `EVIDENCE_NETWORK=testnet NEAR_ACCOUNT_ID=<NEAR_CONTRACT_ACCOUNT_ID> EVIDENCE_TX_FILE=out/live-proof/txs.json npm run evidence` (read-only views) writes `out/evidence.json`. A bare `npm run evidence` is mock mode and is not proof. Never invent hashes. |
+| Live testnet evidence section filled | missing | README "Live on testnet" says "Not run yet". Fill only after the human hosts the four SVGs, approves `npm run live-proof -- --send --i-approve --media-base <url>` and sees real hashes. That run writes them to `out/live-proof/txs.json`; then `EVIDENCE_NETWORK=testnet NEAR_CONTRACT_ACCOUNT_ID=<NEAR_CONTRACT_ACCOUNT_ID> EVIDENCE_TX_FILE=out/live-proof/txs.json npm run evidence` (read-only views; the evidence script reads `NEAR_CONTRACT_ACCOUNT_ID` as the contract account to query) writes `out/evidence.json`. A bare `npm run evidence` is mock mode and is not proof. Never invent hashes. |
 
 ## 3. Pre-hackathon baseline (Q-001 to Q-004)
 
@@ -106,7 +106,7 @@ Status of this section: not started, correctly. This walk drafted no payload and
 | --- | --- | --- |
 | Build on testnet first; testnet-only projects are eligible in all tracks (Q-010) | done | Contract targets testnet; `scripts/testnet-deploy.mjs` refuses any `NEAR_NETWORK` but `testnet`; `scripts/verify.sh` refuses `mainnet`. |
 | Product uses no mainnet or Intents (no testnet for Intents, Q-007) | done | `PRODUCT.md` out of scope: Mainnet, Intents. If that changes: separate dev accounts, tiny amounts, `dry: true` quotes, human's yes per action. |
-| Deploy, mint and anchor are dry runs unless `--send` | done | README "Deploy to testnet"; `npm run deploy:nft` and `npm run mint` print only. |
+| Deploy, mint and anchor are dry runs unless both `--send` and `--i-approve` are given | done | README "Deploy to testnet"; `npm run deploy:nft` and `npm run mint` print only; `--send` without `--i-approve` is refused; `npm run live-proof` hands its `--i-approve` on to both and refuses any `NEAR_NETWORK` but `testnet`. |
 | Live testnet run | needs Brandon | Needs a testnet account and the human's yes. `npm run live:check` is read-only preflight. |
 | Payout account is mainnet (not testnet) | needs Brandon | Section 6. Receiving a prize needs no repo action. |
 

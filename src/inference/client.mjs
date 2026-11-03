@@ -21,7 +21,6 @@
 // caller sets one).
 
 import { createHash } from "node:crypto";
-import { inspect } from "node:util";
 import { capUtf8Bytes, replaceUnsafeChars } from "../util/text.mjs";
 
 export const DEFAULT_BASE_URL = "https://cloud-api.near.ai/v1";
@@ -319,11 +318,13 @@ function redact(text, secret) {
 
 /**
  * Keep an underlying error as `cause` only in a form that cannot show the
- * key. A fetch implementation or proxy may quote request headers in its
- * message, and console.error prints the whole cause chain.
+ * key: a fresh Error with the redacted message, name and code, never the
+ * original object. A fetch implementation or proxy may quote request headers
+ * in its message or attach them as properties, console.error prints the whole
+ * cause chain, and a search of the original (util.inspect truncates long
+ * arrays and strings) cannot prove that no property holds the key.
  */
 function scrubCause(cause, secret) {
-  if (!inspect(cause, { depth: 10 }).includes(secret)) return cause;
   const copy = new Error(redact(String(cause?.message ?? cause), secret));
   if (cause?.name) copy.name = cause.name;
   if (cause?.code !== undefined) copy.code = cause.code;
