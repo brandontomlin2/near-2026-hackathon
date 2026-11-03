@@ -13,11 +13,11 @@ import { sheetHash, MAX_SHEET_WORDS } from "../memory/summarizer.mjs";
 import { hashSheet } from "../anchor/hash.mjs";
 import { renderSvg } from "../art/render.mjs";
 
-const PINNED_FINAL_ROUND_HASH = "5431286c1f732a32bd736e24344895cb0b2ea43a551e459f3b3ed80dd48e4afe";
+const PINNED_FINAL_ROUND_HASH = "ea0270925cbdff0bf41a7b3ee48a0129c4bec03b7dc1d675cd028ca30e34a948";
 const IDS = ["aloof", "chaotic", "social", "skeptic"];
 // Pins the sheet writer, summarizer prompt, hashing, art paths and anchors, not just the swarm.
-const PINNED_ALOOF_SHEET_HASH = "2bbab27f19540464b89997fcf0c420e150045f992cfe3749b56eb3cb463a8908";
-const PINNED_DEMO_JSON_SHA256 = "0e239baf9159abba20f663117789b00788d06080469b2992742ac91bcfc8d0d1";
+const PINNED_ALOOF_SHEET_HASH = "73f70c47cda08512861ed2661c2b581be1c62f15586bea4f9a93f6196061cf58";
+const PINNED_DEMO_JSON_SHA256 = "3038753e19922b6e68b23d65be1e45250c3108b9cacd334d65c7ef686f155880";
 
 const tmp = [];
 function mkTmp() {
