@@ -35,7 +35,7 @@ function parseArgs(argv) {
       opts[flag.slice(2)] = Number(value);
       i++;
     } else if (flag === "--style") {
-      if (value === undefined) throw new Error("--style needs a name");
+      if (!value || value.startsWith("-")) throw new Error(`--style needs a name, got ${JSON.stringify(value)}`);
       getStyle(value); // throws "unknown style" with the valid names
       opts.style = value;
       i++;
@@ -53,12 +53,13 @@ function parseArgs(argv) {
   return opts;
 }
 
-export async function main(argv = process.argv.slice(2), { env = process.env, log = console.log } = {}) {
+// `name` prefixes error lines; scripts/site.mjs wraps this and passes "site".
+export async function main(argv = process.argv.slice(2), { env = process.env, log = console.log, name = "demo" } = {}) {
   let opts;
   try {
     opts = parseArgs(argv);
   } catch (error) {
-    console.error(`demo: ${error.message}`);
+    console.error(`${name}: ${error.message} (see --help)`);
     return 2;
   }
   if (opts.help) {
@@ -66,7 +67,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     return 0;
   }
   if (parseMode(env.MOCK_INFERENCE) === "live") {
-    console.error("demo: runs in mock mode only; unset MOCK_INFERENCE or set it to 1");
+    console.error(`${name}: runs in mock mode only; unset MOCK_INFERENCE or set it to 1`);
     return 2;
   }
   const at = (p) => join(opts.out, p);
@@ -103,7 +104,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     const shown = /[^\w./@:+-]/.test(page) ? JSON.stringify(page) : page;
     log(`Open the page: open ${shown}  (${pathToFileURL(resolve(page)).href})`);
   } catch (error) {
-    console.error(`demo: ${error.message}`);
+    console.error(`${name}: ${error.message}`);
     return 1;
   }
   return 0;

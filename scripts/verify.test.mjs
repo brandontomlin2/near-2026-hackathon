@@ -107,6 +107,23 @@ test("evidence_ok rejects real-looking or unmarked entries in mock mode", async 
   assert.notEqual(runEvidenceOk(unmarked, "mock").status, 0);
 });
 
+test("verify.sh rejects an unknown argument with one line and runs nothing", () => {
+  for (const args of [["--bogus"], ["--live", "--bogus"], ["stray"]]) {
+    const r = spawnSync("/bin/bash", [VERIFY, ...args], { encoding: "utf8" });
+    assert.equal(r.status, 2, args.join(" "));
+    assert.equal(r.stdout, "", "nothing on stdout");
+    assert.equal(r.stderr.trim().split("\n").length, 1, r.stderr);
+    assert.match(r.stderr, /verify: unknown argument "(--bogus|stray)" \(see --help\)/);
+  }
+});
+
+test("verify.sh --help prints usage and exits 0", () => {
+  const r = spawnSync("/bin/bash", [VERIFY, "--help"], { encoding: "utf8" });
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /^Usage: bash scripts\/verify\.sh/);
+  assert.equal(r.stderr, "");
+});
+
 test("package.json exposes evidence, viewer and verify scripts", () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package.json"), "utf8"));
   for (const name of ["evidence", "viewer", "verify"]) assert.ok(pkg.scripts[name], name);

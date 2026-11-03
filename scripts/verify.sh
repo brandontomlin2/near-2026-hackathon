@@ -44,8 +44,7 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
     *)
-      echo "unknown argument: $1" >&2
-      usage >&2
+      echo "verify: unknown argument \"$1\" (see --help)" >&2
       exit 2
       ;;
   esac
