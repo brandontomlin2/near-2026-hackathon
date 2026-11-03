@@ -88,7 +88,9 @@ Build and test. Requirements:
 - Rust 1.95 or newer. `near-sdk` 5.30 declares `rust-version = "1.95"`, so an older rustc (for example 1.93) fails to compile the crate. `contracts/personality-nft/rust-toolchain.toml` pins 1.95.0 plus the `wasm32-unknown-unknown` target; with rustup installed, running cargo inside that directory (which the npm scripts do) fetches it automatically. Without rustup, install Rust 1.95+ yourself.
 - [cargo-near](https://github.com/near/cargo-near) for `npm run build:contract` only (tested with 0.22.0). Unit tests need only cargo.
 
-1. Run `npm run test:contract`. See 57 unit tests pass, including mint by a non-owner failing, a non-sha256 hash rejected, and the anchor surviving `nft_transfer` to a new owner.
+The contract state layout changed during the audit; nothing is deployed yet, so no migration is needed.
+
+1. Run `npm run test:contract`. See 60 unit tests pass, including mint by a non-owner failing, a non-sha256 hash rejected, and the anchor surviving `nft_transfer` to a new owner.
 2. Run `npm run build:contract`. See `contracts/personality-nft/target/near/personality_nft.wasm` and its ABI JSON next to it.
 
 ## Deploy to testnet
