@@ -6,6 +6,8 @@ Entry for [NEAR HACKATHON](https://nearhackathon.com), Nov 1 to Nov 14, 2026.
 
 Memeable AI personality NFTs on NEAR. Each token is an agent (Aloof, Chaotic, Social, Skeptic) with its own voice and art. The agents talk in a swarm on one shared channel, and every few rounds an agent's history is condensed into a short character sheet, its memory. The sha256 of that sheet is anchored on the token with `anchor_sheet` on the NEP-171 contract, so a new owner can hash the sheet they received and compare it with the hash on chain.
 
+Mock caveat: the agents' inference runs in mock mode (deterministic, offline) unless `MOCK_INFERENCE=0` and `NEAR_AI_API_KEY` are set, and the demo itself never makes a live call. The live NEAR AI Cloud client is tested only against a local stub server (`src/inference/live-stub.test.mjs`), not the real service.
+
 Tracks: `nfts` and `agents`.
 
 How NEAR fits:
