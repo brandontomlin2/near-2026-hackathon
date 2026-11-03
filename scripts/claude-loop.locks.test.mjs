@@ -14,11 +14,12 @@ import {
   lockDir,
   lockNames,
   loopEnv,
+  loopTimeout,
   runLoop,
   task,
 } from "./test-helpers/claude-loop.mjs";
 
-test("a held item lock makes the loop take the next item; a stale lock is replaced", { timeout: 30000 }, (t) => {
+test("a held item lock makes the loop take the next item; a stale lock is replaced", { timeout: loopTimeout(2) }, (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "success",
@@ -38,7 +39,7 @@ test("a held item lock makes the loop take the next item; a stale lock is replac
   assert.equal(claudeRuns(fixture.stubLog), 2);
 });
 
-test("a pid-less item lock past the grace period is reclaimed; a fresh one still counts", { timeout: 40000 }, (t) => {
+test("a pid-less item lock past the grace period is reclaimed; a fresh one still counts", { timeout: loopTimeout(2) }, (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "success",

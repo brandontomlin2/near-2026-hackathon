@@ -166,13 +166,33 @@ test("every retry resends the identical request: same body bytes, same headers, 
 
 test("timeout applies per attempt: a stalled first attempt is retried and the second succeeds", async () => {
   const stalled = [];
+  const arrivals = [];
   await withStub((_r, res, n) => {
+    arrivals.shift()?.();
     if (n === 1) { stalled.push(res); return; }
     json(res, 200, completion("late but fine"));
   }, async (s) => {
+    // The client arms its per-attempt timer before the request has left the
+    // process. On a loaded machine that timer can fire before the stub has
+    // received the request, and the stub would then stall the retry instead of
+    // the first attempt. This fetch sends the request without the client's
+    // signal and lets the abort win only once the stub has the request, so the
+    // stub always stalls attempt 1. The rejection is the client's own timeout
+    // reason, exactly what fetch throws for an aborted request.
+    const fetchReachingStub = async (url, init) => {
+      const arrived = new Promise((resolve) => arrivals.push(resolve));
+      const response = fetch(url, { ...init, signal: undefined });
+      await arrived;
+      return new Promise((resolve, reject) => {
+        const abort = () => reject(init.signal.reason);
+        if (init.signal.aborted) abort();
+        else init.signal.addEventListener("abort", abort, { once: true });
+        response.then(resolve, reject);
+      });
+    };
     const delays = [];
     const started = Date.now();
-    const reply = await client(s, { timeoutMs: 100, maxRetries: 1, sleep: async (ms) => { delays.push(ms); } }).chat(ask);
+    const reply = await client(s, { timeoutMs: 100, maxRetries: 1, fetch: fetchReachingStub, sleep: async (ms) => { delays.push(ms); } }).chat(ask);
     assert.equal(reply.content, "late but fine");
     assert.equal(s.seen.length, 2);
     assert.deepEqual(delays, [250]);
