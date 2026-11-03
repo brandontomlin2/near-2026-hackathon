@@ -31,8 +31,8 @@
     "owner": "",
     "kind": "task",
     "lane": "any",
-    "notes": "",
-    "updated_at": "2026-11-03T12:37:23.811Z",
+    "notes": "Prerequisite fixed on claude/evidence-live-doc: live-proof --send now writes out/live-proof/txs.json and prints the exact EVIDENCE_NETWORK=testnet ... npm run evidence command; README and submission checklist quote it. Still todo: the live run itself.",
+    "updated_at": "2026-11-03T15:54:12.075Z",
     "updated_by": "claude"
   },
   {

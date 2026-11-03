@@ -116,3 +116,14 @@ test("README 'Live on testnet' is one short paragraph after the working sections
   assert.ok(body.includes("`npm run live-proof -- --send --i-approve`"), "must name the exact owner-approved command");
   assert.ok(body.includes("`out/evidence.json`"), "must say where the evidence will appear");
 });
+
+test("README and the submission checklist quote the evidence command live-proof --send prints, with the tx file it writes", async () => {
+  // A bare `npm run evidence` is mock mode; the docs must give the testnet invocation exactly as scripts/live-proof.mjs prints it.
+  const { TX_FILE_LABEL, evidenceCommand } = await import("./live-proof.mjs");
+  const command = `\`${evidenceCommand("<NEAR_CONTRACT_ACCOUNT_ID>")}\``;
+  const body = readme.split("## Live on testnet\n")[1].split(/\n## /)[0];
+  assert.ok(body.includes(`\`${TX_FILE_LABEL}\``), `README 'Live on testnet' must name ${TX_FILE_LABEL}`);
+  assert.ok(body.includes(command), `README 'Live on testnet' must quote ${command}`);
+  const checklist = await readFile(join(root, "docs/submission-checklist.md"), "utf8");
+  assert.ok(checklist.includes(command), `docs/submission-checklist.md must quote ${command}`);
+});
