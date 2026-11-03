@@ -36,8 +36,11 @@ const BIDI_OR_CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f‎
 // exactly its regex matches. Text such as "onerror=" or "javascript:" may appear
 // inside text nodes (escaped, visible, inert); it must never appear in a tag.
 const tagsOf = (html) => html.match(/<[^>]*>/g) ?? [];
+// The same tags with quoted attribute values blanked: escaped model text in alt/aria-label is inert,
+// so keyword checks (on*=, src=, javascript:) look at names and structure only.
+const shellOf = (tag) => tag.replace(/="[^"]*"/g, '=""');
 const tagNames = (html) => new Set(tagsOf(html).map((t) => /^<\/?([A-Za-z0-9]+|!doctype)/i.exec(t)?.[1].toLowerCase() ?? t));
-const attrNames = (html) => new Set(tagsOf(html).flatMap((t) => [...t.matchAll(/\s([A-Za-z:-]+)(?==)/g)].map((m) => m[1].toLowerCase())));
+const attrNames = (html) => new Set(tagsOf(html).map(shellOf).flatMap((t) => [...t.matchAll(/\s([A-Za-z:-]+)(?==)/g)].map((m) => m[1].toLowerCase())));
 
 // Page-wide: no tag, attribute or URL beyond what the benign page has; nothing remote or runnable.
 function assertInertPage(html, baseline, label) {
@@ -46,7 +49,7 @@ function assertInertPage(html, baseline, label) {
   const newAttrs = [...attrNames(html)].filter((n) => !attrNames(baseline).has(n));
   assert.deepEqual(newAttrs, [], `${label}: injected attributes`);
   assert.equal(tagsOf(html).length, tagsOf(baseline).length, `${label}: tag count changed, markup was injected`);
-  const tags = tagsOf(html).join("\n");
+  const tags = tagsOf(html).map(shellOf).join("\n");
   assert.doesNotMatch(tags, /\son[a-z]+\s*=/i, `${label}: event handler`);
   assert.doesNotMatch(tags, /javascript:|data:text\/html|vbscript:/i, `${label}: script URL`);
   assert.doesNotMatch(tags, /\b(?:srcset|action|formaction|poster|xlink:href)\s*=/i, `${label}: fetching attribute`);
@@ -56,7 +59,7 @@ function assertInertPage(html, baseline, label) {
       assert.match(t, /^<img\b/i, `${label}: src on a non-img tag`);
       assert.match(m[1], /^[A-Za-z0-9_./-]+$/, `${label}: img src ${m[1]}`);
     }
-    assert.doesNotMatch(t, /\ssrc\s*=\s*[^"\s]/i, `${label}: unquoted src`);
+    assert.doesNotMatch(shellOf(t), /\ssrc\s*=\s*[^"\s]/i, `${label}: unquoted src`);
   }
   assert.doesNotMatch(html.match(/<style\b[^>]*>[\s\S]*?<\/style>/i)[0], /url\(|@import|https?:/i, `${label}: css fetch`);
   assert.equal((html.match(/<style\b/gi) ?? []).length, 1, `${label}: one style block`);
@@ -106,9 +109,10 @@ for (const [i, payload] of PAYLOADS.entries()) {
       const svgFiles = run.files.filter((f) => f.endsWith(".svg"));
       const shareFiles = svgFiles.filter((f) => f.startsWith("share/"));
       const artFiles = svgFiles.filter((f) => !f.startsWith("share/"));
-      assert.equal(shareFiles.length, run.manifest.shares.length);
+      const memeCount = (run.manifest.memes ?? []).length;
+      assert.equal(shareFiles.length, run.manifest.shares.length + memeCount);
       // per agent: signature, mint and one face per mood; plus one share card per manifest share.
-      assert.equal(svgFiles.length, AGENTS.length * (2 + run.manifest.moods.length) + run.manifest.shares.length);
+      assert.equal(svgFiles.length, AGENTS.length * (2 + run.manifest.moods.length) + run.manifest.shares.length + memeCount);
       const artTags = new Set();
       const artAttrs = new Set();
       for (const f of artFiles) {
@@ -129,9 +133,9 @@ for (const [i, payload] of PAYLOADS.entries()) {
         // Escaped text nodes may show "https:" or "javascript:" as visible words; tags never may.
         assert.doesNotMatch(tagsOf(shell).join("\n").replace(/xmlns=""/g, ""), /https?:|javascript:|url\(/i, f);
         assert.doesNotMatch(svg, BIDI_OR_CONTROL, `${f}: bidi/control char`);
-        const extraTags = [...tagNames(shell)].filter((n) => !artTags.has(n) && n !== "text" && n !== "tspan" && n !== "rect");
+        const extraTags = [...tagNames(shell)].filter((n) => !artTags.has(n) && !["text", "tspan", "rect", "title"].includes(n));
         assert.deepEqual(extraTags, [], `${f}: injected tag names`);
-        const extraAttrs = [...attrNames(shell)].filter((n) => !artAttrs.has(n) && !["x", "y", "font-family", "font-size", "font-weight", "fill", "rx", "width", "height", "viewbox", "role", "aria-label", "data-mood", "stroke", "stroke-width", "text-anchor"].includes(n));
+        const extraAttrs = [...attrNames(shell)].filter((n) => !artAttrs.has(n) && !["x", "y", "font-family", "font-size", "font-weight", "fill", "rx", "width", "height", "viewbox", "role", "aria-label", "data-mood", "stroke", "stroke-width", "text-anchor", "data-format", "paint-order", "stroke-linejoin", "fill-opacity", "preserveaspectratio"].includes(n));
         assert.deepEqual(extraAttrs, [], `${f}: injected attributes`);
       }
     } finally {

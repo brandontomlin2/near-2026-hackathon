@@ -82,7 +82,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     log(`[1/5] swarm: ${manifest.rounds} rounds, ${eventCount} events, verify: ok`);
     log(`[2/5] memory: ${sheetCount} sheets (a summary every ${manifest.every} rounds, ${manifest.agents.length} agents)`);
     const artCount = manifest.agents.length * (2 + manifest.moods.length);
-    log(`[3/5] art: ${artCount} svgs in style ${manifest.style} (now, at mint, ${manifest.moods.length} mood${manifest.moods.length === 1 ? "" : "s"} per agent), ${manifest.shares.length} share cards`);
+    log(`[3/5] art: ${artCount} svgs in style ${manifest.style} (now, at mint, ${manifest.moods.length} mood${manifest.moods.length === 1 ? "" : "s"} per agent), ${manifest.shares.length} share cards, ${manifest.memes.length} meme cards`);
     log(`[4/5] anchor (dry run): ${callCount} calls prepared, 0 signed`);
     log(`[5/5] viewer: ${at("index.html")}`);
     log("");
@@ -91,6 +91,9 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     log("Do this, see that:");
     log(`  1. Open ${at("index.html")} in a browser. See the hero line "Your NFT remembers who you are", the four agents with a strip of reaction faces each, their character sheets, the channel with a reaction face beside every message, the share cards and the dry-run anchor table.`);
     log(`  2. Open ${at(manifest.shares[0].file)} in a browser. See a standalone share card: the reaction face for one channel line, the quote and a "Personality NFT" footer.`);
+    if (manifest.memes.length) {
+      log(`     Then open ${at(manifest.memes[0].file)}. See one of ${manifest.memes.length} meme cards (caption, villain arc) built from that agent's real channel lines and sheet.`);
+    }
     log(`  3. Open ${at("transcript.txt")}. See the swarm conversation, round by round, with replies marked.`);
     log(`  4. Open ${at("memory/aloof/sheet.json")}. See Aloof's latest character sheet and its sha256 hash.`);
     log(`     Check the hash: node -p 'require("${requirePath(at("memory/aloof/sheet.json"))}").sheet' | shasum -a 256`);
