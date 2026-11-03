@@ -112,9 +112,19 @@ export async function runSwarm({
   rounds = 5,
   seed = 1,
   client,
-  clientFor = client ? () => client : createPersonaMockClient,
+  clientFor,
   lastK = 6,
 } = {}) {
+  if (!clientFor) {
+    // One persona mock per agent for the whole run: its turn count drives variety.
+    const mocks = new Map();
+    clientFor = client
+      ? () => client
+      : (agent) => {
+        if (!mocks.has(agent.id)) mocks.set(agent.id, createPersonaMockClient(agent));
+        return mocks.get(agent.id);
+      };
+  }
   if (!Array.isArray(agents) || agents.length === 0) throw new RangeError("agents must be a non-empty array");
   if (!Number.isInteger(rounds) || rounds < 1) throw new RangeError("rounds must be a positive integer");
   if (!Number.isInteger(seed)) throw new RangeError("seed must be an integer");

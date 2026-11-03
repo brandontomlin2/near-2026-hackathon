@@ -38,6 +38,8 @@ pub const EVENT_VERSION: &str = "1.0.0";
 pub const INITIAL_MEMORY_DEPTH: u32 = 1;
 /// Longest accepted token id, in bytes.
 pub const MAX_TOKEN_ID_LEN: usize = 64;
+/// Length of a sha256 digest, the only accepted size for metadata hashes.
+pub const SHA256_BYTES: usize = 32;
 /// Longest accepted `title`, in bytes.
 pub const MAX_TITLE_LEN: usize = 128;
 /// Longest accepted `description`, in bytes.
@@ -383,6 +385,24 @@ fn validate_token_id(token_id: &str) {
         !token_id.is_empty() && token_id.len() <= MAX_TOKEN_ID_LEN,
         "token_id must be 1 to 64 bytes"
     );
+    // Same charset as the JS builders (src/anchor/anchor.mjs): [a-z0-9_-].
+    require!(
+        token_id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-'),
+        "token_id may only contain a-z, 0-9, '_' and '-'"
+    );
+}
+
+/// A sha256 digest is exactly 32 bytes; anything else is rejected so the two
+/// `Base64VecU8` hash fields cannot bloat storage or every `nft_token` view.
+fn require_hash_len(value: &Option<near_sdk::json_types::Base64VecU8>, field: &str) {
+    if let Some(v) = value {
+        require!(
+            v.0.len() == SHA256_BYTES,
+            format!("{field} must be exactly {SHA256_BYTES} bytes")
+        );
+    }
 }
 
 fn require_max_len(value: &Option<String>, max: usize, field: &str) {
@@ -406,6 +426,8 @@ fn validate_token_metadata(m: &TokenMetadata) {
     require_max_len(&m.expires_at, MAX_URI_LEN, "expires_at");
     require_max_len(&m.starts_at, MAX_URI_LEN, "starts_at");
     require_max_len(&m.updated_at, MAX_URI_LEN, "updated_at");
+    require_hash_len(&m.media_hash, "media_hash");
+    require_hash_len(&m.reference_hash, "reference_hash");
     if let Some(extra) = &m.extra {
         let parsed = near_sdk::serde_json::from_str::<near_sdk::serde_json::Value>(extra);
         require!(
@@ -735,6 +757,70 @@ mod tests {
     #[should_panic(expected = "token_id must be 1 to 64 bytes")]
     fn mint_overlong_token_id_panics() {
         mint_with(&"a".repeat(MAX_TOKEN_ID_LEN + 1), aloof_metadata());
+    }
+
+    #[test]
+    #[should_panic(expected = "token_id may only contain")]
+    fn mint_uppercase_token_id_panics() {
+        mint_with("Aloof", aloof_metadata());
+    }
+
+    #[test]
+    #[should_panic(expected = "token_id may only contain")]
+    fn mint_token_id_with_dot_panics() {
+        mint_with("a.b", aloof_metadata());
+    }
+
+    #[test]
+    #[should_panic(expected = "token_id may only contain")]
+    fn mint_token_id_with_non_ascii_panics() {
+        mint_with("caf\u{e9}", aloof_metadata());
+    }
+
+    #[test]
+    fn mint_accepts_js_compatible_token_id_charset() {
+        mint_with("agent_0-z9", aloof_metadata());
+    }
+
+    #[test]
+    fn mint_accepts_none_and_32_byte_hashes() {
+        let mut m = aloof_metadata();
+        m.media_hash = Some(near_sdk::json_types::Base64VecU8::from(vec![7u8; SHA256_BYTES]));
+        m.reference_hash = Some(near_sdk::json_types::Base64VecU8::from(vec![9u8; SHA256_BYTES]));
+        mint_with("x", m);
+        mint_with("y", aloof_metadata());
+    }
+
+    #[test]
+    #[should_panic(expected = "media_hash must be exactly 32 bytes")]
+    fn mint_oversized_media_hash_panics() {
+        let mut m = aloof_metadata();
+        m.media_hash = Some(near_sdk::json_types::Base64VecU8::from(vec![0u8; 4096]));
+        mint_with("x", m);
+    }
+
+    #[test]
+    #[should_panic(expected = "media_hash must be exactly 32 bytes")]
+    fn mint_short_media_hash_panics() {
+        let mut m = aloof_metadata();
+        m.media_hash = Some(near_sdk::json_types::Base64VecU8::from(vec![0u8; 31]));
+        mint_with("x", m);
+    }
+
+    #[test]
+    #[should_panic(expected = "reference_hash must be exactly 32 bytes")]
+    fn mint_oversized_reference_hash_panics() {
+        let mut m = aloof_metadata();
+        m.reference_hash = Some(near_sdk::json_types::Base64VecU8::from(vec![0u8; 33]));
+        mint_with("x", m);
+    }
+
+    #[test]
+    #[should_panic(expected = "reference_hash must be exactly 32 bytes")]
+    fn mint_empty_reference_hash_panics() {
+        let mut m = aloof_metadata();
+        m.reference_hash = Some(near_sdk::json_types::Base64VecU8::from(Vec::<u8>::new()));
+        mint_with("x", m);
     }
 
     #[test]

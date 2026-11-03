@@ -199,3 +199,26 @@ test("CLI --send with a missing env exits 2 and never launches the stub `near`",
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("deploy --send refuses to default the contract account to the owner account", async () => {
+  const s = sink();
+  const code = await run(["deploy", "--send"], { NEAR_ACCOUNT_ID: OWNER }, {
+    exec: never, hasNear: never, out: s.out, err: s.err,
+  });
+  assert.equal(code, 2);
+  assert.match(s.errText(), /NEAR_CONTRACT_ACCOUNT_ID must be set explicitly/);
+});
+
+test("deploy --send with an empty NEAR_CONTRACT_ACCOUNT_ID is also refused", async () => {
+  const s = sink();
+  const code = await run(["deploy", "--send"], { NEAR_ACCOUNT_ID: OWNER, NEAR_CONTRACT_ACCOUNT_ID: "" }, {
+    exec: never, hasNear: never, out: s.out, err: s.err,
+  });
+  assert.equal(code, 2);
+});
+
+test("deploy dry run still defaults the contract account to the owner (unchanged)", async () => {
+  const { code, s } = await dry(["deploy"], { NEAR_ACCOUNT_ID: OWNER });
+  assert.equal(code, 0);
+  assert.match(s.text(), new RegExp(`contract: ${OWNER.replace(".", "\\.")}`));
+});
