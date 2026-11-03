@@ -131,9 +131,19 @@ test("viewCall records request details and the right outcome for each response s
 });
 
 test("viewCall turns a thrown fetch into record.error", async () => {
-  const rec = await viewCall({ fetchImpl: async () => { throw new Error("offline"); }, rpcUrl: "u", contract: "c", method: "m", args: {} });
+  const rpcUrl = "https://rpc.testnet.near.org";
+  const rec = await viewCall({ fetchImpl: async () => { throw new Error("offline"); }, rpcUrl, contract: "c.testnet", method: "m", args: {} });
   assert.equal(rec.error, "offline");
   assert.equal("result" in rec, false);
+  assert.equal("response" in rec, false);
+  assert.equal(rec.request.rpc_url, rpcUrl, "the request is recorded even when fetch throws");
+});
+
+test("viewCall refuses an unparseable rpcUrl before fetching and never echoes it", async () => {
+  await assert.rejects(
+    viewCall({ fetchImpl: () => assert.fail("must not fetch"), rpcUrl: "not a url", contract: "c.testnet", method: "m", args: {} }),
+    (err) => err instanceof EvidenceError && err.message === "NEAR_RPC_URL is not a valid URL (value not shown)" && !err.message.includes("not a url"),
+  );
 });
 
 // ---- testnet evidence via main ----
@@ -167,28 +177,72 @@ test("6 tokens produce only 4 sheet_anchor calls, and agents are labelled by tit
   assert.deepEqual(r.evidence.views.slice(1).map((v) => v.agent), ["Skeptic", "Chaotic", "Social", "Skeptic"]);
 });
 
-test("NEAR_RPC_URL is used for fetch and recorded; empty falls back to the default", async (t) => {
+test("NEAR_RPC_URL: a testnet https URL is used for fetch and recorded in public form; empty falls back to the default", async (t) => {
   const handlers = { nft_tokens: () => viewOk([]) };
   const custom = stubFetch(handlers);
-  const a = await runMain(t, { NEAR_ACCOUNT_ID: "alice.testnet", NEAR_RPC_URL: "https://rpc.example/custom" }, custom);
-  assert.equal(custom.calls[0].url, "https://rpc.example/custom");
-  assert.equal(a.evidence.rpc_url, "https://rpc.example/custom");
+  const a = await runMain(t, { NEAR_ACCOUNT_ID: "alice.testnet", NEAR_RPC_URL: "https://rpc.testnet.example/custom" }, custom);
+  assert.equal(a.code, 0);
+  assert.equal(custom.calls[0].url, "https://rpc.testnet.example/custom");
+  assert.equal(a.evidence.rpc_url, "https://rpc.testnet.example/custom");
+  // Provider keys in userinfo or the query string reach the fetch but never the evidence file.
+  const keyed = stubFetch(handlers);
+  const k = await runMain(t, { NEAR_ACCOUNT_ID: "alice.testnet", NEAR_RPC_URL: "https://user:s3cret@near-testnet.example/v1/?apiKey=s3cret" }, keyed);
+  assert.equal(k.code, 0);
+  assert.equal(keyed.calls[0].url, "https://user:s3cret@near-testnet.example/v1/?apiKey=s3cret");
+  assert.equal(k.evidence.rpc_url, "https://near-testnet.example/v1/");
+  assert.equal(JSON.stringify(k.evidence).includes("s3cret"), false);
   const dflt = stubFetch(handlers);
   const b = await runMain(t, { NEAR_ACCOUNT_ID: "alice.testnet", NEAR_RPC_URL: "" }, dflt);
+  assert.equal(b.code, 0);
   assert.equal(dflt.calls[0].url, DEFAULT_RPC_URL);
   assert.equal(DEFAULT_RPC_URL, "https://rpc.testnet.near.org");
   assert.equal(b.evidence.rpc_url, DEFAULT_RPC_URL);
 });
 
-test("testnet account ids: alice.testnet and sub.alice.testnet pass; a bare 'near' is accepted by the current regex; alice.near is refused", async (t) => {
-  for (const id of ["alice.testnet", "sub.alice.testnet", "near"]) {
+test("NEAR_RPC_URL: http, mainnet, mixed and unlabelled endpoints are refused before any fetch, without echoing the value", async (t) => {
+  const refused = [
+    "http://rpc.testnet.near.org",
+    "https://rpc.mainnet.near.org",
+    "https://rpc.example/custom",
+    "https://testnet.mainnet.example",
+    "https://rpc.mainnet.example/testnet",
+    "https://mytestnet.example",
+  ];
+  for (const url of refused) {
+    const f = stubFetch({});
+    await assert.rejects(
+      runMain(t, { NEAR_ACCOUNT_ID: "alice.testnet", NEAR_RPC_URL: url }, f),
+      (err) =>
+        err instanceof EvidenceError &&
+        /^NEAR_RPC_URL must be an https URL whose host names testnet \(value not shown\); mainnet or unlabelled endpoints are refused$/.test(err.message),
+      url,
+    );
+    assert.equal(f.calls.length, 0, url);
+  }
+  const f = stubFetch({});
+  await assert.rejects(
+    runMain(t, { NEAR_ACCOUNT_ID: "alice.testnet", NEAR_RPC_URL: "::not a url::" }, f),
+    (err) => err instanceof EvidenceError && err.message === "NEAR_RPC_URL is not a valid URL (value not shown)",
+  );
+  assert.equal(f.calls.length, 0);
+});
+
+test("testnet account ids: alice.testnet and sub.alice.testnet pass; bare 'near', 'testnet', alice.near and implicit ids are refused", async (t) => {
+  for (const id of ["alice.testnet", "sub.alice.testnet"]) {
     const f = stubFetch({ nft_tokens: () => viewOk([]) });
     const r = await runMain(t, { NEAR_ACCOUNT_ID: id }, f);
     assert.equal(r.code, 0, id);
     assert.equal(r.evidence.contract, id);
   }
+  const named = /^NEAR_ACCOUNT_ID must be a named \.testnet account \(value not shown\); mainnet and implicit accounts are refused$/;
+  for (const id of ["near", "testnet", "alice.near", "alice.testnet.near", "a".repeat(64)]) {
+    const f = stubFetch({});
+    await assert.rejects(runMain(t, { NEAR_ACCOUNT_ID: id }, f), (err) => err instanceof EvidenceError && named.test(err.message), id);
+    assert.equal(f.calls.length, 0, id);
+  }
+  // Malformed ids fail the account id grammar first; the value is still not echoed.
   const f = stubFetch({});
-  await assert.rejects(runMain(t, { NEAR_ACCOUNT_ID: "alice.near" }, f), /refusing a mainnet-looking account id/);
+  await assert.rejects(runMain(t, { NEAR_ACCOUNT_ID: "Alice.testnet" }, f), (err) => err instanceof EvidenceError && !err.message.includes("Alice"));
   assert.equal(f.calls.length, 0);
 });
 
