@@ -74,7 +74,8 @@ test("unicode text round-trips through the log and the sheet hash", async (t) =>
   const [back] = await store.readLog("1");
   assert.equal(back.text, text);
   assert.equal(sheetHash("世界"), sheetHash("世界"));
-  assert.notEqual(sheetHash("é"), sheetHash("é"));
+  // NFC: precomposed and decomposed forms of one sheet hash alike, as the anchor does.
+  assert.equal(sheetHash("\u00e9"), sheetHash("e\u0301"));
 });
 
 test("clampWords handles empty input, unicode and other whitespace", () => {
