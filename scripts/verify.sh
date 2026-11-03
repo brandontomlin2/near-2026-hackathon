@@ -22,6 +22,7 @@ with gitleaks when that binary is installed. Planned npm scripts are:
   mint         mint 4 tokens (mock unless --live)
   swarm        N rounds with MOCK_INFERENCE=1 (default N=5, or SWARM_ROUNDS)
   evidence     write out/evidence.json (mock placeholders; real hashes and RPC views with --live)
+  anchor       dry-run round-hash determinism check (always mock, never signs)
 
 The mock evidence stage passes only for placeholder entries marked mock.
 A missing planned script prints SKIP (not built yet) and does not fail.
@@ -513,6 +514,8 @@ if [[ ! "$rounds" =~ ^[1-9][0-9]*$ ]]; then
 else
   planned "swarm" "swarm" mock --rounds "$rounds"
 fi
+
+planned "round hash" "anchor" mock --dry-run --check
 
 planned "evidence" "evidence" auto
 if [[ "$last_outcome" == "pass" ]]; then
