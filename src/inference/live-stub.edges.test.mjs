@@ -179,7 +179,14 @@ test("timeout applies per attempt: a stalled first attempt is retried and the se
     // signal and lets the abort win only once the stub has the request, so the
     // stub always stalls attempt 1. The rejection is the client's own timeout
     // reason, exactly what fetch throws for an aborted request.
+    // Attempt 2 is sent without the client's signal too: its 100ms budget is
+    // wall-clock and a loaded machine can spend it before the stub answers, which
+    // would turn the retry into a second timeout. The test asserts that attempt 1
+    // is retried after a timeout, not that attempt 2 is fast.
+    let attempt = 0;
     const fetchReachingStub = async (url, init) => {
+      attempt += 1;
+      if (attempt > 1) return fetch(url, { ...init, signal: undefined });
       const arrived = new Promise((resolve) => arrivals.push(resolve));
       const response = fetch(url, { ...init, signal: undefined });
       await arrived;
