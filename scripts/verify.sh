@@ -21,6 +21,7 @@ with gitleaks when that binary is installed. Planned npm scripts are:
   deploy:nft   testnet deploy of the NFT contract (live only)
   mint         mint 4 tokens (mock unless --live)
   swarm        N rounds with MOCK_INFERENCE=1 (default N=5, or SWARM_ROUNDS)
+  demo         the offline end-to-end demo with MOCK_INFERENCE=1 (out/index.html)
   evidence     write out/evidence.json with tx hashes and RPC views (live only)
 
 A missing planned script prints SKIP (not built yet) and does not fail.
@@ -496,6 +497,8 @@ if [[ ! "$rounds" =~ ^[1-9][0-9]*$ ]]; then
 else
   planned "swarm" "swarm" mock --rounds "$rounds"
 fi
+
+planned "demo" "demo" mock
 
 planned "evidence" "evidence" live
 if [[ "$last_outcome" == "pass" ]]; then
