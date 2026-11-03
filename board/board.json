@@ -31,8 +31,8 @@
     "owner": "",
     "kind": "task",
     "lane": "any",
-    "notes": "Prerequisite fixed on claude/evidence-live-doc: live-proof --send now writes out/live-proof/txs.json and prints the exact EVIDENCE_NETWORK=testnet ... npm run evidence command; README and submission checklist quote it. Still todo: the live run itself.",
-    "updated_at": "2026-11-03T15:54:12.075Z",
+    "notes": "Prerequisite fixed on claude/evidence-live-doc: live-proof --send now writes out/live-proof/txs.json and prints the exact EVIDENCE_NETWORK=testnet ... npm run evidence command; README and submission checklist quote it. Still todo: the live run itself.\nPrerequisite fixed on claude/live-proof-media-base: live-proof --send used to spawn mint --send without --media-base (refused by testnet-deploy), so a real run would stop after deploy. live-proof now takes --media-base <url>, passes it to mint, and refuses --send without it before any deploy. Owner command is now: npm run live-proof -- --send --i-approve --media-base <url> (README, checklist, live:check updated). Still todo: host the four SVGs and the live run itself.",
+    "updated_at": "2026-11-03T16:15:52.853Z",
     "updated_by": "claude"
   },
   {
