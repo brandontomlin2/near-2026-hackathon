@@ -6,17 +6,20 @@
 //   npm run live-proof -- --send --i-approve
 //                                      really sends. Refused unless NEAR_ACCOUNT_ID and
 //                                      NEAR_CONTRACT_ACCOUNT_ID are set AND --i-approve is given.
+//                                      Collects the transaction hashes the near CLI prints into
+//                                      out/live-proof/txs.json and prints the exact
+//                                      `npm run evidence` command that reads them.
 //
 // No key handling here. Signing is done by the near CLI with the system keychain, through
 // scripts/testnet-deploy.mjs (deploy, mint) and a near-cli-rs call built below (anchor_sheet).
 // The dry run never spawns anything and never touches the network.
 
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { prepareAnchor } from "../src/anchor/anchor.mjs";
-import { run as deployRun, shellQuote, validateAccountId, UsageError, NETWORK } from "./testnet-deploy.mjs";
+import { AGENTS, run as deployRun, shellQuote, validateAccountId, UsageError, NETWORK } from "./testnet-deploy.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Dry runs write under out/ (gitignored) so a judge's tree stays clean. The tracked
@@ -24,6 +27,24 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_OUT = path.join(HERE, "..", "out", "live-proof", "evidence.example.json");
 export const TRACKED_EXAMPLE = path.join(HERE, "..", "docs", "evidence.example.json");
 export const TESTNET_DEPLOY = path.join(HERE, "testnet-deploy.mjs");
+// Where --send stores the transaction hashes it collected, in the shape scripts/evidence.mjs
+// reads through EVIDENCE_TX_FILE. The label is the repo-relative path (npm run executes
+// from the package root), so the printed command is the same on every machine.
+export const TX_FILE_LABEL = "out/live-proof/txs.json";
+export const TX_FILE = path.join(HERE, "..", ...TX_FILE_LABEL.split("/"));
+/** The exact `npm run evidence` invocation that turns the collected hashes into out/evidence.json. */
+export const evidenceCommand = (contract) => `EVIDENCE_NETWORK=${NETWORK} NEAR_ACCOUNT_ID=${contract} EVIDENCE_TX_FILE=${TX_FILE_LABEL} npm run evidence`;
+// The labels evidence.mjs will show, one per transaction, in send order.
+export const TX_LABELS = ["deploy", ...AGENTS.map((a) => `mint ${a.token_id}`), "anchor_sheet"];
+// near-cli-rs reports a sent transaction as "Transaction ID: <hash>" and as an explorer link
+// ending in /transactions/<hash>. Only those two contexts count: a bare base58 scan would also
+// pick up account ids and the base64 media_hash echoed in the printed args.
+const TX_HASH_RE = /(?:Transaction ID:\s*|\/transactions\/)([1-9A-HJ-NP-Za-km-z]{32,64})\b/g;
+
+/** Unique transaction hashes in the order the near CLI printed them. Pure. */
+export function extractTransactionHashes(output) {
+  return [...new Set([...String(output).matchAll(TX_HASH_RE)].map((m) => m[1]))];
+}
 const RELATIVE_WASM = "contracts/personality-nft/target/near/personality_nft.wasm";
 const SHEET = "Aloof. Observer. Watches the channel, speaks rarely.\nAllies: none yet.\n";
 const ANCHOR_TOKEN = "aloof";
@@ -36,7 +57,8 @@ Default is a dry run: prints the deploy, mint (4 tokens) and anchor_sheet steps 
 an example evidence file. Nothing is signed or sent.
 
   --send         really send all steps on testnet (needs NEAR_ACCOUNT_ID,
-                 NEAR_CONTRACT_ACCOUNT_ID and --i-approve)
+                 NEAR_CONTRACT_ACCOUNT_ID and --i-approve); writes the transaction
+                 hashes to ${TX_FILE_LABEL} and prints the npm run evidence command
   --i-approve    explicit human approval for --send
   --out <file>   where the dry run writes the example (default out/live-proof/evidence.example.json)
   --force        replace an existing --out that is not an example file this tool wrote
@@ -168,13 +190,34 @@ function parseArgs(argv) {
   return opts;
 }
 
+// Runs a step, streaming its stdout and stderr to the terminal as they arrive while also
+// keeping a copy: near-cli-rs prints the transaction hash to either stream.
 function defaultExec(bin, argv) {
-  const r = spawnSync(bin, argv, { stdio: ["ignore", "inherit", "inherit"] });
-  return r.error ? 127 : (r.status ?? 1);
+  return new Promise((resolve) => {
+    const chunks = [];
+    const child = spawn(bin, argv, { stdio: ["ignore", "pipe", "pipe"] });
+    child.stdout.on("data", (d) => { chunks.push(d); process.stdout.write(d); });
+    child.stderr.on("data", (d) => { chunks.push(d); process.stderr.write(d); });
+    child.on("error", () => resolve({ code: 127, output: Buffer.concat(chunks).toString("utf8") }));
+    child.on("close", (status) => resolve({ code: status ?? 1, output: Buffer.concat(chunks).toString("utf8") }));
+  });
+}
+
+// Pairs the hashes found in one stage's output with the labels that stage was expected to
+// produce (deploy: 1, mint: one per agent, anchor_sheet: 1). Extra hashes keep the stage name.
+function labelHashes(stage, hashes) {
+  const expected = TX_LABELS.filter((l) => (stage === "mint" ? l.startsWith("mint ") : l === stage));
+  return hashes.map((hash, i) => ({ label: expected[i] ?? stage, hash }));
+}
+
+function writeTxFile({ contract, owner, transactions }) {
+  mkdirSync(path.dirname(TX_FILE), { recursive: true });
+  writeFileSync(TX_FILE, `${JSON.stringify({ network: NETWORK, contract, owner, transactions }, null, 2)}\n`);
 }
 
 /**
- * deps.exec(bin, argv) -> exit code. Injected in tests so nothing is spawned.
+ * deps.exec(bin, argv) -> { code, output } (or a promise of it). Injected in tests so nothing
+ * is spawned; `output` is what the step printed, scanned for transaction hashes.
  */
 export async function run(argv, env = process.env, deps = {}) {
   const out = deps.out ?? ((l) => process.stdout.write(`${l}\n`));
@@ -192,20 +235,32 @@ export async function run(argv, env = process.env, deps = {}) {
       out(`send: deploy, mint x4, anchor_sheet on ${NETWORK} as ${owner}, contract ${contract}`);
       const anchor = buildAnchorStep({ contract, owner });
       const stages = [
-        ["node", [TESTNET_DEPLOY, "deploy", "--send"]],
-        ["node", [TESTNET_DEPLOY, "mint", "--send"]],
-        ["near", anchor.argv],
+        ["deploy", "node", [TESTNET_DEPLOY, "deploy", "--send"]],
+        ["mint", "node", [TESTNET_DEPLOY, "mint", "--send"]],
+        ["anchor_sheet", "near", anchor.argv],
       ];
-      for (const [bin, args] of stages) {
-        const code = exec(bin, args);
+      const transactions = [];
+      const finish = (code) => {
+        // Written even after a failed step: the earlier transactions are real and stay on chain.
+        writeTxFile({ contract, owner, transactions });
+        const missing = TX_LABELS.filter((l) => !transactions.some((t) => t.label === l));
+        out(`wrote ${transactions.length} of ${TX_LABELS.length} transaction hashes to ${TX_FILE_LABEL}`);
+        if (missing.length) {
+          out(`WARN: no hash found in the near CLI output for: ${missing.join(", ")}. Add each as {"label": ..., "hash": ...} to the transactions array in ${TX_FILE_LABEL} before running evidence.`);
+        }
+        out(code === 0 ? "done. Next, with read-only RPC views (nothing signed):" : "Next, once every hash is in the file (read-only RPC views, nothing signed):");
+        out(`  ${evidenceCommand(contract)}`);
+        return code;
+      };
+      for (const [stage, bin, args] of stages) {
+        const { code, output } = await exec(bin, args);
+        transactions.push(...labelHashes(stage, extractTransactionHashes(output)));
         if (code !== 0) {
-          errOut(`error: step failed with exit ${code}; stopping. Earlier transactions were not rolled back.`);
-          return code;
+          errOut(`error: ${stage} failed with exit ${code}; stopping. Earlier transactions were not rolled back.`);
+          return finish(code);
         }
       }
-      out("done. Collect the tx hashes above into a file, then:");
-      out(`  EVIDENCE_NETWORK=testnet NEAR_ACCOUNT_ID=${contract} EVIDENCE_TX_FILE=<txs.json> npm run evidence`);
-      return 0;
+      return finish(0);
     }
 
     const owner = env.NEAR_ACCOUNT_ID ? validateAccountId(env.NEAR_ACCOUNT_ID, "NEAR_ACCOUNT_ID") : PLACEHOLDER_OWNER;
