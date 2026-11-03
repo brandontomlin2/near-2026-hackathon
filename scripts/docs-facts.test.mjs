@@ -248,7 +248,7 @@ test("privacy.md: attest-check prints CONSISTENT, NOT VERIFIED (exit 0) and REJE
     run(process.execPath, [join(root, "scripts/attest-check.mjs"), "--tamper"], { env }),
     (err) => err.code === 1 && /^REJECT:/m.test(err.stdout),
   );
-  assert.ok(privacy.includes("`CONSISTENT, NOT VERIFIED` and exits 0, or `REJECT` and exits 1"));
+  assert.ok(privacy.includes("`CONSISTENT, NOT VERIFIED` and exits 0, `REJECT` and exits 1, or"));
 });
 
 test("demo-video.md, demo-script.md and x-post.md: the quoted npm run ask lines and the meme card text are real", async () => {
