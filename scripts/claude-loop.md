@@ -137,7 +137,7 @@ The prompt is the item JSON plus instructions to read `CLAUDE.md` and `PRODUCT.m
 ## Tests
 
 ```sh
-node --test scripts/claude-loop.test.mjs
+node --test scripts/claude-loop.*.test.mjs
 shellcheck -s bash scripts/claude-loop.sh scripts/claude-swarm.sh
 bash scripts/verify.sh
 ```

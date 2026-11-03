@@ -171,8 +171,10 @@ export async function runSwarm({
         seed: seed * 1000003 + events.length,
       });
       // Whatever client produced it, stored text has no control or bidi characters
-      // (they would otherwise reach the terminal through the transcript) and is bounded.
-      let text = capUtf8Bytes(replaceUnsafeChars(response.content).trim(), MAX_REPLY_BYTES).trimEnd();
+      // (they would otherwise reach the terminal through the transcript), is one line
+      // (a live reply ending in "\n[Skeptic] ..." must not read as another agent's
+      // transcript line, and CR must not overwrite the real prefix) and is bounded.
+      let text = capUtf8Bytes(replaceUnsafeChars(response.content).replace(/[\r\n]+/g, " ").trim(), MAX_REPLY_BYTES).trimEnd();
       if (target && !text.includes(targetName)) text = `@${targetName} ${text}`;
 
       events.push({
