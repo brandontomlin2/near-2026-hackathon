@@ -146,3 +146,18 @@ test("one sheet hash: sheet record, anchor_sheet dry-run args and evidence.json 
     assert.equal(e.sheet.sheet_hash, t.sheet.sheetHash);
   }
 });
+
+test("evidence covers every sheet, each with its own anchor dry-run", async () => {
+  const ev = await mockEvidence();
+  const { swarm, tokens } = ev.memory_loop;
+  assert.ok(swarm.every >= 1);
+  for (const t of tokens) {
+    assert.ok(t.sheets.length >= 1);
+    assert.equal(t.sheets.at(-1).sheet_hash, t.sheet.sheet_hash);
+    for (const s of t.sheets) {
+      assert.equal(s.anchor.args.sheet_hash, s.sheet_hash);
+      assert.equal(s.anchor.status, "dry-run");
+      assert.equal(s.anchor.linked_round_hash, swarm.round_hashes[s.round - 1]);
+    }
+  }
+});

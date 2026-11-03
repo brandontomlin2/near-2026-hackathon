@@ -49,6 +49,40 @@ test("CLI writes a sheet per agent and a memory loop linked to the final hash", 
   }
 });
 
+test("--every and SUMMARY_EVERY_N_ROUNDS set the sheet cadence, with a sheet file per round", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "swarm-cli-"));
+  try {
+    const env = { ...process.env, MOCK_INFERENCE: "1" };
+    await run(process.execPath, [script, "--rounds", "4", "--every", "2", "--out", dir], { env });
+    const loop = JSON.parse(await readFile(join(dir, "memory-loop.json"), "utf8"));
+    assert.equal(loop.every, 2);
+    for (const t of loop.tokens) {
+      assert.deepEqual(t.sheets.map((s) => s.round), [2, 4]);
+      assert.equal(t.sheets[1].diff.previousHash, t.sheets[0].sheet.sheetHash);
+      for (const s of t.sheets) {
+        const file = JSON.parse(await readFile(join(dir, "sheets", `${t.tokenId}.round-${s.round}.json`), "utf8"));
+        assert.equal(file.sheetHash, s.sheet.sheetHash);
+      }
+    }
+    // The env var applies when the flag is absent; the flag wins when both are given.
+    await run(process.execPath, [script, "--rounds", "4", "--out", dir], { env: { ...env, SUMMARY_EVERY_N_ROUNDS: "1" } });
+    assert.equal(JSON.parse(await readFile(join(dir, "memory-loop.json"), "utf8")).tokens[0].sheets.length, 4);
+    await run(process.execPath, [script, "--rounds", "4", "--every", "4", "--out", dir], { env: { ...env, SUMMARY_EVERY_N_ROUNDS: "1" } });
+    assert.equal(JSON.parse(await readFile(join(dir, "memory-loop.json"), "utf8")).tokens[0].sheets.length, 1);
+    // The default cadence is 3, like npm run demo.
+    await run(process.execPath, [script, "--rounds", "6", "--out", dir], { env });
+    assert.deepEqual(JSON.parse(await readFile(join(dir, "memory-loop.json"), "utf8")).tokens[0].sheets.map((s) => s.round), [3, 6]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a bad SUMMARY_EVERY_N_ROUNDS or --every exits 2", async () => {
+  const env = { ...process.env, MOCK_INFERENCE: "1", SUMMARY_EVERY_N_ROUNDS: "zero" };
+  await assert.rejects(run(process.execPath, [script, "--rounds", "1"], { env }), (err) => err.code === 2);
+  await assert.rejects(run(process.execPath, [script, "--every", "0"]), (err) => err.code === 2 && /--every/.test(err.stderr));
+});
+
 test("live mode without a key fails instead of falling back to the mock", async () => {
   const dir = await mkdtemp(join(tmpdir(), "swarm-cli-"));
   try {

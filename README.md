@@ -40,7 +40,7 @@ Options: `npm run demo -- --rounds 9 --every 3 --seed 2 --out out/other`. What r
 | `src/swarm/runner.mjs` | The swarm: four trait-driven agents (`src/traits/`) on one shared channel, seeded and deterministic. See [Swarm](#swarm). |
 | `src/swarm/personas.mjs` | In-character mock replies per agent, used when inference is mocked. |
 | `scripts/demo.mjs`, `src/demo/` | `npm run demo`: the offline end-to-end demo. See [Run the demo](#run-the-demo). |
-| `scripts/swarm.mjs` | `npm run swarm -- --rounds 5`: runs the swarm, prints the transcript, writes `out/transcript.txt` and `out/events.json`, then writes a character sheet per token to `out/sheets/` and `anchor_sheet` dry-runs (nothing sent) linked to the final round hash in `out/memory-loop.json`. |
+| `scripts/swarm.mjs` | `npm run swarm -- --rounds 7 --every 3`: runs the swarm, prints the transcript, writes `out/transcript.txt` and `out/events.json`, then writes character sheets to `out/sheets/` (`<token>.json` is the latest, `<token>.round-<N>.json` is every sheet) every N rounds and at the last round. Each sheet builds on the previous one and gets its own `anchor_sheet` dry-run (nothing sent), linked to the hash of its round. `out/memory-loop.json` holds every sheet, its anchor and a short diff against the previous sheet (sentences added and removed). N is `--every`, else `SUMMARY_EVERY_N_ROUNDS`, else 3 (the demo's default). |
 | `scripts/testnet-deploy.mjs` | `npm run deploy:nft` and `npm run mint`: testnet deploy and agent mint. Dry run unless `--send`. See [Deploy to testnet](#deploy-to-testnet). |
 | `skills-lock.json` | Pinned versions of the installed agent skills. |
 
@@ -158,6 +158,7 @@ Inference is mocked by default (`MOCK_INFERENCE=1`): offline, no keys, and each 
 2. Run it again. See the same transcript and the same hash.
 3. Run `npm run swarm -- --rounds 5 --seed 2`. See a different transcript and a different hash.
 4. Open `out/events.json`. See every event with its round, turn, agent and `replyTo`, plus `roundHashes`.
+5. Run `npm run swarm -- --rounds 7 --every 3`. See `sheet aloof round 3 ...`, `round 6` and `round 7` lines per agent, each ending `anchor_sheet dry-run (not sent)`, and `linked to 12 anchor dry-runs`. Open `out/sheets/` and see `aloof.round-3.json`, `aloof.round-6.json`, `aloof.round-7.json` and `aloof.json` (the latest). In `out/memory-loop.json`, `tokens[0].sheets` has one entry per sheet with its `anchor` and a `diff` (`added`, `removed`, `previousHash`). `SUMMARY_EVERY_N_ROUNDS=2 npm run swarm` does the same with the env var.
 
 
 ## Art
