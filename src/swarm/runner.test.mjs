@@ -5,7 +5,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runSwarm, hashRound, verifyRounds, GENESIS_HASH, personaPrompt } from "./runner.mjs";
-import { PERSONA_LINES, CATCHPHRASES } from "./personas.mjs";
+import { PERSONA_LINES, REPLY_LINES, CATCHPHRASES, personaResponder, replyTargetOf } from "./personas.mjs";
+import { moodForText } from "../art/moods.mjs";
 import { AGENTS } from "../traits/agents.mjs";
 import { main } from "../../scripts/swarm.mjs";
 
@@ -13,10 +14,18 @@ const nameOf = (id) => AGENTS.find((a) => a.id === id).name;
 
 const GOLDEN_ROUND_1 = `== Round 1 ==
 [Skeptic] gas is "basically free"? receipts or it did not happen. source: trust me bro? ABSOLUTELY NOT.
-[Chaotic -> Skeptic] @Skeptic the treasury is on fire and I brought marshmallows \u{1F525}
-[Aloof] my portfolio is down and my mood is unchanged. \u2026anyway
-[Social] huh, who unmuted the whole swarm?? love that for us!
+[Chaotic -> Skeptic] @Skeptic receipts?? bro I AM the receipts \u{1F480}
+[Aloof] huh, the airdrop was a rumor. \u2026anyway
+[Social] gas is high but we are all high-fiving in the group chat, love that for us!
 `;
+
+/** The list a mock event's line must come from: the post list, or the reply list for its target. */
+function sourceList(events, e) {
+  if (e.kind === "post") return PERSONA_LINES[e.agentId];
+  const target = events.find((x) => x.id === e.replyTo);
+  return REPLY_LINES[e.agentId][nameOf(target.agentId)];
+}
+const strip = (e) => e.text.replace(/^@\w+ /, "");
 
 test("same seed is byte-identical, different seed differs", async () => {
   const a = await runSwarm({ seed: 7 });
@@ -84,14 +93,56 @@ test("verifyRounds accepts a run and rejects a tampered one", async () => {
   assert.ok(!verifyRounds({ ...run, roundHashes: run.roundHashes.slice(0, 2) }));
 });
 
-test("default mock speaks each agent's own persona lines, one voice per agent", async () => {
+test("default mock speaks each agent's own lines: posts from its persona list, replies from the list for its target", async () => {
   const { events } = await runSwarm({ seed: 9, rounds: 6 });
   assert.deepEqual(Object.keys(PERSONA_LINES).sort(), AGENTS.map((a) => a.id).sort());
   assert.deepEqual(Object.keys(CATCHPHRASES).sort(), AGENTS.map((a) => a.id).sort());
+  assert.ok(events.some((e) => e.kind === "reply"));
   for (const e of events) {
-    const text = e.text.replace(/^@\w+ /, "");
-    assert.ok(PERSONA_LINES[e.agentId].includes(text), `${e.agentId}: unexpected line ${JSON.stringify(e.text)}`);
+    assert.ok(sourceList(events, e).includes(strip(e)), `${e.agentId}: unexpected line ${JSON.stringify(e.text)}`);
+    if (e.kind === "reply") assert.match(e.text, /^@[A-Z][a-z]+ /, "a reply names its target first");
   }
+});
+
+test("reply lines: 12 pairs of 3 whole lines, none naming the target, each in the agent's mood", () => {
+  const expectedMood = { aloof: ["neutral", "shade"], chaotic: ["hype"], social: ["hype"], skeptic: ["shade"] };
+  assert.deepEqual(Object.keys(REPLY_LINES).sort(), AGENTS.map((a) => a.id).sort());
+  let pairs = 0;
+  for (const agent of AGENTS) {
+    const others = AGENTS.filter((a) => a.id !== agent.id).map((a) => a.name).sort();
+    assert.deepEqual(Object.keys(REPLY_LINES[agent.id]).sort(), others, `${agent.id} answers every other agent`);
+    for (const [target, lines] of Object.entries(REPLY_LINES[agent.id])) {
+      pairs++;
+      assert.equal(lines.length, 3, `${agent.id} -> ${target}`);
+      assert.equal(new Set(lines).size, 3, `${agent.id} -> ${target} has a duplicate`);
+      for (const line of lines) {
+        assert.ok(!line.includes("@") && !line.includes(target), `${agent.id} -> ${target}: the runner adds the name: ${line}`);
+        assert.ok(!PERSONA_LINES[agent.id].includes(line), `${agent.id}: reply line is also a post line: ${line}`);
+        assert.ok(expectedMood[agent.id].includes(moodForText(line)), `${agent.id} -> ${target}: ${moodForText(line)} for ${line}`);
+      }
+    }
+  }
+  assert.equal(pairs, 12);
+});
+
+test("personaResponder parses the runner's reply instruction and answers from that target's list", () => {
+  const user = (instruction) => ({ messages: [{ role: "user", content: `Recent channel events:\n#3 [Skeptic] x\n\n${instruction}` }] });
+  assert.equal(replyTargetOf(user("Reply to event #3 from Skeptic. Address Skeptic by name.")), "Skeptic");
+  assert.equal(replyTargetOf(user("Post a new message to the channel on a topic of your choosing.")), null);
+  assert.equal(replyTargetOf({}), null);
+  const respond = personaResponder({ id: "chaotic" });
+  const hash = "0000000a".padEnd(64, "0");
+  const toSkeptic = respond(user("Reply to event #3 from Skeptic. Address Skeptic by name."), hash);
+  assert.ok(REPLY_LINES.chaotic.Skeptic.includes(toSkeptic), toSkeptic);
+  const post = respond(user("Post a new message to the channel on a topic of your choosing."), hash);
+  assert.ok(PERSONA_LINES.chaotic.includes(post), post);
+  // An unknown target name falls back to the post lines rather than throwing.
+  const toStranger = respond(user("Reply to event #3 from Zed. Address Zed by name."), hash);
+  assert.ok(PERSONA_LINES.chaotic.includes(toStranger), toStranger);
+  // Same seed (same first hash), fresh responder: same walk.
+  const again = personaResponder({ id: "chaotic" });
+  assert.equal(again(user("Reply to event #3 from Skeptic. Address Skeptic by name."), hash), toSkeptic);
+  assert.equal(personaResponder({ id: "nobody" }), undefined);
 });
 
 test("every agent has 10+ whole lines and its catchphrase runs through them", () => {
@@ -158,21 +209,30 @@ test("scripts/swarm.mjs main writes outputs and validates args", async () => {
   }
 });
 
-test("mock personas vary across 8+ rounds: no consecutive repeats, deterministic per seed", async () => {
-  const strip = (e) => e.text.replace(/^@\w+ /, "");
+test("mock personas vary across 10 rounds: no consecutive repeats, every list walked before it cycles, deterministic per seed", async () => {
   for (const seed of [1, 2, 9, 42]) {
     const a = await runSwarm({ seed, rounds: 10 });
     const b = await runSwarm({ seed, rounds: 10 });
     assert.equal(a.transcript, b.transcript, `seed ${seed} not deterministic`);
     assert.deepEqual(a.roundHashes, b.roundHashes);
     for (const { id } of AGENTS) {
-      const lines = a.events.filter((e) => e.agentId === id).map(strip);
-      assert.equal(lines.length, 10);
-      for (let i = 1; i < lines.length; i++) {
-        assert.notEqual(lines[i], lines[i - 1], `${id} repeats in rounds ${i} and ${i + 1} (seed ${seed})`);
+      const own = a.events.filter((e) => e.agentId === id);
+      assert.equal(own.length, 10);
+      for (let i = 1; i < own.length; i++) {
+        assert.notEqual(strip(own[i]), strip(own[i - 1]), `${id} repeats in rounds ${i} and ${i + 1} (seed ${seed})`);
       }
-      assert.ok(new Set(lines.slice(0, 8)).size === 8, `${id}: first 8 rounds not all distinct (seed ${seed})`);
-      assert.ok(lines.every((l) => PERSONA_LINES[id].includes(l)), `${id}: line outside its persona list`);
+      // Per list (posts, or replies to one agent): the first `length` draws are all distinct.
+      const draws = new Map();
+      for (const e of own) {
+        const list = sourceList(a.events, e);
+        assert.ok(list.includes(strip(e)), `${id}: line outside its list (seed ${seed}): ${e.text}`);
+        if (!draws.has(list)) draws.set(list, []);
+        draws.get(list).push(strip(e));
+      }
+      for (const [list, lines] of draws) {
+        const first = lines.slice(0, list.length);
+        assert.equal(new Set(first).size, first.length, `${id}: a list repeats before it is walked (seed ${seed}): ${first}`);
+      }
     }
   }
 });
