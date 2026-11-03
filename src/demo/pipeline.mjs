@@ -194,6 +194,7 @@ export async function runDemo({
     names: Object.fromEntries(AGENTS.map((a) => [a.id, a.name])),
     moods,
     faces: faceSvgs,
+    seed,
   });
   for (const m of memeCards) await writeFile(join(outDir, m.file), m.svg);
   const memes = memeCards.map(({ format, agentId, file, alt, mood }) => ({ format, agentId, file, alt, mood }));
