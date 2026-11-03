@@ -12,6 +12,7 @@
 // The key never appears in errors, logs or returned objects.
 
 import { createHash } from "node:crypto";
+import { inspect } from "node:util";
 
 export const DEFAULT_BASE_URL = "https://cloud-api.near.ai/v1";
 export const DEFAULT_TIMEOUT_MS = 60_000;
@@ -247,6 +248,23 @@ function isRetryableStatus(status) {
   return status === 408 || status === 409 || status === 429 || status >= 500;
 }
 
+function redact(text, secret) {
+  return secret ? text.split(secret).join("[redacted]") : text;
+}
+
+/**
+ * Keep an underlying error as `cause` only in a form that cannot show the
+ * key. A fetch implementation or proxy may quote request headers in its
+ * message, and console.error prints the whole cause chain.
+ */
+function scrubCause(cause, secret) {
+  if (!inspect(cause, { depth: 10 }).includes(secret)) return cause;
+  const copy = new Error(redact(String(cause?.message ?? cause), secret));
+  if (cause?.name) copy.name = cause.name;
+  if (cause?.code !== undefined) copy.code = cause.code;
+  return copy;
+}
+
 /**
  * Read a response body for an error message without ever echoing more than a
  * short prefix. Provider bodies can be large or contain the request.
@@ -254,8 +272,7 @@ function isRetryableStatus(status) {
 async function errorSnippet(response, secret) {
   try {
     const text = await response.text();
-    const redacted = secret ? text.split(secret).join("[redacted]") : text;
-    return redacted.slice(0, 200).replace(/\s+/g, " ").trim();
+    return redact(text, secret).slice(0, 200).replace(/\s+/g, " ").trim();
   } catch {
     return "";
   }
@@ -310,7 +327,7 @@ export function createLiveClient(options) {
       const timedOut = cause && cause.name === "TimeoutError";
       throw new InferenceError(
         timedOut ? `request to ${url} timed out after ${timeoutMs}ms` : `request to ${url} failed`,
-        { code: timedOut ? "timeout" : "network", retryable: true, cause },
+        { code: timedOut ? "timeout" : "network", retryable: true, cause: scrubCause(cause, apiKey) },
       );
     }
     if (!response.ok) {
@@ -326,10 +343,16 @@ export function createLiveClient(options) {
     } catch (cause) {
       if (cause && cause.name === "TimeoutError") {
         throw new InferenceError(`reading response from ${url} timed out after ${timeoutMs}ms`, {
-          code: "timeout", retryable: true, cause,
+          code: "timeout", retryable: true, cause: scrubCause(cause, apiKey),
         });
       }
-      throw new InferenceError("NEAR AI Cloud returned a non-JSON body", { code: "bad_response", cause });
+      // No cause here: V8's SyntaxError quotes the first bytes of the body,
+      // which is whatever the provider or a proxy sent. The content type is
+      // the useful diagnostic (an HTML error page, usually).
+      throw new InferenceError(
+        `NEAR AI Cloud returned a non-JSON body (content-type ${response.headers.get("content-type") ?? "unknown"})`,
+        { code: "bad_response" },
+      );
     }
     const content = data?.choices?.[0]?.message?.content;
     if (typeof content !== "string" || content.trim() === "") {
