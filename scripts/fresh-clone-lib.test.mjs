@@ -171,3 +171,15 @@ test("script fails with no runnable blocks unless --allow-empty, and without LIC
   assert.notEqual(noLicense.code, 0);
   assert.match(noLicense.out, /FAIL\s+LICENSE/);
 });
+
+test("script run through a symlinked directory still checks and reports", () => {
+  const dir = fixture("# nothing\n");
+  const real = fs.mkdtempSync(path.join(os.tmpdir(), "fc-link-"));
+  const link = path.join(real, "scripts-link");
+  fs.symlinkSync(HERE, link);
+  const env = { ...process.env, MOCK_INFERENCE: "0" };
+  const r = spawnSync("bash", [path.join(link, "fresh-clone-test.sh"), dir], { encoding: "utf8", env });
+  assert.notEqual(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /result: FAIL/);
+  fs.rmSync(real, { recursive: true, force: true });
+});

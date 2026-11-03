@@ -44,9 +44,16 @@ trap 'rm -rf "$work"' EXIT
 row() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$pre"; }
 
 finish() {
+  local out="$work/helper.out" code
   node "$script_dir/fresh-clone-lib.mjs" run --readme "$work/repo/README.md" --cwd "$work/repo" \
-    --pre "$pre" ${allow_empty[@]+"${allow_empty[@]}"}
-  exit $?
+    --pre "$pre" ${allow_empty[@]+"${allow_empty[@]}"} | tee "$out"
+  code=${PIPESTATUS[0]}
+  # A silent helper must never read as success: require its result line.
+  if ! grep -Eq '^result: (PASS|FAIL)$' "$out"; then
+    echo "error: helper printed no 'result:' line; treating as FAIL" >&2
+    exit 1
+  fi
+  exit "$code"
 }
 
 if [[ -n "$(git -C "$repo" status --porcelain 2>/dev/null)" ]]; then

@@ -8,6 +8,8 @@
 //          PASS/FAIL table (rows from <tsv> first) and exits 1 on any FAIL.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const RUN_RE = /^<!--\s*judge:run\s*-->\s*$/;
@@ -15,7 +17,9 @@ const EXPECT_RE = /^<!--\s*judge:expect\s+(.*?)\s*-->\s*$/;
 const FENCE_RE = /^(`{3,}|~{3,})\s*([\w+-]*)[^\n]*$/;
 const SHELL_LANGS = new Set(["", "sh", "bash", "shell", "console", "zsh"]);
 
-// Blocks marked runnable must work offline with no keys. These are refused.
+// Blocks marked runnable must work offline with no keys. This is a lint that
+// catches README authors' mistakes, not a sandbox: it is trivially bypassed
+// (node -e, npm scripts, eval). The child also gets a temp HOME and a scrubbed env.
 const UNSAFE = [
   [/(^|[^\w-])(curl|wget)\s/, "network download"],
   [/--live\b/, "live mode"],
@@ -139,13 +143,15 @@ export function formatTable(rows) {
 
 function runBlock(block, cwd, timeoutMs) {
   const script = ["set -eo pipefail", ...commandsOf(block.code)].join("\n");
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "fresh-clone-home-"));
   const res = spawnSync("bash", ["-c", script], {
     cwd,
-    env: scrubEnv(process.env),
+    env: { ...scrubEnv(process.env), HOME: home },
     encoding: "utf8",
     timeout: timeoutMs,
     maxBuffer: 64 * 1024 * 1024,
   });
+  fs.rmSync(home, { recursive: true, force: true });
   const output = `${res.stdout ?? ""}${res.stderr ?? ""}`;
   process.stdout.write(output.endsWith("\n") || output === "" ? output : output + "\n");
   return evaluate(
@@ -216,4 +222,14 @@ function main(argv) {
   return failed ? 1 : 0;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) process.exit(main(process.argv.slice(2)));
+// Resolve symlinks: import.meta.url is a realpath, argv[1] is not (macOS /tmp -> /private/tmp).
+function isMain() {
+  if (!process.argv[1]) return false;
+  try {
+    return import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href;
+  } catch {
+    return false;
+  }
+}
+
+if (isMain()) process.exit(main(process.argv.slice(2)));

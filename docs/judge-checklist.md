@@ -54,4 +54,4 @@ npm run infer -- "What do you make of the treasury proposal?"
 
 - `<!-- judge:run -->` makes the block runnable. Blocks without it are never run. Prose between the marker and the fence cancels it.
 - `<!-- judge:expect TEXT -->` (zero or more) requires `TEXT` to appear in the block's combined stdout and stderr. The step passes only if the exit code is 0 and every expect is found.
-- A marked block is refused (FAIL) if it uses `curl`/`wget`, `--live`, the `near` CLI, `cargo near`, `git push`, reads `.env` or key files, selects a non-testnet network, or is not a shell block. Mark only offline, keyless steps. Do not mark `bash scripts/verify.sh` (it clones and installs again) or the testnet run.
+- A lint (not a sandbox, easily bypassed) flags a marked block as FAIL if it uses `curl`/`wget`, `--live`, the `near` CLI, `cargo near`, `git push`, reads `.env` or key files, selects a non-testnet network, or is not a shell block. The child runs with a scrubbed environment and a temp `HOME`. Mark only offline, keyless steps. Do not mark `bash scripts/verify.sh` (it clones and installs again) or the testnet run.
