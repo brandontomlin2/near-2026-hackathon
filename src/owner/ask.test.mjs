@@ -10,7 +10,7 @@ import test, { after, before, describe } from "node:test";
 
 import { hashSheet } from "../anchor/hash.mjs";
 import { runDemo } from "../demo/pipeline.mjs";
-import { sheetResponder } from "../demo/sheet-responder.mjs";
+import { sheetResponder } from "../memory/sheet-responder.mjs";
 import { createMockClient } from "../inference/client.mjs";
 import { createMemoryStore } from "../memory/summarizer.mjs";
 import { MAX_REPLY_BYTES, personaPrompt } from "../swarm/runner.mjs";

@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 
 import { InferenceError, createInferenceClient, createMockClient, parseMode } from "../src/inference/client.mjs";
 import { MemoryError, createMemoryStore } from "../src/memory/summarizer.mjs";
-import { sheetResponder } from "../src/demo/sheet-responder.mjs";
+import { sheetResponder } from "../src/memory/sheet-responder.mjs";
 import { AskError, MAX_QUESTION_CHARS, askAgent, askResponder } from "../src/owner/ask.mjs";
 import { AGENTS } from "../src/traits/agents.mjs";
 
