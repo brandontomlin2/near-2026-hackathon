@@ -19,7 +19,7 @@ import { replaceUnsafeChars } from "../util/text.mjs";
 export const DEFAULT_SUMMARY_EVERY_N_ROUNDS = 5;
 export const MAX_SHEET_WORDS = 200;
 export const MAX_EVENT_TEXT_CHARS = 500;
-export const EVENT_KINDS = Object.freeze(["post", "reply", "mention"]);
+const EVENT_KINDS = Object.freeze(["post", "reply", "mention"]);
 
 const TOKEN_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 

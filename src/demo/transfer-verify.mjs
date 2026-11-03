@@ -10,15 +10,15 @@
 
 import { hashSheet } from "../anchor/hash.mjs";
 
-export const TRANSFER_FROM = "alice.demo.testnet";
-export const TRANSFER_TO = "bob.demo.testnet";
+const TRANSFER_FROM = "alice.demo.testnet";
+const TRANSFER_TO = "bob.demo.testnet";
 
 // Host from https://docs.near.org/protocol/network/networks (Testnet "Explorer");
 // the /address/ path is the one this repo's NEAR skills use for nearblocks.io.
 // A transaction URL pattern is not confirmed in the docs, so none is included.
-export const TESTNET_EXPLORER_ACCOUNT_TEMPLATE = "https://testnet.nearblocks.io/address/{account_id}";
+const TESTNET_EXPLORER_ACCOUNT_TEMPLATE = "https://testnet.nearblocks.io/address/{account_id}";
 // The same pattern as plain text, for mock output: no scheme, so nothing linkifies it.
-export const TESTNET_EXPLORER_ACCOUNT_PATTERN = "testnet.nearblocks.io/address/<account_id>";
+const TESTNET_EXPLORER_ACCOUNT_PATTERN = "testnet.nearblocks.io/address/<account_id>";
 
 /**
  * Where a reader can look the contract up. Mock mode has nothing deployed, so it
@@ -27,7 +27,7 @@ export const TESTNET_EXPLORER_ACCOUNT_PATTERN = "testnet.nearblocks.io/address/<
  * @param {string} contractId
  * @param {string} mode "mock" or "live"
  */
-export function explorerInfo(contractId, mode) {
+function explorerInfo(contractId, mode) {
   if (mode === "mock") {
     return {
       placeholder: true,
