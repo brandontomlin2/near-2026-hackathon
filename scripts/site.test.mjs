@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { test } from "node:test";
 import { buildSite } from "./site.mjs";
 
 describe("npm run site output", () => {
@@ -37,4 +40,21 @@ describe("npm run site output", () => {
     assert.doesNotMatch(html, /<(?:script|link|img|iframe)\b[^>]*(?:src|href)="https?:/i);
     assert.doesNotMatch(html, /url\(\s*['"]?https?:|@import/i);
   });
+});
+
+test("CLI entry builds the site into the given dir and prints the ready line", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "site-cli-"));
+  try {
+    const target = path.join(tmp, "site");
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+    const res = spawnSync(process.execPath, ["scripts/site.mjs", target], {
+      cwd: root, encoding: "utf8", env: { ...process.env, MOCK_INFERENCE: "1" },
+    });
+    assert.equal(res.status, 0, res.stderr);
+    assert.ok(fs.statSync(path.join(target, "index.html")).isFile());
+    const last = res.stdout.trimEnd().split("\n").at(-1);
+    assert.ok(last.startsWith(`Site ready: ${target}/index.html`), last);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });

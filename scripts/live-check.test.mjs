@@ -51,3 +51,18 @@ test("owner account missing on chain is not ready; fresh contract account is onl
   assert.match(text(r), /NEAR_ACCOUNT_ID does not exist/);
   assert.match(text(r), /\[note\] NEAR_CONTRACT_ACCOUNT_ID does not exist/);
 });
+
+test("non-unknown-account RPC error skips the existence check, stays ready, and never prints values", async () => {
+  const limited = async () => ({ json: async () => ({ error: { message: "rate limited" } }) });
+  const r = await check(ENV, { statWasm: () => 1, fetch: limited });
+  assert.equal(r.ready, true);
+  assert.match(text(r), /RPC unreachable/);
+  assert.ok(!text(r).includes("alice.testnet"));
+});
+
+test("RPC body with neither error nor result is treated as a missing account", async () => {
+  const empty = async () => ({ json: async () => ({}) });
+  const r = await check(ENV, { statWasm: () => 1, fetch: empty });
+  assert.equal(r.ready, false);
+  assert.match(text(r), /NEAR_ACCOUNT_ID does not exist/);
+});
