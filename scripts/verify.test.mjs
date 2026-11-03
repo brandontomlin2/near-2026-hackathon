@@ -98,6 +98,21 @@ test("evidence_ok rejects mock evidence in live mode", async () => {
   assert.notEqual(runEvidenceOk(await mockEvidence(), "live").status, 0);
 });
 
+test("evidence_ok in live mode needs every transaction hash valid, not just one", async () => {
+  const live = {
+    network: "testnet",
+    transactions: [{ hash: "9".repeat(44) }, { hash: "9".repeat(43) + "8" }],
+    views: [{ method: "sheet_anchor", result: null }],
+  };
+  assert.equal(runEvidenceOk(live, "live").status, 0);
+  const oneBad = structuredClone(live);
+  oneBad.transactions.push({ hash: "not-a-hash" });
+  assert.notEqual(runEvidenceOk(oneBad, "live").status, 0, "one valid hash must not rescue an invalid one");
+  const none = structuredClone(live);
+  none.transactions = [];
+  assert.notEqual(runEvidenceOk(none, "live").status, 0);
+});
+
 test("evidence_ok rejects real-looking or unmarked entries in mock mode", async () => {
   const { mockEvidence } = await import("./evidence.mjs");
   const real = await mockEvidence();
