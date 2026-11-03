@@ -193,8 +193,9 @@ export function replyTargetOf(request) {
  * @returns {import("../inference/client.mjs").MockResponder | undefined}
  */
 export function personaResponder(agent) {
+  // Own keys only: an id like "toString" must not pick up an inherited function.
+  if (!Object.hasOwn(PERSONA_LINES, agent.id)) return undefined;
   const lines = PERSONA_LINES[agent.id];
-  if (!lines) return undefined;
   const replies = REPLY_LINES[agent.id] ?? {};
   // One responder serves one agent for one run. Its first request hash (which
   // carries the seed) fixes a starting point; each list (posts, or replies to
