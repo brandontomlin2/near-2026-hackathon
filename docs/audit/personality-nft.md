@@ -2,8 +2,10 @@
 
 Scope: `contracts/personality-nft/src/lib.rs` (near-sdk 5.30, near-contract-standards 5.30).
 Method: manual review against the NEAR audit checklist, plus unit tests for every
-finding below (`cargo test` in the contract dir, 43 tests). No transactions were
+finding below (`cargo test` in the contract dir, 60 tests). No transactions were
 sent and no keys were used.
+
+**State layout:** the contract state layout changed in audit 2 and its follow-up (`seen_hashes`, `in_flight` with block heights). Nothing is deployed yet, so no migration is needed.
 
 Public method names are unchanged. `anchor_sheet` and `nft_mint` gained new
 panic conditions (listed below); their signatures are the same.
@@ -23,7 +25,7 @@ panic conditions (listed below); their signatures are the same.
 | 10 | Low | `scripts/testnet-deploy.mjs` | `deploy --send` defaulted the contract account to `NEAR_ACCOUNT_ID`, which could overwrite the owner's personal account code. | Fixed: `deploy --send` requires an explicit `NEAR_CONTRACT_ACCOUNT_ID`; dry-run unchanged. |
 | 11 | Info | `validate_token_id` | Contract accepted any 1-64 byte id; JS builders only accept `[a-z0-9_-]`. | Fixed: contract now enforces the same charset. |
 | 12 | Info | contract | Follow-up audit notes, no change: no owner rotation/migration (see #6); validation order in `anchor_sheet` runs hash/deposit checks before the ownership check (harmless); refund dust of <= 1 yocto per call is kept by the contract; JS first-anchor deposit (0.01 NEAR) is generous but excess is refunded; mint deposit (0.05 NEAR) is refunded minus storage. | No change. |
-| 13 | Medium | `nft_transfer_call` / `anchor_sheet` | The receiver owns the token during `nft_on_transfer` and could re-anchor, then revert the transfer, leaving the original owner with a tampered anchor. | Fixed (audit 2, M1): the token is frozen for `anchor_sheet` while in flight (cleared in `nft_resolve_transfer`); a nested `nft_transfer_call` is rejected. |
+| 13 | Medium | `nft_transfer_call` / `anchor_sheet` | The receiver owns the token during `nft_on_transfer` and could re-anchor, then revert the transfer, leaving the original owner with a tampered anchor. | Fixed (audit 2, M1): the token is frozen for `anchor_sheet` while in flight (cleared in `nft_resolve_transfer`); a nested `nft_transfer_call` is rejected. Follow-up: the lock stores its block height and expires after `IN_FLIGHT_EXPIRY_BLOCKS` (1000, about 17 minutes), so a failed `nft_resolve_transfer` callback cannot freeze the anchor forever. |
 | 14 | Low | `nft_mint` / metadata | Mint to the contract account itself strands the token; `copies` unchecked. | Fixed (audit 2, L2, L4): receiver must not be the contract account; `copies` must be 1. |
 | 8 | Info | `nft_resolve_transfer` | Marked `#[private]` by the macro. The check is in the generated wrapper, so it cannot be hit from a plain Rust unit test. Covered by SDK. | No change. |
 
