@@ -9,19 +9,20 @@
 import { createHash } from "node:crypto";
 import { GENESIS_HASH, hashRound, verifyRounds } from "../swarm/runner.mjs";
 import { AGENTS } from "../traits/agents.mjs";
+import { replaceUnsafeChars } from "../util/text.mjs";
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
-// C0/C1 controls (except tab, LF, CR) and bidi overrides/isolates. A model could use
-// them to reorder or hide the text around it (trojan-source style); show U+FFFD instead.
-const UNSAFE_CHARS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+/** The page's <title>. scripts/viewer.mjs uses it to recognise its own earlier output before overwriting. */
+export const PAGE_TITLE = "Swarm viewer";
 
 /**
  * The one HTML escaping helper: element text and double- or single-quoted attribute values.
+ * Control and bidi characters become U+FFFD first (src/util/text.mjs).
  * @param {unknown} value
  */
 export function escapeHtml(value) {
-  return String(value).replace(UNSAFE_CHARS, "\uFFFD").replace(/[&<>"']/g, (ch) => ({
+  return replaceUnsafeChars(value).replace(/[&<>"']/g, (ch) => ({
     "&": "&amp;",
     "<": "&lt;",
     ">": "&gt;",
@@ -145,7 +146,7 @@ export function renderViewer(result, agents = AGENTS) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   ${securityMetaTags(STYLE)}
-  <title>Swarm viewer</title>
+  <title>${PAGE_TITLE}</title>
   <style>${STYLE}</style>
 </head>
 <body>

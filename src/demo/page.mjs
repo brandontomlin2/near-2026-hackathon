@@ -37,6 +37,20 @@ pre{background:var(--card);border:1px solid var(--line);border-radius:6px;paddin
 
 const SAFE_FILE = /^[A-Za-z0-9_][A-Za-z0-9_./-]*$/;
 
+/**
+ * The only way a path from the manifest reaches a src or href. Those are URL contexts,
+ * where HTML escaping is not enough ("javascript:" survives it), so only a plain relative
+ * file name passes; anything else is a bad manifest and the page is not rendered.
+ * @param {unknown} file
+ * @returns {string} the same path, HTML-escaped
+ */
+function safeFile(file) {
+  if (typeof file !== "string" || !SAFE_FILE.test(file) || file.split("/").includes("..")) {
+    throw new TypeError(`manifest file is not a plain relative path: ${JSON.stringify(file)}`);
+  }
+  return esc(file);
+}
+
 const YOCTO_PER_NEAR = 10n ** 24n;
 
 /** "10000000000000000000000" -> "0.01 NEAR", "1" -> "1 yoctoNEAR". */
@@ -55,12 +69,12 @@ function agentCard(a, moods) {
   const latest = a.sheets.at(-1);
   const n = a.sheets.length;
   const strip = moods.length > 1
-    ? `<div class="moods">${moods.map((m) => `<figure><img src="${esc(a.faces[m])}" alt="${esc(a.name)} in mood ${esc(m)}" loading="lazy"><figcaption>${esc(m)}</figcaption></figure>`).join("")}</div>`
+    ? `<div class="moods">${moods.map((m) => `<figure><img src="${safeFile(a.faces[m])}" alt="${esc(a.name)} in mood ${esc(m)}" loading="lazy"><figcaption>${esc(m)}</figcaption></figure>`).join("")}</div>`
     : "";
   return `<div class="card">
 <div class="arts">
-<figure class="big"><img src="${esc(a.art)}" alt="${esc(a.name)}, signature image"><figcaption>now, after ${n} summar${n === 1 ? "y" : "ies"} (memory depth ${esc(a.memoryDepth)})</figcaption></figure>
-<figure class="small"><img src="${esc(a.mintArt)}" alt="${esc(a.name)} at mint"><figcaption>at mint (memory depth 1)</figcaption></figure>
+<figure class="big"><img src="${safeFile(a.art)}" alt="${esc(a.name)}, signature image"><figcaption>now, after ${n} summar${n === 1 ? "y" : "ies"} (memory depth ${esc(a.memoryDepth)})</figcaption></figure>
+<figure class="small"><img src="${safeFile(a.mintArt)}" alt="${esc(a.name)} at mint"><figcaption>at mint (memory depth 1)</figcaption></figure>
 </div>
 ${strip}
 <h3>${esc(a.name)} <span class="mut">· ${esc(a.personality)}</span></h3>
@@ -100,7 +114,7 @@ export function thenNowCaption(agent, names) {
 function heroFigure(a, names) {
   const caption = thenNowCaption(a, names);
   const arc = caption ? `<span class="arc">${esc(caption)}</span>` : "";
-  return `<figure><img src="${esc(a.art)}" alt="${esc(a.name)}"><figcaption>${esc(a.name)}${arc}</figcaption></figure>`;
+  return `<figure><img src="${safeFile(a.art)}" alt="${esc(a.name)}"><figcaption>${esc(a.name)}${arc}</figcaption></figure>`;
 }
 
 function memorySection(a) {
@@ -125,7 +139,7 @@ function channel(manifest, events, moods) {
       const mood = moodForText(e.text);
       const shown = moods.includes(mood) ? mood : "neutral";
       const face = agent?.faces?.[shown]
-        ? `<img src="${esc(agent.faces[shown])}" alt="${esc(name)} feeling ${esc(mood)}" data-mood="${esc(mood)}" loading="lazy">`
+        ? `<img src="${safeFile(agent.faces[shown])}" alt="${esc(name)} feeling ${esc(mood)}" data-mood="${esc(mood)}" loading="lazy">`
         : "";
       out.push(`<div class="msg">${face}<div><span class="who">${who}</span> <span class="mood">${esc(mood)}</span> ${esc(e.text)}</div></div>`);
     }
@@ -144,9 +158,13 @@ export function renderDemoPage(manifest, { events, anchors })
   const moods = manifest.moods ?? ["neutral"];
   const shares = (manifest.shares ?? []).map((x) => {
     const agent = manifest.agents.find((a) => a.id === x.agentId);
-    return `<a href="${esc(x.file)}"><img src="${esc(x.file)}" alt="Share card: ${esc(agent?.name ?? x.agentId)}, round ${esc(x.round)}, ${esc(x.mood)}" loading="lazy"></a>`;
+    const file = safeFile(x.file);
+    return `<a href="${file}"><img src="${file}" alt="Share card: ${esc(agent?.name ?? x.agentId)}, round ${esc(x.round)}, ${esc(x.mood)}" loading="lazy"></a>`;
   }).join("\n");
-  const memes = (manifest.memes ?? []).map((x) => `<a href="${esc(x.file)}"><img src="${esc(x.file)}" alt="${esc(x.alt)}" loading="lazy"></a>`).join("\n");
+  const memes = (manifest.memes ?? []).map((x) => {
+    const file = safeFile(x.file);
+    return `<a href="${file}"><img src="${file}" alt="${esc(x.alt)}" loading="lazy"></a>`;
+  }).join("\n");
   const memeSection = memes ? `<h2>Meme pack</h2>
 <p class="mut">Meme formats built from each agent's real replies and character sheet: a caption over its face and a villain arc. Standalone SVGs in <code>share/</code>.</p>
 <div class="shares">
@@ -158,12 +176,7 @@ ${memes}
   const shareCount = (manifest.shares ?? []).length;
   const chain = manifest.roundHashes.map((h, i) => `<tr><td>${i + 1}</td><td class="hash">${esc(h)}</td></tr>`).join("\n");
   const calls = anchors.calls.map((c) => `<tr><td>${esc(c.tokenId)}</td><td>${esc(c.round)}</td><td>${esc(c.method)}</td><td class="hash">${esc(c.args.sheet_hash)}</td><td>${esc(formatDeposit(c.depositYocto))}</td><td>${esc(c.status)}</td></tr>`).join("\n");
-  // href is a URL context, where HTML escaping is not enough ("javascript:" survives it).
-  // Only plain relative file names are linked.
-  for (const f of manifest.files) {
-    if (!SAFE_FILE.test(f) || f.split("/").includes("..")) throw new TypeError(`manifest file is not a plain relative path: ${JSON.stringify(f)}`);
-  }
-  const files = manifest.files.filter((f) => f !== "index.html").map((f) => `<li><a href="${esc(f)}">${esc(f)}</a></li>`).join("\n");
+  const files = manifest.files.filter((f) => f !== "index.html").map((f) => `<li><a href="${safeFile(f)}">${esc(f)}</a></li>`).join("\n");
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 ${securityMetaTags(CSS)}

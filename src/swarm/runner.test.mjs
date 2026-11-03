@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runSwarm, hashRound, verifyRounds, GENESIS_HASH, personaPrompt } from "./runner.mjs";
+import { runSwarm, hashRound, verifyRounds, GENESIS_HASH, MAX_REPLY_BYTES, personaPrompt } from "./runner.mjs";
 import { PERSONA_LINES, CATCHPHRASES } from "./personas.mjs";
 import { AGENTS } from "../traits/agents.mjs";
 import { main } from "../../scripts/swarm.mjs";
@@ -175,4 +175,29 @@ test("mock personas vary across 8+ rounds: no consecutive repeats, deterministic
       assert.ok(lines.every((l) => PERSONA_LINES[id].includes(l)), `${id}: line outside its persona list`);
     }
   }
+});
+
+// Audit L-2 and L-3: whatever client answers, stored event text (and so transcript.txt,
+// events.json and the round hashes) carries no control or bidi characters and is bounded.
+test("hostile client: control characters are replaced and a 4 MiB reply is cut to MAX_REPLY_BYTES", async () => {
+  const hostile = "\u001b[2J\u001b]0;pwned\u0007\u001b]8;;http://evil.example\u0007link\u001b]8;;\u0007 \u202ereversed\u202c ok";
+  const huge = "é".repeat(2 * 1024 * 1024);
+  let n = 0;
+  const client = { async chat() { return { content: (n++ % 2 === 0) ? hostile : huge }; } };
+  const result = await runSwarm({ client, rounds: 2, seed: 4 });
+  const unsafe = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/;
+  for (const e of result.events) {
+    assert.doesNotMatch(e.text, unsafe, `event ${e.id}`);
+    assert.ok(Buffer.byteLength(e.text, "utf8") <= MAX_REPLY_BYTES + 32, `event ${e.id}: ${Buffer.byteLength(e.text, "utf8")} bytes`); // + "@Name " prefix at most
+    assert.ok(!e.text.includes("\uFFFD\uFFFD\uFFFD"), "no split code point");
+  }
+  const small = result.events.filter((e) => e.text.includes("link"));
+  assert.ok(small.length > 0);
+  for (const e of small) assert.ok(e.text.includes("\uFFFD[2J") && e.text.endsWith(" ok"), e.text);
+  const big = result.events.filter((e) => e.text.includes("é"));
+  assert.ok(big.length > 0);
+  for (const e of big) assert.ok(Buffer.byteLength(e.text, "utf8") >= MAX_REPLY_BYTES - 1);
+  assert.doesNotMatch(result.transcript, unsafe);
+  assert.ok(result.transcript.length < 4 * MAX_REPLY_BYTES * 2 + 200);
+  assert.ok(verifyRounds(result));
 });
