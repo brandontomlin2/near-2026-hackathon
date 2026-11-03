@@ -74,11 +74,12 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
   let result;
   let memory;
   try {
-    // Mock (the default): each agent speaks its own persona lines. Live: one shared client.
+    // Mock (the default): each agent speaks its own persona lines and the sheets come from
+    // the counting stand-in, as in npm run demo. Live: one shared client for both.
     const client = parseMode(env.MOCK_INFERENCE) === "live" ? createInferenceClient({ env }) : undefined;
     result = await runSwarm({ rounds: opts.rounds, seed: opts.seed, client });
     if (!verifyRounds(result)) throw new Error("round hashes do not verify");
-    memory = await runMemoryLoop({ swarm: result, client: createInferenceClient({ env }), every: opts.every });
+    memory = await runMemoryLoop({ swarm: result, client, every: opts.every });
   } catch (error) {
     console.error(`swarm: ${error.message}`);
     return 1;
@@ -105,7 +106,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
   }
   log(result.transcript.trimEnd());
   log(`\nfinal round hash: ${finalHash}`);
-  log(`verify: ok (${opts.rounds} rounds)`);
+  log(`verify: ok (${opts.rounds} ${opts.rounds === 1 ? "round" : "rounds"})`);
   for (const token of memory.tokens) {
     for (const { round, sheet, diff } of token.sheets) {
       log(`sheet ${token.tokenId} round ${round} ${sheet.sheetHash} (+${diff.added.length} -${diff.removed.length}) -> anchor_sheet dry-run (not sent)`);
