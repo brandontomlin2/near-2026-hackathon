@@ -363,7 +363,9 @@ test("a failing step stops the run", async () => {
 
 test("the evidence command is exactly what scripts/evidence.mjs reads", () => {
   assert.equal(TX_FILE_LABEL, "out/live-proof/txs.json");
-  assert.equal(evidenceCommand(CONTRACT), "EVIDENCE_NETWORK=testnet NEAR_ACCOUNT_ID=agent-nft.testnet EVIDENCE_TX_FILE=out/live-proof/txs.json npm run evidence");
+  // Review L-d: the contract goes in NEAR_CONTRACT_ACCOUNT_ID, the variable evidence.mjs reads
+  // first (NEAR_ACCOUNT_ID is only its fallback), so the printed command matches the deploy step.
+  assert.equal(evidenceCommand(CONTRACT), "EVIDENCE_NETWORK=testnet NEAR_CONTRACT_ACCOUNT_ID=agent-nft.testnet EVIDENCE_TX_FILE=out/live-proof/txs.json npm run evidence");
   assert.deepEqual(TX_LABELS, ["deploy", "mint aloof", "mint chaotic", "mint social", "mint skeptic", "anchor_sheet"]);
 });
 

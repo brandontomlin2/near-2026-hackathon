@@ -263,7 +263,15 @@ test("README and verify.sh give the same --live command, with the contract accou
   assert.ok(verify.includes(`  ${command}\n`), "verify.sh usage must show the same command");
   const skill = await readFile(join(root, ".agents/skills/verify-near-2026/SKILL.md"), "utf8");
   assert.ok(skill.includes(`\n${command}\n`), "the verify skill must show the same command");
-  assert.ok(readmeText.includes("which reads `NEAR_ACCOUNT_ID` as the contract account to query"));
+  // Review L-d: the evidence stage reads NEAR_CONTRACT_ACCOUNT_ID (NEAR_ACCOUNT_ID is its fallback);
+  // the docs must name that variable, not the fallback, everywhere they describe the stage.
+  assert.ok(readmeText.includes("which reads `NEAR_CONTRACT_ACCOUNT_ID` as the contract account to query"));
+  assert.ok(readmeText.includes("a live run without `NEAR_NETWORK=testnet` and `NEAR_CONTRACT_ACCOUNT_ID` is a failure"));
+  const checklistText = await readFile(join(root, "docs/submission-checklist.md"), "utf8");
+  for (const [name, text] of [["README", readmeText], ["docs/submission-checklist.md", checklistText]]) {
+    assert.doesNotMatch(text, /reads `NEAR_ACCOUNT_ID` as the contract account/, `${name} must not say the evidence stage reads NEAR_ACCOUNT_ID`);
+    assert.doesNotMatch(text, /NEAR_ACCOUNT_ID=<NEAR_CONTRACT_ACCOUNT_ID>/, `${name} must not put the contract id in NEAR_ACCOUNT_ID`);
+  }
   assert.ok(readmeText.includes("Give that path as an absolute path, because the script runs inside a fresh clone in a temp directory."));
   assert.ok(readmeText.includes("Without it the stage records `FAIL` with `out/evidence.json missing tx hashes or RPC views`."));
   assert.ok(verify.includes('record FAIL "evidence" "out/evidence.json missing tx hashes or RPC views"'));

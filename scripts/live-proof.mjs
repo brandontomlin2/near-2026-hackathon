@@ -41,8 +41,12 @@ export const TX_FILE_LABEL = "out/live-proof/txs.json";
 export const TX_FILE = path.join(HERE, "..", ...TX_FILE_LABEL.split("/"));
 /** The complete owner command, as the docs quote it. mint --send needs --media-base, so it is not optional. */
 export const SEND_COMMAND = "npm run live-proof -- --send --i-approve --media-base <url>";
-/** The exact `npm run evidence` invocation that turns the collected hashes into out/evidence.json. */
-export const evidenceCommand = (contract) => `EVIDENCE_NETWORK=${NETWORK} NEAR_ACCOUNT_ID=${contract} EVIDENCE_TX_FILE=${TX_FILE_LABEL} npm run evidence`;
+/**
+ * The exact `npm run evidence` invocation that turns the collected hashes into out/evidence.json.
+ * The contract goes in NEAR_CONTRACT_ACCOUNT_ID, the variable scripts/evidence.mjs reads first
+ * (NEAR_ACCOUNT_ID is only its fallback), the same variable the deploy step used for it.
+ */
+export const evidenceCommand = (contract) => `EVIDENCE_NETWORK=${NETWORK} NEAR_CONTRACT_ACCOUNT_ID=${contract} EVIDENCE_TX_FILE=${TX_FILE_LABEL} npm run evidence`;
 // The labels evidence.mjs will show, one per transaction, in send order.
 export const TX_LABELS = ["deploy", ...AGENTS.map((a) => `mint ${a.token_id}`), "anchor_sheet"];
 // near-cli-rs reports a sent transaction as "Transaction ID: <hash>" and as an explorer link
