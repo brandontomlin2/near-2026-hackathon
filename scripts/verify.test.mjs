@@ -69,20 +69,40 @@ function runEvidenceOk(evidence, mode) {
 
 test("evidence_ok accepts the mock evidence file in mock mode", async () => {
   const { mockEvidence } = await import("./evidence.mjs");
-  assert.equal(runEvidenceOk(mockEvidence(), "mock").status, 0);
+  assert.equal(runEvidenceOk(await mockEvidence(), "mock").status, 0);
+});
+
+test("evidence_ok rejects broken mock memory loops", async () => {
+  const { mockEvidence } = await import("./evidence.mjs");
+  const cases = {
+    "memory_loop missing": (e) => delete e.memory_loop,
+    "linked hash differs": (e) => { e.memory_loop.tokens[0].anchor.linked_round_hash = "a".repeat(64); },
+    "sheet hash mismatch": (e) => { e.memory_loop.tokens[0].anchor.args.sheet_hash = "b".repeat(64); },
+    "non-null tx hash": (e) => { e.memory_loop.tokens[0].anchor.transaction_hash = "MOCK-tx"; },
+    "duplicate token": (e) => { e.memory_loop.tokens[1] = structuredClone(e.memory_loop.tokens[0]); },
+  };
+  for (const [name, mutate] of Object.entries(cases)) {
+    const ev = await mockEvidence();
+    mutate(ev);
+    assert.notEqual(runEvidenceOk(ev, "mock").status, 0, name);
+  }
+});
+
+test("verify.sh labels mock evidence as not on-chain proof", () => {
+  assert.match(fs.readFileSync(VERIFY, "utf8"), /mock, not on-chain proof/);
 });
 
 test("evidence_ok rejects mock evidence in live mode", async () => {
   const { mockEvidence } = await import("./evidence.mjs");
-  assert.notEqual(runEvidenceOk(mockEvidence(), "live").status, 0);
+  assert.notEqual(runEvidenceOk(await mockEvidence(), "live").status, 0);
 });
 
 test("evidence_ok rejects real-looking or unmarked entries in mock mode", async () => {
   const { mockEvidence } = await import("./evidence.mjs");
-  const real = mockEvidence();
+  const real = await mockEvidence();
   real.transactions[0].hash = "9".repeat(44);
   assert.notEqual(runEvidenceOk(real, "mock").status, 0);
-  const unmarked = mockEvidence();
+  const unmarked = await mockEvidence();
   delete unmarked.mock;
   assert.notEqual(runEvidenceOk(unmarked, "mock").status, 0);
 });
