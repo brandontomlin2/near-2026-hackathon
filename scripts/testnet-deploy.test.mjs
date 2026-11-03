@@ -390,3 +390,19 @@ test("default deploy dry run from the repo root prints the repo-relative wasm an
     assert.ok(!missing.stdout.includes(homedir()), "home directory leaked into the dry run");
   }
 });
+
+// src/traits/agents.mjs is the single source of truth for ids, names and traits; the
+// deploy list only adds descriptions and drops memory_depth (the contract tracks it).
+test("deploy AGENTS ids, titles and traits are pinned to src/traits/agents.mjs", async () => {
+  const { AGENTS: seeded } = await import("../src/traits/agents.mjs");
+  const expected = seeded.map((a) => {
+    const { memory_depth, ...traits } = a.traits;
+    assert.equal(memory_depth, 1);
+    return { token_id: a.id, title: a.name, traits };
+  });
+  assert.deepEqual(
+    AGENTS.map(({ token_id, title, traits }) => ({ token_id, title, traits })),
+    expected,
+  );
+  for (const a of AGENTS) assert.ok(a.description.length > 0, a.token_id);
+});

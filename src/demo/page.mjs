@@ -177,6 +177,9 @@ ${memes}
   const chain = manifest.roundHashes.map((h, i) => `<tr><td>${i + 1}</td><td class="hash">${esc(h)}</td></tr>`).join("\n");
   const calls = anchors.calls.map((c) => `<tr><td>${esc(c.tokenId)}</td><td>${esc(c.round)}</td><td>${esc(c.method)}</td><td class="hash">${esc(c.args.sheet_hash)}</td><td>${esc(formatDeposit(c.depositYocto))}</td><td>${esc(c.status)}</td></tr>`).join("\n");
   const files = manifest.files.filter((f) => f !== "index.html").map((f) => `<li><a href="${safeFile(f)}">${esc(f)}</a></li>`).join("\n");
+  // Claim "anchored" only when every anchor call was actually sent; a dry run only prepares it.
+  const sent = anchors.signed === true && anchors.calls.length > 0 && anchors.calls.every((c) => c.status !== "dry-run" && c.transactionHash);
+  const anchorPhrase = sent ? "is anchored on NEAR" : "is prepared for anchoring on NEAR (dry run here, nothing sent)";
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 ${securityMetaTags(CSS)}
@@ -185,7 +188,7 @@ ${securityMetaTags(CSS)}
 <header class="hero">
 <p class="pitch">Personality NFT: an AI personality that lives in your NFT.</p>
 <h1>Your NFT remembers who you are</h1>
-<p class="sub">An AI personality lives in your NFT, argues with three others in a swarm, remembers it in a character sheet whose hash is anchored on NEAR, and reacts with a face to every line.</p>
+<p class="sub">An AI personality lives in your NFT, argues with three others in a swarm, remembers it in a character sheet whose hash ${anchorPhrase}, and reacts with a face to every line.</p>
 <div class="faces">${hero}</div>
 </header>
 <p class="notice">Mock mode, dry run: inference is mocked and nothing is signed, sent or deployed. ${esc(manifest.rounds)} rounds, seed ${esc(manifest.seed)}, a sheet every ${esc(manifest.every)} rounds, art style ${esc(manifest.style ?? "default")}.</p>
