@@ -90,10 +90,10 @@ test("live mode without a key or model: exit 1, one coded line, no mode line, no
   assert.equal(noKey.stdout, "");
   assert.equal(noKey.stderr, "infer: inference error (missing_api_key): live mode needs NEAR_AI_API_KEY\n");
 
-  const noModel = run(["hello"], { MOCK_INFERENCE: "0", NEAR_AI_API_KEY: "sk-gaps14-do-not-print" });
+  const noModel = run(["hello"], { MOCK_INFERENCE: "0", NEAR_AI_API_KEY: "test-fake-key-gaps14-do-not-print" });
   assert.equal(noModel.status, 1);
   assert.equal(noModel.stderr, "infer: inference error (missing_model): live mode needs NEAR_AI_MODEL\n");
-  assert.ok(!noModel.stderr.includes("sk-gaps14-do-not-print") && !noModel.stdout.includes("sk-gaps14-do-not-print"));
+  assert.ok(!noModel.stderr.includes("test-fake-key-gaps14-do-not-print") && !noModel.stdout.includes("test-fake-key-gaps14-do-not-print"));
 });
 
 test("an invalid MOCK_INFERENCE is a coded bad_config error with exit 1, not a silent mock run", () => {
@@ -106,12 +106,12 @@ test("an invalid MOCK_INFERENCE is a coded bad_config error with exit 1, not a s
 test("live mode against a refused connection: coded network error, exit 1, the key never printed", () => {
   const r = run(["hello"], {
     MOCK_INFERENCE: "0",
-    NEAR_AI_API_KEY: "sk-gaps14-do-not-print",
+    NEAR_AI_API_KEY: "test-fake-key-gaps14-do-not-print",
     NEAR_AI_MODEL: "m",
     NEAR_AI_BASE_URL: "http://127.0.0.1:1/v1",
   });
   assert.equal(r.status, 1);
   assert.equal(r.stdout, "");
   assert.match(r.stderr, /^mode: live model: m\ninfer: inference error \(network\): request to http:\/\/127\.0\.0\.1:1\/v1\/chat\/completions failed\n$/);
-  assert.ok(!r.stderr.includes("sk-gaps14-do-not-print"));
+  assert.ok(!r.stderr.includes("test-fake-key-gaps14-do-not-print"));
 });

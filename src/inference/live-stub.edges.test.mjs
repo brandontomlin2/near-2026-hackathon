@@ -10,7 +10,7 @@ import { inspect } from "node:util";
 
 import { DEFAULT_MAX_TOKENS, InferenceError, MAX_CONTENT_BYTES, createInferenceClient, createLiveClient } from "./client.mjs";
 
-const KEY = "sk-stub-edges-not-real-ABCDEFGHIJKLMNOP0123456789";
+const KEY = "test-fake-key-stub-edges-not-real-ABCDEFGHIJKLMNOP0123456789";
 const MODEL = "stub/edges-model";
 const ask = { messages: [{ role: "user", content: "ping" }] };
 const noSleep = async () => {};

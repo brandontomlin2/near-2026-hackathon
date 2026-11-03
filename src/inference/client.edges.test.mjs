@@ -15,7 +15,7 @@ import {
   normalizeRequest,
 } from "./client.mjs";
 
-const KEY = "sk-edges-not-a-real-key-0123456789";
+const KEY = "test-fake-key-edges-not-a-real-key-0123456789";
 const user = (content) => ({ role: "user", content });
 const ask = (content, extra = {}) => ({ messages: [user(content)], ...extra });
 

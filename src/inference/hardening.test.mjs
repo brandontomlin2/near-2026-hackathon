@@ -6,7 +6,7 @@ import test from "node:test";
 
 import { DEFAULT_MAX_TOKENS, InferenceError, MAX_CONTENT_BYTES, createInferenceClient, createLiveClient, createMockClient } from "./client.mjs";
 
-const KEY = "sk-hardening-secret-0123456789";
+const KEY = "test-fake-key-hardening-secret-0123456789";
 const REQ = { messages: [{ role: "user", content: "hello there" }] };
 const noSleep = () => Promise.resolve();
 
