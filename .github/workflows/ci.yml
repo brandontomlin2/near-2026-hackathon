@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install gitleaks (pinned, checksum verified)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/gitleaks"
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          mkdir -p "$dir"
+          gh release download "v${GITLEAKS_VERSION}" --repo gitleaks/gitleaks \
+            --pattern "$tarball" --dir "$dir"
+          echo "${GITLEAKS_SHA256}  ${dir}/${tarball}" | sha256sum -c -
+          tar -xzf "${dir}/${tarball}" -C "$dir" gitleaks
+          echo "$dir" >> "$GITHUB_PATH"
+      - name: Scan full git history for leaked credentials
+        run: gitleaks detect --source . --config .gitleaks.toml --redact --no-banner --verbose
+
+  structure:
+    name: Repository structure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Every tracked symlink resolves
+        run: |
+          set -euo pipefail
+          broken=0
+          while IFS= read -r link; do
+            if [ ! -e "$link" ]; then
+              echo "::error file=$link::broken symlink -> $(readlink "$link")"
+              broken=1
+            fi
+          done < <(git ls-files -s | awk '$1 == "120000" { print $4 }')
+          [ "$broken" -eq 0 ]
+      - name: No tracked env or key files
+        run: |
+          set -euo pipefail
+          hits=$(git ls-files | grep -E '(^|/)\.env(\..*)?$|\.(pem|key)$' | grep -v '\.env\.example$' || true)
+          if [ -n "$hits" ]; then
+            echo "::error::tracked secret-looking files:"
+            echo "$hits"
+            exit 1
+          fi
+      - name: Required files present
+        run: |
+          set -euo pipefail
+          for f in README.md; do
+            [ -f "$f" ] || { echo "::error file=$f::missing"; exit 1; }
+          done
