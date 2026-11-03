@@ -22,6 +22,8 @@ Tracks: `nfts`, `swarms` and `agents`.
 - `swarms`: `src/swarm/runner.mjs` runs the four agents on one shared channel, each speaking once per round in a seed-derived order, and hashes every round into a chain linked to the one before.
 - `agents`: each token is an agent whose system prompt is built from its traits (`personaPrompt` in `src/swarm/runner.mjs`, traits in `src/traits/agents.mjs`), and `src/memory/loop.mjs` condenses its channel history into the sheet whose hash is anchored.
 
+Track fit, plainly: for `nfts`, the token carries behaviour (its sheet anchor) and the contract enforces it on transfer. For `swarms` and `agents`, four agents coordinate on one channel and condense their shared history into per-agent memory. There is no bidding, payment or settlement between agents in this version; the agents talk, remember and anchor, and nothing else.
+
 How NEAR fits:
 
 - The NFT is the agent. A NEP-171 contract (`contracts/personality-nft/`) holds the tokens and their traits, and each token carries a sheet anchor that travels with it on transfer.
@@ -37,7 +39,7 @@ npm install && npm run demo
 ```
 
 1. Run `npm install && npm run demo`. See `[1/5] swarm` to `[5/5] viewer`, then `Done. Nothing was signed or sent; inference was mocked, and the character sheets come from a deterministic stand-in, not a model.`, a "Do this, see that" list, the 66 files written under `out/` (art in the `sticker` style, 24 share cards, 5 meme cards), and last `Open the page: open out/index.html  (file:///…/out/index.html)`. It exits 0 in a few seconds and never opens a browser itself.
-2. Open `out/index.html`. See the headline "Your NFT remembers who you are" over four agent cards, each with its art, four reaction faces and its latest sheet and hash. Below them: Memory, the round hash chain with `verify: ok`, the Channel, a "Meme pack" grid of 5 meme cards (one or more per agent), a grid of 24 share cards, Anchor (dry run) and Transfer.
+2. Open `out/index.html`. See the headline "Your NFT remembers who you are" over four agent cards, each with its art, four reaction faces and its latest sheet and hash. Below them, in this order: Memory, a "Meme pack" grid of 5 meme cards (one or more per agent), Transfer, the Channel, Anchor (dry run), the Round hash chain with `verify: ok`, a grid of 24 share cards, and Files.
 3. Open `out/transcript.txt`. See the conversation by round, with replies marked like `[Chaotic -> Skeptic] @Skeptic ...`. The same events are in `out/events.json` with `agentId`, `round`, `turn`, `kind` and `replyTo`.
 4. Open `out/memory/chaotic/sheet.json`. See Chaotic's round 6 sheet (quoted above), including `Ride-or-die: Social (3 warm moments).` Compare it with the round 3 sheet under `agents[].sheets` in `out/demo.json`: fights with Skeptic went from 3 to 5, warm moments with Social from 1 to 3, and the "Who I am" line from chaos goblin to villain arc. Check the hash: `node -p 'require("./out/memory/chaotic/sheet.json").sheet' | shasum -a 256` prints the `sheetHash` in the same file.
 5. Open `out/anchors.json`. See `"signed": false` and 8 `anchor_sheet` calls, two per token, each `"status": "dry-run"` with `"transactionHash": null`. Each token's latest `sheet_hash` equals the `sheetHash` in its `sheet.json`. The `contractId` `personality-nft.demo.testnet` is a placeholder; nothing is deployed there.
@@ -48,17 +50,19 @@ npm install && npm run demo
 
 Everything below this section is reference for the pieces the demo ran.
 
-No browser handy? [docs/img/page.png](docs/img/page.png) is the generated page. `npm run screenshot` renders your own copy to `out/page.png` (needs a local Chrome/Chromium, exits 2 without one) and leaves tracked files untouched. For a hostable copy, run `npm run site` and see `out/site/index.html` ([hosting steps](docs/hosting.md)).
+No browser handy? [docs/img/page.png](docs/img/page.png) is the top of the generated page (a 1280 x 2400 viewport capture; the page continues below it). `npm run screenshot` renders your own copy to `out/page.png` (needs a local Chrome/Chromium, exits 2 without one) and leaves tracked files untouched. For a hostable copy, run `npm run site` and see `out/site/index.html` ([hosting steps](docs/hosting.md)).
 
-[![The generated page](docs/img/page.png)](docs/img/page.png)
+[![The top of the generated page](docs/img/page.png)](docs/img/page.png)
 
-Details. Options: `npm run demo -- --rounds 9 --every 3 --seed 2 --style pixel --out out/other`; the steps are wired in `src/demo/pipeline.mjs`, and the meme pack is built by `src/demo/memes.mjs`. The sheets come from a deterministic stand-in that counts exchanges and reads warm or tense words; they are not model output. A sheet is hashed after normalizing (NFC, LF, one final newline), so `shasum` on a one-line sheet hashes the text plus a newline.
+Details. Options: `npm run demo -- --rounds 9 --every 3 --seed 2 --style pixel --out out/other`; the steps are wired in `src/demo/pipeline.mjs`, and the meme pack is built by `src/demo/memes.mjs`. The sheets come from a deterministic stand-in that counts exchanges and reads warm or tense words (`src/demo/sheet-responder.mjs`); they are not model output. That counting stand-in is used by `npm run demo` only: `npm run swarm` hands its sheets to the generic mock responder in mock mode (one sentence picked by a hash of the request plus a topic word from the prompt, not a reading of the channel, so a swarm sheet has no fights or hugs), and in live mode the model writes them. A sheet is hashed after normalizing (NFC, LF, one final newline), so `shasum` on a one-line sheet hashes the text plus a newline.
 
 The 5 meme cards are built from the agents' real replies and latest sheets, with no hand-written jokes: `out/share/meme-caption-chaotic.svg` ("WHEN SKEPTIC REPLIES AGAIN" over Chaotic's face, with Chaotic's latest non-neutral reply to Skeptic as the bottom line), `out/share/meme-caption-skeptic.svg` ("WHEN CHAOTIC REPLIES FOR THE 4TH TIME", counted from the events) and one `out/share/meme-villain-<agent>.svg` for Chaotic, Aloof and Social ("<NAME>'S VILLAIN ARC", the sheet's "PUBLIC ENEMY #1" line and its rivalry line). Skeptic's villain card is folded into Chaotic's: they name each other, and one card per rivalry goes to the side with more replies. Nobody replied to Aloof or Social twice, so they get no caption card.
 
 ## Mock caveats and status
 
 Inference runs in mock mode (deterministic, offline) unless `MOCK_INFERENCE=0` and `NEAR_AI_API_KEY` are set, and the demo itself never makes a live call. The live NEAR AI Cloud client is tested only against a local stub server (`src/inference/live-stub.test.mjs`), not the real service.
+
+The mock transcript is scripted. In mock mode each agent's lines are drawn from fixed hand-written lists in `src/swarm/personas.mjs`: 12 or 13 post lines per persona (Aloof 13, Chaotic 13, Social 12, Skeptic 12) and 3 reply lines per agent it answers. The mock ignores the prompt's content; it reads only which agent is being answered, to pick the reply list, and the seed, to pick where in the list to start. Only `MOCK_INFERENCE=0` produces model-written replies. The character sheets are not model output either: `npm run demo` uses a counting stand-in and `npm run swarm` the generic mock responder (see the "Details" paragraph under [Try it](#try-it-judge-path)).
 
 Nothing in this repository is deployed or live on testnet. The contract is unit-tested locally; deploy, mint and anchor are dry runs that sign nothing unless a human adds `--send`. Every hash, transaction and chain value in the demo output is a MOCK stand-in. Design: [`PRODUCT.md`](PRODUCT.md). Libraries, AI-generated code and pre-hackathon code (none): [`docs/DISCLOSURE.md`](docs/DISCLOSURE.md).
 
@@ -129,7 +133,7 @@ npm run infer -- "What do you make of the treasury proposal?"
 npm run infer -- --json --seed 3 "Same prompt"
 ```
 
-4. Ask for live mode with no key set. See `inference error (missing_api_key)` and exit 1, so a live call is never made by accident. The block below exits 0 only when the command fails with that message.
+4. Ask for live mode with no key set. See `inference error (missing_api_key)` and exit 1, so a live call is never made by accident. The trailing `|| true` keeps the block's exit code at 0 whatever happens; the line to check is the error message.
 
 <!-- judge:run -->
 <!-- judge:expect inference error (missing_api_key) -->
@@ -141,12 +145,12 @@ For a live run, put `MOCK_INFERENCE=0`, `NEAR_AI_API_KEY` and `NEAR_AI_MODEL` in
 
 ## Swarm
 
-The four agents share one channel for N rounds. Each agent's prompt is built from its traits and the last 6 channel events, a seed fixes the speaking order and who replies to whom, and each round is hashed and chained to the one before. `MOCK_INFERENCE=0` sends the same prompts to NEAR AI Cloud.
+The four agents share one channel for N rounds. Each agent's prompt is built from its traits and the last 6 channel events, a seed fixes the speaking order and who replies to whom, and each round is hashed and chained to the one before. In mock mode (the default) the replies are scripted: each agent's lines come from fixed hand-written lists in `src/swarm/personas.mjs` (12 or 13 posts per persona and 3 replies per agent it answers), and the mock ignores the prompt's content beyond who is being answered. The sheets in mock mode come from the generic mock responder, not the counting stand-in the demo uses. Only `MOCK_INFERENCE=0` sends the prompts to NEAR AI Cloud and gets model-written replies and sheets.
 
 1. Run `npm run swarm -- --rounds 5`. See 5 round headers, 20 lines such as `[Skeptic] Doubtful. ...` and `[Chaotic -> Skeptic] @Skeptic ...`, then `final round hash: <64 hex>` and `verify: ok (5 rounds)`. Then 8 sheet lines (rounds 3 and 5 for each agent) such as `sheet aloof round 3 <64 hex> (+3 -0) -> anchor_sheet dry-run (not sent)` and `final round hash <64 hex> linked to 8 anchor dry-runs (MOCK, not on-chain)`.
 2. Run it again. See the same transcript and the same hash.
 3. Run `npm run swarm -- --rounds 5 --seed 2`. See a different transcript and a different hash.
-4. Open `out/swarm/events.json`. See every event with its round, turn, agent and `replyTo`, plus `roundHashes`.
+4. Open `out/swarm/events.json`. See every event with its `round`, `turn`, `agentId` and `replyTo`, plus `roundHashes`.
 5. Run `npm run swarm -- --rounds 7 --every 3`. See sheet lines for rounds 3, 6 and 7 per agent and `linked to 12 anchor dry-runs`. See `out/swarm/sheets/aloof.round-3.json`, `.round-6`, `.round-7` and `aloof.json` (the latest), and in `out/swarm/memory-loop.json` one entry per sheet under `tokens[0].sheets` with its `anchor` and a `diff` (`added`, `removed`, `previousHash`).
 
 ## Art
@@ -181,7 +185,7 @@ Every pull request must paste the real `bash scripts/verify.sh` output in a `## 
 
 ## Live on testnet
 
-Not run yet. Nothing from this repository is deployed to testnet, so there is no contract id and no transaction hash to check, and every hash above is a mock or a dry run. Only the owner can change that, with `npm run live-proof -- --send --i-approve` (refused unless `NEAR_ACCOUNT_ID` and `NEAR_CONTRACT_ACCOUNT_ID` are set); it deploys, mints the four tokens and anchors one sheet, then `npm run evidence` writes the real transaction hashes and RPC views to `out/evidence.json`. When that has happened, this section will quote that file.
+Not run yet. Nothing from this repository is deployed to testnet, so there is no contract id and no transaction hash to check, and every hash above is a mock or a dry run. Only the owner can change that, with `npm run live-proof -- --send --i-approve` (refused unless `NEAR_ACCOUNT_ID` and `NEAR_CONTRACT_ACCOUNT_ID` are set); it deploys, mints the four tokens and anchors one sheet, collects the transaction hashes the near CLI prints into `out/live-proof/txs.json`, and ends by printing the next command: `EVIDENCE_NETWORK=testnet NEAR_ACCOUNT_ID=<NEAR_CONTRACT_ACCOUNT_ID> EVIDENCE_TX_FILE=out/live-proof/txs.json npm run evidence`, which makes read-only RPC views and writes the real transaction hashes and view results to `out/evidence.json` (a plain `npm run evidence` stays in mock mode and writes `MOCK-` placeholders). When that has happened, this section will quote that file.
 
 ## Disclosure
 
