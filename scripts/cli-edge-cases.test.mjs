@@ -5,11 +5,11 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const script = (name) => fileURLToPath(new URL(`./${name}`, import.meta.url));
 const CLEAN_ENV = { MOCK_INFERENCE: "1" };
@@ -251,5 +251,22 @@ test("the largest allowed --rounds is accepted by the parser, one above is not",
     assert.match(r.stderr, /1000/);
   } finally {
     cleanup(dir);
+  }
+});
+
+test("demo's last output line gives the open command and the absolute file:// URL", () => {
+  const dir = mkdtempSync(join(tmpdir(), "cli-open-"));
+  try {
+    for (const out of [undefined, "custom/dir"]) {
+      const r = run("demo.mjs", ["--rounds", "2", "--every", "1", ...(out ? ["--out", out] : [])], { cwd: dir });
+      assert.equal(r.code, 0, r.stderr);
+      const lines = r.stdout.trimEnd().split("\n");
+      const rel = join(out ?? "out", "index.html");
+      const url = pathToFileURL(join(realpathSync(dir), rel)).href;
+      assert.equal(lines.at(-1), `Open the page: open ${rel}  (${url})`);
+      assert.ok(existsSync(join(dir, rel)));
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
