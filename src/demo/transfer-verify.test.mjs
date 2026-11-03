@@ -58,7 +58,11 @@ describe("transfer verify", () => {
     assert.equal(t.explorer.placeholder, true);
     assert.equal(t.teeInference.status, "mocked");
     assert.match(t.teeInference.label, /NEAR AI Cloud \(TEE\)/);
-    assert.ok(t.explorer.contractUrl.startsWith("https://testnet.nearblocks.io/address/"));
+    // Mock mode never carries an explorer URL: the contract is not deployed, so a link would point at an account nobody owns.
+    assert.equal(t.explorer.mock, true);
+    assert.equal(t.explorer.contractUrl, undefined);
+    assert.ok(!JSON.stringify(t.explorer).includes("https://"));
+    assert.match(t.explorer.note, /mock placeholder/);
     for (const k of t.tokens) assert.ok(JSON.parse(k.nftMetadata.extra).role);
   });
 
@@ -67,7 +71,7 @@ describe("transfer verify", () => {
     assert.ok(html.includes("Transfer: memory travels with the NFT"));
     assert.ok(html.includes("alice.demo.testnet") && html.includes("bob.demo.testnet"));
     assert.ok(html.includes("MISMATCH"));
-    assert.ok(html.includes("placeholder"));
+    assert.ok(html.includes("mock placeholder"));
     assert.match(html, /NEAR AI Cloud \(TEE\) in live mode<\/strong>: <span class="ok">mocked/);
   });
 });
@@ -118,11 +122,35 @@ describe("buildTransfer / transferSection (unit)", () => {
     assert.equal(transferSection(), "");
   });
 
-  it("shows the contract URL without scheme and not as a link", () => {
-    const html = transferSection({ transfer: buildTransfer([], { calls: [] }, opts) });
-    assert.ok(html.includes("testnet.nearblocks.io/address/c.testnet"));
-    assert.ok(!html.includes("https://testnet.nearblocks.io"));
+  it("mock mode: the contract is a labelled mock placeholder in plain text, never a link", () => {
+    const t = buildTransfer([], { calls: [] }, { ...opts, mode: "mock" });
+    assert.equal(t.explorer.placeholder, true);
+    assert.equal(t.explorer.mock, true);
+    assert.ok(!("contractUrl" in t.explorer));
+    assert.equal(t.explorer.accountUrlPattern, "testnet.nearblocks.io/address/<account_id>");
+    const html = transferSection({ transfer: t });
+    assert.ok(html.includes("mock placeholder"));
+    assert.ok(html.includes("<code>c.testnet</code>"));
+    assert.ok(html.includes("testnet.nearblocks.io/address/&lt;account_id&gt;"));
+    assert.ok(!html.includes("https://"));
     assert.ok(!html.includes("<a href"));
+  });
+
+  it("live mode: the contract links to its real testnet explorer page", () => {
+    const t = buildTransfer([], { calls: [] }, { ...opts, mode: "live" });
+    assert.equal(t.explorer.placeholder, false);
+    assert.equal(t.explorer.mock, false);
+    assert.equal(t.explorer.contractUrl, "https://testnet.nearblocks.io/address/c.testnet");
+    const html = transferSection({ transfer: t });
+    assert.ok(html.includes('<a href="https://testnet.nearblocks.io/address/c.testnet" rel="noopener noreferrer">testnet.nearblocks.io/address/c.testnet</a>'));
+    assert.ok(!html.includes("is not deployed, so there is no explorer link"));
+  });
+
+  it("live mode: a contract id that cannot form a safe explorer URL is shown as text, not linked", () => {
+    const t = buildTransfer([], { calls: [] }, { contractId: 'x"><script>', mode: "live" });
+    const html = transferSection({ transfer: t });
+    assert.ok(!html.includes("<a href"));
+    assert.ok(!html.includes("<script>"));
   });
 
   it("escapes ids, hashes and sheet text; extra carries traits and memory_depth 1", () => {
