@@ -1,0 +1,15 @@
+# Gitleaks configuration. Extends the default ruleset; only adds allowlists.
+# Keep allowlists narrow: match the placeholder, not the file.
+
+title = "near-2026-hackathon"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documentation placeholders that are not credentials"
+regexTarget = "line"
+regexes = [
+  # Vendored NEAR skill docs show curl examples with a literal placeholder token.
+  '''Bearer YOUR_API_KEY''',
+]
