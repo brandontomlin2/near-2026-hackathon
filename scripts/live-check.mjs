@@ -97,9 +97,23 @@ export async function check(env = process.env, deps = {}) {
   return { ready, lines };
 }
 
+const USAGE = `Usage: node scripts/live-check.mjs
+Read-only preflight for a live testnet run. Takes no options; reads
+NEAR_ACCOUNT_ID, NEAR_CONTRACT_ACCOUNT_ID and NEAR_NETWORK from the environment
+(values are never printed). Exits 0 when ready, 1 when something is missing.`;
+
 const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedDirectly) {
-  const { ready, lines } = await check();
-  process.stdout.write(`${lines.join("\n")}\n`);
-  process.exitCode = ready ? 0 : 1;
+  const argv = process.argv.slice(2);
+  if (argv.some((a) => a === "--help" || a === "-h")) {
+    process.stdout.write(`${USAGE}\n`);
+    process.exitCode = 0;
+  } else if (argv.length > 0) {
+    process.stderr.write(`live-check: unknown argument ${JSON.stringify(argv[0])}; this script takes no options (see --help)\n`);
+    process.exitCode = 2;
+  } else {
+    const { ready, lines } = await check();
+    process.stdout.write(`${lines.join("\n")}\n`);
+    process.exitCode = ready ? 0 : 1;
+  }
 }

@@ -25,7 +25,7 @@ function parseArgs(argv) {
       options.json = true;
     } else if (arg === "--system") {
       const raw = argv[i + 1];
-      if (raw === undefined || raw.trim() === "") throw new Error("--system needs a non-empty value");
+      if (raw === undefined || raw.trim() === "" || raw.startsWith("-")) throw new Error(`--system needs a non-empty value, got ${JSON.stringify(raw)}`);
       options.system = raw;
       i += 1;
     } else if (arg === "--seed") {
@@ -35,7 +35,8 @@ function parseArgs(argv) {
       }
       options.seed = Number(raw);
       i += 1;
-    } else if (arg.startsWith("--")) {
+    } else if (/^--|^-[a-zA-Z]/.test(arg)) {
+      // A bare "-" or a negative number can still be part of the prompt.
       throw new Error(`unknown flag ${arg}`);
     } else {
       options.prompt.push(arg);
