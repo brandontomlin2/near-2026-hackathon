@@ -26,7 +26,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { prepareAnchor } from "../src/anchor/anchor.mjs";
-import { AGENTS, run as deployRun, shellQuote, validateAccountId, validateMediaBase, UsageError, NETWORK } from "./testnet-deploy.mjs";
+import { AGENTS, assertTestnetNetwork, run as deployRun, shellQuote, validateAccountId, validateMediaBase, validateTestnetAccountId, UsageError, NETWORK } from "./testnet-deploy.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Dry runs write under out/ (gitignored) so a judge's tree stays clean. The tracked
@@ -79,7 +79,8 @@ an example evidence file. Nothing is signed or sent.
 
 Environment:
   NEAR_ACCOUNT_ID           owner and signer (required with --send)
-  NEAR_CONTRACT_ACCOUNT_ID  account the contract lives on (required with --send)
+  NEAR_CONTRACT_ACCOUNT_ID  account the contract lives on (required with --send; must be
+                            a named .testnet account)
   NEAR_NETWORK              unset or testnet; anything else is refused, in both modes
 `;
 
@@ -221,13 +222,6 @@ function parseArgs(argv) {
   return opts;
 }
 
-/** Review L-2: refuse any network but testnet here, before a child is spawned or a file written. */
-function assertTestnet(env) {
-  if (env.NEAR_NETWORK !== undefined && env.NEAR_NETWORK !== "" && env.NEAR_NETWORK !== NETWORK) {
-    throw new UsageError(`NEAR_NETWORK must be unset or ${NETWORK}; this script refuses other networks`);
-  }
-}
-
 // Runs a step, streaming its stdout and stderr to the terminal as they arrive while also
 // keeping a copy: near-cli-rs prints the transaction hash to either stream.
 function defaultExec(bin, argv) {
@@ -264,7 +258,8 @@ export async function run(argv, env = process.env, deps = {}) {
   try {
     const opts = parseArgs(argv);
     if (opts.help) { out(USAGE); return 0; }
-    assertTestnet(env);
+    // Review L-2: refuse any network but testnet here, before a child is spawned or a file written.
+    assertTestnetNetwork(env);
 
     if (opts.send) {
       // Every gate runs before the first spawn.
@@ -275,7 +270,9 @@ export async function run(argv, env = process.env, deps = {}) {
         throw new UsageError("--send needs --media-base <url>: the base URL where the four <token_id>.svg files are hosted, which mint --send requires. Nothing was sent.");
       }
       const owner = validateAccountId(env.NEAR_ACCOUNT_ID, "NEAR_ACCOUNT_ID");
-      const contract = validateAccountId(env.NEAR_CONTRACT_ACCOUNT_ID, "NEAR_CONTRACT_ACCOUNT_ID");
+      // Review L-b: the contract must be a named .testnet account, the rule the evidence
+      // script applies, so a run is never sent and then refused at the evidence step.
+      const contract = validateTestnetAccountId(env.NEAR_CONTRACT_ACCOUNT_ID, "NEAR_CONTRACT_ACCOUNT_ID");
       out(`send: deploy, mint x4, anchor_sheet on ${NETWORK} as ${owner}, contract ${contract}`);
       const anchor = buildAnchorStep({ contract, owner });
       // The human's --i-approve (checked above) is handed on to the two testnet-deploy

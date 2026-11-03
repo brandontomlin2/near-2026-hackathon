@@ -53,6 +53,30 @@ export function validateAccountId(value, label) {
   return value;
 }
 
+// A named testnet account: a valid id ending in ".testnet". Mainnet (.near) and
+// implicit (64-hex) ids are refused. This is the contract-account rule every tool
+// that signs (deploy, mint, live-proof) and the evidence script share, so a run
+// can never be sent and then refused at the evidence step. Never echoes the value.
+export function validateTestnetAccountId(value, label) {
+  validateAccountId(value, label);
+  if (!value.endsWith(`.${NETWORK}`)) {
+    throw new UsageError(`${label} must be a named .${NETWORK} account (value not shown); mainnet and implicit accounts are refused`);
+  }
+  return value;
+}
+
+// The one definition of an acceptable NEAR_NETWORK: unset, empty or "testnet".
+// Shared by testnet-deploy, live-proof and live-check so the three stay in sync.
+export function isTestnetNetwork(env) {
+  return env.NEAR_NETWORK === undefined || env.NEAR_NETWORK === "" || env.NEAR_NETWORK === NETWORK;
+}
+
+export function assertTestnetNetwork(env) {
+  if (!isTestnetNetwork(env)) {
+    throw new UsageError(`NEAR_NETWORK must be unset or ${NETWORK}; this script refuses other networks`);
+  }
+}
+
 export function parseCount(value) {
   const n = /^[0-9]+$/.test(value) ? Number(value) : Number.NaN;
   if (!Number.isInteger(n) || n < 1 || n > AGENTS.length) {
@@ -191,7 +215,8 @@ Options:
 
 Environment:
   NEAR_ACCOUNT_ID           owner and signer (required with --send)
-  NEAR_CONTRACT_ACCOUNT_ID  account the contract lives on (default NEAR_ACCOUNT_ID)
+  NEAR_CONTRACT_ACCOUNT_ID  account the contract lives on (default NEAR_ACCOUNT_ID);
+                            with --send it must be a named .testnet account
   NEAR_NETWORK              unset or testnet; anything else is refused
 `;
 
@@ -278,9 +303,7 @@ export async function run(argv, env = process.env, deps = {}) {
       out(USAGE);
       return 0;
     }
-    if (env.NEAR_NETWORK !== undefined && env.NEAR_NETWORK !== "" && env.NEAR_NETWORK !== NETWORK) {
-      throw new UsageError(`NEAR_NETWORK must be unset or ${NETWORK}; this script refuses other networks`);
-    }
+    assertTestnetNetwork(env);
 
     const ownerRaw = env.NEAR_ACCOUNT_ID || "";
     const contractRaw = env.NEAR_CONTRACT_ACCOUNT_ID || ownerRaw;
@@ -296,7 +319,12 @@ export async function run(argv, env = process.env, deps = {}) {
         "NEAR_CONTRACT_ACCOUNT_ID must be set explicitly for deploy --send (it will not default to NEAR_ACCOUNT_ID, which would overwrite the owner account's code)",
       );
     }
-    const contract = checked(contractRaw, "NEAR_CONTRACT_ACCOUNT_ID (or NEAR_ACCOUNT_ID)") ?? "<NEAR_CONTRACT_ACCOUNT_ID>";
+    const contractLabel = env.NEAR_CONTRACT_ACCOUNT_ID ? "NEAR_CONTRACT_ACCOUNT_ID" : "NEAR_CONTRACT_ACCOUNT_ID (or NEAR_ACCOUNT_ID)";
+    const contract = checked(contractRaw, contractLabel) ?? "<NEAR_CONTRACT_ACCOUNT_ID>";
+    // Review L-b: the account that is signed to must be a named .testnet account, the
+    // same rule scripts/evidence.mjs applies, so nothing is sent that evidence refuses.
+    // A dry run keeps the looser check: it prints a plan and signs nothing.
+    if (opts.send) validateTestnetAccountId(contract, contractLabel);
     if (opts.mediaBase) validateMediaBase(opts.mediaBase);
     if (opts.send && opts.command === "mint" && !opts.mediaBase) {
       throw new UsageError("mint --send needs --media-base <url>: the tokens' media must point at hosted art, not the placeholder");
@@ -323,7 +351,7 @@ export async function run(argv, env = process.env, deps = {}) {
           steps: steps.map(({ argv, ...rest }) => ({ ...rest, command: ["near", ...argv] })),
         }, null, 2));
       } else {
-        out(`dry-run: nothing is signed or sent. Add --send to broadcast on ${NETWORK}.`);
+        out(`dry-run: nothing is signed or sent. Add --send --i-approve to broadcast on ${NETWORK}.`);
         out(`network: ${NETWORK}   owner: ${owner}   contract: ${contract}`);
         out("");
         steps.forEach((step, i) => out(`${formatStep(step, i, steps.length)}\n`));

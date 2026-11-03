@@ -99,7 +99,7 @@ test("loadTransactions validates hashes: base58, 32 to 64 chars", (t) => {
 
 test("viewCall records request details and the right outcome for each response shape", async () => {
   const args = { token_id: "t1", note: "é" };
-  const rpcUrl = "https://rpc.example/x";
+  const rpcUrl = "https://rpc.example";
   const rpc = (json) => ({ ok: true, status: 200, json: async () => json });
   const cases = [
     { name: "http error", res: httpFail(500), error: /^HTTP 500$/, noResult: true, noResponse: true },
@@ -139,11 +139,21 @@ test("viewCall turns a thrown fetch into record.error", async () => {
   assert.equal(rec.request.rpc_url, rpcUrl, "the request is recorded even when fetch throws");
 });
 
-test("viewCall refuses an unparseable rpcUrl before fetching and never echoes it", async () => {
-  await assert.rejects(
-    viewCall({ fetchImpl: () => assert.fail("must not fetch"), rpcUrl: "not a url", contract: "c.testnet", method: "m", args: {} }),
-    (err) => err instanceof EvidenceError && err.message === "NEAR_RPC_URL is not a valid URL (value not shown)" && !err.message.includes("not a url"),
-  );
+test("viewCall records only the origin of the rpcUrl, never its path, userinfo or query", async () => {
+  const rpcUrl = "https://user:s3cret@near-testnet.example:8443/v2/PATH-KEY/?apiKey=s3cret#frag";
+  const rec = await viewCall({ fetchImpl: async () => viewOk({ ok: 1 }), rpcUrl, contract: "c.testnet", method: "m", args: {} });
+  assert.equal(rec.request.rpc_url, "https://near-testnet.example:8443");
+  assert.equal(JSON.stringify(rec).includes("s3cret") || JSON.stringify(rec).includes("PATH-KEY"), false);
+});
+
+// Same contract as main for a thrown fetch: the failure is recorded, not thrown. An
+// unparsable URL is refused before any fetch and the value is never echoed.
+test("viewCall with an unparseable rpcUrl records the error, never fetches and never echoes the value", async () => {
+  const rec = await viewCall({ fetchImpl: () => assert.fail("must not fetch"), rpcUrl: "not a url", contract: "c.testnet", method: "m", args: {} });
+  assert.equal(rec.error, "NEAR_RPC_URL is not a valid URL (value not shown)");
+  assert.equal("request" in rec, false, "no request was made, so none is recorded");
+  assert.equal("result" in rec, false);
+  assert.equal(JSON.stringify(rec).includes("not a url"), false);
 });
 
 // ---- testnet evidence via main ----
@@ -183,14 +193,15 @@ test("NEAR_RPC_URL: a testnet https URL is used for fetch and recorded in public
   const a = await runMain(t, { NEAR_ACCOUNT_ID: "alice.testnet", NEAR_RPC_URL: "https://rpc.testnet.example/custom" }, custom);
   assert.equal(a.code, 0);
   assert.equal(custom.calls[0].url, "https://rpc.testnet.example/custom");
-  assert.equal(a.evidence.rpc_url, "https://rpc.testnet.example/custom");
-  // Provider keys in userinfo or the query string reach the fetch but never the evidence file.
+  assert.equal(a.evidence.rpc_url, "https://rpc.testnet.example", "the path is not recorded: providers put keys there");
+  // Provider keys in userinfo, the path or the query string reach the fetch but never the evidence file.
   const keyed = stubFetch(handlers);
-  const k = await runMain(t, { NEAR_ACCOUNT_ID: "alice.testnet", NEAR_RPC_URL: "https://user:s3cret@near-testnet.example/v1/?apiKey=s3cret" }, keyed);
+  const k = await runMain(t, { NEAR_ACCOUNT_ID: "alice.testnet", NEAR_RPC_URL: "https://user:s3cret@near-testnet.example/v2/s3cret/?apiKey=s3cret" }, keyed);
   assert.equal(k.code, 0);
-  assert.equal(keyed.calls[0].url, "https://user:s3cret@near-testnet.example/v1/?apiKey=s3cret");
-  assert.equal(k.evidence.rpc_url, "https://near-testnet.example/v1/");
+  assert.equal(keyed.calls[0].url, "https://user:s3cret@near-testnet.example/v2/s3cret/?apiKey=s3cret");
+  assert.equal(k.evidence.rpc_url, "https://near-testnet.example");
   assert.equal(JSON.stringify(k.evidence).includes("s3cret"), false);
+  assert.equal(k.logs.join("\n").includes("s3cret"), false, "nothing printed carries the key either");
   const dflt = stubFetch(handlers);
   const b = await runMain(t, { NEAR_ACCOUNT_ID: "alice.testnet", NEAR_RPC_URL: "" }, dflt);
   assert.equal(b.code, 0);

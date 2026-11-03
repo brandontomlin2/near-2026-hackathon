@@ -12,7 +12,7 @@
 import { statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_WASM, NETWORK, validateAccountId } from "./testnet-deploy.mjs";
+import { DEFAULT_WASM, NETWORK, isTestnetNetwork, validateAccountId } from "./testnet-deploy.mjs";
 
 export const RPC_URL = "https://rpc.testnet.near.org";
 export const BUILD_HINT = "Run npm run build:contract first.";
@@ -72,8 +72,8 @@ export async function check(env = process.env, deps = {}) {
   const contract = accountState(contractName, env[contractName], { required: true });
   add(contract.ok, contract.ok ? contract.note : `${contract.note} (deploy --send will not default it to NEAR_ACCOUNT_ID)`);
 
-  const net = env.NEAR_NETWORK;
-  add(!net || net === NETWORK, !net || net === NETWORK ? `NEAR_NETWORK is unset or ${NETWORK}` : `NEAR_NETWORK must be unset or ${NETWORK}`);
+  const netOk = isTestnetNetwork(env);
+  add(netOk, netOk ? `NEAR_NETWORK is unset or ${NETWORK}` : `NEAR_NETWORK must be unset or ${NETWORK}`);
 
   const toView = [["NEAR_ACCOUNT_ID", owner, env.NEAR_ACCOUNT_ID], [contractName, contract, env[contractName]]]
     .filter(([, s, v]) => s.ok && v);

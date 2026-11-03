@@ -248,6 +248,24 @@ test("--send --i-approve with NEAR_NETWORK other than testnet exits 2 and spawns
   }
 });
 
+// Review L-b: the evidence step refuses any contract that is not a named .testnet account.
+// live-proof must refuse the same ids before deploying, so a run is never sent and then
+// refused at the evidence step. The owner (signer) keeps the general account-id check.
+test("--send --i-approve with a mainnet-looking or implicit NEAR_CONTRACT_ACCOUNT_ID exits 2 and spawns nothing", async () => {
+  removeTxFile();
+  for (const contract of ["agent-nft.near", "a".repeat(64), "near", "agent-nft.testnet.near"]) {
+    const r = await go(SEND, { ...APPROVED_ENV, NEAR_CONTRACT_ACCOUNT_ID: contract });
+    assert.equal(r.code, 2, contract);
+    assert.equal(r.spawned.length, 0, `${contract}: nothing may be spawned`);
+    assert.equal(r.errs, "error: NEAR_CONTRACT_ACCOUNT_ID must be a named .testnet account (value not shown); mainnet and implicit accounts are refused (see --help)", contract);
+    assert.equal(r.text, "", `${contract}: nothing printed before the refusal`);
+    assert.ok(!existsSync(TX_FILE), `${contract}: no transaction file for a run that sent nothing`);
+  }
+  // The dry run keeps the looser check: it prints a plan and signs nothing.
+  const dry = await go([], { ...APPROVED_ENV, NEAR_CONTRACT_ACCOUNT_ID: "agent-nft.near" });
+  assert.equal(dry.code, 0, dry.errs);
+});
+
 test("dry run with NEAR_NETWORK other than testnet exits 2 and writes nothing", async () => {
   for (const network of ["mainnet", "betanet"]) {
     const r = await go([], { ...APPROVED_ENV, NEAR_NETWORK: network });

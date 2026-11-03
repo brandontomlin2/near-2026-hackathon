@@ -254,17 +254,22 @@ test("README hash normalisation summary matches normalizeSheet, and the TEE badg
 });
 
 test("README and verify.sh give the same --live command, with the contract account and an absolute EVIDENCE_TX_FILE", async () => {
-  const command = 'NEAR_NETWORK=testnet NEAR_ACCOUNT_ID=<contract-account> EVIDENCE_TX_FILE="$PWD/out/live-proof/txs.json" bash scripts/verify.sh --live';
+  // The contract account goes in NEAR_CONTRACT_ACCOUNT_ID, the variable deploy uses for it
+  // (NEAR_ACCOUNT_ID is the signer there and only a fallback here).
+  const command = 'NEAR_NETWORK=testnet NEAR_CONTRACT_ACCOUNT_ID=<contract-account> EVIDENCE_TX_FILE="$PWD/out/live-proof/txs.json" bash scripts/verify.sh --live';
   assert.ok(readme.includes(`\n${command}\n`), "README 'Validate locally' must show the full --live command");
-  assert.doesNotMatch(readme, /NEAR_ACCOUNT_ID=<testnet-account> bash scripts\/verify\.sh --live/);
+  assert.doesNotMatch(readme, /NEAR_ACCOUNT_ID=<(testnet|contract)-account> [^\n]*bash scripts\/verify\.sh --live/);
   const verify = await readFile(join(root, "scripts/verify.sh"), "utf8");
   assert.ok(verify.includes(`  ${command}\n`), "verify.sh usage must show the same command");
+  const skill = await readFile(join(root, ".agents/skills/verify-near-2026/SKILL.md"), "utf8");
+  assert.ok(skill.includes(`\n${command}\n`), "the verify skill must show the same command");
   assert.ok(readmeText.includes("which reads `NEAR_ACCOUNT_ID` as the contract account to query"));
   assert.ok(readmeText.includes("Give that path as an absolute path, because the script runs inside a fresh clone in a temp directory."));
   assert.ok(readmeText.includes("Without it the stage records `FAIL` with `out/evidence.json missing tx hashes or RPC views`."));
   assert.ok(verify.includes('record FAIL "evidence" "out/evidence.json missing tx hashes or RPC views"'));
   const evidence = await readFile(join(root, "scripts/evidence.mjs"), "utf8");
-  assert.match(evidence, /NEAR_ACCOUNT_ID\s+contract account to query/);
+  assert.match(evidence, /NEAR_CONTRACT_ACCOUNT_ID\n\s+contract account to query/);
+  assert.match(evidence, /Falls back to NEAR_ACCOUNT_ID when unset/);
   assert.match(evidence, /fs\.readFileSync\(file, "utf8"\)/, "the tx file is read relative to the clone's cwd, hence the absolute path");
   assert.match(verify, /git clone --local[\s\S]*cd "\$work\/repo"/, "verify.sh cd's into the fresh clone");
 });
