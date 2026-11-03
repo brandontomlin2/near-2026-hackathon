@@ -6,6 +6,7 @@
 // renderViewer validates the result first and throws rather than writing a
 // partial page.
 
+import { createHash } from "node:crypto";
 import { GENESIS_HASH, hashRound, verifyRounds } from "../swarm/runner.mjs";
 import { AGENTS } from "../traits/agents.mjs";
 
@@ -27,6 +28,19 @@ export function escapeHtml(value) {
     '"': "&quot;",
     "'": "&#39;",
   })[ch]);
+}
+
+/**
+ * Defense in depth for the static pages: a CSP and referrer policy as <meta> tags. Nothing is
+ * fetched (default-src 'none'), there is no script, and the single <style> block is allowed by
+ * hash rather than 'unsafe-inline'. Images are same-directory files. `<meta>` cannot carry
+ * frame-ancestors, so that one needs a response header on the host.
+ * @param {string} css exact text of the page's one <style> block
+ */
+export function securityMetaTags(css) {
+  const hash = createHash("sha256").update(css, "utf8").digest("base64");
+  const csp = `default-src 'none'; style-src 'sha256-${hash}'; img-src 'self'; base-uri 'none'; form-action 'none'`;
+  return `<meta http-equiv="Content-Security-Policy" content="${csp}">\n<meta name="referrer" content="no-referrer">`;
 }
 
 /**
@@ -130,6 +144,7 @@ export function renderViewer(result, agents = AGENTS) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  ${securityMetaTags(STYLE)}
   <title>Swarm viewer</title>
   <style>${STYLE}</style>
 </head>
