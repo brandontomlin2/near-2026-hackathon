@@ -15,7 +15,7 @@
 // The dry run never spawns anything and never touches the network.
 
 import { spawn } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { prepareAnchor } from "../src/anchor/anchor.mjs";
@@ -51,7 +51,7 @@ const ANCHOR_TOKEN = "aloof";
 const PLACEHOLDER_CONTRACT = "<NEAR_CONTRACT_ACCOUNT_ID>";
 const PLACEHOLDER_OWNER = "<NEAR_ACCOUNT_ID>";
 
-const USAGE = `Usage: node scripts/live-proof.mjs [--send --i-approve] [--out <file>] [--update-example]
+const USAGE = `Usage: node scripts/live-proof.mjs [--send --i-approve] [--out <file>] [--force] [--update-example]
 
 Default is a dry run: prints the deploy, mint (4 tokens) and anchor_sheet steps and writes
 an example evidence file. Nothing is signed or sent.
@@ -61,8 +61,33 @@ an example evidence file. Nothing is signed or sent.
                  hashes to ${TX_FILE_LABEL} and prints the npm run evidence command
   --i-approve    explicit human approval for --send
   --out <file>   where the dry run writes the example (default out/live-proof/evidence.example.json)
+  --force        replace an existing --out that is not an example file this tool wrote
   --update-example  write the tracked docs/evidence.example.json instead (maintainers only)
 `;
+
+/** An earlier file from this tool: JSON with "example": true. Anything else is someone's file. */
+function isExampleEvidence(text) {
+  try {
+    const parsed = JSON.parse(text);
+    return Boolean(parsed) && typeof parsed === "object" && parsed.example === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Refuse to overwrite a file this tool did not write, unless --force. Runs before any work. */
+function assertOutIsWritable(out, force) {
+  if (force || !existsSync(out)) return;
+  let text;
+  try {
+    text = readFileSync(out, "utf8");
+  } catch (err) {
+    throw new UsageError(`cannot read existing --out ${out}: ${err.message}`);
+  }
+  if (!isExampleEvidence(text)) {
+    throw new UsageError(`--out ${out} exists and is not an example evidence file this tool wrote; pass --force to replace it`);
+  }
+}
 
 /** Near CLI argv for the anchor_sheet call, built from the existing anchor payload. */
 export function buildAnchorStep({ contract, owner }) {
@@ -143,11 +168,12 @@ export function exampleEvidence({ contract, owner, steps }) {
 const OUT_LABELS = { default: "out/live-proof/evidence.example.json", tracked: "docs/evidence.example.json", custom: "the --out file" };
 
 function parseArgs(argv) {
-  const opts = { send: false, approve: false, out: DEFAULT_OUT, outLabel: OUT_LABELS.default, help: false };
+  const opts = { send: false, approve: false, force: false, out: DEFAULT_OUT, outLabel: OUT_LABELS.default, help: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === "--send") opts.send = true;
     else if (a === "--i-approve") opts.approve = true;
+    else if (a === "--force") opts.force = true;
     else if (a === "--update-example") opts.updateExample = true;
     else if (a === "--out") {
       const value = argv[i + 1];
@@ -240,6 +266,7 @@ export async function run(argv, env = process.env, deps = {}) {
     const owner = env.NEAR_ACCOUNT_ID ? validateAccountId(env.NEAR_ACCOUNT_ID, "NEAR_ACCOUNT_ID") : PLACEHOLDER_OWNER;
     const contract = env.NEAR_CONTRACT_ACCOUNT_ID ? validateAccountId(env.NEAR_CONTRACT_ACCOUNT_ID, "NEAR_CONTRACT_ACCOUNT_ID") : PLACEHOLDER_CONTRACT;
     const planEnv = { NEAR_ACCOUNT_ID: owner === PLACEHOLDER_OWNER ? "" : owner, NEAR_CONTRACT_ACCOUNT_ID: contract === PLACEHOLDER_CONTRACT ? "" : contract };
+    assertOutIsWritable(opts.out, opts.force);
     const steps = await buildPlan({ contract, owner, env: planEnv });
     out(`dry-run: nothing is signed or sent. Add --send --i-approve to broadcast on ${NETWORK}.`);
     out(`network: ${NETWORK}   owner: ${owner}   contract: ${contract}`);
