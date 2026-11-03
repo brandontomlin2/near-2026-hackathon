@@ -209,7 +209,7 @@ test("swarm: --every larger than --rounds writes one sheet per agent at the fina
   const sheetLines = lines(r.stdout).filter((l) => l.startsWith("sheet "));
   assert.equal(sheetLines.length, 4);
   for (const l of sheetLines) assert.match(l, /^sheet \S+ round 2 /);
-  assert.match(r.stdout, /linked to 4 of 4 anchor dry-runs \(MOCK, not on-chain\)/);
+  assert.match(r.stdout, /^4 anchor dry-runs, each linked to its round hash; final round hash [0-9a-f]{64} \(MOCK, not on-chain\)$/m);
 });
 
 test("swarm: whitespace-only SUMMARY_EVERY_N_ROUNDS is treated as unset (default cadence 3)", () => {
@@ -236,7 +236,7 @@ test("swarm: stdout shape for one round, hash agrees with events.json, stderr em
   const sheets = out.slice(h + 2, -1);
   assert.equal(sheets.length, 4);
   for (const l of sheets) assert.match(l, /^sheet \S+ round 1 [0-9a-f]{64} \(\+\d+ -\d+\) -> anchor_sheet dry-run \(not sent\)$/);
-  assert.equal(out.at(-1), `final round hash ${hash} linked to 4 of 4 anchor dry-runs (MOCK, not on-chain)`);
+  assert.equal(out.at(-1), `4 anchor dry-runs, each linked to its round hash; final round hash ${hash} (MOCK, not on-chain)`);
   const events = JSON.parse(readFileSync(join(cwd, "s", "events.json"), "utf8"));
   assert.equal(events.roundHashes.at(-1), hash);
 });
