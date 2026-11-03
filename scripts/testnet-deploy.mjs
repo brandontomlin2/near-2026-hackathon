@@ -238,6 +238,13 @@ export async function run(argv, env = process.env, deps = {}) {
     // An unset value is only an error with --send; a dry run uses placeholders.
     const checked = (value, label) => (value || opts.send ? validateAccountId(value, label) : null);
     const owner = checked(ownerRaw, "NEAR_ACCOUNT_ID") ?? "<NEAR_ACCOUNT_ID>";
+    // --send deploy overwrites the contract account's code, so it must never
+    // fall back to the owner's personal account: require it to be explicit.
+    if (opts.send && opts.command === "deploy" && !env.NEAR_CONTRACT_ACCOUNT_ID) {
+      throw new UsageError(
+        "NEAR_CONTRACT_ACCOUNT_ID must be set explicitly for deploy --send (it will not default to NEAR_ACCOUNT_ID, which would overwrite the owner account's code)",
+      );
+    }
     const contract = checked(contractRaw, "NEAR_CONTRACT_ACCOUNT_ID (or NEAR_ACCOUNT_ID)") ?? "<NEAR_CONTRACT_ACCOUNT_ID>";
     const receiver = (opts.receiver ? validateAccountId(opts.receiver, "--receiver") : null) ?? owner;
 

@@ -19,6 +19,10 @@ panic conditions (listed below); their signatures are the same.
 | 5 | Low | `new` / `new_default_meta` | Initialization is public. Whoever calls it first picks the owner. `#[init]` blocks a second call, but deploy and init must be one batch. | Operational: deploy with `--initFunction new_default_meta` (testnet-deploy). |
 | 6 | Low | contract | `owner_id` (minter) is immutable; no rotation. A lost key means no more mints. Existing tokens are unaffected. | Accepted for a hackathon. |
 | 7 | Info | views | `nft_tokens*` take a caller-chosen `limit`; a huge limit only affects the caller's own view call. | No change. |
+| 9 | Low | `validate_token_metadata` | `media_hash` / `reference_hash` were unbounded `Base64VecU8`, allowing view bloat (self-grief by the minter). | Fixed: each must be `None` or exactly 32 bytes (sha256). |
+| 10 | Low | `scripts/testnet-deploy.mjs` | `deploy --send` defaulted the contract account to `NEAR_ACCOUNT_ID`, which could overwrite the owner's personal account code. | Fixed: `deploy --send` requires an explicit `NEAR_CONTRACT_ACCOUNT_ID`; dry-run unchanged. |
+| 11 | Info | `validate_token_id` | Contract accepted any 1-64 byte id; JS builders only accept `[a-z0-9_-]`. | Fixed: contract now enforces the same charset. |
+| 12 | Info | contract | Follow-up audit notes, no change: no owner rotation/migration (see #6); validation order in `anchor_sheet` runs hash/deposit checks before the ownership check (harmless); refund dust of <= 1 yocto per call is kept by the contract; JS first-anchor deposit (0.01 NEAR) is generous but excess is refunded; mint deposit (0.05 NEAR) is refunded minus storage. | No change. |
 | 8 | Info | `nft_resolve_transfer` | Marked `#[private]` by the macro. The check is in the generated wrapper, so it cannot be hit from a plain Rust unit test. Covered by SDK. | No change. |
 
 ## Checked and found sound
