@@ -72,7 +72,7 @@ function section(sheet, label, next) {
   const start = sheet.indexOf(`${label}: `);
   if (start < 0) return "";
   const rest = sheet.slice(start + label.length + 2);
-  const end = next ? rest.indexOf(` ${next}: `) : -1;
+  const end = rest.indexOf(` ${next}: `);
   return end < 0 ? rest : rest.slice(0, end);
 }
 

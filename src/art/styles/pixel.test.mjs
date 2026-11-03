@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runStyleContract, MAX_SVG_BYTES } from "./contract.mjs";
 import { style } from "./pixel.mjs";
-import { AGENTS, agentById } from "../../traits/agents.mjs";
+import { AGENTS } from "../../traits/agents.mjs";
 import { MOODS } from "../moods.mjs";
 
 runStyleContract(style);
@@ -45,7 +45,7 @@ test("pixel: data-ring only on rings-layer rects", () => {
 });
 
 test("pixel: skeptic neutral draws the raised finger, other moods differ", () => {
-  const t = agentById("skeptic").traits;
+  const t = AGENTS.find((a) => a.id === "skeptic").traits;
   const face = (m) => svgOf(t, m).match(/<g id="face">[\s\S]*$/)[0];
   // the finger tip: light-skin "e" pixels at x 28..29, y 9 (inside the frame, in the face group)
   const tip = (m) => new RegExp(`<g fill="#ffe2c6">(?:<rect[^>]*/>)*<rect x="224" y="72" width="16"`).test(face(m));

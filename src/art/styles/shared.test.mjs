@@ -2,12 +2,13 @@
 // through the contract (which compares a style against rarityTier itself).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rarityTier, TIERS, traitSeed, defsPrefix, LAYER_IDS } from "./shared.mjs";
+import { rarityTier, traitSeed, defsPrefix, LAYER_IDS } from "./shared.mjs";
 import { STYLES } from "./index.mjs";
 import { TRAIT_VALUES, MEMORY_DEPTH_MIN, MEMORY_DEPTH_MAX } from "../../traits/validate.mjs";
 
 const base = Object.freeze({ temperament: "muted", role: "auditor", risk: "wary", voice: "flat" });
 
+const TIERS = ["common", "rare", "epic", "legendary"];
 const EXPECTED_TIER = {
   1: "common", 2: "common", 3: "common",
   4: "rare", 5: "rare", 6: "rare",
@@ -16,7 +17,6 @@ const EXPECTED_TIER = {
 };
 
 test("rarity tier boundaries: 1-3 common, 4-6 rare, 7-9 epic, 10-12 legendary", () => {
-  assert.deepEqual([...TIERS], ["common", "rare", "epic", "legendary"]);
   for (let d = MEMORY_DEPTH_MIN; d <= MEMORY_DEPTH_MAX; d++) assert.equal(rarityTier(d), EXPECTED_TIER[d], `depth ${d}`);
 });
 

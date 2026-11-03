@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 
 import { AGENTS } from "../src/traits/agents.mjs";
 import { STYLE_NAMES, getStyle } from "../src/art/styles/index.mjs";
-import { main as renderMain, renderStyle, renderAll } from "./render-agents.mjs";
+import { main as renderMain, renderAll } from "./render-agents.mjs";
 import { run as screenshotRun } from "./screenshot.mjs";
 
 const script = (name) => fileURLToPath(new URL(`./${name}`, import.meta.url));
@@ -340,12 +340,10 @@ test("render-agents CLI: --style all groups paths by style in STYLE_NAMES order"
   for (const p of paths) assert.ok(existsSync(join(cwd, p)), p);
 });
 
-test("render-agents API: renderStyle matches main() and the files equal getStyle().render", () => {
+test("render-agents: main() --style pixel writes files equal to getStyle().render", () => {
   const a = scratch();
-  const b = scratch();
-  const viaApi = renderStyle("pixel", a);
-  const viaMain = renderMain(["--style", "pixel", "--out", b]);
-  assert.deepEqual(viaApi.map((p) => p.slice(a.length)), viaMain.map((p) => p.slice(b.length)));
+  const written = renderMain(["--style", "pixel", "--out", a]);
+  assert.ok(written.length > 0);
   const style = getStyle("pixel");
   for (const agent of AGENTS) {
     for (const mood of style.moods) {

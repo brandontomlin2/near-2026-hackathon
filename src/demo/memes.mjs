@@ -112,35 +112,34 @@ export function fitText(text, { width, maxLines, maxSize, minSize, maxHeight = I
 
 // --- rendering helpers -----------------------------------------------------
 
-/** White Impact text with a thick black outline, centered on x. */
-function impactBlock(fit, { x = SIZE / 2, y, anchor = "middle", grow = "down" }) {
+/** White Impact text with a thick black outline, centered horizontally. */
+function impactBlock(fit, { y, grow = "down" }) {
   const { lines, size } = fit;
   if (!lines.length) return "";
   const step = size * LINE_HEIGHT;
   const first = grow === "up" ? y - (lines.length - 1) * step : y;
-  const tspans = lines.map((l, i) => `<tspan x="${x}" y="${Math.round(first + i * step)}">${escapeXml(l)}</tspan>`).join("");
-  return `<text font-family="${IMPACT}" font-size="${size}" font-weight="900" fill="#fff" stroke="#000" stroke-width="${Math.round(size * 0.14)}" stroke-linejoin="round" paint-order="stroke" text-anchor="${anchor}">${tspans}</text>`;
+  const tspans = lines.map((l, i) => `<tspan x="${SIZE / 2}" y="${Math.round(first + i * step)}">${escapeXml(l)}</tspan>`).join("");
+  return `<text font-family="${IMPACT}" font-size="${size}" font-weight="900" fill="#fff" stroke="#000" stroke-width="${Math.round(size * 0.14)}" stroke-linejoin="round" paint-order="stroke" text-anchor="middle">${tspans}</text>`;
 }
 
-function plainBlock(fit, { x, y, fill, weight = 700, anchor = "start" }) {
+function plainBlock(fit, { x, y, fill, anchor }) {
   const { lines, size } = fit;
   const step = size * 1.2;
   const tspans = lines.map((l, i) => `<tspan x="${x}" y="${Math.round(y + i * step)}">${escapeXml(l)}</tspan>`).join("");
-  return `<text font-family="${SANS}" font-size="${size}" font-weight="${weight}" fill="${fill}" text-anchor="${anchor}">${tspans}</text>`;
+  return `<text font-family="${SANS}" font-size="${size}" font-weight="700" fill="${fill}" text-anchor="${anchor}">${tspans}</text>`;
 }
 
 const MAX_LABEL = 200;
 /** Cap text at MAX_LABEL code points, ending with an ellipsis. */
 export function capLabel(text) {
-  const chars = [...text];
-  return chars.length <= MAX_LABEL ? text : `${chars.slice(0, MAX_LABEL - 1).join("").trimEnd()}…`;
+  return capChars(text, MAX_LABEL);
 }
 
-function frame(body, { label, mood, format, background = "#111" }) {
+function frame(body, { label, mood, format }) {
   label = capLabel(label);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIZE} ${SIZE}" width="${SIZE}" height="${SIZE}" role="img" aria-label="${escapeXml(label)}" data-mood="${escapeXml(mood)}" data-format="${escapeXml(format)}">
 <title>${escapeXml(label)}</title>
-<rect width="${SIZE}" height="${SIZE}" fill="${background}"/>
+<rect width="${SIZE}" height="${SIZE}" fill="#111"/>
 ${body}
 </svg>
 `;
@@ -152,7 +151,7 @@ export function ordinal(n) {
   return `${n}${({ 1: "ST", 2: "ND", 3: "RD" })[n % 10] ?? "TH"}`;
 }
 
-function pickMood(moods, wanted, fallbacks = ["shade"]) {
+function pickMood(moods, wanted, fallbacks) {
   for (const m of [wanted, ...fallbacks]) if (m && moods.includes(m)) return m;
   return "neutral";
 }
