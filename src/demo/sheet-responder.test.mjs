@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { sheetResponder } from "./sheet-responder.mjs";
+import { sheetResponder, VIBES } from "./sheet-responder.mjs";
 import { buildSummaryMessages, MAX_SHEET_WORDS } from "../memory/summarizer.mjs";
 
 const ev = (kind, from, text, round = 1) => ({ round, kind, from, text });
@@ -87,8 +87,47 @@ describe("sheetResponder", () => {
     assert.match(sheet, /Signature quote: "Oh, come on! The gas meme is a joke"\./);
     assert.match(sheet, /Public enemy #1: Skeptic \(2 fights\)/);
     assert.match(sheet, /Rivalry arc: Skeptic and I keep clashing\. Social keeps the peace/);
-    assert.match(sheet, /Who I am: Chaotic, (villain arc|chaos goblin|locked in)/);
+    assert.match(sheet, /Who I am: Chaotic, (villain arc, fully committed, zero regrets|chaos goblin, picks fights for sport|certified menace)/);
     assert.ok(!/traded words/.test(sheet));
+  });
+
+  it("reads the widened warm and tense words", () => {
+    const warm = ["love that for us", "gm to everyone", "the room clapped", "I waved", "snacks provided", "saved you a seat", "high-fiving", "my friend", "we love you anyway"];
+    const tense = ["I doubt it", "receipts or it did not happen", "receipt please", "ABSOLUTELY NOT", "show the hash", "not a rug", "nope", "it did not happen"];
+    for (const text of warm) {
+      assert.match(respond("Aloof", null, [ev("mention", "Social", `@Aloof ${text}`)]), /Social: 0 fights, 1 hug, 0 shrugs/, text);
+    }
+    for (const text of tense) {
+      assert.match(respond("Aloof", null, [ev("mention", "Skeptic", `@Aloof ${text}`)]), /Skeptic: 1 fight, 0 hugs, 0 shrugs/, text);
+    }
+    // Tense wins when both appear.
+    assert.match(respond("Aloof", null, [ev("mention", "Skeptic", "@Aloof \"everyone clapped\" is not a source. nope.")]), /Skeptic: 1 fight, 0 hugs, 0 shrugs/);
+  });
+
+  it("vibes are in each agent's own voice: four states, three phrasings, distinct per agent", () => {
+    const names = ["Aloof", "Chaotic", "Social", "Skeptic"];
+    for (const state of ["quiet", "fighting", "hugging", "balanced"]) {
+      const lists = names.map((n) => VIBES[n][state]);
+      for (const list of lists) {
+        assert.equal(list.length, 3);
+        for (const line of list) assert.doesNotMatch(line, /["\n]|: /, line);
+      }
+      assert.equal(new Set(lists.flat()).size, names.length * 3, `${state}: a phrasing is shared between agents`);
+    }
+    const quiet = (name) => respond(name, null, [ev("post", name, "hello")]);
+    const fighting = (name) => respond(name, null, [ev("mention", "Other", `@${name} nope`)]);
+    const hugging = (name) => respond(name, null, [ev("mention", "Other", `@${name} gm`)]);
+    const balanced = (name) => respond(name, null, [ev("mention", "Other", `@${name} nope`), ev("mention", "Other", `@${name} gm`)]);
+    for (const [state, make] of Object.entries({ quiet, fighting, hugging, balanced })) {
+      for (const name of names) {
+        const vibe = new RegExp(`^Who I am: ${name}, (.+?)\\. I live in`).exec(make(name))[1];
+        assert.ok(VIBES[name][state].includes(vibe), `${name} ${state}: ${vibe}`);
+      }
+    }
+    assert.match(fighting("Skeptic"), /Who I am: Skeptic, (auditor with receipts, undefeated|professional doubter|the hash does not lie)/);
+    assert.match(hugging("Social"), /Who I am: Social, (group chat mom, snacks provided|soft launch of a friend group|ride-or-die for the whole roster)/);
+    // An unseeded name still gets a sheet.
+    assert.match(quiet("Zed"), /^Who I am: Zed, .+\. I live in/);
   });
 
   it("keeps the signature quote when later events have no post from this agent", () => {
