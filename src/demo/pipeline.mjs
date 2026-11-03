@@ -16,6 +16,7 @@ import { prepareAnchor, submitAnchor } from "../anchor/anchor.mjs";
 import { sheetResponder } from "./sheet-responder.mjs";
 import { renderDemoPage } from "./page.mjs";
 import { renderShareCard } from "./share.mjs";
+import { buildMemes } from "./memes.mjs";
 import { buildTransfer } from "./transfer-verify.mjs";
 import { assertSafeOutDir, clearOwnedFiles } from "../util/outdir.mjs";
 
@@ -128,10 +129,10 @@ export async function runDemo({
   const shareDir = join(outDir, "share");
   await mkdir(artDir, { recursive: true });
   await mkdir(shareDir, { recursive: true });
-  // This run owns its art and share cards: drop files a run with other rounds/style left behind.
+  // This run owns its art, share cards and meme cards: drop files a run with other rounds/style left behind.
   const ids = AGENTS.map((a) => a.id).join("|");
   await clearOwnedFiles(outDir, "art", new RegExp(`^(${ids})(\\.[a-z0-9-]+)?\\.svg$`));
-  await clearOwnedFiles(outDir, "share", new RegExp(`^(${ids})-\\d+\\.svg$`));
+  await clearOwnedFiles(outDir, "share", new RegExp(`^((${ids})-\\d+|meme-[a-z]+-(${ids}))\\.svg$`));
   const moods = [...style.moods];
   const faceSvgs = {};
   const agents = [];
@@ -185,6 +186,18 @@ export async function runDemo({
     shares.push({ file, eventId: e.id, agentId: e.agentId, round: e.round, mood: shown });
   }
 
+  // Meme pack: caption and villain-arc cards from the real events
+  // and each agent's latest sheet.
+  const memeCards = buildMemes({
+    events: result.events,
+    sheets: Object.fromEntries(agents.map((a) => [a.id, a.sheets.at(-1)?.sheet ?? ""])),
+    names: Object.fromEntries(AGENTS.map((a) => [a.id, a.name])),
+    moods,
+    faces: faceSvgs,
+  });
+  for (const m of memeCards) await writeFile(join(outDir, m.file), m.svg);
+  const memes = memeCards.map(({ format, agentId, file, alt, mood }) => ({ format, agentId, file, alt, mood }));
+
   // 5. Write the rest.
   await writeFile(join(outDir, "transcript.txt"), result.transcript);
   await writeFile(join(outDir, "events.json"), json(result));
@@ -203,6 +216,7 @@ export async function runDemo({
     roundHashes: result.roundHashes,
     agents,
     shares,
+    memes,
     anchors: "anchors.json",
     transfer: buildTransfer(agents, anchors, { contractId, mode: "mock" }),
     files: [],
@@ -211,6 +225,7 @@ export async function runDemo({
   manifest.files = [
     "transcript.txt", "events.json", "anchors.json", "demo.json", "index.html",
     ...shares.map((x) => x.file),
+    ...memes.map((x) => x.file),
     ...AGENTS.flatMap((a) => [
       `art/${a.id}.svg`, `art/${a.id}.mint.svg`,
       ...moods.map((m) => `art/${a.id}.${m}.svg`),

@@ -58,14 +58,17 @@ export function buildTransfer(agents, anchors, { contractId, mode }) {
       },
     });
   }
-  const first = agents.find((a) => a.sheets.length > 0);
-  const tamperedSheet = first ? tamperSheet(first.sheets.at(-1).sheet) : null;
+  // Tamper example comes from the first token actually emitted, so an agent
+  // skipped for lacking an anchor cannot break it.
+  const first = tokens[0];
+  const firstAgent = first && agents.find((a) => a.id === first.tokenId);
+  const tamperedSheet = first ? tamperSheet(firstAgent.sheets.at(-1).sheet) : null;
   const tamper = first
     ? {
-        tokenId: first.id,
-        anchoredHash: tokens.find((t) => t.tokenId === first.id).anchoredHash,
+        tokenId: first.tokenId,
+        anchoredHash: first.anchoredHash,
         tamperedSheet,
-        ...verifySheetAgainstAnchor(tamperedSheet, tokens.find((t) => t.tokenId === first.id).anchoredHash),
+        ...verifySheetAgainstAnchor(tamperedSheet, first.anchoredHash),
       }
     : null;
   return {
