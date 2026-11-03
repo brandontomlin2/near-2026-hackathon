@@ -39,6 +39,13 @@ test("invalid account id and wrong network are flagged and values never printed"
   assert.match(text(r), /NEAR_NETWORK must be unset or testnet/);
 });
 
+test("--offline skips the account existence check without calling fetch, and says so", async () => {
+  const r = await check(ENV, { statWasm: () => 1, fetch: noFetch, offline: true });
+  assert.equal(r.ready, true);
+  assert.match(text(r), /\[skip\] account existence check skipped: --offline/);
+  assert.ok(!text(r).includes("alice.testnet"));
+});
+
 test("offline RPC skips the existence check cleanly and stays ready", async () => {
   const r = await check(ENV, { statWasm: () => 1, fetch: offline });
   assert.equal(r.ready, true);

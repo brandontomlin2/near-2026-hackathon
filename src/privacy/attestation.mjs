@@ -9,7 +9,7 @@
 // An attacker who can forge JSON can pass every check here. Read
 // docs/privacy.md before claiming anything to a judge.
 
-import { createHash } from "node:crypto";
+import { sha256Hex } from "../anchor/hash.mjs";
 
 export const VERDICT = Object.freeze({
   CONSISTENT: "consistent", // structure and bindings agree; nothing cryptographic checked
@@ -34,14 +34,11 @@ const TDX_REPORT_DATA_LENGTH = 64;
 const HEX64 = /^[0-9a-f]{64}$/;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
-export function sha256Hex(input) {
-  return createHash("sha256").update(input).digest("hex");
-}
-
 /**
  * The attestation nonce we send, derived from the exact request body.
- * Choosing nonce = sha256(request body) ties the fetched attestation to this
- * one request. It is our own convention; the server only needs 32 random-looking
+ * Choosing nonce = sha256(request body) is intended to tie the fetched attestation
+ * to this one request, once the quote is actually verified (this module does not
+ * verify the quote signature, so the tie is nominal today). It is our own convention; the server only needs 32 random-looking
  * bytes. The chat signature text also carries this same request hash.
  */
 export function requestHash(requestBody) {
@@ -113,8 +110,9 @@ export function checkAttestation(report, expected) {
     add(checks, "nonce-echo", "skip", "report carries no top-level nonce field");
   }
 
-  // Judge the report by its best node: every node's problems are listed, but
-  // one fully consistent node is enough, since we only talk to one node.
+  // Check every node and list every problem. Any failing check on any node
+  // rejects the whole report (see finish): a report that attests a bad node
+  // is not one we trust, even if we only talk to one node.
   entries.forEach((e, i) => {
     const tag = `node[${i}]`;
     const addrOk = typeof e?.signing_address === "string" && ADDRESS.test(e.signing_address);
@@ -127,7 +125,10 @@ export function checkAttestation(report, expected) {
     const nv = e?.nvidia_payload;
     let nvOk = false;
     if (typeof nv === "string") {
-      try { nvOk = typeof JSON.parse(nv) === "object"; } catch { nvOk = false; }
+      try {
+        const parsed = JSON.parse(nv);
+        nvOk = parsed !== null && typeof parsed === "object";
+      } catch { nvOk = false; }
     } else nvOk = nv !== null && typeof nv === "object";
     add(checks, `${tag}.nvidia-payload`, nvOk ? "pass" : "fail",
       nvOk ? "present and parses as an object (not sent to NRAS)" : "nvidia_payload missing or not JSON");

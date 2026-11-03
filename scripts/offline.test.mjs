@@ -72,6 +72,17 @@ test("npm run mint (mock dry run) makes no network calls and spawns nothing", as
   assert.equal(JSON.parse(configured.stdout).mode, "dry-run");
 });
 
+test("npm run live:check -- --offline makes no network calls even with account vars set", async () => {
+  const result = await runOffline([script("live-check.mjs"), "--offline"], {
+    env: { NEAR_ACCOUNT_ID: "alice.testnet", NEAR_CONTRACT_ACCOUNT_ID: "nft.alice.testnet" },
+  });
+  assert.deepEqual(result.violations, [], `live:check --offline touched the network: ${result.violations.join("; ")}`);
+  // Exit 1 is allowed: the wasm may not be built. A usage error (2) or crash is not.
+  assert.ok([0, 1].includes(result.code), `exit ${result.code}: ${result.stderr}`);
+  assert.match(result.stdout, /\[skip\] account existence check skipped: --offline/);
+  assert.ok(!result.stdout.includes("alice.testnet"), "account values must not be printed");
+});
+
 test("npm run evidence (mock) makes no network calls", async () => {
   await withTmp(async (dir) => {
     const result = await runOffline([script("evidence.mjs")], { cwd: dir });

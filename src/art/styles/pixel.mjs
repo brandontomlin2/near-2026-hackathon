@@ -497,7 +497,7 @@ function horn(gl, blocks, bx, by) {
   put(gl, bx + 1, by + 1, "w");
 }
 
-function glyph(role, mood, gl) {
+function glyph(role, gl) {
   if (role === "trickster") {
     // jester cap over the top quarter: solid blocks of two colours, brim, three horns with gold bells
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (inHead(x, y) && y <= 8) gl[y][x] = "B";
@@ -519,7 +519,7 @@ function glyph(role, mood, gl) {
 
 function renderPixel(traits, mood) {
   const pal = { ...PAL, ...TEMPERAMENTS[traits.temperament] };
-  const gl = glyph(traits.role, mood, blank());
+  const gl = glyph(traits.role, blank());
   const face = headFill(gl);
   const feat = blank();
   const ov = blank();

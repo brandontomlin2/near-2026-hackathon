@@ -7,7 +7,7 @@ the limits stated plainly. If we only ship the mock fixture, **no-go**:
 
 ## What NEAR AI Cloud offers
 
-Inference runs in Intel TDX confidential VMs with NVIDIA TEE GPUs. For a
+Per NEAR AI's documentation (not verified here), inference runs in Intel TDX confidential VMs with NVIDIA TEE GPUs. For a
 model, `GET /v1/attestation/report?model=...&signing_algo=ecdsa&nonce=<64 hex>`
 (API key required, free) returns per node a `signing_address`,
 `nvidia_payload` and `intel_quote`. Each chat reply is signed by that key;
@@ -17,14 +17,18 @@ docs.near.ai/cloud. No network was used to write this.
 
 ## What `src/privacy/attestation.mjs` checks offline
 
-Run `node scripts/attest-check.mjs` (add `--tamper` to see a reject).
+Run `npm run attest:check` (add `-- --tamper` to see a reject). It checks the
+hand-made fixture report from `src/privacy/fixture.mjs`, not a live TEE: no
+report is fetched, no network call is made, and the first line of output says
+so. The same code path would run on a real report, but nothing in this
+repository has been run against one.
 
 - Report structure: `model_attestations` present, each node has a
   well-formed signing address, a parseable `nvidia_payload`, an `intel_quote`.
 - Nonce binding: we use `nonce = sha256(request body)`, so the report is tied
   to one request. We check the report echoes it and that the quote's
   REPORTDATA bytes (offset 568, per the TDX v4 layout as we understand it)
-  contain the nonce and the signing address.
+  contain the nonce and the signing address (an assumed layout, not yet confirmed against a real report).
 - Model id: matches what we asked for, when the report names one.
 - If a chat signature is supplied: its signed text names our model and
   request hash, and its signer is one of the attested nodes.
@@ -50,9 +54,11 @@ cases lists what was not verified.
 
 ## Does it qualify for the privacy track?
 
-Honestly, only weakly today. The track is about private/verifiable AI. Our
-use of NEAR AI Cloud is private inference by construction, but a judge will
-ask "how do I know?". Offline consistency checks do not answer that. A
+Honestly, only weakly today. The track is about private/verifiable AI. NEAR
+AI Cloud documents that inference runs inside TEEs; this repository does not
+verify that, and an operator who overrides `NEAR_AI_BASE_URL` leaves that
+guarantee (the client now refuses plain `http://` except to loopback). A judge
+will ask "how do I know?". Offline consistency checks do not answer that. A
 credible entry needs the three online steps: NRAS, `dcap-qvl`, and signature
 recovery, run once against a live report and shown in the demo.
 
@@ -72,10 +78,6 @@ recovery, run once against a live report and shown in the demo.
 
 Open question for the human: is a live API key available, and is the extra
 day worth a fourth track.
-
-## Needs wiring by the integrator
-
-Suggested `package.json` line: `"attest:check": "node scripts/attest-check.mjs"`.
 
 ## Hostile model text on the hosted page
 

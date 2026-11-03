@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { buildMemes, fitText, estimateWidth, capLabel, ordinal, parseVillain, SIZE } from "./memes.mjs";
+import { buildMemes, fitText, estimateWidth, capLabel, ordinal, parseVillain, rivalryLine, RIVALRY_LINES, MIN_VILLAIN_FIGHTS, SIZE } from "./memes.mjs";
 import { cleanText } from "./share.mjs";
 import { runDemo } from "./pipeline.mjs";
 import { getStyle } from "../art/styles/index.mjs";
@@ -87,15 +87,19 @@ describe("memes: formats come from data", () => {
       ["1ST", "2ND", "3RD", "4TH", "11TH", "12TH", "13TH", "21ST", "22ND", "101ST", "111TH"]);
   });
 
-  it("villain: enemy, fight count and rivalry come from the sheet", () => {
+  it("villain: enemy and fight count come from the sheet, the rivalry line from the persona bank", () => {
     const c = by(build(), "villain", "a");
     assert.equal(c.enemy, "Bob");
     assert.equal(c.fights, 2);
     assert.equal(c.top, "Ann's villain arc");
     assert.equal(c.bottom, "Public enemy #1: Bob", "fight count hidden below 3");
-    assert.equal(c.rivalry, "Bob and I are not done yet.");
+    assert.equal(c.rivalry, rivalryLine({ id: "a", seed: 0, enemy: "Bob", fights: 2 }));
+    assert.ok(!c.rivalry.includes("{"), "placeholders are filled");
+    assert.ok(c.rivalry.includes("Bob"));
+    assert.ok(!c.svg.includes("Bob and I are not done yet."), "the sheet's templated Rivalry arc line is not shown");
+    assert.ok(c.svg.includes(c.rivalry.replace(/&/g, "&amp;")));
+    assert.ok(c.alt.endsWith(` / ${c.rivalry}`));
     assert.ok(c.svg.includes("ANN&#39;S"));
-    assert.ok(c.svg.includes("Bob and I are not done yet."));
     assert.equal(c.mood, "shade");
     assert.ok(c.svg.includes('data-mood="shade"') && !c.svg.includes('data-mood="hype"'), "enemy face is nested in shade");
   });
@@ -103,6 +107,72 @@ describe("memes: formats come from data", () => {
   it("villain: shows the fight count from 3 fights", () => {
     const c = by(build({ sheets: { a: SHEET.replace("(2 fights)", "(3 fights)"), b: NOBODY } }), "villain", "a");
     assert.equal(c.bottom, "Public enemy #1: Bob (3 fights)");
+  });
+
+  it("villain: needs 2+ counted fights; 1 fight, no count or no enemy gives no card", () => {
+    assert.equal(MIN_VILLAIN_FIGHTS, 2);
+    const villains = (sheet) => build({ sheets: { a: sheet, b: NOBODY } }).filter((c) => c.format === "villain");
+    assert.equal(villains(SHEET.replace("(2 fights)", "(1 fight)")).length, 0, "one fight is not an arc");
+    assert.equal(villains(SHEET.replace(" (2 fights)", "")).length, 0, "an uncounted enemy is not an arc");
+    assert.equal(villains(SHEET.replace("(2 fights)", "(0 fights)")).length, 0);
+    assert.equal(villains(SHEET).length, 1);
+    assert.equal(villains(SHEET.replace("(2 fights)", "(7 fights)"))[0].fights, 7);
+  });
+
+  it("villain: the rivalry line is deterministic per agent and seed, and varies across seeds", () => {
+    const pick = (seed) => by(build({ seed }), "villain", "a").rivalry;
+    assert.equal(pick(0), pick(0));
+    assert.equal(pick(1), pick(1));
+    assert.equal(by(build(), "villain", "a").rivalry, pick(0), "seed defaults to 0");
+    const distinct = new Set(Array.from({ length: 16 }, (_, s) => pick(s)));
+    assert.ok(distinct.size >= 2, `16 seeds gave ${distinct.size} line(s)`);
+    const filled = RIVALRY_LINES.default.map((t) => t.replaceAll("{enemy}", "Bob").replaceAll("{n}", "2"));
+    for (const l of distinct) assert.ok(filled.includes(l), `${l} is not a filled default line`);
+  });
+
+  it("villain: roster agents get their own persona bank, others the default bank", () => {
+    for (const id of ["aloof", "chaotic", "social", "skeptic"]) {
+      const line = rivalryLine({ id, seed: 1, enemy: "Zed", fights: 4 });
+      const own = RIVALRY_LINES[id].map((t) => t.replaceAll("{enemy}", "Zed").replaceAll("{n}", "4"));
+      assert.ok(own.includes(line), `${id}: ${line}`);
+      assert.ok(line.includes("Zed"));
+    }
+    const generic = rivalryLine({ id: "someone-else", seed: 1, enemy: "Zed", fights: 4 });
+    assert.ok(RIVALRY_LINES.default.map((t) => t.replaceAll("{enemy}", "Zed").replaceAll("{n}", "4")).includes(generic));
+  });
+
+  it("villain: every bank line is short, plural-safe and uses the placeholders only", () => {
+    for (const [bank, lines] of Object.entries(RIVALRY_LINES)) {
+      assert.ok(lines.length >= 6, bank);
+      assert.equal(new Set(lines).size, lines.length, `${bank} repeats a line`);
+      for (const t of lines) {
+        assert.doesNotMatch(t, /\{(?!enemy\}|n\})/, `${bank}: unknown placeholder in ${t}`);
+        assert.doesNotMatch(t, /\bfight\b/, `${bank}: singular "fight" with a 2+ count in ${t}`);
+        const filled = t.replaceAll("{enemy}", "Skeptic").replaceAll("{n}", "12");
+        const fit = fitText(filled, { width: SIZE - 60, maxLines: 2, maxSize: 40, minSize: 20, maxHeight: 80, em: 0.62, upper: false });
+        assert.equal(fit.truncated, false, `${bank}: too long: ${filled}`);
+      }
+    }
+  });
+
+  it("villain: no two cards in one pack share a rivalry line", () => {
+    // Eight default-bank agents all naming the same enemy, so every line in
+    // the bank is needed and hash collisions must skip to an unused one.
+    const used = new Set();
+    const first = rivalryLine({ id: "a", seed: 3, enemy: "Bob", fights: 2, used });
+    const again = rivalryLine({ id: "a", seed: 3, enemy: "Bob", fights: 2, used });
+    assert.notEqual(first, again, "a taken line is skipped");
+    assert.deepEqual([...used], [first, again]);
+    const many = Object.fromEntries(Array.from({ length: 8 }, (_, i) => [`v${i}`, `V${i}`]));
+    many.b = "Bob";
+    const f = Object.fromEntries(Object.keys(many).map((id) => [id, faces.a]));
+    const sheets = Object.fromEntries(Object.keys(many).map((id) => [id, id === "b" ? NOBODY : `Who I am: ${many[id]}. Public enemy #1: Bob (2 fights). Receipts: 1 post.`]));
+    for (const seed of [0, 1, 2]) {
+      const cards = buildMemes({ events: [], sheets, names: many, moods: MOODS, faces: f, seed }).filter((c) => c.format === "villain");
+      assert.equal(cards.length, 8, "the default bank has 8 lines for 8 cards");
+      assert.equal(new Set(cards.map((c) => c.rivalry)).size, cards.length, `seed ${seed}: ${cards.map((c) => c.rivalry).join(" | ")}`);
+      assert.equal(new Set(cards.map((c) => c.alt)).size, cards.length);
+    }
   });
 
   it("villain: a mirrored rivalry gets one card (fights, then replies, then agent order)", () => {
@@ -132,8 +202,8 @@ describe("memes: formats come from data", () => {
   });
 
   it("parseVillain handles singular, no count, missing and unparseable lines", () => {
-    assert.deepEqual(parseVillain("Public enemy #1: Zed (1 fight). Rivalry arc: x."), { enemy: "Zed", fights: 1, rivalry: "x." });
-    assert.deepEqual(parseVillain("Public enemy #1: Zed. Ride-or-die: n."), { enemy: "Zed", fights: null, rivalry: "" });
+    assert.deepEqual(parseVillain("Public enemy #1: Zed (1 fight). Rivalry arc: x."), { enemy: "Zed", fights: 1 });
+    assert.deepEqual(parseVillain("Public enemy #1: Zed. Ride-or-die: n."), { enemy: "Zed", fights: null });
     for (const s of ["", undefined, "no enemy line", "Public enemy #1: nobody yet.", "Public enemy #1: No one", "Public enemy #1: ", "Public enemy #1: (3 fights)"]) {
       assert.equal(parseVillain(s), null, String(s));
     }
@@ -219,8 +289,11 @@ describe("memes: hostile input", () => {
         assert.ok(!svg.includes("]]>"));
         assert.ok(!/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/.test(svg));
         assert.ok(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(svg));
-        assert.ok(svg.includes("&lt;script&gt;") || svg.includes("&lt;SCRIPT&gt;"));
-        assert.ok(svg.includes("\u{1F525}") || svg.includes("café") || svg.includes("CAFÉ"));
+        if (c.agentId === "a") {
+          // Ann's hostile name reaches every card of hers (label and top line).
+          assert.ok(svg.includes("&lt;script&gt;") || svg.includes("&lt;SCRIPT&gt;"));
+          assert.ok(svg.includes("\u{1F525}") || svg.includes("café") || svg.includes("CAFÉ"));
+        }
         // Text nodes and attribute values hold no raw < or & (only entities).
         for (const m of svg.matchAll(/>([^<]*)</g)) assert.ok(!/&(?!(amp|lt|gt|quot|#39);)/.test(m[1]), m[1]);
         for (const m of svg.matchAll(/="([^"]*)"/g)) assert.ok(!/&(?!(amp|lt|gt|quot|#39);)/.test(m[1]) && !m[1].includes("<"), m[1]);
@@ -273,9 +346,17 @@ describe("memes: default demo run", () => {
     }
   });
 
-  it("is data driven end to end: 2 captions and 1 villain", () => {
+  it("is data driven end to end: 2 captions and 1 villain (Chaotic's 5-fight feud; Aloof and Social count 1 fight)", () => {
     const count = (f) => result.manifest.memes.filter((m) => m.format === f).length;
     assert.deepEqual([count("caption"), count("villain")], [2, 1]);
+    assert.deepEqual(result.manifest.memes.map((m) => `${m.format}:${m.agentId}`), ["caption:chaotic", "caption:skeptic", "villain:chaotic"]);
+    assert.ok(result.manifest.memes.every((m) => AGENTS.some((a) => a.id === m.agentId)));
+    const sheetOf = (id) => result.manifest.agents.find((a) => a.id === id).sheets.at(-1).sheet;
+    for (const id of ["aloof", "social"]) assert.match(sheetOf(id), /Public enemy #1: \w+ \(1 fight\)/, `${id} has a one-fight enemy, so no villain card`);
+    const villain = fs.readFileSync(path.join(dir, "share/meme-villain-chaotic.svg"), "utf8");
+    assert.ok(villain.includes("PUBLIC ENEMY #1:") && villain.includes("SKEPTIC (5 FIGHTS)"));
+    const alt = result.manifest.memes.find((m) => m.format === "villain").alt;
+    assert.ok(RIVALRY_LINES.chaotic.map((t) => t.replaceAll("{enemy}", "Skeptic").replaceAll("{n}", "5")).includes(alt.split(" / ").at(-1)), alt);
     const events = JSON.parse(fs.readFileSync(path.join(dir, "events.json"), "utf8")).events;
     const skeptic = fs.readFileSync(path.join(dir, "share/meme-caption-skeptic.svg"), "utf8");
     const n = events.filter((e) => e.kind === "reply" && e.agentId === "chaotic" && events.find((x) => x.id === e.replyTo)?.agentId === "skeptic").length;

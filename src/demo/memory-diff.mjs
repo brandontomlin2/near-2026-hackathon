@@ -2,10 +2,14 @@
 //
 // The sheets are free text written by a model (or the offline stand-in), so the
 // labels are matched loosely and anything missing prints as "none". Output goes
-// to a terminal: control characters are dropped and values are clipped.
+// to a terminal: control and bidi characters become U+FFFD and values are clipped.
+
+import { replaceUnsafeChars } from "../util/text.mjs";
 
 const MAX_VALUE_CHARS = 80;
-const NONE = /^(?:none|nobody|no one|no-one|nothing|n\/a|-|\(none\))\b/i;
+// A placeholder must end the value or be followed by a non-word character: "none yet"
+// is none, "nonetheless" is a value. `\b` would never let "-" or "(none)" match.
+const NONE = /^(?:none|nobody|no one|no-one|nothing|n\/a|-|\(none\))(?!\w)/i;
 
 // A section runs from its label to the next ". Label:" (a sentence end followed
 // by a capitalised label) or to the end of the sheet, so renamed or reordered
@@ -20,8 +24,7 @@ const LABELS = Object.freeze({
 });
 
 function clean(text) {
-  // eslint-disable-next-line no-control-regex
-  const flat = String(text).replace(/[\u0000-\u001f\u007f-\u009f]|\s+/g, " ").trim();
+  const flat = replaceUnsafeChars(text).replace(/\s+/g, " ").trim();
   return flat.length > MAX_VALUE_CHARS ? `${flat.slice(0, MAX_VALUE_CHARS - 3).trimEnd()}...` : flat;
 }
 

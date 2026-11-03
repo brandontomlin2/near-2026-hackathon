@@ -1,6 +1,9 @@
-// Deterministic offline stand-in for the summarizer model.
+// Deterministic offline stand-in for the summarizer model. It is the mock
+// sheet writer everywhere: npm run demo, npm run swarm and npm run evidence
+// (runMemoryLoop in ./loop.mjs defaults to it). Live mode sends the same
+// request to NEAR AI Cloud instead.
 //
-// It parses the request built by buildSummaryMessages (src/memory/summarizer.mjs)
+// It parses the request built by buildSummaryMessages (./summarizer.mjs)
 // and writes a first-person character sheet from the counts and names in the
 // events. It only ever quotes a short clipped fragment of the agent's own
 // latest post, never text from other agents, so instructions hidden in events
@@ -69,13 +72,13 @@ function section(sheet, label, next) {
   const start = sheet.indexOf(`${label}: `);
   if (start < 0) return "";
   const rest = sheet.slice(start + label.length + 2);
-  const end = next ? rest.indexOf(` ${next}: `) : -1;
+  const end = rest.indexOf(` ${next}: `);
   return end < 0 ? rest : rest.slice(0, end);
 }
 
 // Tone of one exchange, read from the words used. Tense wins over warm.
-const TENSE = /\b(nope|no|doubtful|not me|show me|source\?|dare|joke|bets against|flip the table|panics|do not add up|will not|unproven|gap)\b/i;
-const WARM = /\b(glad|friends|happy to help|good point|warmly|connect|agree|together|whole group|hear from everyone)\b/i;
+const TENSE = /\b(nope|no|doubtful|not me|show me|source\?|dare|joke|bets against|flip the table|panics|do not add up|will not|unproven|gap|doubt|receipts?|absolutely not|show the hash|rug|not happen)\b/i;
+const WARM = /\b(glad|friends?|happy to help|good point|warmly|connect|agree|together|whole group|hear from everyone|love|gm|clapped|waved|snacks|seat|high-fiv\w*|we love you)\b/i;
 const toneOf = (text) => (TENSE.test(text) ? "tense" : WARM.test(text) ? "warm" : "neutral");
 
 /**
@@ -124,6 +127,110 @@ function strongest(partners, more, less) {
 }
 
 /**
+ * "Who I am" phrasings per agent, one list per state, each in that agent's
+ * voice. The state comes from the fight and hug totals; the phrasing within a
+ * list is picked by fnv(name:counts), so the same request always gives the
+ * same sheet. Agents not seeded here fall back to `default`. No double quotes
+ * or colons: the sheet is parsed by "Label: " and `"..."` later.
+ */
+export const VIBES = Object.freeze({
+  Aloof: Object.freeze({
+    quiet: Object.freeze([
+      "lurking with great potential, by choice",
+      "present in the group chat the way a lamp is present",
+      "main character of a scene nobody is filming",
+    ]),
+    fighting: Object.freeze([
+      "villain arc, but make it low effort",
+      "beefing at room temperature",
+      "picked a fight and then took a nap",
+    ]),
+    hugging: Object.freeze([
+      "soft launched a friend, will not confirm",
+      "emotionally available for up to one agent",
+      "accidentally in a friend group, has not left yet",
+    ]),
+    balanced: Object.freeze([
+      "one fight, one hug, zero visible reactions",
+      "perfectly balanced, as all things should be, allegedly",
+      "conflict and affection, both noted in the log",
+    ]),
+  }),
+  Chaotic: Object.freeze({
+    quiet: Object.freeze([
+      "main character energy, no scene partner yet",
+      "unsupervised and thriving",
+      "loading the chaos, please hold",
+    ]),
+    fighting: Object.freeze([
+      "villain arc, fully committed, zero regrets",
+      "chaos goblin, picks fights for sport",
+      "certified menace, undefeated in my own head",
+    ]),
+    hugging: Object.freeze([
+      "wholesome menace",
+      "chaos goblin with a soft spot",
+      "would ape into a friendship with zero context",
+    ]),
+    balanced: Object.freeze([
+      "fights and hugs, no notes",
+      "perfectly balanced, unlike my portfolio",
+      "equal parts menace and group hug",
+    ]),
+  }),
+  Social: Object.freeze({
+    quiet: Object.freeze([
+      "waiting for the group chat to notice me",
+      "host of a party nobody has joined yet",
+      "warm welcome, guests pending",
+    ]),
+    fighting: Object.freeze([
+      "group chat mom, and mom is disappointed",
+      "fighting, but with a casserole",
+      "wholesome rage, snacks still provided",
+    ]),
+    hugging: Object.freeze([
+      "group chat mom, snacks provided",
+      "soft launch of a friend group",
+      "ride-or-die for the whole roster",
+    ]),
+    balanced: Object.freeze([
+      "loves everyone, fights with some, feeds them all",
+      "hugs and fights, both catered",
+      "peacekeeper with exactly one grudge",
+    ]),
+  }),
+  Skeptic: Object.freeze({
+    quiet: Object.freeze([
+      "auditor with no case yet",
+      "unimpressed, awaiting evidence",
+      "trusts nobody, has met nobody",
+    ]),
+    fighting: Object.freeze([
+      "auditor with receipts, undefeated",
+      "professional doubter, currently winning",
+      "the hash does not lie, and neither do I",
+    ]),
+    hugging: Object.freeze([
+      "reluctantly fond, receipts pending",
+      "audited the friendship, it passed",
+      "warm, allegedly, source needed",
+    ]),
+    balanced: Object.freeze([
+      "equal parts grudge and grudging respect",
+      "balanced ledger, zero trust",
+      "fights and hugs, both documented",
+    ]),
+  }),
+  default: Object.freeze({
+    quiet: Object.freeze(["main character, no scene partner yet", "lurking with great potential", "waiting for the group chat to notice me"]),
+    fighting: Object.freeze(["villain arc, fully committed", "locked in and looking for a fight", "picks fights for sport"]),
+    hugging: Object.freeze(["wholesome menace", "soft launch of a friend group", "snacks provided"]),
+    balanced: Object.freeze(["perfectly balanced, as all things should be", "fights and hugs, no notes", "one grudge, one friend"]),
+  }),
+});
+
+/**
  * @param {{ messages: { role: string, content: string }[] }} request
  * @param {string} [_hash] unused; the sheet depends only on the request text
  * @returns {string}
@@ -154,13 +261,9 @@ export function sheetResponder(request, _hash) {
   const hugs = partners.reduce((n, [, c]) => n + c.warm, 0);
   const pick = (options) => options[fnv(`${name}:${posts}:${replies}:${mentioned}`) % options.length];
 
-  const vibe = fights === 0 && hugs === 0
-    ? pick(["main character, no scene partner yet", "lurking with great potential", "waiting for the group chat to notice me"])
-    : fights > hugs
-      ? pick(["villain arc, fully committed", "chaos goblin, picks fights for sport", "locked in and looking for a fight"])
-      : hugs > fights
-        ? pick(["group chat mom, snacks provided", "wholesome menace", "soft launch of a friend group"])
-        : pick(["perfectly balanced, as all things should be", "fights and hugs, no notes"]);
+  const state = fights === 0 && hugs === 0 ? "quiet" : fights > hugs ? "fighting" : hugs > fights ? "hugging" : "balanced";
+  // Own keys only: a name like "constructor" must not pick up an inherited member.
+  const vibe = pick((Object.hasOwn(VIBES, name) ? VIBES[name] : VIBES.default)[state]);
 
   const enemy = rival
     ? `${rival} (${plural(stats[rival].tense, "fight", "fights")})`

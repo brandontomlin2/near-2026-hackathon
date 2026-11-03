@@ -4,12 +4,18 @@
 
 import { createHash } from "node:crypto";
 import { AGENTS } from "../traits/agents.mjs";
+import { capUtf8Bytes, replaceUnsafeChars } from "../util/text.mjs";
 import { createPersonaMockClient } from "./personas.mjs";
 
 /** @typedef {{ id: number, round: number, turn: number, agentId: string, kind: "post" | "reply", replyTo: number | null, text: string }} SwarmEvent */
 
 // Upper bound on --rounds for the CLIs and runSwarm; stops a typo from running for hours.
 export const MAX_ROUNDS = 1000;
+
+// Upper bound on one reply, in UTF-8 bytes. Agents are asked for one or two short
+// sentences (the mock lines are under 100 characters); the event text feeds
+// transcript.txt, events.json, the round hash and a share card, so it is bounded here.
+export const MAX_REPLY_BYTES = 1024;
 
 export const GENESIS_HASH = "0".repeat(64);
 
@@ -164,7 +170,11 @@ export async function runSwarm({
         }],
         seed: seed * 1000003 + events.length,
       });
-      let text = String(response.content).trim();
+      // Whatever client produced it, stored text has no control or bidi characters
+      // (they would otherwise reach the terminal through the transcript), is one line
+      // (a live reply ending in "\n[Skeptic] ..." must not read as another agent's
+      // transcript line, and CR must not overwrite the real prefix) and is bounded.
+      let text = capUtf8Bytes(replaceUnsafeChars(response.content).replace(/[\r\n]+/g, " ").trim(), MAX_REPLY_BYTES).trimEnd();
       if (target && !text.includes(targetName)) text = `@${targetName} ${text}`;
 
       events.push({

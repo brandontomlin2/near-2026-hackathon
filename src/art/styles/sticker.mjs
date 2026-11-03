@@ -219,8 +219,6 @@ function fist(cx, cy, pal) {
   );
 }
 
-const finger = (d, pal) => fat(d, 26, pal.skin);
-
 // ---------------------------------------------------------------- roles
 // Each role returns { head, tf, headExtra, sil, silT, back, faceT, top }
 //   tf        transform for the head group
@@ -443,8 +441,8 @@ function auditor(ctx, pal, t, mood) {
     const { full = true, crack = false, leftOnly = false, inner = ["", ""], tilt = 0 } = opts;
     return (
       `<g transform="rotate(${tilt} 128 ${EY})">` +
-      lens(L - 4, EY, full ? "#cfeaff" : GLASS) + inner[0] + (full ? glare(L - 4, EY, idL, true) : glare(L - 4, EY, idL, false)) +
-      (leftOnly ? "" : lens(R + 4, EY, full ? "#cfeaff" : GLASS) + inner[1] + (full ? glare(R + 4, EY, idR, true) : glare(R + 4, EY, idR, false))) +
+      lens(L - 4, EY, full ? "#cfeaff" : GLASS) + inner[0] + glare(L - 4, EY, idL, full) +
+      (leftOnly ? "" : lens(R + 4, EY, full ? "#cfeaff" : GLASS) + inner[1] + glare(R + 4, EY, idR, full)) +
       (crack ? line(`M${L - 20} ${EY - 30} L${L - 6} ${EY - 8} L${L - 18} ${EY + 4} L${L - 2} ${EY + 30}`, 4) + line(`M${L - 6} ${EY - 8} L${L + 22} ${EY - 4}`, 4) + line(`M${R + 24} ${EY - 26} L${R + 8} ${EY - 4} L${R + 22} ${EY + 10}`, 4) : "") +
       circ(L - 4, EY, 38, "none", 10).replace(INK, frame) +
       (leftOnly ? "" : circ(R + 4, EY, 38, "none", 10).replace(INK, frame)) +
@@ -550,7 +548,7 @@ function background(pal, risk) {
   switch (risk) {
     case "low":
       for (const y of [28, 92, 156, 220]) {
-        for (const x of [(y / 64) % 2 === 0 ? 32 : 96, (y / 64) % 2 === 0 ? 160 : 224]) g += circ(x + (y === 92 ? 0 : 0), y, 11, c, 0);
+        for (const x of [96, 224]) g += circ(x, y, 11, c, 0);
       }
       for (const [x, y] of [[96, 28], [224, 28], [32, 92], [160, 92], [96, 156], [224, 156], [32, 220], [160, 220]]) g += circ(x, y, 11, c, 0);
       break;

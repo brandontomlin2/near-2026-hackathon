@@ -6,14 +6,14 @@
 
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { runSwarm, verifyRounds, GENESIS_HASH } from "../swarm/runner.mjs";
+import { runSwarm, verifyRounds } from "../swarm/runner.mjs";
 import { AGENTS } from "../traits/agents.mjs";
 import { createMemoryStore, maybeSummarize } from "../memory/summarizer.mjs";
 import { createMockClient } from "../inference/client.mjs";
 import { getStyle } from "../art/styles/index.mjs";
 import { moodForText } from "../art/moods.mjs";
 import { prepareAnchor, submitAnchor } from "../anchor/anchor.mjs";
-import { sheetResponder } from "./sheet-responder.mjs";
+import { sheetResponder } from "../memory/sheet-responder.mjs";
 import { renderDemoPage } from "./page.mjs";
 import { renderShareCard } from "./share.mjs";
 import { buildMemes } from "./memes.mjs";
@@ -194,6 +194,7 @@ export async function runDemo({
     names: Object.fromEntries(AGENTS.map((a) => [a.id, a.name])),
     moods,
     faces: faceSvgs,
+    seed,
   });
   for (const m of memeCards) await writeFile(join(outDir, m.file), m.svg);
   const memes = memeCards.map(({ format, agentId, file, alt, mood }) => ({ format, agentId, file, alt, mood }));
@@ -235,7 +236,7 @@ export async function runDemo({
   await writeFile(join(outDir, "demo.json"), json(manifest));
   await writeFile(
     join(outDir, "index.html"),
-    renderDemoPage(manifest, { events: result.events, anchors, genesisHash: GENESIS_HASH }),
+    renderDemoPage(manifest, { events: result.events, anchors }),
   );
 
   return { outDir, files: manifest.files, finalRoundHash, verified: true, manifest };

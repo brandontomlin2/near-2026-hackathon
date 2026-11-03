@@ -119,9 +119,9 @@ test("demo-video.md: the quoted banner is on the page, and 'mock' appears where 
   assert.ok(video.includes(banner));
   assert.ok(page.includes(banner));
   const mentions = page.match(/mock/gi) ?? [];
-  assert.equal(mentions.length, 6, "banner (Mock mode, mocked), MOCK_INFERENCE=0 note, transfer accounts and contract labelled mock placeholder, TEE badge");
+  assert.equal(mentions.length, 6, "banner (Mock mode, mocked), MOCK_INFERENCE=0 note, transfer accounts and contract labelled mock placeholder, Inference badge");
   assert.ok(page.includes("MOCK_INFERENCE=0"));
-  assert.ok(page.includes("NEAR AI Cloud (TEE) in live mode : mocked"));
+  assert.ok(page.includes("Inference (NEAR AI Cloud) : mocked"));
 });
 
 test("art gains a star per sheet (not a ring); the X post, video and script say star", async () => {
@@ -139,22 +139,23 @@ test("art gains a star per sheet (not a ring); the X post, video and script say 
   assert.match(await doc("x-post.md"), /a star is added to its art/);
 });
 
-test("demo-script.md: page facts (verify: ok, Chaotic's enemy, one shook per agent, section order)", async () => {
+test("demo-script.md: page facts (verify: ok, Chaotic's rivalry grows, who is caught off guard, section order)", async () => {
   const script = await doc("demo-script.md");
   assert.ok(page.includes("verify: ok"));
   const chaotic = demo.agents.find((a) => a.id === "chaotic");
   const [r3, r6] = chaotic.sheets.map((s) => s.sheet);
-  assert.ok(r3.includes("Public enemy #1: nobody yet"));
-  assert.ok(r6.includes("Public enemy #1: Skeptic"));
-  assert.ok(r3.includes("Ride-or-die: no one yet") && r6.includes("Ride-or-die: no one yet"), "allies do not grow");
-  assert.match(script, /Skeptic became its public enemy #1/);
-  assert.doesNotMatch(script, /allies grew|allies have changed/);
+  const fights = (sheet) => Number(/Public enemy #1: Skeptic \((\d+) fights?\)/.exec(sheet)?.[1]);
+  const hugs = (sheet) => Number(/Ride-or-die: Social \((\d+) warm moments?\)/.exec(sheet)?.[1]);
+  assert.deepEqual([fights(r3), fights(r6), hugs(r3), hugs(r6)], [3, 5, 1, 3], "Chaotic: 3 to 5 fights with Skeptic, 1 to 3 warm moments with Social");
+  assert.match(script, /fights with Skeptic went from 3 to 5/);
+  assert.match(script, /Social (?:became|is) its ride-or-die/);
   const events = JSON.parse(await readFile(join(out, "events.json"), "utf8"));
   const shook = {};
   for (const e of Array.isArray(events) ? events : events.events) {
     if (moodForText(e.text) === "shook") shook[e.agentId] = (shook[e.agentId] ?? 0) + 1;
   }
-  assert.deepEqual(shook, { aloof: 1, chaotic: 1, skeptic: 1, social: 1 }, "each agent is caught off guard once");
+  assert.deepEqual(shook, { aloof: 1, skeptic: 1 }, "Aloof and Skeptic are each caught off guard once; Chaotic and Social never are");
+  assert.match(script, /Aloof and Skeptic each get caught off guard once/);
   const order = ["Agents", "Memory", "Meme pack", "Transfer: memory travels with the NFT", "Channel", "Anchor (dry run)", "Round hash chain", `${demo.shares.length} share cards`, "Files"];
   const positions = order.map((h) => page.indexOf(` ${h} `));
   assert.deepEqual([...positions].sort((a, b) => a - b), positions, "section order on the page");
@@ -225,6 +226,32 @@ test("PRODUCT.md: every `npm run X` is a package.json script and every repo path
   for (const p of paths) {
     await assert.doesNotReject(stat(join(root, p)), `PRODUCT.md names ${p}, which does not exist`);
   }
+});
+
+test("audit row 13 opens with the current lock design and keeps the removed block-height expiry as history", async () => {
+  const audit = await readFile(join(root, "docs/audit/personality-nft.md"), "utf8");
+  const row = audit.split("\n").find((l) => l.startsWith("| 13 |"));
+  assert.ok(row, "audit table must have row 13");
+  const status = row.split(" | ")[4];
+  assert.match(status, /^Fixed; the current code is described under Follow-up 3 below \(lock cleared only by `release_lock`, no expiry\)\./);
+  assert.match(status, /History: Originally \(audit 2, M1\)/);
+  assert.match(status, /Originally the lock also stored its block height and expired after `IN_FLIGHT_EXPIRY_BLOCKS`/);
+  assert.match(status, /that expiry no longer exists, see Follow-up 3/);
+  const lib = await readFile(join(root, "contracts/personality-nft/src/lib.rs"), "utf8");
+  assert.doesNotMatch(lib, /IN_FLIGHT_EXPIRY_BLOCKS|set_at/, "the contract has no lock expiry");
+  assert.match(lib, /fn release_lock/);
+});
+
+test("audit doc does not pin a contract unit-test total; the per-audit history it gives is not the total", async () => {
+  // Same rule as the README: `cargo test` prints "N passed" and N changes with
+  // every contract PR, so a pinned total goes stale (row 20 records one such drift).
+  const audit = await readFile(join(root, "docs/audit/personality-nft.md"), "utf8");
+  assert.doesNotMatch(audit, /\b\d+ (unit )?tests?\)/, "no '(..., N tests)' in the method line");
+  assert.doesNotMatch(audit, /\b\d+ pass\b/, "no 'N pass' total under Tests added");
+  assert.match(audit, /does not pin the total/);
+  const lib = await readFile(join(root, "contracts/personality-nft/src/lib.rs"), "utf8");
+  const total = (lib.match(/#\[test\]/g) ?? []).length;
+  assert.ok(total > 66, `the contract has ${total} tests, more than the 66 the doc once pinned`);
 });
 
 test("privacy.md: attest-check prints CONSISTENT, NOT VERIFIED (exit 0) and REJECT with --tamper (exit 1)", async () => {

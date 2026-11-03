@@ -7,17 +7,16 @@
 //     rewritten every SUMMARY_EVERY_N_ROUNDS rounds from the previous sheet
 //     plus the events that arrived since the last summary.
 //
-// On wake, an agent reads its sheet and the last K events. It never reads the
-// full log. The summary call goes through src/inference/client.mjs, so mock
-// mode (the default) stays deterministic and needs no keys.
+// The summary call goes through src/inference/client.mjs, so mock mode (the
+// default) stays deterministic and needs no keys.
 
 import { mkdir, readFile, rename, writeFile, appendFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { hashSheet } from "../anchor/hash.mjs";
+import { replaceUnsafeChars } from "../util/text.mjs";
 
 export const DEFAULT_SUMMARY_EVERY_N_ROUNDS = 5;
-export const DEFAULT_WAKE_EVENTS = 8;
 export const MAX_SHEET_WORDS = 200;
 export const MAX_EVENT_TEXT_CHARS = 500;
 export const EVENT_KINDS = Object.freeze(["post", "reply", "mention"]);
@@ -190,7 +189,8 @@ export async function summarize({ client, tokenId, name, round, log, previous = 
     events: fresh,
   });
   const response = await client.chat({ messages, seed: `${tokenId}:${round}` });
-  const sheet = clampWords(response.content);
+  // The sheet is stored, hashed and printed, so control and bidi characters are replaced first.
+  const sheet = clampWords(replaceUnsafeChars(response.content));
   if (sheet.length === 0) {
     throw new MemoryError("summarizer returned an empty sheet", { code: "empty_sheet" });
   }
@@ -203,19 +203,6 @@ export async function summarize({ client, tokenId, name, round, log, previous = 
     newEvents: fresh.length,
     mode: response.mode,
     model: response.model,
-  };
-}
-
-/**
- * What an agent reads on wake: its sheet and the last `k` events. Never the
- * full log.
- * @param {{ sheet: string | null, log: ReadonlyArray<object>, k?: number }} input
- */
-export function wakeContext({ sheet, log, k = DEFAULT_WAKE_EVENTS }) {
-  assertPositiveInteger(k, "k");
-  return {
-    sheet: sheet ?? "",
-    events: log.slice(Math.max(0, log.length - k)),
   };
 }
 

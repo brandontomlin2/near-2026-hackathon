@@ -57,7 +57,7 @@ describe("transfer verify", () => {
     assert.equal(t.placeholder, true);
     assert.equal(t.explorer.placeholder, true);
     assert.equal(t.teeInference.status, "mocked");
-    assert.match(t.teeInference.label, /NEAR AI Cloud \(TEE\)/);
+    assert.equal(t.teeInference.label, "Inference (NEAR AI Cloud)");
     // Mock mode never carries an explorer URL: the contract is not deployed, so a link would point at an account nobody owns.
     assert.equal(t.explorer.mock, true);
     assert.equal(t.explorer.contractUrl, undefined);
@@ -72,7 +72,7 @@ describe("transfer verify", () => {
     assert.ok(html.includes("alice.demo.testnet") && html.includes("bob.demo.testnet"));
     assert.ok(html.includes("MISMATCH"));
     assert.ok(html.includes("mock placeholder"));
-    assert.match(html, /NEAR AI Cloud \(TEE\) in live mode<\/strong>: <span class="ok">mocked/);
+    assert.match(html, /Inference \(NEAR AI Cloud\)<\/strong>: <span class="mut">mocked/);
   });
 });
 
@@ -112,9 +112,20 @@ describe("buildTransfer / transferSection (unit)", () => {
     const mock = buildTransfer([], { calls: [] }, { ...opts, mode: "mock" });
     const live = buildTransfer([], { calls: [] }, { ...opts, mode: "live" });
     assert.equal(mock.teeInference.status, "mocked");
-    assert.equal(live.teeInference.status, "live");
+    assert.equal(live.teeInference.status, "live (unattested)");
     assert.ok(transferSection({ transfer: mock }).includes("(this demo makes no inference call)"));
     assert.ok(!transferSection({ transfer: live }).includes("(this demo makes no inference call)"));
+  });
+
+  it("the inference badge is never green and never says TEE without an attestation result", () => {
+    for (const mode of ["mock", "live"]) {
+      const t = buildTransfer([], { calls: [] }, { ...opts, mode });
+      const html = transferSection({ transfer: t });
+      const line = html.split("\n").find((l) => l.includes(t.teeInference.label));
+      assert.ok(line, `${mode}: badge line present`);
+      assert.doesNotMatch(line, /class="ok"/, `${mode}: badge must not use the green class`);
+      assert.doesNotMatch(`${t.teeInference.label} ${t.teeInference.status}`, /TEE|attested(?!\))|verified/i, `${mode}: no TEE or verified wording`);
+    }
   });
 
   it("transferSection returns empty string without a transfer", () => {

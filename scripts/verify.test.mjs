@@ -118,6 +118,61 @@ test("verify.sh rejects an unknown argument with one line and runs nothing", () 
   }
 });
 
+// --live queries the contract account, which deploy calls NEAR_CONTRACT_ACCOUNT_ID
+// (NEAR_ACCOUNT_ID is the signer there and only a fallback here). The gate runs before
+// anything is cloned, so these runs take no time and touch no network.
+test("verify.sh --live needs NEAR_NETWORK=testnet and a contract account: NEAR_CONTRACT_ACCOUNT_ID or NEAR_ACCOUNT_ID", () => {
+  const base = { ...process.env };
+  for (const name of ["NEAR_NETWORK", "NEAR_ACCOUNT_ID", "NEAR_CONTRACT_ACCOUNT_ID", "EVIDENCE_TX_FILE"]) delete base[name];
+  const live = (env) => spawnSync("/bin/bash", [VERIFY, "--live"], { encoding: "utf8", env: { ...base, ...env } });
+  const refused = [
+    ["no network", { NEAR_CONTRACT_ACCOUNT_ID: "nft.alice.testnet" }],
+    ["no account", { NEAR_NETWORK: "testnet" }],
+    ["empty accounts", { NEAR_NETWORK: "testnet", NEAR_CONTRACT_ACCOUNT_ID: "", NEAR_ACCOUNT_ID: "" }],
+  ];
+  for (const [label, env] of refused) {
+    const r = live(env);
+    assert.equal(r.status, 1, label);
+    assert.match(r.stderr, /^error: --live requires NEAR_NETWORK=testnet and NEAR_CONTRACT_ACCOUNT_ID \(or NEAR_ACCOUNT_ID\)\.$/m, label);
+    assert.doesNotMatch(r.stdout, /fresh clone/, `${label}: refused before the clone`);
+    assert.doesNotMatch(r.stdout, /nft\.alice/, `${label}: the account value is never printed`);
+  }
+});
+
+test("verify.sh --live passes the env gate with NEAR_CONTRACT_ACCOUNT_ID alone, and with NEAR_ACCOUNT_ID as the fallback", (t) => {
+  // A throwaway repository holding only the script: every npm stage SKIPs, so the run is
+  // quick and offline. The live evidence stage cannot pass there (no evidence file), so the
+  // assertions are about the gate and the mode line, not the final result.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "verify-live-env-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const repo = path.join(root, "repo");
+  fs.mkdirSync(path.join(repo, "scripts"), { recursive: true });
+  fs.copyFileSync(VERIFY, path.join(repo, "scripts", "verify.sh"));
+  const git = (...a) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...a], { cwd: repo, encoding: "utf8" });
+  assert.equal(git("init", "-q").status, 0);
+  assert.equal(git("add", "-A").status, 0);
+  assert.equal(git("commit", "-q", "-m", "fixture").status, 0);
+  const base = { ...process.env, TMPDIR: root };
+  for (const name of ["NEAR_ACCOUNT_ID", "NEAR_CONTRACT_ACCOUNT_ID", "EVIDENCE_TX_FILE"]) delete base[name];
+  const live = (env) => spawnSync("/bin/bash", ["scripts/verify.sh", "--live"], { cwd: repo, encoding: "utf8", env: { ...base, NEAR_NETWORK: "testnet", ...env } });
+
+  const contractOnly = live({ NEAR_CONTRACT_ACCOUNT_ID: "nft.alice.testnet" });
+  assert.doesNotMatch(contractOnly.stderr, /--live requires/, contractOnly.stderr);
+  assert.match(contractOnly.stdout, /^mode: live \(testnet, contract account NEAR_CONTRACT_ACCOUNT_ID set, keys not printed\)$/m);
+  assert.match(contractOnly.stdout, /fresh clone/, "the gate passed and the run went on");
+  assert.doesNotMatch(contractOnly.stdout + contractOnly.stderr, /nft\.alice/, "the account value is never printed");
+
+  const fallback = live({ NEAR_ACCOUNT_ID: "alice.testnet" });
+  assert.doesNotMatch(fallback.stderr, /--live requires/, fallback.stderr);
+  assert.match(fallback.stdout, /^mode: live \(testnet, contract account from NEAR_ACCOUNT_ID, keys not printed\)$/m);
+  assert.match(fallback.stdout, /fresh clone/);
+});
+
+test("the mock runner drops both account variables and key-like names from the child env", () => {
+  const text = fs.readFileSync(VERIFY, "utf8");
+  assert.match(text, /mode === "mock" && \(isSecretName\(name\) \|\| name === "NEAR_ACCOUNT_ID" \|\| name === "NEAR_CONTRACT_ACCOUNT_ID"\)/);
+});
+
 test("verify.sh --help prints usage and exits 0", () => {
   const r = spawnSync("/bin/bash", [VERIFY, "--help"], { encoding: "utf8" });
   assert.equal(r.status, 0);
@@ -141,6 +196,92 @@ test("verify.sh builds every temp path from the resolved absolute tmp_root, neve
   for (const template of templates) assert.match(template, /^\$tmp_root\//, template);
   assert.match(text, /^tmp_root=\$\(cd "\$\{TMPDIR:-\/tmp\}" .*&& pwd -P\)/m);
   assert.match(text, /^export TMPDIR="\$tmp_root"$/m);
+});
+
+// Loads only resolve_evidence_tx_file from verify.sh and calls it with the given
+// source root, from the given working directory, with EVIDENCE_TX_FILE set as given
+// (or unset). Prints the exported value (or "<unset>") on the last stdout line.
+function runResolveTxFile({ root, cwd, txFile }) {
+  const script = [
+    "set -euo pipefail",
+    'eval "$(sed -n "/^resolve_evidence_tx_file()/,/^}$/p" "$1")"',
+    'resolve_evidence_tx_file "$2"',
+    'printf "%s\\n" "${EVIDENCE_TX_FILE-<unset>}"',
+  ].join("\n");
+  const env = { ...process.env };
+  delete env.EVIDENCE_TX_FILE;
+  if (txFile !== undefined) env.EVIDENCE_TX_FILE = txFile;
+  const r = spawnSync("/bin/bash", ["-c", script, "bash", VERIFY, root], { cwd, encoding: "utf8", env });
+  return { ...r, resolved: r.stdout.trimEnd().split("\n").at(-1) };
+}
+
+// The live evidence stage runs inside the fresh clone, where the gitignored out/
+// does not exist, so the relative path live-proof prints must be made absolute
+// against the source checkout before the cd. Offline: no network, no near CLI.
+test("resolve_evidence_tx_file makes the documented relative path absolute against the source checkout", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "verify-txfile-"));
+  const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), "verify-txfile-cwd-"));
+  t.after(() => { for (const d of [root, elsewhere]) fs.rmSync(d, { recursive: true, force: true }); });
+  const txs = path.join(root, "out", "live-proof", "txs.json");
+  fs.mkdirSync(path.dirname(txs), { recursive: true });
+  fs.writeFileSync(txs, "[]");
+
+  // The path `npm run live-proof` prints, run from a directory that is not the checkout.
+  const relative = runResolveTxFile({ root, cwd: elsewhere, txFile: "out/live-proof/txs.json" });
+  assert.equal(relative.status, 0, relative.stderr);
+  assert.equal(relative.resolved, txs);
+  assert.equal(relative.stderr, "", "an existing file draws no WARN");
+  assert.match(relative.stdout, /^evidence tx file: /m);
+
+  // Unset: the live-proof file in the source checkout is the default.
+  const unset = runResolveTxFile({ root, cwd: elsewhere });
+  assert.equal(unset.status, 0, unset.stderr);
+  assert.equal(unset.resolved, txs);
+
+  // An absolute path is kept as is.
+  const absolute = runResolveTxFile({ root, cwd: elsewhere, txFile: txs });
+  assert.equal(absolute.status, 0, absolute.stderr);
+  assert.equal(absolute.resolved, txs);
+});
+
+test("resolve_evidence_tx_file prefers the invoking directory for a relative path, and leaves nothing set when there is no file", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "verify-txfile-"));
+  // bash's $PWD is the physical path (macOS: /tmp -> /private/tmp), so compare against it.
+  const cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "verify-txfile-cwd-")));
+  t.after(() => { for (const d of [root, cwd]) fs.rmSync(d, { recursive: true, force: true }); });
+  const inRoot = path.join(root, "txs.json");
+  const inCwd = path.join(cwd, "txs.json");
+  fs.writeFileSync(inRoot, "[]");
+  fs.writeFileSync(inCwd, "[]");
+
+  // Plain shell semantics first: a relative path that exists where the user stands wins.
+  const both = runResolveTxFile({ root, cwd, txFile: "txs.json" });
+  assert.equal(both.status, 0, both.stderr);
+  assert.equal(both.resolved, inCwd);
+
+  // A relative path that exists nowhere still resolves (against the checkout) and warns, never fails:
+  // the evidence stage reports the missing file itself.
+  const missing = runResolveTxFile({ root, cwd, txFile: "nope/txs.json" });
+  assert.equal(missing.status, 0, missing.stderr);
+  assert.equal(missing.resolved, path.join(root, "nope/txs.json"));
+  assert.match(missing.stderr, /^WARN: evidence tx file .*nope\/txs\.json does not exist/m);
+
+  // Unset and no default file: leave EVIDENCE_TX_FILE unset and say so.
+  const none = runResolveTxFile({ root, cwd });
+  assert.equal(none.status, 0, none.stderr);
+  assert.equal(none.resolved, "<unset>");
+  assert.match(none.stdout, /^evidence tx file: none \(EVIDENCE_TX_FILE unset, no out\/live-proof\/txs\.json in /m);
+});
+
+test("verify.sh resolves the evidence tx file only with --live and before entering the fresh clone", () => {
+  const text = fs.readFileSync(VERIFY, "utf8");
+  const call = text.indexOf('resolve_evidence_tx_file "$source_root"');
+  const enter = text.indexOf('cd "$work/repo"');
+  assert.ok(call > 0 && enter > 0 && call < enter, "the call must come before cd into the clone");
+  assert.match(text, /if \[\[ "\$LIVE" -eq 1 \]\]; then\n  resolve_evidence_tx_file "\$source_root"\nfi/);
+  const usage = text.slice(text.indexOf("usage() {"), text.indexOf("\nEOF\n"));
+  assert.match(usage, /EVIDENCE_TX_FILE/, "usage documents the variable");
+  assert.match(usage, /out\/live-proof\/txs\.json exists in the\n\s+source checkout, that file is used/);
 });
 
 // Every stage a complete mock run records, in order. The summary only prints
@@ -408,6 +549,17 @@ test("summary refuses result: PASS when any stage has no row, naming the missing
   const complete = runPrintSummary({ failed: 0, skipped: 0 });
   assert.equal(resultLine(complete), "result: PASS");
   assert.doesNotMatch(complete.stdout, /no row was recorded/);
+});
+
+// Privacy audit L-4: the "wrote ..." line is pasted into every PR's Proof section, so it
+// must name the repo-relative file, not ${source_root}/... with the home directory.
+test("the evidence stage reports its file as a repo-relative path", () => {
+  const text = fs.readFileSync(VERIFY, "utf8");
+  assert.ok(text.includes('echo "wrote out/evidence.json"'), "expected a repo-relative wrote line");
+  assert.doesNotMatch(text, /echo "wrote \$\{?source_root/, "the wrote line must not print source_root");
+  for (const line of text.split("\n").filter((l) => /^\s*echo /.test(l))) {
+    assert.ok(!/\$\{?source_root/.test(line), `echo prints an absolute path: ${line.trim()}`);
+  }
 });
 
 test("package.json exposes evidence, viewer and verify scripts", () => {

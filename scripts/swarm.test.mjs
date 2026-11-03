@@ -49,6 +49,42 @@ test("CLI writes a sheet per agent and a memory loop linked to the final hash", 
   }
 });
 
+test("mock sheets are character sheets from the counting stand-in, with receipts that match events.json", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "swarm-cli-"));
+  try {
+    const env = { ...process.env, MOCK_INFERENCE: "1" };
+    await run(process.execPath, [script, "--rounds", "3", "--out", dir], { env });
+    const { events } = JSON.parse(await readFile(join(dir, "events.json"), "utf8"));
+    for (const [id, name] of [["aloof", "Aloof"], ["chaotic", "Chaotic"], ["social", "Social"], ["skeptic", "Skeptic"]]) {
+      const { sheet } = JSON.parse(await readFile(join(dir, "sheets", `${id}.json`), "utf8"));
+      assert.match(sheet, new RegExp(`^Who I am: ${name}, `), `${id}: the sheet is written in ${name}'s first person`);
+      for (const label of ["Public enemy #1:", "Ride-or-die:", "Rivalry arc:", "Scorecard:", "Signature quote:", "Receipts:"]) {
+        assert.ok(sheet.includes(label), `${id}: sheet lacks "${label}"`);
+      }
+      const posts = events.filter((e) => e.agentId === id && e.kind === "post").length;
+      const replies = events.filter((e) => e.agentId === id && e.kind === "reply").length;
+      const own = new Set(events.filter((e) => e.agentId === id).map((e) => e.id));
+      const mentioned = events.filter((e) => e.kind === "reply" && own.has(e.replyTo) && e.agentId !== id).length;
+      const receipts = /Receipts: (\d+) posts?, (\d+) repl(?:y|ies), mentioned (\d+) times?\./.exec(sheet);
+      assert.ok(receipts, `${id}: sheet has no Receipts line`);
+      assert.deepEqual(receipts.slice(1).map(Number), [posts, replies, mentioned], `${id}: receipts count the channel`);
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("the verify line says '1 round' for a one-round run", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "swarm-cli-"));
+  try {
+    const { stdout } = await run(process.execPath, [script, "--rounds", "1", "--out", dir], { env: { ...process.env, MOCK_INFERENCE: "1" } });
+    assert.match(stdout, /^verify: ok \(1 round\)$/m);
+    assert.doesNotMatch(stdout, /1 rounds/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("--every and SUMMARY_EVERY_N_ROUNDS set the sheet cadence, with a sheet file per round", async () => {
   const dir = await mkdtemp(join(tmpdir(), "swarm-cli-"));
   try {
@@ -126,4 +162,37 @@ test("npm run swarm and npm run demo defaults do not overwrite each other", asyn
 test("swarm default output directory is out/swarm, distinct from the demo's out/", async () => {
   const src = await readFile(script, "utf8");
   assert.match(src, /out: "out\/swarm"/);
+});
+
+// Audit L-2: in live mode the model's text reaches transcript.txt and stdout; control, OSC
+// and bidi characters must not survive into either. Local stub server, no real service.
+test("live mode: control characters in replies never reach transcript.txt, events.json, the sheets or stdout", async () => {
+  const { createServer } = await import("node:http");
+  const hostile = "\u001b[2J\u001b]0;pwned\u0007\u001b]8;;http://evil.example\u0007link\u001b]8;;\u0007 \u202ereversed\u202c ok";
+  const server = createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ id: "c1", model: "stub", choices: [{ message: { content: hostile } }] }));
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const dir = await mkdtemp(join(tmpdir(), "swarm-cli-"));
+  const unsafe = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/;
+  try {
+    const env = { ...process.env, MOCK_INFERENCE: "0", NEAR_AI_API_KEY: "stub-key-not-real", NEAR_AI_MODEL: "stub", NEAR_AI_BASE_URL: `http://127.0.0.1:${server.address().port}/v1` };
+    const { stdout, stderr } = await run(process.execPath, [script, "--rounds", "2", "--out", dir], { env });
+    assert.doesNotMatch(stdout, unsafe);
+    assert.doesNotMatch(stderr, unsafe);
+    assert.match(stdout, /link\uFFFD/);
+    for (const file of ["transcript.txt", "events.json", "memory-loop.json", "sheets/aloof.json"]) {
+      const text = await readFile(join(dir, file), "utf8");
+      assert.doesNotMatch(text, unsafe, file);
+      assert.doesNotMatch(text, /\\u001b|\\u0007|\\u202e/i, `${file}: control character stored as a JSON escape`);
+    }
+  } finally {
+    server.closeAllConnections?.();
+    await new Promise((resolve) => server.close(resolve));
+    await rm(dir, { recursive: true, force: true });
+  }
 });

@@ -7,15 +7,33 @@
 //   live (MOCK_INFERENCE "0" or "false"): NEAR AI Cloud, which speaks the
 //     OpenAI chat-completions protocol at https://cloud-api.near.ai/v1.
 //     Reads NEAR_AI_API_KEY and NEAR_AI_MODEL. NEAR_AI_BASE_URL overrides the
-//     endpoint, which the tests use to point at a local server.
+//     endpoint, which the tests use to point at a local server. It must be https
+//     unless the host is loopback (localhost, 127.0.0.1, ::1).
 //
-// The key never appears in errors, logs or returned objects.
+// The key never appears in errors, logs or returned objects. Neither does the
+// base URL: one with credentials or a plain-http remote host is refused when the
+// client is made, and the message does not echo it.
+//
+// Reply text is bounded: control and bidi characters become U+FFFD and the text
+// is cut at MAX_CONTENT_BYTES, both with the helpers in src/util/text.mjs, so a
+// reply can neither drive the terminal nor grow a sheet or share card without
+// limit. Live requests always carry max_tokens (DEFAULT_MAX_TOKENS unless the
+// caller sets one).
 
 import { createHash } from "node:crypto";
+import { capUtf8Bytes, replaceUnsafeChars } from "../util/text.mjs";
 
 export const DEFAULT_BASE_URL = "https://cloud-api.near.ai/v1";
 export const DEFAULT_TIMEOUT_MS = 60_000;
 export const DEFAULT_MAX_RETRIES = 2;
+// Largest response body the client will buffer. A chat completion is a few KiB;
+// 4 MiB leaves room for very long replies while bounding memory per request.
+export const DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
+// Sent as max_tokens on every live request that does not set maxTokens. Sheets are
+// under 200 words and swarm replies one or two sentences, so this is generous.
+export const DEFAULT_MAX_TOKENS = 1024;
+// Upper bound on reply text, in UTF-8 bytes, whatever the provider or responder returns.
+export const MAX_CONTENT_BYTES = 32 * 1024;
 const RETRY_BASE_DELAY_MS = 250;
 const RETRY_MAX_DELAY_MS = 8_000;
 const MOCK_MODEL = "mock";
@@ -204,6 +222,52 @@ function estimateTokens(messages) {
   return messages.reduce((n, m) => n + Math.ceil(m.content.length / 4), 0);
 }
 
+/** The one place reply text is made safe to store and print: no control or bidi characters, bounded size. */
+function boundContent(content) {
+  return capUtf8Bytes(replaceUnsafeChars(content), MAX_CONTENT_BYTES);
+}
+
+// Provider-supplied labels (model, id) are printed too (infer --json); same treatment, short cap.
+const MAX_LABEL_BYTES = 200;
+function boundLabel(value, fallback) {
+  return typeof value === "string" ? capUtf8Bytes(replaceUnsafeChars(value), MAX_LABEL_BYTES) : fallback;
+}
+
+// Plain http is for the local stub servers in the tests only. Anywhere else it would send
+// the bearer key and the prompt in cleartext, so only these loopback hosts may use it.
+// (URL.hostname keeps the brackets around an IPv6 literal.)
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * Validate the endpoint. A URL carrying userinfo (http://user:secret@host) is refused
+ * outright, and plain http is accepted only for loopback hosts. No message echoes the
+ * value, so credentials cannot leak into the "request to <url> failed" errors or logs.
+ * @param {string} raw
+ * @returns {string} the base URL without a trailing slash
+ */
+function checkBaseUrl(raw) {
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new InferenceError("NEAR_AI_BASE_URL must be an absolute http(s) URL", { code: "bad_config" });
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new InferenceError("NEAR_AI_BASE_URL must be an absolute http(s) URL", { code: "bad_config" });
+  }
+  if (parsed.protocol === "http:" && !LOOPBACK_HOSTS.has(parsed.hostname)) {
+    throw new InferenceError("NEAR_AI_BASE_URL must use https; plain http is accepted only for localhost, 127.0.0.1 and ::1", {
+      code: "bad_config",
+    });
+  }
+  if (parsed.username !== "" || parsed.password !== "") {
+    throw new InferenceError("NEAR_AI_BASE_URL must not contain credentials (user:password@host); the key goes in NEAR_AI_API_KEY", {
+      code: "bad_config",
+    });
+  }
+  return raw.replace(/\/+$/, "");
+}
+
 /**
  * @param {{ model?: string, responder?: MockResponder }} [options]
  */
@@ -217,10 +281,11 @@ export function createMockClient(options = {}) {
     async chat(request) {
       const normalized = normalizeRequest(request, model);
       const hash = hashRequest(normalized);
-      const content = responder(normalized, hash);
-      if (typeof content !== "string") {
+      const raw = responder(normalized, hash);
+      if (typeof raw !== "string") {
         throw new InferenceError("mock responder must return a string", { code: "bad_responder" });
       }
+      const content = boundContent(raw);
       return {
         content,
         mode: "mock",
@@ -247,15 +312,69 @@ function isRetryableStatus(status) {
   return status === 408 || status === 409 || status === 429 || status >= 500;
 }
 
+function redact(text, secret) {
+  return secret ? text.split(secret).join("[redacted]") : text;
+}
+
+/**
+ * Keep an underlying error as `cause` only in a form that cannot show the
+ * key: a fresh Error with the redacted message, name and code, never the
+ * original object. A fetch implementation or proxy may quote request headers
+ * in its message or attach them as properties, console.error prints the whole
+ * cause chain, and a search of the original (util.inspect truncates long
+ * arrays and strings) cannot prove that no property holds the key.
+ */
+function scrubCause(cause, secret) {
+  const copy = new Error(redact(String(cause?.message ?? cause), secret));
+  if (cause?.name) copy.name = cause.name;
+  if (cause?.code !== undefined) copy.code = cause.code;
+  return copy;
+}
+
+/**
+ * Buffer a response body up to `maxBytes`. Past that, abort the request and
+ * throw response_too_large. The error carries no body, header or key.
+ * @param {Response} response
+ * @param {number} maxBytes
+ * @param {AbortController} controller
+ * @returns {Promise<string>}
+ */
+async function readBodyCapped(response, maxBytes, controller) {
+  const tooLarge = () => {
+    controller.abort();
+    return new InferenceError(`NEAR AI Cloud response body exceeded the ${maxBytes} byte limit`, {
+      code: "response_too_large",
+    });
+  };
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) throw tooLarge();
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      const error = tooLarge();
+      await reader.cancel().catch(() => {});
+      throw error;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 /**
  * Read a response body for an error message without ever echoing more than a
  * short prefix. Provider bodies can be large or contain the request.
  */
-async function errorSnippet(response, secret) {
+async function errorSnippet(response, secret, maxBytes, controller) {
   try {
-    const text = await response.text();
-    const redacted = secret ? text.split(secret).join("[redacted]") : text;
-    return redacted.slice(0, 200).replace(/\s+/g, " ").trim();
+    const text = await readBodyCapped(response, maxBytes, controller);
+    // Error text reaches stderr: no terminal control characters from the provider either.
+    return replaceUnsafeChars(redact(text, secret)).slice(0, 200).replace(/\s+/g, " ").trim();
   } catch {
     return "";
   }
@@ -268,6 +387,7 @@ async function errorSnippet(response, secret) {
  *   baseUrl?: string,
  *   timeoutMs?: number,
  *   maxRetries?: number,
+ *   maxResponseBytes?: number,
  *   fetch?: typeof fetch,
  *   sleep?: (ms: number) => Promise<void>,
  * }} options
@@ -281,7 +401,7 @@ export function createLiveClient(options) {
   }
   const apiKey = options.apiKey.trim();
   const model = options.model;
-  const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
+  const baseUrl = checkBaseUrl(options.baseUrl ?? DEFAULT_BASE_URL);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
   if (!Number.isInteger(maxRetries) || maxRetries < 0) {
@@ -290,11 +410,16 @@ export function createLiveClient(options) {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new InferenceError("timeoutMs must be a positive number", { code: "bad_config" });
   }
+  const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
+  if (!Number.isInteger(maxResponseBytes) || maxResponseBytes <= 0) {
+    throw new InferenceError("maxResponseBytes must be a positive integer", { code: "bad_config" });
+  }
   const doFetch = options.fetch ?? globalThis.fetch;
   const wait = options.sleep ?? sleep;
   const url = `${baseUrl}/chat/completions`;
 
   async function send(body) {
+    const controller = new AbortController();
     let response;
     try {
       response = await doFetch(url, {
@@ -304,17 +429,17 @@ export function createLiveClient(options) {
           authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.any([AbortSignal.timeout(timeoutMs), controller.signal]),
       });
     } catch (cause) {
       const timedOut = cause && cause.name === "TimeoutError";
       throw new InferenceError(
         timedOut ? `request to ${url} timed out after ${timeoutMs}ms` : `request to ${url} failed`,
-        { code: timedOut ? "timeout" : "network", retryable: true, cause },
+        { code: timedOut ? "timeout" : "network", retryable: true, cause: scrubCause(cause, apiKey) },
       );
     }
     if (!response.ok) {
-      const snippet = await errorSnippet(response, apiKey);
+      const snippet = await errorSnippet(response, apiKey, maxResponseBytes, controller);
       throw new InferenceError(
         `NEAR AI Cloud returned HTTP ${response.status}${snippet ? `: ${snippet}` : ""}`,
         { status: response.status, code: "http_error", retryable: isRetryableStatus(response.status) },
@@ -322,14 +447,21 @@ export function createLiveClient(options) {
     }
     let data;
     try {
-      data = await response.json();
+      data = JSON.parse(await readBodyCapped(response, maxResponseBytes, controller));
     } catch (cause) {
+      if (cause instanceof InferenceError) throw cause;
       if (cause && cause.name === "TimeoutError") {
         throw new InferenceError(`reading response from ${url} timed out after ${timeoutMs}ms`, {
-          code: "timeout", retryable: true, cause,
+          code: "timeout", retryable: true, cause: scrubCause(cause, apiKey),
         });
       }
-      throw new InferenceError("NEAR AI Cloud returned a non-JSON body", { code: "bad_response", cause });
+      // No cause here: V8's SyntaxError quotes the first bytes of the body,
+      // which is whatever the provider or a proxy sent. The content type is
+      // the useful diagnostic (an HTML error page, usually).
+      throw new InferenceError(
+        `NEAR AI Cloud returned a non-JSON body (content-type ${response.headers.get("content-type") ?? "unknown"})`,
+        { code: "bad_response" },
+      );
     }
     const content = data?.choices?.[0]?.message?.content;
     if (typeof content !== "string" || content.trim() === "") {
@@ -338,10 +470,10 @@ export function createLiveClient(options) {
       });
     }
     return {
-      content,
+      content: boundContent(content),
       mode: /** @type {const} */ ("live"),
-      model: typeof data.model === "string" ? data.model : model,
-      id: typeof data.id === "string" ? data.id : "",
+      model: boundLabel(data.model, model),
+      id: boundLabel(data.id, ""),
       usage: {
         promptTokens: count(data?.usage?.prompt_tokens),
         completionTokens: count(data?.usage?.completion_tokens),
@@ -356,9 +488,10 @@ export function createLiveClient(options) {
     /** @param {ChatRequest} request @returns {Promise<ChatResponse>} */
     async chat(request) {
       const normalized = normalizeRequest(request, model);
-      const body = { model, messages: normalized.messages };
+      // max_tokens is always sent. The default lives here and not in the callers because the
+      // mock hash covers maxTokens: a caller adding it would move every mock transcript.
+      const body = { model, messages: normalized.messages, max_tokens: normalized.maxTokens ?? DEFAULT_MAX_TOKENS };
       if (normalized.temperature !== undefined) body.temperature = normalized.temperature;
-      if (normalized.maxTokens !== undefined) body.max_tokens = normalized.maxTokens;
       if (typeof normalized.seed === "number") body.seed = normalized.seed;
 
       let attempt = 0;
@@ -385,6 +518,7 @@ export function createLiveClient(options) {
  *   fetch?: typeof fetch,
  *   timeoutMs?: number,
  *   maxRetries?: number,
+ *   maxResponseBytes?: number,
  * }} [options]
  */
 export function createInferenceClient(options = {}) {
@@ -400,5 +534,6 @@ export function createInferenceClient(options = {}) {
     fetch: options.fetch,
     timeoutMs: options.timeoutMs,
     maxRetries: options.maxRetries,
+    maxResponseBytes: options.maxResponseBytes,
   });
 }
