@@ -18,8 +18,8 @@ import { renderShareCard, wrapText } from "./share.mjs";
 const PINNED_FINAL_ROUND_HASH = "ed0b0c82315a4a04b81026fb90429ff0c7f292ede27a992c6cbadbee5435284d";
 const IDS = ["aloof", "chaotic", "social", "skeptic"];
 // Pins the sheet writer, summarizer prompt, hashing, art paths and anchors, not just the swarm.
-const PINNED_ALOOF_SHEET_HASH = "c5dbce1a701dadfa057cf6aed9f435c773b02b5aeb2641906c22867bb97bc0d0";
-const PINNED_DEMO_JSON_SHA256 = "a49d2079fe73c52e4dc2fa7dfe26ee87ecddcbf157fc923a838f19272525d634";
+const PINNED_ALOOF_SHEET_HASH = "db3158b78dd0de587426fe2d272950caec99825ce8b2695502b7e7675e4130fb";
+const PINNED_DEMO_JSON_SHA256 = "6a375777cc1a7f537dec9fff169fd797105f07dca55a0aef467e05629f79a31b";
 
 const tmp = [];
 function mkTmp() {
