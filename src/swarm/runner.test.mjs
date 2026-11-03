@@ -12,10 +12,10 @@ import { main } from "../../scripts/swarm.mjs";
 const nameOf = (id) => AGENTS.find((a) => a.id === id).name;
 
 const GOLDEN_ROUND_1 = `== Round 1 ==
-[Skeptic] Doubtful. The relay fee is unproven until someone shows the log.
-[Chaotic -> Skeptic] @Skeptic Brilliant, truly! Mix up the mint schedule and see who panics!
-[Aloof] For the record. I will wait on the new charter before I say more.
-[Social] Happy to help. I will introduce the two who disagree about the treasury proposal.
+[Skeptic] Receipts. The numbers on the airdrop rumor do not add up yet.
+[Chaotic -> Skeptic] @Skeptic Brilliant, truly! I dare someone to defend the new charter with a straight face.
+[Aloof] Quietly. I will wait on the summary rule before I say more.
+[Social] Glad to see this. The treasury proposal goes better when we all show up, so please do.
 `;
 
 test("same seed is byte-identical, different seed differs", async () => {
@@ -152,5 +152,24 @@ test("scripts/swarm.mjs main writes outputs and validates args", async () => {
     }
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("mock personas vary across 8+ rounds: no consecutive repeats, deterministic per seed", async () => {
+  const strip = (e) => e.text.replace(/^@\w+ /, "");
+  for (const seed of [1, 2, 9, 42]) {
+    const a = await runSwarm({ seed, rounds: 10 });
+    const b = await runSwarm({ seed, rounds: 10 });
+    assert.equal(a.transcript, b.transcript, `seed ${seed} not deterministic`);
+    assert.deepEqual(a.roundHashes, b.roundHashes);
+    for (const { id } of AGENTS) {
+      const lines = a.events.filter((e) => e.agentId === id).map(strip);
+      assert.equal(lines.length, 10);
+      for (let i = 1; i < lines.length; i++) {
+        assert.notEqual(lines[i], lines[i - 1], `${id} repeats in rounds ${i} and ${i + 1} (seed ${seed})`);
+      }
+      assert.ok(new Set(lines.slice(0, 8)).size === 8, `${id}: first 8 rounds not all distinct (seed ${seed})`);
+      assert.ok(new Set(lines.map((l) => l.split(" ")[0])).size >= 4, `${id}: openers too samey`);
+    }
   }
 });
