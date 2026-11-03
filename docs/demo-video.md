@@ -56,7 +56,7 @@ Take them from the fresh-clone run above, in this order. The first four are the 
 | 6 | Channel exchange | Same page, Channel section | 1280 x 720, crop to a few lines around a `Chaotic -> Skeptic` message. | The `[Chaotic -> Skeptic]` style line, or the same line in `out/transcript.txt`. |
 | 7 | Judge screen | `bash scripts/verify.sh` | Crop to the last lines. | `result: PASS`. Run it before shooting and only shoot if it passes. |
 
-Every screenshot should show the word MOCK somewhere: add it in the post text or as an overlay on the image, because the page itself says "mock" only in its banner, the `MOCK_INFERENCE=0` note in the Memory section and the `mocked` TEE badge in the Transfer section. Put the alt text "Mock-mode demo, hashes are MOCK" on each image.
+Every screenshot should show the word MOCK somewhere: add it in the post text or as an overlay on the image, because the page itself says "mock" only in its banner, the `MOCK_INFERENCE=0` note in the Memory section, and the "mock placeholder" labels and `mocked` TEE badge in the Transfer section. Put the alt text "Mock-mode demo, hashes are MOCK" on each image.
 
 ## What not to show
 

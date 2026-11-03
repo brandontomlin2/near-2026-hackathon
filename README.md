@@ -1,6 +1,6 @@
-# NEAR 2026 Hackathon
+# Personality NFT
 
-Entry for [NEAR HACKATHON](https://nearhackathon.com), Nov 1 to Nov 14, 2026.
+NEAR 2026 Hackathon entry. Built for [NEAR HACKATHON](https://nearhackathon.com), Nov 1 to Nov 14, 2026.
 
 **Four AI agents argue in a group chat, each gets a "public enemy / ride-or-die" character sheet, and the sheet's hash is pinned to its NFT.**
 
@@ -73,6 +73,7 @@ Nothing in this repository is deployed or live on testnet. The contract is unit-
 | `scripts/testnet-deploy.mjs` | `npm run deploy:nft` and `npm run mint`, dry run unless `--send`. |
 | `scripts/verify.sh` | Local judge screen, replaces GitHub Actions. |
 | `docs/DISCLOSURE.md` | Libraries, AI-generated code and pre-hackathon code. |
+| `board/`, `.agents/`, `.claude/`, `skills-lock.json` | Agent tooling used to build this repository (build board, vendored NEAR skills), not part of the product. |
 
 ## Contract
 
@@ -89,7 +90,7 @@ Nothing in this repository is deployed or live on testnet. The contract is unit-
 
 **`nft_transfer_call` caveats.** The in-flight lock never expires; only the `release_lock` callback chained after the standard `nft_resolve_transfer` clears it, once the receiver's promise settles. A receiver can delay that only as long as the gas the sender attached lets it keep chaining calls, so the stall is finite but not block-bounded. A second `nft_transfer_call` on a token whose first one has not resolved panics instead of settling as a no-op. The lock's storage (about 80 bytes per token in flight) is paid from the contract account's balance until it is released, because `nft_transfer_call` takes exactly 1 yoctoNEAR. `true` from `nft_transfer_call` also covers the rare case where `nft_resolve_transfer` itself ran out of its 5 Tgas: the token stays with the receiver, but the previous owner's approvals are not restored. Details in [`docs/audit/personality-nft.md`](docs/audit/personality-nft.md) (items 15 to 18).
 
-Build and test. Needs Rust 1.95 or newer (the crate's `rust-toolchain.toml` pins it, so rustup fetches it) and [cargo-near](https://github.com/near/cargo-near) for the build only (tested with 0.22.0).
+Build and test. Needs Rust 1.95.0 (pinned in the crate's `rust-toolchain.toml`, so rustup fetches it) and [cargo-near](https://github.com/near/cargo-near) for the build only (tested with 0.22.0).
 
 1. Run `npm run test:contract`. See every unit test pass, `test result: ok.` with `0 failed`, including mint by a non-owner failing, a non-sha256 hash rejected, and the anchor surviving `nft_transfer` to a new owner.
 2. Run `npm run build:contract`. See `contracts/personality-nft/target/near/personality_nft.wasm` and its ABI JSON next to it.
@@ -101,7 +102,7 @@ Build and test. Needs Rust 1.95 or newer (the crate's `rust-toolchain.toml` pins
 1. Run `npm run build:contract`. See `contracts/personality-nft/target/near/personality_nft.wasm`.
 2. Run `npm run deploy:nft`. Step 1 must have run first: without the wasm it stops with `error: wasm not found at ... Run npm run build:contract first.` and exits 1. Otherwise see `[1/1] deploy`, a call to `<contract>.new_default_meta` and a `near --quiet contract deploy ... sign-with-keychain send` command printed. Nothing is sent.
 3. Run `npm run mint`. See `[1/4] mint aloof` through `[4/4] mint skeptic`, each an `nft_mint` call with full NEP-177 `token_metadata` (`extra` holds the trait JSON), a `0.05 NEAR` deposit and the near-cli-rs command. Without `--media-base`, `media` is a labelled placeholder URL.
-4. Run `npm run live:check`. See a read-only `[todo]` list of what a live run still needs (wasm, `NEAR_ACCOUNT_ID`, `NEAR_CONTRACT_ACCOUNT_ID`) and exit 1 until it is all done. Values are never printed.
+4. Run `npm run live:check`. It is read-only. See `[todo]` lines for what a live run still needs (wasm, `NEAR_ACCOUNT_ID`, `NEAR_CONTRACT_ACCOUNT_ID`), `[ok]`/`[skip]` lines for the rest (`NEAR_NETWORK`, the account existence check), then `ready: no. Fix the [todo] items above.` and exit 1 until it is all done. Values are never printed.
 5. To send: export those two variables, run `npm run deploy:nft -- --send` once, host the four SVGs, then run `npm run mint -- --send --media-base <url>`. Any `NEAR_NETWORK` other than `testnet` is refused.
 
 ## Inference
