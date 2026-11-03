@@ -129,10 +129,10 @@ export async function runDemo({
   const shareDir = join(outDir, "share");
   await mkdir(artDir, { recursive: true });
   await mkdir(shareDir, { recursive: true });
-  // This run owns its art and share cards: drop files a run with other rounds/style left behind.
+  // This run owns its art, share cards and meme cards: drop files a run with other rounds/style left behind.
   const ids = AGENTS.map((a) => a.id).join("|");
   await clearOwnedFiles(outDir, "art", new RegExp(`^(${ids})(\\.[a-z0-9-]+)?\\.svg$`));
-  await clearOwnedFiles(outDir, "share", new RegExp(`^(${ids})-\\d+\\.svg$`));
+  await clearOwnedFiles(outDir, "share", new RegExp(`^((${ids})-\\d+|meme-[a-z]+-(${ids}))\\.svg$`));
   const moods = [...style.moods];
   const faceSvgs = {};
   const agents = [];
