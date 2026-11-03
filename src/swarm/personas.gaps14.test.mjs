@@ -30,16 +30,17 @@ test("a reply to a known agent is answered from the list for that agent only", (
 
 test("each reply list is walked on its own, so answering one agent does not move the walk for another", () => {
   const solo = personaResponder({ id: "aloof" });
-  const soloWalk = Array.from({ length: 3 }, () => solo(asking("Chaotic"), HASH));
+  const lineCount = REPLY_LINES.aloof.Chaotic.length;
+  const soloWalk = Array.from({ length: lineCount }, () => solo(asking("Chaotic"), HASH));
   const mixed = personaResponder({ id: "aloof" });
   const mixedWalk = [];
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < lineCount; i++) {
     mixedWalk.push(mixed(asking("Chaotic"), HASH));
     mixed(asking("Social"), HASH);
     mixed(post, HASH);
   }
   assert.deepEqual(mixedWalk, soloWalk);
-  assert.deepEqual([...soloWalk].sort(), [...REPLY_LINES.aloof.Chaotic].sort(), "all three lines before any repeat");
+  assert.deepEqual([...soloWalk].sort(), [...REPLY_LINES.aloof.Chaotic].sort(), "every line before any repeat");
 });
 
 test("every agent's catchphrase is a string that appears in its own post lines", () => {
