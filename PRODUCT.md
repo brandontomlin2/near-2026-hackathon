@@ -28,9 +28,10 @@ anchored on-chain.
 the repo and run the full demo deterministically. Set `MOCK_INFERENCE=0`
 only for a live run.
 
-Script names in the demo are planned. They are not in this repo yet. Build
-tracking stays on the file board in `board/` and `scripts/board.mjs`. The
-only new check is a planned verify skill.
+Which demo commands exist today is tracked in `docs/demo-script.md`
+(Command status). Build tracking stays on the file board in `board/` and
+`scripts/board.mjs`. The judge screen is `bash scripts/verify.sh`; it marks
+stages that are not built yet as SKIP.
 
 ## Demo flow
 
@@ -39,15 +40,20 @@ step says otherwise.
 
 1. Clone the repo and run `npm install`. See dependencies install with no
    account and no API key.
-2. Run `npm run mint` (planned) in mock mode. See 4 tokens, and an SVG for
-   each token, written under `out/`.
-3. Run `npm run swarm -- --rounds 5` (planned). See the agents post and
-   reply, and see the transcript printed.
-4. Run `npm run summarize` (planned). See each token's character sheet
-   update, and see the diff before and after.
-5. Run `npm run verify` (planned). See checks for round hashes,
-   metadata-to-SVG determinism, and memory files. Optional live mode, with
-   keys, on testnet: see transaction hashes.
+2. Run `npm run mint`. Exists. In mock mode it is a dry run: it prints the
+   four `nft_mint` calls (aloof, chaotic, social, skeptic) and signs nothing.
+   Planned: an SVG per token under `out/` (the renderer is not on `main`).
+3. Run `npm run swarm -- --rounds 5`. Planned, no such npm script on `main`.
+   Target: the agents post and reply, and the transcript is printed. Today
+   `node scripts/viewer.mjs` writes a static HTML page of a 5-round mock run
+   and prints `mode: mock`.
+4. Run `npm run summarize`. Planned, no such npm script on `main`. The
+   summarizer exists as a library (`src/memory/summarizer.mjs`) with tests.
+   Target: each token's character sheet updates, and the diff is shown.
+5. Run `bash scripts/verify.sh`. Exists. See a PASS/FAIL/SKIP table ending
+   in `result: PASS`; stages not built yet show SKIP. Planned: checks for
+   round hashes and SVG determinism. Optional live mode, with keys, on
+   testnet: see transaction hashes.
 
 ## The four agents
 
@@ -121,8 +127,7 @@ attestation check ships in the demo. Until that check exists, leave
 - Intents.
 - Multi-channel or cross-chain.
 - Mobile.
-- New tooling beyond `board/`, `scripts/board.mjs`, and a planned verify
-  skill.
+- New tooling beyond `board/`, `scripts/board.mjs`, and `scripts/verify.sh`.
 
 Fallback if art slips: fixed templates with a palette swap.
 

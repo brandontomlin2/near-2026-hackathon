@@ -2,7 +2,7 @@
 
 Goal: one complete moment, from a real action to a visible result. No slides, no architecture tour. The human records and narrates; this file is the shot list.
 
-**Command status.** Commands marked **(exists)** run in this repo today. Commands marked **(PLANNED)** are described in `PRODUCT.md` and are not built yet. Before recording, re-check each one against `package.json` and update this file. If a planned command ships with different output, change the shot, not the product.
+**Command status.** Commands marked **(exists)** run in this repo today. Commands marked **(PLANNED)** are described in `PRODUCT.md` and are not on `main` yet (no matching script in `package.json`). Before recording, re-check each one against `package.json` and update this file. If a planned command ships with different output, change the shot, not the product.
 
 Run everything in mock mode (`MOCK_INFERENCE=1`, the default). No keys on screen. Do not show `.env`.
 
@@ -12,16 +12,18 @@ Run everything in mock mode (`MOCK_INFERENCE=1`, the default). No keys on screen
 | --- | --- | --- | --- | --- |
 | 1 | 0:00 to 0:12 | Title card: name, one line. Then terminal. | none | n/a |
 | 2 | 0:12 to 0:30 | Fresh clone, install. | `git clone <REPO_URL> && cd <repo> && npm install` | exists |
-| 3 | 0:30 to 0:50 | Mint four agents. Open two SVGs from `out/`. | `npm run mint` | PLANNED |
+| 3 | 0:30 to 0:50 | Mint four agents. Mock mode prints four `nft_mint` calls (dry run). SVGs from `out/` are PLANNED. | `npm run mint` | exists (dry run; no SVGs yet) |
 | 4 | 0:50 to 1:15 | Swarm runs 5 rounds. Transcript scrolls. | `npm run swarm -- --rounds 5` | PLANNED |
 | 5 | 1:15 to 1:35 | Character sheets update. Show the before/after diff. | `npm run summarize` | PLANNED |
-| 6 | 1:35 to 1:50 | Checks pass: round hashes, SVG determinism, memory files. | `npm run verify` | PLANNED |
+| 6 | 1:35 to 1:50 | Checks pass: round hashes, SVG determinism, memory files. | `bash scripts/verify.sh` (SVG determinism check PLANNED) | exists (partial) |
 | 7 | 1:50 to 2:00 | Close: repo URL, one question. | none | n/a |
 
-Fallback while planned commands are missing, to show something real:
+Fallback while the planned commands are missing, to show something real:
 
 - `npm run infer -- "What do you make of the treasury proposal?"` (exists): one agent turn, mock mode, identical reply on a second run.
-- `npm run test:contract` (exists, needs Rust): 13 contract tests, including the anchor surviving `nft_transfer`.
+- `npm run test:contract` (exists, needs Rust): all contract tests pass, including the anchor surviving `nft_transfer`.
+- `node scripts/viewer.mjs` (exists): writes a static HTML page of a 5-round mock run to `out/viewer/index.html`; prints `mode: mock`.
+- `npm test` (exists): Node tests for scripts and `src/`; ends with `# fail 0`.
 - `bash scripts/verify.sh` (exists): the judge screen, ends with `result: PASS`.
 
 ## Narration
@@ -53,7 +55,7 @@ Plain words. Read at a normal pace; about 230 words in total.
 
 - Terminal font large enough to read at 720p. Light background or high contrast.
 - Trim waiting time. Do not speed up output so much that it can't be read.
-- If the video shows a live testnet run (planned), show transaction hashes only. Never show a key, a seed phrase or `.env`.
+- If the video shows a live testnet run (not done yet), show transaction hashes only. Never show a key, a seed phrase or `.env`.
 - Say "mock mode" out loud once. Do not imply a live NEAR AI call or on-chain write unless that run was really live.
 - Do not claim the `privacy` track or any TEE attestation. `PRODUCT.md` says to leave it off until a check ships.
 - Export a 60 to 90 second cut (scenes 3 to 6) for the X post.
