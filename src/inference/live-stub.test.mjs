@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
-import { DEFAULT_MAX_RESPONSE_BYTES, InferenceError, createInferenceClient } from "./client.mjs";
+import { DEFAULT_MAX_RESPONSE_BYTES, InferenceError, MAX_CONTENT_BYTES, createInferenceClient } from "./client.mjs";
 import { runSwarm } from "../swarm/runner.mjs";
 import { AGENTS } from "../traits/agents.mjs";
 import { runMemoryLoop } from "../memory/loop.mjs";
@@ -168,17 +168,26 @@ function assertNoKey(e) {
   assert.ok(!JSON.stringify(e.cause ?? null).includes(KEY));
 }
 
-test("response cap: a 1 MiB reply is well under the default cap and comes back whole", () =>
+// Two caps apply to a live reply. The raw body cap (DEFAULT_MAX_RESPONSE_BYTES)
+// bounds memory: a body past it aborts the request with response_too_large. The
+// text cap (MAX_CONTENT_BYTES) bounds what the caller sees: a body under the raw
+// cap is read whole and its content is then cut. The tests below assert the raw
+// layer: the request succeeds, and the text is bounded by the text layer.
+test("response cap: a 1 MiB body is well under the default cap, is read whole and the text is cut to MAX_CONTENT_BYTES", () =>
   withStub((_r, res) => json(res, 200, completionOfSize(1024 * 1024)), async (s) => {
+    assert.ok(MAX_CONTENT_BYTES < 1024 * 1024, "text cap is below the body size, so it is the one that bites");
     const reply = await clientFor(s, { maxRetries: 0 }).chat(ask);
-    assert.equal(Buffer.byteLength(reply.content), 1024 * 1024 - Buffer.byteLength(JSON.stringify(completion(""))));
+    assert.equal(Buffer.byteLength(reply.content), MAX_CONTENT_BYTES);
+    assert.ok([...reply.content].every((c) => c === "a"), "cut text is a prefix of the reply");
+    assert.equal(s.seen.length, 1);
   }));
 
-test("response cap: a body exactly at the default cap passes", () =>
+test("response cap: a body exactly at the default cap passes and the text is cut to MAX_CONTENT_BYTES", () =>
   withStub((_r, res) => json(res, 200, completionOfSize(DEFAULT_MAX_RESPONSE_BYTES)), async (s) => {
     assert.ok(DEFAULT_MAX_RESPONSE_BYTES >= 2 * 1024 * 1024, "cap is comfortably above any real chat completion");
     const reply = await clientFor(s, { maxRetries: 0 }).chat(ask);
-    assert.ok(reply.content.length > 1024 * 1024);
+    assert.equal(Buffer.byteLength(reply.content), MAX_CONTENT_BYTES);
+    assert.equal(s.seen.length, 1);
   }));
 
 test("response cap: one byte over the default cap fails with a clear error, no retry, no key", () =>

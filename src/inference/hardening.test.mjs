@@ -245,8 +245,11 @@ test("mock reply: a responder's control and bidi characters are replaced too", a
 });
 
 // Audit L-3: no cap on a live reply's size, and no max_tokens on the request.
-test("a 4 MiB reply is cut to MAX_CONTENT_BYTES on a code point boundary", async () => {
-  const huge = "é".repeat(2 * 1024 * 1024); // 2 bytes each: 4 MiB
+// This is the text layer. The reply stays under the 4 MiB raw body cap
+// (DEFAULT_MAX_RESPONSE_BYTES, covered in live-stub.test.mjs) so the request
+// succeeds and only the content cap is exercised here.
+test("a 2 MiB reply is cut to MAX_CONTENT_BYTES on a code point boundary", async () => {
+  const huge = "é".repeat(1024 * 1024); // 2 bytes each: 2 MiB, under the body cap
   const reply = await live(async () => ok(huge)).chat(REQ);
   const bytes = Buffer.byteLength(reply.content, "utf8");
   assert.ok(bytes <= MAX_CONTENT_BYTES, `${bytes} bytes`);
