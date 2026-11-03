@@ -46,7 +46,7 @@ an example evidence file. Nothing is signed or sent.
 export function buildAnchorStep({ contract, owner }) {
   const p = prepareAnchor({ contractId: contract === PLACEHOLDER_CONTRACT ? "placeholder.testnet" : contract, tokenId: ANCHOR_TOKEN, sheet: SHEET, network: NETWORK });
   const gasTgas = `${Number(BigInt(p.gas) / 10n ** 12n)} Tgas`;
-  const deposit = p.firstAnchor ? "0.01 NEAR" : "1 yoctoNEAR";
+  const deposit = "0.01 NEAR";
   const argv = [
     "--quiet", "contract", "call-function", "as-transaction", contract, p.methodName,
     "json-args", JSON.stringify(p.args),
