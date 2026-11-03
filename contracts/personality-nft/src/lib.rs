@@ -58,6 +58,8 @@ enum StorageKey {
     Enumeration,
     Approval,
     SheetAnchors,
+    SeenHashes,
+    InFlight,
 }
 
 /// The on-chain pointer to a token's off-chain character sheet.
@@ -95,6 +97,12 @@ pub struct Contract {
     tokens: NonFungibleToken,
     metadata: LazyOption<NFTContractMetadata>,
     sheet_anchors: LookupMap<TokenId, SheetAnchor>,
+    /// `"{token_id}:{sheet_hash}"` for every hash ever anchored. A hash can be
+    /// anchored once per token, so alternating A, B, A, B cannot inflate depth.
+    seen_hashes: LookupMap<String, ()>,
+    /// Tokens inside an `nft_transfer_call`: ownership has moved to the
+    /// receiver but the transfer may still revert. Their anchor is frozen.
+    in_flight: LookupMap<TokenId, ()>,
 }
 
 #[near]
@@ -131,6 +139,8 @@ impl Contract {
             ),
             metadata: LazyOption::new(StorageKey::Metadata, Some(&metadata)),
             sheet_anchors: LookupMap::new(StorageKey::SheetAnchors),
+            seen_hashes: LookupMap::new(StorageKey::SeenHashes),
+            in_flight: LookupMap::new(StorageKey::InFlight),
         }
     }
 
@@ -150,6 +160,10 @@ impl Contract {
         require!(
             env::predecessor_account_id() == self.tokens.owner_id,
             "only the contract owner can mint"
+        );
+        require!(
+            receiver_id != env::current_account_id(),
+            "cannot mint to the contract account itself"
         );
         validate_token_id(&token_id);
         validate_token_metadata(&token_metadata);
@@ -185,9 +199,15 @@ impl Contract {
     /// Records the sha256 of the token's latest character sheet and grows its
     /// memory depth by one. Only the current token owner may call this.
     ///
-    /// Attach at least 1 yoctoNEAR (so a full-access key must sign). The first
-    /// anchor on a token grows storage; the deposit must cover that growth and
-    /// the remainder is refunded. Emits a NEP-297 `sheet_anchored` event.
+    /// A hash can be anchored only once per token (re-anchoring an old hash is
+    /// rejected), so depth counts distinct sheets. It is still advisory: the
+    /// chain holds no sheet contents. Frozen while an `nft_transfer_call` is in
+    /// flight.
+    ///
+    /// Attach at least 1 yoctoNEAR (so a full-access key must sign). Every
+    /// anchor adds a seen-hash record, so the deposit must cover that storage
+    /// growth (about 100 bytes plus the first anchor's own growth); the
+    /// remainder is refunded. Emits a NEP-297 `sheet_anchored` event.
     #[payable]
     pub fn anchor_sheet(&mut self, token_id: TokenId, sheet_hash: String) -> SheetAnchor {
         require!(
@@ -209,6 +229,11 @@ impl Contract {
             "only the token owner can anchor a sheet"
         );
 
+        require!(
+            !self.in_flight.contains_key(&token_id),
+            "token is in an nft_transfer_call; anchor after it resolves"
+        );
+
         let initial_storage = env::storage_usage();
         let mut anchor = self
             .sheet_anchors
@@ -219,6 +244,12 @@ impl Contract {
             anchor.sheet_hash.as_deref() != Some(sheet_hash.as_str()),
             "sheet_hash is already anchored; memory depth only grows with a new sheet"
         );
+        require!(
+            self.seen_hashes
+                .insert(format!("{token_id}:{sheet_hash}"), ())
+                .is_none(),
+            "sheet_hash was anchored before; memory depth only grows with a new sheet"
+        );
         anchor.memory_depth = anchor
             .memory_depth
             .checked_add(1)
@@ -227,6 +258,7 @@ impl Contract {
         anchor.updated_at = U64(env::block_timestamp());
         self.sheet_anchors.insert(token_id.clone(), anchor.clone());
         self.sheet_anchors.flush();
+        self.seen_hashes.flush();
         let storage_used = env::storage_usage().saturating_sub(initial_storage);
         refund_deposit_to_account(storage_used, caller);
 
@@ -245,6 +277,31 @@ impl Contract {
     /// Returns the token's sheet anchor, or `None` if the token does not exist.
     pub fn sheet_anchor(&self, token_id: TokenId) -> Option<SheetAnchor> {
         self.sheet_anchors.get(&token_id).cloned()
+    }
+
+    /// Like `nft_transfer`, but panics unless the token's anchor is exactly
+    /// `(expected_hash, expected_depth)`. Sellers and marketplaces use it so a
+    /// sale cannot land after the anchor was swapped. Requires 1 yoctoNEAR.
+    #[payable]
+    pub fn nft_transfer_expecting_anchor(
+        &mut self,
+        receiver_id: AccountId,
+        token_id: TokenId,
+        approval_id: Option<u64>,
+        memo: Option<String>,
+        expected_hash: Option<String>,
+        expected_depth: u32,
+    ) {
+        let anchor = self
+            .sheet_anchors
+            .get(&token_id)
+            .unwrap_or_else(|| env::panic_str("sheet anchor missing for token"));
+        require!(
+            anchor.sheet_hash == expected_hash && anchor.memory_depth == expected_depth,
+            "sheet anchor does not match the expected anchor"
+        );
+        self.tokens
+            .nft_transfer(receiver_id, token_id, approval_id, memo);
     }
 
     /// The account allowed to mint.
@@ -279,6 +336,10 @@ impl NonFungibleTokenCore for Contract {
         memo: Option<String>,
         msg: String,
     ) -> PromiseOrValue<bool> {
+        require!(
+            self.in_flight.insert(token_id.clone(), ()).is_none(),
+            "token is already in an nft_transfer_call"
+        );
         self.tokens
             .nft_transfer_call(receiver_id, token_id, approval_id, memo, msg)
     }
@@ -298,6 +359,7 @@ impl NonFungibleTokenResolver for Contract {
         token_id: TokenId,
         approved_account_ids: Option<HashMap<AccountId, u64>>,
     ) -> bool {
+        self.in_flight.remove(&token_id);
         self.tokens.nft_resolve_transfer(
             previous_owner_id,
             receiver_id,
@@ -417,6 +479,10 @@ fn require_max_len(value: &Option<String>, max: usize, field: &str) {
 /// Bounds every free-form metadata string so a mint cannot bloat storage or
 /// every `nft_token` view, and requires `extra` to be a JSON object.
 fn validate_token_metadata(m: &TokenMetadata) {
+    require!(
+        matches!(m.copies, None | Some(1)),
+        "copies must be 1: each agent is a single token"
+    );
     require_max_len(&m.title, MAX_TITLE_LEN, "title");
     require_max_len(&m.description, MAX_DESCRIPTION_LEN, "description");
     require_max_len(&m.extra, MAX_EXTRA_LEN, "extra");
@@ -568,7 +634,7 @@ mod tests {
         assert!(event.contains(r#""memory_depth":2"#));
 
         // A second summary, once storage exists, only needs 1 yoctoNEAR.
-        testing_env!(context(accounts(2), ONE_YOCTO).build());
+        testing_env!(context(accounts(2), MINT_DEPOSIT).build());
         let second = contract.anchor_sheet("aloof".to_string(), HASH_B.to_string());
         assert_eq!(second.sheet_hash.as_deref(), Some(HASH_B));
         assert_eq!(second.memory_depth, 3);
@@ -630,7 +696,7 @@ mod tests {
         assert_eq!(carried.sheet_hash.as_deref(), Some(HASH_A));
         assert_eq!(carried.memory_depth, 2);
 
-        testing_env!(context(accounts(3), ONE_YOCTO).build());
+        testing_env!(context(accounts(3), MINT_DEPOSIT).build());
         let next = contract.anchor_sheet("aloof".to_string(), HASH_B.to_string());
         assert_eq!(next.memory_depth, 3);
     }
@@ -785,8 +851,14 @@ mod tests {
     #[test]
     fn mint_accepts_none_and_32_byte_hashes() {
         let mut m = aloof_metadata();
-        m.media_hash = Some(near_sdk::json_types::Base64VecU8::from(vec![7u8; SHA256_BYTES]));
-        m.reference_hash = Some(near_sdk::json_types::Base64VecU8::from(vec![9u8; SHA256_BYTES]));
+        m.media_hash = Some(near_sdk::json_types::Base64VecU8::from(vec![
+            7u8;
+            SHA256_BYTES
+        ]));
+        m.reference_hash = Some(near_sdk::json_types::Base64VecU8::from(vec![
+            9u8;
+            SHA256_BYTES
+        ]));
         mint_with("x", m);
         mint_with("y", aloof_metadata());
     }
@@ -1065,5 +1137,117 @@ mod tests {
         let anchor = contract.sheet_anchor("aloof".to_string()).unwrap();
         assert_eq!(anchor.sheet_hash, None);
         assert_eq!(anchor.memory_depth, INITIAL_MEMORY_DEPTH);
+    }
+
+    fn panics<F: FnOnce()>(f: F) -> bool {
+        catch_unwind(AssertUnwindSafe(f)).is_err()
+    }
+
+    fn resolve(contract: &mut Contract, receiver_reverts: bool) -> bool {
+        testing_env!(
+            context(accounts(0), NearToken::from_yoctonear(0)).build(),
+            near_sdk::test_vm_config(),
+            near_sdk::RuntimeFeesConfig::test(),
+            Default::default(),
+            vec![near_sdk::PromiseResult::Successful(
+                receiver_reverts.to_string().into_bytes()
+            )]
+        );
+        contract.nft_resolve_transfer(accounts(2), accounts(3), "aloof".to_string(), None)
+    }
+
+    #[test]
+    fn anchor_is_frozen_during_transfer_call_and_unfrozen_after_revert() {
+        let mut contract = minted_contract();
+        testing_env!(context(accounts(2), ONE_YOCTO)
+            .prepaid_gas(near_sdk::Gas::from_tgas(100))
+            .build());
+        let _ = contract.nft_transfer_call(accounts(3), "aloof".to_string(), None, None, "".into());
+        // The receiver owns the token now but must not touch the anchor.
+        testing_env!(context(accounts(3), MINT_DEPOSIT).build());
+        assert!(panics(|| {
+            contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+        }));
+        // A nested transfer call cannot overwrite the in-flight lock either.
+        testing_env!(context(accounts(3), ONE_YOCTO)
+            .prepaid_gas(near_sdk::Gas::from_tgas(100))
+            .build());
+        assert!(panics(|| {
+            let _ =
+                contract.nft_transfer_call(accounts(4), "aloof".to_string(), None, None, "".into());
+        }));
+        // The receiver reverts the transfer: the token returns, anchor untouched.
+        assert!(!resolve(&mut contract, true));
+        let token = contract.nft_token("aloof".to_string()).unwrap();
+        assert_eq!(token.owner_id, accounts(2));
+        let anchor = contract.sheet_anchor("aloof".to_string()).unwrap();
+        assert_eq!(anchor.sheet_hash, None);
+        assert_eq!(anchor.memory_depth, INITIAL_MEMORY_DEPTH);
+        // The owner can anchor again once the transfer resolved.
+        testing_env!(context(accounts(2), MINT_DEPOSIT).build());
+        let anchor = contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+        assert_eq!(anchor.memory_depth, 2);
+    }
+
+    #[test]
+    fn alternating_two_hashes_cannot_inflate_depth() {
+        let mut contract = minted_contract();
+        testing_env!(context(accounts(2), MINT_DEPOSIT).build());
+        contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+        contract.anchor_sheet("aloof".to_string(), HASH_B.to_string());
+        assert!(panics(|| {
+            contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+        }));
+        let anchor = contract.sheet_anchor("aloof".to_string()).unwrap();
+        assert_eq!(anchor.sheet_hash.as_deref(), Some(HASH_B));
+        assert_eq!(anchor.memory_depth, 3);
+    }
+
+    #[test]
+    fn transfer_expecting_anchor_checks_hash_and_depth() {
+        let mut contract = minted_contract();
+        testing_env!(context(accounts(2), MINT_DEPOSIT).build());
+        contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+        testing_env!(context(accounts(2), ONE_YOCTO).build());
+        for (hash, depth) in [(Some(HASH_B), 2), (Some(HASH_A), 3), (None, 2)] {
+            assert!(panics(|| {
+                contract.nft_transfer_expecting_anchor(
+                    accounts(3),
+                    "aloof".to_string(),
+                    None,
+                    None,
+                    hash.map(String::from),
+                    depth,
+                );
+            }));
+        }
+        contract.nft_transfer_expecting_anchor(
+            accounts(3),
+            "aloof".to_string(),
+            None,
+            None,
+            Some(HASH_A.to_string()),
+            2,
+        );
+        let token = contract.nft_token("aloof".to_string()).unwrap();
+        assert_eq!(token.owner_id, accounts(3));
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot mint to the contract account itself")]
+    fn mint_to_the_contract_account_panics() {
+        testing_env!(context(accounts(1), MINT_DEPOSIT).build());
+        let mut contract = Contract::new_default_meta(accounts(1));
+        contract.nft_mint("x".to_string(), accounts(0), aloof_metadata());
+    }
+
+    #[test]
+    #[should_panic(expected = "copies must be 1")]
+    fn mint_with_copies_other_than_one_panics() {
+        testing_env!(context(accounts(1), MINT_DEPOSIT).build());
+        let mut contract = Contract::new_default_meta(accounts(1));
+        let mut meta = aloof_metadata();
+        meta.copies = Some(1000);
+        contract.nft_mint("x".to_string(), accounts(2), meta);
     }
 }

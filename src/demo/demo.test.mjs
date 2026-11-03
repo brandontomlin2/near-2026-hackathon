@@ -184,15 +184,14 @@ describe("demo: anchors", () => {
     }
   });
 
-  it("first call per token has the larger deposit, the second costs 1 yocto", () => {
+  it("every call carries the storage deposit; only the first is flagged firstAnchor", () => {
     const anchors = readJson(dirA, "anchors.json");
     for (const id of IDS) {
       const [first, second, ...rest] = anchors.calls.filter((c) => c.tokenId === id);
       assert.equal(rest.length, 0);
       assert.equal(first.firstAnchor, true);
       assert.equal(second.firstAnchor, false);
-      assert.equal(second.depositYocto, "1");
-      assert.ok(BigInt(first.depositYocto) > BigInt(second.depositYocto));
+      assert.equal(second.depositYocto, first.depositYocto);
     }
   });
 });
@@ -354,7 +353,7 @@ describe("demo: guards and formatting", () => {
   it("the page names the placeholder contract, shows deposits in NEAR and how to check a hash", () => {
     const html = fs.readFileSync(path.join(dirA, "index.html"), "utf8");
     assert.ok(html.includes("placeholder contract id"));
-    assert.ok(html.includes("0.01 NEAR") && html.includes("1 yoctoNEAR"));
+    assert.ok(html.includes("0.01 NEAR"));
     assert.ok(html.includes("shasum -a 256"));
     assert.ok(html.includes("memory_depth: 1 at mint, 3 now"));
     assert.ok(!html.includes('href="index.html"'));
