@@ -16,8 +16,8 @@ import { renderSvg } from "../art/render.mjs";
 const PINNED_FINAL_ROUND_HASH = "ea0270925cbdff0bf41a7b3ee48a0129c4bec03b7dc1d675cd028ca30e34a948";
 const IDS = ["aloof", "chaotic", "social", "skeptic"];
 // Pins the sheet writer, summarizer prompt, hashing, art paths and anchors, not just the swarm.
-const PINNED_ALOOF_SHEET_HASH = "73f70c47cda08512861ed2661c2b581be1c62f15586bea4f9a93f6196061cf58";
-const PINNED_DEMO_JSON_SHA256 = "6e7a79e6bec8b69077b7a52d86220b489d38ddc613de228ee30ee4731eb26ffc";
+const PINNED_ALOOF_SHEET_HASH = "7e73c2b29078073c4bfedaabc4566f3f4d5a5d9b5ed0ce479bd56e4e5c1121ec";
+const PINNED_DEMO_JSON_SHA256 = "854d96a0e9bd75da4b7551808addafc6efe86f342051784c8e1d0699895e45cf";
 
 const tmp = [];
 function mkTmp() {

@@ -17,8 +17,8 @@ describe("sheetResponder", () => {
       ev("mention", "Skeptic", "@Aloof prove it."),
       ev("post", "Social", "Not mine."),
     ]);
-    assert.match(sheet, /^Who I am: I am Aloof,/);
-    assert.match(sheet, /Reputation: 2 posts, 1 reply, mentioned 1 time\./);
+    assert.match(sheet, /^Who I am: Aloof,/);
+    assert.match(sheet, /Receipts: 2 posts, 1 reply, mentioned 1 time\./);
     assert.ok(sheet.split(/\s+/).length <= MAX_SHEET_WORDS);
   });
 
@@ -28,14 +28,14 @@ describe("sheetResponder", () => {
       ev("reply", "Aloof", "@Social Hi."),
       ev("mention", "Skeptic", "@Aloof hm."),
     ]);
-    assert.match(first, /Skeptic 1 time \(0 warm, 0 tense\), Social 1 time \(0 warm, 0 tense\)/);
+    assert.match(first, /Skeptic: 0 fights, 0 hugs, 1 shrug; Social: 0 fights, 0 hugs, 1 shrug/);
     const second = respond("Aloof", first, [
       ev("post", "Aloof", "Two.", 4),
       ev("mention", "Skeptic", "@Aloof Doubtful. again.", 4),
       ev("mention", "Skeptic", "@Aloof Friends. once more.", 4),
     ]);
-    assert.match(second, /Reputation: 2 posts, 1 reply, mentioned 3 times\./);
-    assert.match(second, /Skeptic 3 times \(1 warm, 1 tense\), Social 1 time \(0 warm, 0 tense\)/);
+    assert.match(second, /Receipts: 2 posts, 1 reply, mentioned 3 times\./);
+    assert.match(second, /Skeptic: 1 fight, 1 hug, 1 shrug; Social: 0 fights, 0 hugs, 1 shrug/);
   });
 
   it("picks allies and grudges from the tone of exchanges, not their count", () => {
@@ -46,11 +46,11 @@ describe("sheetResponder", () => {
       ev("mention", "Social", "@Aloof Friends. Let's agree a plan together."),
       ev("reply", "Aloof", "@Chaotic Noted."),
     ]);
-    assert.match(sheet, /Skeptic 3 times \(1 warm, 2 tense\)/);
-    assert.match(sheet, /Grudges and allies: Social is my ally; I hold a grudge against Skeptic\./);
+    assert.match(sheet, /Skeptic: 2 fights, 1 hug, 0 shrugs/);
+    assert.match(sheet, /Public enemy #1: Skeptic \(2 fights\)\.\s+Ride-or-die: Social \(1 warm moment\)\./);
 
     const neutral = respond("Aloof", null, [ev("mention", "Social", "@Aloof a"), ev("mention", "Chaotic", "@Aloof b")]);
-    assert.match(neutral, /I have no ally yet; I hold no grudges yet\./);
+    assert.match(neutral, /Public enemy #1: nobody yet[\s\S]*Ride-or-die: no one yet/);
   });
 
   it("breaks tone ties alphabetically and carries tone forward", () => {
@@ -58,10 +58,10 @@ describe("sheetResponder", () => {
       ev("mention", "Social", "@Aloof Glad to see this."),
       ev("mention", "Chaotic", "@Aloof Good point."),
     ]);
-    assert.match(first, /Chaotic is my ally/);
+    assert.match(first, /Ride-or-die: Chaotic/);
     const second = respond("Aloof", first, [ev("mention", "Social", "@Aloof Warmly.", 4)]);
-    assert.match(second, /Social 2 times \(2 warm, 0 tense\)/);
-    assert.match(second, /Social is my ally/);
+    assert.match(second, /Social: 0 fights, 2 hugs, 0 shrugs/);
+    assert.match(second, /Ride-or-die: Social/);
   });
 
   it("uses singular and plural forms", () => {
@@ -71,10 +71,30 @@ describe("sheetResponder", () => {
       ev("mention", "Social", "@Aloof z"),
     ]);
     assert.match(one, /1 post, 1 reply, mentioned 1 time\./);
-    assert.match(one, /Social 2 times/);
+    assert.match(one, /Social: 0 fights, 0 hugs, 2 shrugs/);
     const two = respond("Aloof", null, [ev("post", "Aloof", "a"), ev("post", "Aloof", "b")]);
     assert.match(two, /2 posts, 0 replies, mentioned 0 times\./);
-    assert.match(respond("Aloof", null, [ev("mention", "Social", "@Aloof z")]), /Social 1 time \(/);
+    assert.match(respond("Aloof", null, [ev("mention", "Social", "@Aloof z")]), /Social: 0 fights, 0 hugs, 1 shrug/);
+  });
+
+  it("reads like a character: signature quote from own words, a vibe, a rivalry story", () => {
+    const sheet = respond("Chaotic", null, [
+      ev("post", "Chaotic", "Oh, come on! The gas meme is a joke."),
+      ev("mention", "Skeptic", "@Chaotic Doubtful. Show me the log."),
+      ev("mention", "Skeptic", "@Chaotic Nope."),
+      ev("mention", "Social", "@Chaotic Glad you are here."),
+    ]);
+    assert.match(sheet, /Signature quote: "Oh, come on! The gas meme is a joke"\./);
+    assert.match(sheet, /Public enemy #1: Skeptic \(2 fights\)/);
+    assert.match(sheet, /Rivalry arc: Skeptic and I keep clashing\. Social keeps the peace/);
+    assert.match(sheet, /Who I am: Chaotic, (villain arc|chaos goblin|locked in)/);
+    assert.ok(!/traded words/.test(sheet));
+  });
+
+  it("keeps the signature quote when later events have no post from this agent", () => {
+    const first = respond("Aloof", null, [ev("post", "Aloof", "Quietly fine.")]);
+    const second = respond("Aloof", first, [ev("mention", "Social", "@Aloof hi", 4)]);
+    assert.match(second, /Signature quote: "Quietly fine"/);
   });
 
   it("is deterministic for the same request", () => {
@@ -101,7 +121,7 @@ describe("sheetResponder", () => {
     assert.doesNotThrow(() => {
       sheet = sheetResponder(req, "h");
     });
-    assert.match(sheet, /Reputation: 0 posts, 0 replies, mentioned 0 times\./);
-    assert.match(sheet, /nobody has traded words with me yet/);
+    assert.match(sheet, /Receipts: 0 posts, 0 replies, mentioned 0 times\./);
+    assert.match(sheet, /Scorecard: empty/);
   });
 });
