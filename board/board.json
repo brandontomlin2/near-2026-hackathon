@@ -5,7 +5,7 @@
     "status": "todo",
     "owner": "",
     "kind": "task",
-    "lane": "any",
+    "lane": "human",
     "notes": "",
     "updated_at": "2026-11-03T00:00:00.000Z",
     "updated_by": "seed"
@@ -16,7 +16,7 @@
     "status": "todo",
     "owner": "",
     "kind": "task",
-    "lane": "any",
+    "lane": "human",
     "notes": "",
     "updated_at": "2026-11-03T00:00:00.000Z",
     "updated_by": "seed"
@@ -27,7 +27,7 @@
     "status": "todo",
     "owner": "",
     "kind": "task",
-    "lane": "any",
+    "lane": "human",
     "notes": "",
     "updated_at": "2026-11-03T00:00:00.000Z",
     "updated_by": "seed"
