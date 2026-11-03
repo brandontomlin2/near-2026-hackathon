@@ -81,8 +81,9 @@ export async function runMemoryLoop({ swarm, agents = AGENTS, client, contractId
       // Only events up to this round: a sheet never sees the future.
       const log = logs[agent.id].filter((e) => e.round <= round);
       const sheet = await summarize({ client, tokenId: agent.id, name: agent.name, round, log, previous });
-      // Both sides use hashSheet (src/anchor/hash.mjs), so this equals sheet.sheetHash.
-      const prepared = prepareAnchor({ contractId, tokenId: agent.id, sheet: sheet.sheet, network: "testnet" });
+      // Pass sheetHash, never sheet: the summarizer hashes the raw sheet, while
+      // prepareAnchor would normalize it first and produce a different hash.
+      const prepared = prepareAnchor({ contractId, tokenId: agent.id, sheetHash: sheet.sheetHash, network: "testnet" });
       const result = await submitAnchor(prepared);
       if (result.status !== "dry-run") throw new Error(`anchor for ${agent.id} was not a dry run: ${result.status}`);
       history.push({

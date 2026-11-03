@@ -20,8 +20,9 @@ Then open `out/index.html` in a browser.
 2. Open `out/index.html`. See the four agents, each with its art at mint (1 ring) next to its art now (3 rings, one per character sheet), its latest sheet and the sheet hash. Further down: every sheet in order (round 3, then round 6), the round hash chain with `verify: ok`, the full channel with replies shown as `Chaotic → Skeptic`, and the dry-run anchor table.
 3. Open `out/memory/chaotic/sheet.json`. See Chaotic's round 6 sheet: who it is, who it has traded words with (and how many exchanges were warm or tense), its ally (Social) and its grudge (Skeptic), a running belief, and its post, reply and mention counts. The counts grow from the round 3 sheet (shown on the page and in `out/demo.json`). Check the hash with an independent tool: `node -p 'require("./out/memory/chaotic/sheet.json").sheet' | shasum -a 256` prints the `sheetHash` in the same file. The sheet is hashed after normalizing (NFC, LF, one final newline), which for a one-line sheet is the text plus a newline.
 4. Open `out/anchors.json`. The `contractId` `personality-nft.demo.testnet` is a placeholder: no contract is deployed there. See 8 `anchor_sheet` calls for testnet, two per token, each `"status": "dry-run"` with `"transactionHash": null` and `"signed": false`. The first call per token carries the storage deposit and the second carries 1 yoctoNEAR. Each token's latest `sheet_hash` equals the `sheetHash` in its `sheet.json`, so the hash in the file is the hash the token would carry.
-5. Run `npm run demo` again. See the same final round hash, `ea0270925cbdff0bf41a7b3ee48a0129c4bec03b7dc1d675cd028ca30e34a948`, and byte-identical files.
-6. Run `MOCK_INFERENCE=0 npm run demo`. See `demo: runs in mock mode only` and exit 2. The demo never makes a live call.
+5. Open `out/index.html` and find "Transfer: memory travels with the NFT". See a simulated transfer from `alice.demo.testnet` to `bob.demo.testnet` (placeholder accounts): each token's sheet is re-hashed with the official sheet hash function and shows `match` against its anchored hash, a tampered sheet shows `MISMATCH`, and the NEAR AI Cloud (TEE) badge is marked `mocked`. The same data is under `transfer` in `out/demo.json`.
+6. Run `npm run demo` again. See the same final round hash, `ea0270925cbdff0bf41a7b3ee48a0129c4bec03b7dc1d675cd028ca30e34a948`, and byte-identical files.
+7. Run `MOCK_INFERENCE=0 npm run demo`. See `demo: runs in mock mode only` and exit 2. The demo never makes a live call.
 
 Options: `npm run demo -- --rounds 9 --every 3 --seed 2 --out out/other`. What runs, in order: the swarm (`src/swarm/runner.mjs`), the memory summarizer (`src/memory/summarizer.mjs`, here with a deterministic mock sheet writer in `src/demo/sheet-responder.mjs`), the art renderer (`src/art/render.mjs`), the anchor call builder in dry-run mode (`src/anchor/anchor.mjs`), and the page (`src/demo/page.mjs`). The steps are wired in `src/demo/pipeline.mjs`. The sheets in the demo come from a deterministic stand-in for the model that counts exchanges and reads warm or tense words. They are not model output. With `MOCK_INFERENCE=0` the same summarizer prompt goes to NEAR AI Cloud (the demo itself refuses live mode).
 
@@ -58,7 +59,7 @@ On top of the standard, every token carries a *sheet anchor* keyed by token id, 
 | `sheet_anchor(token_id)` | anyone (view) | none | Returns `{ sheet_hash, memory_depth, updated_at }`, or `null` for an unknown token. |
 | `owner_id()` | anyone (view) | none | The minting account. |
 
-Why the hash and not the sheet: the log and the sheet stay off-chain, and the token carries only enough to prove which sheet it claims. A new owner hashes the sheet they received and compares it with `sheet_anchor`. The sheet hash is `hashSheet` in `src/anchor/hash.mjs`: sha256 of the sheet after Unicode NFC, LF line endings, no trailing spaces, no leading or trailing blank lines and one final newline.
+Why the hash and not the sheet: the log and the sheet stay off-chain, and the token carries only enough to prove which sheet it claims. A new owner hashes the sheet they received and compares it with `sheet_anchor`.
 
 Build and test. Requirements:
 
@@ -83,15 +84,38 @@ Steps:
 
 1. Run `npm run build:contract`. See `contracts/personality-nft/target/near/personality_nft.wasm`. This needs cargo-near.
 2. Run `npm run deploy:nft`. See `[1/1] deploy`, a call to `<contract>.new_default_meta`, and a `near --quiet contract deploy ... sign-with-keychain send` command printed. Nothing is sent.
-3. Run `npm run mint`. See four steps, `mint aloof` through `mint skeptic`. Each shows an `nft_mint` call with `token_metadata.extra` holding the trait JSON and a deposit of `0.05 NEAR`. The contract refunds whatever the token does not use. Use `npm run mint -- --count 3` for three agents, or `--receiver <acct>` to send the tokens elsewhere.
+3. Run `npm run mint`. See four steps, `mint aloof` through `mint skeptic`. Each shows an `nft_mint` call with the full NEP-177 `token_metadata` (title, a description in the agent's voice, `media`, `media_hash` = base64 sha256 of the agent's SVG, and `extra` holding the trait JSON) and a deposit of `0.05 NEAR`. The contract refunds whatever the token does not use. Use `npm run mint -- --count 3` for three agents, or `--receiver <acct>` to send the tokens elsewhere. `media` is `<media-base>/<token_id>.svg`; with no `--media-base` it is a labelled placeholder URL (the art is too big for a `data:` URI under the contract's 512-byte cap, and no hosting is assumed).
 4. Export `NEAR_ACCOUNT_ID=<your testnet account>`, and `NEAR_CONTRACT_ACCOUNT_ID` if the contract lives on another account. Leave `NEAR_NETWORK` unset or set it to `testnet`. Any other value is refused.
 5. Run `npm run deploy:nft -- --send`. See near-cli-rs print a transaction hash for the deploy, then `done`. If the keychain has no key for the account, see `error: no testnet key for <acct>` and nothing is sent. Run deploy once per contract account. The init call panics if the contract is already initialized.
-6. Run `npm run mint -- --send`. See one transaction hash per agent. Re-running with the same token ids fails on chain at the first duplicate, and the script stops there. Earlier mints are not rolled back.
+6. Host the four SVGs (from `src/art/render.mjs`) and run `npm run mint -- --send --media-base <url>`; `--send` refuses to run without `--media-base`. See one transaction hash per agent. Re-running with the same token ids fails on chain at the first duplicate, and the script stops there. Earlier mints are not rolled back.
 7. Check the tokens with `near contract call-function as-read-only <contract> nft_total_supply json-args '{}' network-config testnet now`. See `4`. Then run `near contract call-function as-read-only <contract> nft_token json-args '{"token_id":"aloof"}' network-config testnet now`. See `owner_id` set to your account and `extra` holding the Aloof traits.
 
 `npm run mint` and `npm run deploy:nft` in `scripts/verify.sh --live` run as dry runs too, because the script sends only with `--send`. A live verify run does not put transactions on testnet.
 
 Tests for argument building and dry-run output: `node --test scripts/testnet-deploy.test.mjs`.
+
+## Live on testnet
+
+**Status: not run yet.** No contract has been deployed to testnet from this repository so far, and there are no transaction hashes to show. This section is a template. It is filled in when the live run happens (it needs the owner's explicit approval and their keychain account). `docs/evidence.example.json` shows the shape of the evidence a live run produces and is marked `"example": true`. Its hashes are placeholders.
+
+Contract id: `TBD` (to be filled in after the live run)
+
+| Step | Transaction | Explorer |
+| --- | --- | --- |
+| deploy | `TBD` | `TBD` |
+| mint (4 tokens) | `TBD` | `TBD` |
+| anchor_sheet | `TBD` | `TBD` |
+
+What the live run will do, as one command:
+
+1. Run `npm run live-proof`. See the deploy, four mint, and `anchor_sheet` steps printed in order, and `docs/evidence.example.json` written. Nothing is signed or sent.
+2. The owner runs `NEAR_ACCOUNT_ID=<account> NEAR_CONTRACT_ACCOUNT_ID=<contract> npm run live-proof -- --send --i-approve`. It refuses without both variables and the flag. Signing is done by the `near` CLI with the system keychain; this repository handles no keys.
+
+Once the live run is done, a judge can check it with read-only view calls. They need no account and no keys. Replace `<contract>` with the contract id above:
+
+1. `near contract call-function as-read-only <contract> nft_total_supply json-args '{}' network-config testnet now`. Expect `"4"`.
+2. `near contract call-function as-read-only <contract> nft_token json-args '{"token_id":"aloof"}' network-config testnet now`. Expect `token_id` `aloof`, `owner_id` set to the owner account, and `metadata.extra` holding `{"temperament":"cool","role":"observer","risk":"low","voice":"dry"}`.
+3. `near contract call-function as-read-only <contract> sheet_anchor json-args '{"token_id":"aloof"}' network-config testnet now`. Expect `sheet_hash` set to a 64-character hex string (the sha256 of the anchored character sheet), `memory_depth` `2`, and an `updated_at` timestamp. Before the anchor step the same call returns `sheet_hash: null` and `memory_depth: 1`.
 
 ## Inference
 
