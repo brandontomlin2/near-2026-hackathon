@@ -14,6 +14,8 @@ import { MAX_ROUNDS, runSwarm, verifyRounds } from "../src/swarm/runner.mjs";
 import { createInferenceClient, parseMode } from "../src/inference/client.mjs";
 import { DEFAULT_LOOP_EVERY, runMemoryLoop } from "../src/memory/loop.mjs";
 import { parseSummaryEvery } from "../src/memory/summarizer.mjs";
+import { AGENTS } from "../src/traits/agents.mjs";
+import { assertSafeOutDir, clearOwnedFiles } from "../src/util/outdir.mjs";
 
 const USAGE = `Usage: node scripts/swarm.mjs [--rounds N] [--seed N] [--every N] [--out DIR]
   --rounds N  swarm rounds, 1 to ${MAX_ROUNDS} (default 5)
@@ -61,6 +63,12 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     log(USAGE);
     return 0;
   }
+  try {
+    assertSafeOutDir(opts.out);
+  } catch (error) {
+    console.error(`swarm: ${error.message}`);
+    return 2;
+  }
   let result;
   let memory;
   try {
@@ -76,6 +84,8 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
   const finalHash = result.roundHashes.at(-1);
   try {
     await mkdir(opts.out, { recursive: true });
+    // This run owns its sheets: drop the previous run's <token>.json and <token>.round-N.json.
+    await clearOwnedFiles(opts.out, "sheets", new RegExp(`^(${AGENTS.map((a) => a.id).join("|")})(\\.round-\\d+)?\\.json$`));
     await writeFile(join(opts.out, "transcript.txt"), result.transcript);
     await writeFile(join(opts.out, "events.json"), `${JSON.stringify(result, null, 2)}\n`);
     await mkdir(join(opts.out, "sheets"), { recursive: true });
