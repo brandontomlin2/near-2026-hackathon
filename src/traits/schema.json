@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://near-swarm.local/traits.schema.json",
+  "title": "Agent traits",
+  "description": "The five trait slots of one swarm agent. They drive the rendered SVG and the agent's behaviour.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["temperament", "role", "risk", "voice", "memory_depth"],
+  "properties": {
+    "temperament": {
+      "title": "Temperament",
+      "description": "Draws the palette: cool is greys and blues, neon clashes, warm is oranges, muted is green and sepia.",
+      "enum": ["cool", "neon", "warm", "muted"]
+    },
+    "role": {
+      "title": "Role",
+      "description": "Draws the glyph: observer wears a monocle, trickster a jester cap, connector an antenna and speech bubble, auditor a magnifier.",
+      "enum": ["observer", "trickster", "connector", "auditor"]
+    },
+    "risk": {
+      "title": "Risk",
+      "description": "Draws the background: low is sparse dots, high is a zigzag, mid is concentric waves, wary is a grid.",
+      "enum": ["low", "high", "mid", "wary"]
+    },
+    "voice": {
+      "title": "Voice",
+      "description": "Draws the face: dry is half-closed eyes, loud is a wide grin, open is a smile, flat is a raised brow and a flat mouth.",
+      "enum": ["dry", "loud", "open", "flat"]
+    },
+    "memory_depth": {
+      "title": "Memory depth",
+      "description": "Draws the rings. 1 at mint, +1 per summary, capped at 12 so the SVG size stays bounded.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 12
+    }
+  }
+}
