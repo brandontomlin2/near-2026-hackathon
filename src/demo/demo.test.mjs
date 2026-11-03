@@ -466,6 +466,23 @@ describe("demo: CLI main", () => {
     for (const f of walk(dir)) assert.ok(out.includes(`${dir}/${f}`), `output lacks ${f}`);
     assert.ok(out.includes(PINNED_FINAL_ROUND_HASH));
   });
+
+  it("prints one memory-diff line per agent between the memory step and the art step", async () => {
+    const r = await run(["--out", mkTmp()], {});
+    assert.equal(r.code, 0, r.errors.join("\n"));
+    const memory = r.lines.findIndex((l) => l.startsWith("[2/5] memory:"));
+    const art = r.lines.findIndex((l) => l.startsWith("[3/5] art:"));
+    assert.ok(memory >= 0 && art > memory, "memory and art step lines missing or out of order");
+    const between = r.lines.slice(memory + 1, art);
+    assert.equal(between.length, AGENTS.length, between.join("\n"));
+    for (const [i, agent] of AGENTS.entries()) {
+      const line = between[i];
+      assert.ok(line.startsWith(`     ${agent.id}: enemy `), line);
+      assert.match(line, / -> |enemy none|ride-or-die none/, line); // first -> latest, or a field that stayed put
+      assert.match(line, /, ride-or-die .+, quote (?:"[^"]+"|none)$/, line);
+    }
+    assert.equal(r.lines.at(-1).startsWith("Open the page: open "), true);
+  });
 });
 
 describe("demo: guards and formatting", () => {
