@@ -49,7 +49,6 @@ ITEM_LOCK=""
 RUN_DIR=""
 ITEM_ID=""
 SESSION_ID=""
-LAST_RESULT=""
 SPEND_TODAY=0
 SPEND_FILE=""
 STARTED_AT=""
@@ -272,12 +271,7 @@ JS
 
 write_status() {
   local state="$1"
-  local result="${2-}"
-  if [[ $# -ge 2 ]]; then
-    LAST_RESULT=$result
-  else
-    result=$LAST_RESULT
-  fi
+  local result="$2"
   status_node write "$state" "$result"
 }
 

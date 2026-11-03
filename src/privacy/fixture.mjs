@@ -4,7 +4,8 @@
 // the offline binding check has something to read. It proves the code path,
 // not the hardware.
 
-import { requestHash, sha256Hex } from "./attestation.mjs";
+import { sha256Hex } from "../anchor/hash.mjs";
+import { requestHash } from "./attestation.mjs";
 
 export const MOCK_MODEL = "mock-tee-model";
 export const MOCK_SIGNING_ADDRESS = "0x" + sha256Hex("mock-signing-key").slice(0, 40);

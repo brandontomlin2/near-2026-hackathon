@@ -17,7 +17,6 @@ import {
   parseSummaryEvery,
   shouldSummarize,
   summarize,
-  wakeContext,
 } from "./summarizer.mjs";
 
 async function tempDir(t) {
@@ -176,15 +175,6 @@ test("summarize with the mock client is deterministic and bounded", async () => 
   assert.equal(a.sheetHash, b.sheetHash);
   assert.equal(a.mode, "mock");
   assert.ok(a.sheet.split(" ").length <= MAX_SHEET_WORDS);
-});
-
-test("wakeContext returns the sheet and only the last k events", () => {
-  const log = [event(1), event(2), event(3), event(4)];
-  const ctx = wakeContext({ sheet: "Me.", log, k: 2 });
-  assert.equal(ctx.sheet, "Me.");
-  assert.deepEqual(ctx.events.map((e) => e.round), [3, 4]);
-  assert.deepEqual(wakeContext({ sheet: null, log: [], k: 8 }), { sheet: "", events: [] });
-  assert.deepEqual(wakeContext({ sheet: "", log, k: 99 }).events.length, 4);
 });
 
 test("store appends events, reads them back, and reports an empty log", async (t) => {

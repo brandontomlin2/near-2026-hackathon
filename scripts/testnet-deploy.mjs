@@ -20,6 +20,7 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isValidAccountId } from "../src/anchor/anchor.mjs";
 import { renderSvg } from "../src/art/render.mjs";
 
 export const NETWORK = "testnet";
@@ -41,13 +42,11 @@ export const AGENTS = [
   { token_id: "skeptic", description: "Show me the receipt. Until then I will assume nothing, and I will check twice.", title: "Skeptic", traits: { temperament: "muted", role: "auditor", risk: "wary", voice: "flat" } },
 ];
 
-const ACCOUNT_RE = /^(?=.{2,64}$)(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
-
 export class UsageError extends Error {}
 
 // The value is not echoed: a mistyped secret must not end up in logs.
 export function validateAccountId(value, label) {
-  if (typeof value !== "string" || !ACCOUNT_RE.test(value)) {
+  if (!isValidAccountId(value)) {
     throw new UsageError(`${label} is unset or not a valid NEAR account id (value not shown)`);
   }
   return value;
