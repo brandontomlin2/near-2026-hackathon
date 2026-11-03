@@ -53,7 +53,7 @@ Options: `npm run demo -- --rounds 9 --every 3 --seed 2 --out out/other`. What r
 | `src/swarm/runner.mjs` | The swarm: four trait-driven agents (`src/traits/`) on one shared channel, seeded and deterministic. See [Swarm](#swarm). |
 | `src/swarm/personas.mjs` | In-character mock replies per agent, used when inference is mocked. |
 | `scripts/demo.mjs`, `src/demo/` | `npm run demo`: the offline end-to-end demo. See [Try it](#try-it-judge-path). |
-| `scripts/swarm.mjs` | `npm run swarm -- --rounds 5`: runs the swarm, prints the transcript, writes `out/transcript.txt` and `out/events.json`, then writes a character sheet per token to `out/sheets/` and `anchor_sheet` dry-runs (nothing sent) linked to the final round hash in `out/memory-loop.json`. |
+| `scripts/swarm.mjs` | `npm run swarm -- --rounds 5`: runs the swarm, prints the transcript, writes `out/swarm/transcript.txt` and `out/swarm/events.json`, then writes a character sheet per token to `out/swarm/sheets/` and `anchor_sheet` dry-runs (nothing sent) linked to the final round hash in `out/swarm/memory-loop.json`. |
 | `scripts/testnet-deploy.mjs` | `npm run deploy:nft` and `npm run mint`: testnet deploy and agent mint. Dry run unless `--send`. See [Deploy to testnet](#deploy-to-testnet). |
 | `skills-lock.json` | Pinned versions of the installed agent skills. |
 
@@ -119,7 +119,7 @@ Contract id: `TBD` (to be filled in after the live run)
 
 What the live run will do, as one command:
 
-1. Run `npm run live-proof`. See the deploy, four mint, and `anchor_sheet` steps printed in order, and `docs/evidence.example.json` written. Nothing is signed or sent.
+1. Run `npm run live-proof`. See the deploy, four mint, and `anchor_sheet` steps printed in order, and `out/live-proof/evidence.example.json` written (gitignored; the tracked `docs/evidence.example.json` is untouched). Nothing is signed or sent.
 2. The owner runs `NEAR_ACCOUNT_ID=<account> NEAR_CONTRACT_ACCOUNT_ID=<contract> npm run live-proof -- --send --i-approve`. It refuses without both variables and the flag. Signing is done by the `near` CLI with the system keychain; this repository handles no keys.
 
 Once the live run is done, a judge can check it with read-only view calls. They need no account and no keys. Replace `<contract>` with the contract id above:
@@ -192,8 +192,8 @@ Inference is mocked by default (`MOCK_INFERENCE=1`): offline, no keys, and each 
 1. Run `npm run swarm -- --rounds 5`. See 5 round headers, 20 lines such as `[Skeptic] Doubtful. ...` and `[Chaotic -> Skeptic] @Skeptic ...`, then `final round hash: <64 hex>` and `verify: ok (5 rounds)`. Then four lines such as `sheet aloof <64 hex> -> anchor_sheet dry-run (not sent)` and `final round hash <64 hex> linked to 4 anchor dry-runs (MOCK, not on-chain)`.
 2. Run it again. See the same transcript and the same hash.
 3. Run `npm run swarm -- --rounds 5 --seed 2`. See a different transcript and a different hash.
-4. Open `out/events.json`. See every event with its round, turn, agent and `replyTo`, plus `roundHashes`.
-5. Open `out/memory-loop.json`. See the same `finalRoundHash` and, per token, its character sheet and an `anchor_sheet` dry-run (`status` `dry-run`, `transactionHash` `null`) whose `linkedRoundHash` is that hash. The per-token sheets are also in `out/sheets/<agent>.json`. The sheet text is a deterministic mock stand-in, not a model, and nothing is sent.
+4. Open `out/swarm/events.json`. See every event with its round, turn, agent and `replyTo`, plus `roundHashes`.
+5. Open `out/swarm/memory-loop.json`. See the same `finalRoundHash` and, per token, its character sheet and an `anchor_sheet` dry-run (`status` `dry-run`, `transactionHash` `null`) whose `linkedRoundHash` is that hash. The per-token sheets are also in `out/swarm/sheets/<agent>.json`. The sheet text is a deterministic mock stand-in, not a model, and nothing is sent.
 
 
 ## Art

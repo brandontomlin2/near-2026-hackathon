@@ -84,3 +84,20 @@ test("a failing step stops the run", async () => {
   assert.equal(code, 1);
   assert.equal(spawned.length, 1);
 });
+
+test("default dry run leaves git-tracked files unchanged and writes under out/", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const { existsSync, rmSync } = await import("node:fs");
+  const { DEFAULT_OUT, TRACKED_EXAMPLE } = await import("./live-proof.mjs");
+  const root = path.join(path.dirname(TRACKED_EXAMPLE), "..");
+  const snap = () => execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: root, encoding: "utf8" });
+  const before = snap();
+  const tracked = readFileSync(TRACKED_EXAMPLE, "utf8");
+  const code = await run([], {}, { out: () => {}, err: () => {}, exec: () => 0 });
+  assert.equal(code, 0);
+  assert.equal(snap(), before);
+  assert.equal(readFileSync(TRACKED_EXAMPLE, "utf8"), tracked);
+  assert.ok(existsSync(DEFAULT_OUT));
+  assert.ok(path.relative(root, DEFAULT_OUT).startsWith("out" + path.sep));
+  rmSync(DEFAULT_OUT);
+});
