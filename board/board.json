@@ -79,13 +79,13 @@
   {
     "id": "shared-channel-on-chain-anchor",
     "title": "shared channel + on-chain anchor",
-    "status": "todo",
-    "owner": "",
+    "status": "review",
+    "owner": "claude",
     "kind": "task",
     "lane": "any",
-    "notes": "",
-    "updated_at": "2026-11-03T00:00:00.000Z",
-    "updated_by": "seed"
+    "notes": "src/channel (shared channel, round digests, JSONL log) + src/anchor (sheet hash, anchor_sheet prep, dry-run default, live gated by ANCHOR_LIVE and injected sender); 69 node tests pass\nready for review",
+    "updated_at": "2026-11-03T02:45:09.923Z",
+    "updated_by": "claude"
   },
   {
     "id": "sim-mode",
