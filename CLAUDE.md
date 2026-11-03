@@ -34,6 +34,8 @@ This repository is an entry for NEAR HACKATHON (Nov 1 to Nov 14, 2026, UTC).
 
 Never commit directly to `main`. Work on `feat/`, `fix/`, `chore/` or `docs/` branches, open a pull request, have it reviewed, and squash-merge after review passes. Rebase on `main` before merging.
 
+Every pull request must include the output of `bash scripts/verify.sh` in a `## Proof` section before Pipeline Ops merges.
+
 ## Submission
 
 Submission is one attempt per repository and cannot be edited. Before submitting, work through the checklist in `docs/HACKATHON.md` under "Procedure", collect every field listed under "What the human decides" from the human, print the full JSON payload, and send only after they confirm.
