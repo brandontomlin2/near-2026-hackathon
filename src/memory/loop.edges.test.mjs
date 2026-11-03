@@ -200,9 +200,9 @@ test("tokens come out in the order of the agents given, one per agent, and an ag
   assert.deepEqual(tokens.map((t) => t.name), ["Social", "Aloof"]);
   const logs = tokenLogs(swarm.events, subset);
   assert.deepEqual(Object.keys(logs), ["social", "aloof"]);
-  const fromOthers = logs.social.filter((e) => e.from !== "social");
+  const fromOthers = logs.social.filter((e) => e.from !== "Social");
   assert.ok(fromOthers.every((e) => e.kind === "mention"), "only mentions come from agents outside the subset");
-  assert.ok(logs.social.every((e) => e.kind === "mention" || e.from === "social"));
+  assert.ok(logs.social.every((e) => e.kind === "mention" || e.from === "Social"));
   for (const t of tokens) {
     const rounds = t.sheets.map((s) => s.round);
     assert.deepEqual(rounds, [...rounds].sort((a, b) => a - b));
@@ -219,7 +219,8 @@ test("tokenLogs: self-replies and replies to unknown events are not mentions; un
     { id: 5, round: 2, turn: 2, agentId: "chaotic", kind: "reply", replyTo: 4, text: "reply to a ghost" },
   ];
   const logs = tokenLogs(events, AGENTS);
-  assert.deepEqual(logs.aloof.map((e) => [e.round, e.kind, e.from]), [[1, "post", "aloof"], [1, "reply", "aloof"], [2, "mention", "ghost"]]);
+  // Known agents are named by their display name; an author outside `agents` keeps its raw id.
+  assert.deepEqual(logs.aloof.map((e) => [e.round, e.kind, e.from]), [[1, "post", "Aloof"], [1, "reply", "Aloof"], [2, "mention", "ghost"]]);
   assert.deepEqual(logs.social.map((e) => e.kind), ["reply"]);
   assert.deepEqual(logs.chaotic.map((e) => e.kind), ["reply"]);
   assert.deepEqual(logs.skeptic, []);

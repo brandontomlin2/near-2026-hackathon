@@ -137,18 +137,30 @@ test("README persona line counts match src/swarm/personas.mjs, and the mock read
   assert.ok(REPLY_LINES.aloof.Skeptic.includes(reply));
 });
 
-test("README sheet provenance: demo sheets count fights, swarm mock sheets are generic one-liners, events carry agentId", async () => {
+test("README sheet provenance: demo and swarm mock sheets both come from the counting stand-in, events carry agentId", async () => {
   await withTmp(async (dir) => {
     const out = await runDemoCli(dir);
     const demoSheet = JSON.parse(await readFile(join(out, "memory/aloof/sheet.json"), "utf8")).sheet;
     assert.match(demoSheet, /Public enemy #1:/, "demo sheets come from the counting stand-in");
     const sw = join(dir, "swarm");
-    await run(process.execPath, [join(root, "scripts/swarm.mjs"), "--rounds", "5", "--out", sw], { env });
+    const { stdout } = await run(process.execPath, [join(root, "scripts/swarm.mjs"), "--rounds", "5", "--out", sw], { env });
     const swarmSheet = JSON.parse(await readFile(join(sw, "sheets/aloof.json"), "utf8")).sheet;
-    assert.doesNotMatch(swarmSheet, /Public enemy #1:|Ride-or-die:|fights|hugs/, "swarm mock sheets are not from the counting stand-in");
-    assert.ok(swarmSheet.length > 0 && !swarmSheet.includes("\n"), "generic mock responder writes one line");
-    assert.ok(readmeText.includes("That counting stand-in is used by `npm run demo` only"));
-    assert.ok(readmeText.includes("`npm run swarm` hands its sheets to the generic mock responder in mock mode"));
+    assert.match(swarmSheet, /^Who I am: Aloof, .* Public enemy #1: .* Scorecard: .* Receipts: /, "swarm mock sheets come from the same counting stand-in");
+    assert.ok(readmeText.includes("The same stand-in writes the sheets for `npm run swarm` and `npm run evidence` in mock mode"));
+    assert.ok(readmeText.includes("The sheets in mock mode come from the same counting stand-in as the demo (`src/memory/sheet-responder.mjs`)"));
+    assert.doesNotMatch(readmeText, /generic mock responder|src\/demo\/sheet-responder/, "the stand-in lives in src/memory and is the only mock sheet writer");
+    // The sample sheet line quotes the real (+added -removed) sentence counts for Aloof's round 3 sheet.
+    const sample = readme.match(/`sheet aloof round 3 <64 hex> \((\+\d+ -\d+)\) -> anchor_sheet dry-run \(not sent\)`/);
+    assert.ok(sample, "README swarm step 1 must show a `sheet aloof round 3 <64 hex> (+N -M) -> ...` line");
+    const real = stdout.match(/^sheet aloof round 3 [0-9a-f]{64} \((\+\d+ -\d+)\) -> anchor_sheet dry-run \(not sent\)$/m);
+    assert.ok(real, "swarm prints a sheet line for aloof round 3");
+    assert.equal(sample[1], real[1], "README's (+N -M) for aloof round 3 must match the real output");
+    // The aloof.json step quotes fragments of the real round 5 sheet.
+    const step = readme.match(/^\d+\. Open `out\/swarm\/sheets\/aloof\.json`\..*$/m);
+    assert.ok(step, "README swarm section must have an 'Open out/swarm/sheets/aloof.json' step");
+    const quotes = [...step[0].matchAll(/`([^`]*(?:Who I am|Public enemy|Ride-or-die|Scorecard|Receipts)[^`]*)`/g)].map((m) => m[1]);
+    assert.ok(quotes.length >= 2, "the step must quote at least two sheet fragments in backticks");
+    for (const q of quotes) assert.ok(swarmSheet.includes(q), `real aloof.json sheet does not contain: ${q}`);
     const events = JSON.parse(await readFile(join(sw, "events.json"), "utf8"));
     for (const key of ["round", "turn", "agentId", "replyTo"]) assert.ok(key in events.events[0], `events.json lacks ${key}`);
     assert.ok(!("agent" in events.events[0]));

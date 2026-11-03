@@ -4,7 +4,6 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { hashSheet } from "../src/anchor/hash.mjs";
-import { createMockClient } from "../src/inference/client.mjs";
 import { runMemoryLoop } from "../src/memory/loop.mjs";
 import { runSwarm } from "../src/swarm/runner.mjs";
 import { AGENTS, EvidenceError, loadTransactions, main, mockEvidence } from "./evidence.mjs";
@@ -63,6 +62,24 @@ test("mock evidence carries the full memory loop, linked to the swarm final hash
     assert.equal(t.anchor.linked_round_hash, expected);
   }
   assert.deepEqual(ev.views.filter((v) => v.method === "sheet_anchor").map((v) => v.args.token_id), loop.tokens.map((t) => t.token_id));
+});
+
+test("mock evidence hashes the same stand-in sheets npm run swarm writes, so the two agree hash for hash", async () => {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const dir = tmp();
+  const env = { ...process.env, MOCK_INFERENCE: "1" };
+  delete env.NEAR_AI_API_KEY;
+  await promisify(execFile)(process.execPath, [path.join(path.dirname(new URL(import.meta.url).pathname), "swarm.mjs"), "--rounds", "5", "--seed", "1", "--out", dir], { env });
+  const ev = await mockEvidence();
+  for (const t of ev.memory_loop.tokens) {
+    const written = JSON.parse(fs.readFileSync(path.join(dir, "sheets", `${t.token_id}.json`), "utf8"));
+    assert.equal(t.sheet.sheet_hash, written.sheetHash, `${t.token_id}: evidence and npm run swarm anchor different sheets`);
+    assert.equal(t.sheet.sheet_hash, hashSheet(written.sheet));
+    assert.match(written.sheet, /Public enemy #1:/, `${t.token_id}: the evidence sheet is a character sheet, not a generic mock line`);
+    assert.deepEqual(t.sheets.map((s) => s.sheet_hash), (await Promise.all(t.sheets.map(async (s) =>
+      JSON.parse(fs.readFileSync(path.join(dir, "sheets", `${t.token_id}.round-${s.round}.json`), "utf8")).sheetHash))));
+  }
 });
 
 test("mock runs are byte-identical, print the MOCK banner and never fetch", async () => {
@@ -150,7 +167,8 @@ test("evidence covers every sheet, each with its own anchor dry-run", async () =
 
 test("one sheet hash: sheet record, anchor_sheet dry-run args and evidence.json agree", async () => {
   const swarm = await runSwarm({ rounds: 5, seed: 1 });
-  const loop = await runMemoryLoop({ swarm, client: createMockClient() });
+  // No client: the loop's default sheet writer (the counting stand-in), which is what mock evidence uses.
+  const loop = await runMemoryLoop({ swarm });
   const ev = await mockEvidence();
   assert.equal(ev.memory_loop.tokens.length, loop.tokens.length);
   for (const [i, t] of loop.tokens.entries()) {

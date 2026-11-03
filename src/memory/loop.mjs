@@ -8,20 +8,27 @@
 
 import { AGENTS } from "../traits/agents.mjs";
 import { prepareAnchor, submitAnchor } from "../anchor/anchor.mjs";
+import { createMockClient } from "../inference/client.mjs";
 import { makeEvent, shouldSummarize, summarize } from "./summarizer.mjs";
+import { sheetResponder } from "./sheet-responder.mjs";
 
 /**
  * Per agent id, the summarizer log in swarm order: own posts and replies, plus
  * a mention for every reply another agent made to one of this agent's events.
+ * `from` is the author's display name (the name the summarizer prompt and the
+ * sheet stand-in use, same as npm run demo); an author outside `agents` keeps
+ * its raw id.
  */
 export function tokenLogs(events, agents = AGENTS) {
   const logs = Object.fromEntries(agents.map((a) => [a.id, []]));
+  const nameOf = new Map(agents.map((a) => [a.id, a.name]));
   const authorById = new Map(events.map((e) => [e.id, e.agentId]));
   for (const e of events) {
-    logs[e.agentId]?.push(makeEvent({ round: e.round, kind: e.kind, from: e.agentId, text: e.text }));
+    const from = nameOf.get(e.agentId) ?? e.agentId;
+    logs[e.agentId]?.push(makeEvent({ round: e.round, kind: e.kind, from, text: e.text }));
     const target = e.replyTo === null ? undefined : authorById.get(e.replyTo);
     if (target && target !== e.agentId && logs[target]) {
-      logs[target].push(makeEvent({ round: e.round, kind: "mention", from: e.agentId, text: e.text }));
+      logs[target].push(makeEvent({ round: e.round, kind: "mention", from, text: e.text }));
     }
   }
   return logs;
@@ -69,8 +76,11 @@ export function sheetRounds(rounds, every) {
  * anchor_sheet dry-run, linked to the hash of the round it was written at.
  * token.sheet / token.anchor are the latest; token.sheets is the history of
  * { round, sheet, diff, anchor }, oldest first.
+ * Without a `client` the sheets come from the counting stand-in
+ * (./sheet-responder.mjs), the same one npm run demo uses: offline and
+ * deterministic. Pass a live inference client for model-written sheets.
  */
-export async function runMemoryLoop({ swarm, agents = AGENTS, client, contractId = "mock-contract.testnet", every = DEFAULT_LOOP_EVERY }) {
+export async function runMemoryLoop({ swarm, agents = AGENTS, client = createMockClient({ responder: sheetResponder }), contractId = "mock-contract.testnet", every = DEFAULT_LOOP_EVERY }) {
   const finalRoundHash = swarm.roundHashes.at(-1);
   const logs = tokenLogs(swarm.events, agents);
   const tokens = [];
