@@ -214,6 +214,20 @@ test("hosting.md: npm run site prints 'Site ready' and every link on the page is
   }
 });
 
+test("audit row 13 opens with the current lock design and keeps the removed block-height expiry as history", async () => {
+  const audit = await readFile(join(root, "docs/audit/personality-nft.md"), "utf8");
+  const row = audit.split("\n").find((l) => l.startsWith("| 13 |"));
+  assert.ok(row, "audit table must have row 13");
+  const status = row.split(" | ")[4];
+  assert.match(status, /^Fixed; the current code is described under Follow-up 3 below \(lock cleared only by `release_lock`, no expiry\)\./);
+  assert.match(status, /History: Originally \(audit 2, M1\)/);
+  assert.match(status, /Originally the lock also stored its block height and expired after `IN_FLIGHT_EXPIRY_BLOCKS`/);
+  assert.match(status, /that expiry no longer exists, see Follow-up 3/);
+  const lib = await readFile(join(root, "contracts/personality-nft/src/lib.rs"), "utf8");
+  assert.doesNotMatch(lib, /IN_FLIGHT_EXPIRY_BLOCKS|set_at/, "the contract has no lock expiry");
+  assert.match(lib, /fn release_lock/);
+});
+
 test("privacy.md: attest-check prints CONSISTENT, NOT VERIFIED (exit 0) and REJECT with --tamper (exit 1)", async () => {
   const privacy = await doc("privacy.md");
   const ok = await run(process.execPath, [join(root, "scripts/attest-check.mjs")], { env });

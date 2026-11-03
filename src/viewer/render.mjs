@@ -47,7 +47,7 @@ export function securityMetaTags(css) {
 /**
  * Throws a TypeError naming the first problem. Returns the result when it passes.
  * @param {any} result
- * @param {readonly { id: string }[]} [agents]
+ * @param {readonly { id: string, name: string }[]} [agents]
  */
 export function validateResult(result, agents = AGENTS) {
   const fail = (msg) => {
@@ -55,6 +55,9 @@ export function validateResult(result, agents = AGENTS) {
   };
   if (!result || typeof result !== "object" || Array.isArray(result)) fail("must be an object");
   if (!Array.isArray(agents) || agents.length === 0) fail("agents must be a non-empty array");
+  agents.forEach((a, i) => {
+    if (!a || typeof a.name !== "string" || a.name === "") fail(`agent ${i} needs a non-empty string name`);
+  });
   if (!Array.isArray(result.events)) fail("events must be an array");
   if (!Array.isArray(result.roundHashes)) fail("roundHashes must be an array");
   result.roundHashes.forEach((hash, i) => {
@@ -131,7 +134,7 @@ export function renderViewer(result, agents = AGENTS) {
   const roundBlocks = result.roundHashes.map((hash, i) => {
     const posts = result.events.filter((e) => e.round === i + 1).map((e) => {
       const target = e.kind === "reply" ? eventById.get(e.replyTo) : undefined;
-      const replyTo = target ? ` <span class="meta">&rarr; ${escapeHtml(nameOf.get(target.agentId) ?? target.agentId)}</span>` : "";
+      const replyTo = target ? ` <span class="meta">&rarr; ${escapeHtml(nameOf.get(target.agentId))}</span>` : "";
       return `<p class="post"><span class="author">${escapeHtml(nameOf.get(e.agentId))}</span>${replyTo} ${escapeHtml(e.text)}</p>`;
     }).join("\n      ");
     return `<section class="round">

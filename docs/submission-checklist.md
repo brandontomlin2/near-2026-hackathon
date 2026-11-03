@@ -32,7 +32,7 @@ Status key: **done** (evidence given), **missing** (agent-doable work not finish
 | Planned features not described as shipped | done | README "Mock caveats and status" and "Live on testnet" say nothing is deployed and there are no hashes to show. Re-check after any live run. |
 | Second project named in README (Q-015) | needs Brandon | Ask if the lead is submitting another project. If yes, add a README line naming it (not done, none known). If no, record "one project only" in section 5. |
 | Hosted demo up (Q-012, optional but a plus) | needs Brandon | `npm run site` builds `out/site/`; `docs/hosting.md`. Hosting needs the human's account. Keep up to 2026-11-18, ideally 2026-11-25. |
-| Live testnet evidence section filled | missing | README "Live on testnet" says "Not run yet". Fill only after the human approves `npm run live-proof -- --send --i-approve` and sees real hashes. Never invent hashes. |
+| Live testnet evidence section filled | missing | README "Live on testnet" says "Not run yet". Fill only after the human approves `npm run live-proof -- --send --i-approve` and sees real hashes. That run writes them to `out/live-proof/txs.json`; then `EVIDENCE_NETWORK=testnet NEAR_ACCOUNT_ID=<NEAR_CONTRACT_ACCOUNT_ID> EVIDENCE_TX_FILE=out/live-proof/txs.json npm run evidence` (read-only views) writes `out/evidence.json`. A bare `npm run evidence` is mock mode and is not proof. Never invent hashes. |
 
 ## 3. Pre-hackathon baseline (Q-001 to Q-004)
 
