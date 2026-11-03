@@ -129,10 +129,13 @@ export function tokenMetadata(agent, { mediaBase = MEDIA_PLACEHOLDER_BASE } = {}
   return metadata;
 }
 
+// The sent commands never carry --quiet: in quiet mode near-cli-rs installs no tracing
+// subscriber and prints no "Transaction ID" block, which scripts/live-proof.mjs reads
+// to record each step's hash. Only the keychain probe in run() is quiet.
 export function buildDeployStep({ contract, owner, wasm }) {
   const args = { owner_id: owner };
   const argv = [
-    "--quiet", "contract", "deploy", contract,
+    "contract", "deploy", contract,
     "use-file", wasm,
     "with-init-call", INIT_METHOD,
     "json-args", JSON.stringify(args),
@@ -160,7 +163,7 @@ export function buildMintStep({ contract, owner, receiver, agent, mediaBase }) {
     token_metadata: tokenMetadata(agent, { mediaBase }),
   };
   const argv = [
-    "--quiet", "contract", "call-function", "as-transaction", contract, MINT_METHOD,
+    "contract", "call-function", "as-transaction", contract, MINT_METHOD,
     "json-args", JSON.stringify(args),
     "prepaid-gas", GAS,
     "attached-deposit", MINT_DEPOSIT,

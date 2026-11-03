@@ -92,7 +92,7 @@ test("tokenMetadata puts traits in extra as compact JSON the contract can search
 test("buildDeployStep runs the init call on testnet, signed by the contract account", () => {
   const step = buildDeployStep({ contract: CONTRACT, owner: OWNER, wasm: WASM });
   assert.deepEqual(step.argv, [
-    "--quiet", "contract", "deploy", CONTRACT,
+    "contract", "deploy", CONTRACT,
     "use-file", WASM,
     "with-init-call", INIT_METHOD,
     "json-args", JSON.stringify({ owner_id: OWNER }),
@@ -113,7 +113,7 @@ test("buildMintStep builds one nft_mint call per agent with its trait metadata",
     receiver_id: OWNER,
     token_metadata: tokenMetadata(AGENTS[1]),
   });
-  assert.deepEqual(step.argv.slice(0, 6), ["--quiet", "contract", "call-function", "as-transaction", CONTRACT, MINT_METHOD]);
+  assert.deepEqual(step.argv.slice(0, 5), ["contract", "call-function", "as-transaction", CONTRACT, MINT_METHOD]);
   assert.equal(step.argv[step.argv.indexOf("attached-deposit") + 1], MINT_DEPOSIT);
   assert.equal(step.argv[step.argv.indexOf("sign-as") + 1], OWNER);
   assert.equal(step.argv[step.argv.indexOf("network-config") + 1], NETWORK);
@@ -129,6 +129,19 @@ test("buildPlan: deploy is one step, mint defaults to all agents and honours cou
   assert.equal(three.length, 3);
   assert.equal(JSON.parse(three[2].argv[three[2].argv.indexOf("json-args") + 1]).receiver_id, "friend.testnet");
   assert.throws(() => buildPlan({ command: "burn", contract: CONTRACT, owner: OWNER }), UsageError);
+});
+
+test("no sent command carries --quiet: in quiet mode near-cli-rs prints no Transaction ID, which live-proof reads", () => {
+  const steps = [
+    ...buildPlan({ command: "deploy", contract: CONTRACT, owner: OWNER, wasm: WASM }),
+    ...buildPlan({ command: "mint", contract: CONTRACT, owner: OWNER, receiver: OWNER }),
+  ];
+  assert.equal(steps.length, 1 + AGENTS.length);
+  for (const step of steps) {
+    assert.ok(!step.argv.includes("--quiet"), `${step.name}: ${JSON.stringify(step.argv)}`);
+    assert.equal(step.argv[0], "contract", `${step.name} starts with the contract subcommand`);
+    assert.equal(step.argv.at(-1), "send");
+  }
 });
 
 test("parseArgs rejects conflicting or incomplete options", () => {
@@ -160,7 +173,8 @@ test("dry run is the default: prints every command and signs nothing", async () 
   assert.equal(code, 0);
   const text = c.text();
   assert.match(text, /^dry-run: nothing is signed or sent/m);
-  assert.equal(text.match(/command  near --quiet contract call-function as-transaction/g).length, 2);
+  assert.equal(text.match(/command  near contract call-function as-transaction/g).length, 2);
+  assert.ok(!text.includes("--quiet"), "the printed command is the one a live run sends, which is never quiet");
   assert.ok(text.includes(`"token_id":"aloof"`));
   assert.ok(text.includes(`"token_id":"chaotic"`));
   assert.ok(!text.includes("skeptic"));
@@ -305,7 +319,8 @@ test("--send deploy signs the init call on the contract account with the wasm gi
     }, { exec, hasNear: () => true, out: c.out, err: c.err });
     assert.equal(code, 0, c.errors.join("\n"));
     assert.equal(sent.length, 1);
-    assert.deepEqual(sent[0].slice(0, 4), ["--quiet", "contract", "deploy", CONTRACT]);
+    assert.deepEqual(sent[0].slice(0, 3), ["contract", "deploy", CONTRACT]);
+    assert.ok(!sent[0].includes("--quiet"), "a quiet deploy would print no Transaction ID");
     assert.equal(sent[0][sent[0].indexOf("use-file") + 1], wasm);
     assert.equal(sent[0].at(-1), "send");
   } finally {

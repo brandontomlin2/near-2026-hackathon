@@ -72,6 +72,13 @@ test("README timing claim is cold-run safe and deploy step orders build before d
   assert.match(readmeText, /deploy:nft`\. Step 1 must have run first/);
 });
 
+test("README quotes the deploy command without --quiet: quiet near-cli-rs prints no Transaction ID for live-proof to record", () => {
+  const deployStep = readme.match(/^2\. Run `npm run deploy:nft`\..*$/m);
+  assert.ok(deployStep, "README must have a 'Run npm run deploy:nft' step");
+  assert.ok(deployStep[0].includes("`near contract deploy ... sign-with-keychain send`"), deployStep[0]);
+  assert.ok(!readme.includes("near --quiet"), "no README command may be quiet");
+});
+
 test("README does not pin a contract unit-test count; it claims only 'ok' and '0 failed'", () => {
   // `cargo test` prints "N passed; 0 failed" and N changes with every contract PR.
   const contractStep = readme.match(/^1\. Run `npm run test:contract`\..*$/m);

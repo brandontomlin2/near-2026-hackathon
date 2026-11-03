@@ -224,6 +224,33 @@ test("every child argv live-proof sends passes all of testnet-deploy's send gate
   removeTxFile();
 });
 
+test("no near command live-proof sends carries --quiet: quiet near-cli-rs prints no Transaction ID, so no hash could be recorded", async () => {
+  const { run: deployRun } = await import("./testnet-deploy.mjs");
+  const dry = await go([], APPROVED_ENV);
+  assert.equal(dry.code, 0);
+  assert.ok(!dry.text.includes("--quiet"), "the dry-run plan prints the commands a live run sends");
+  const r = await go(SEND, APPROVED_ENV);
+  assert.equal(r.code, 0);
+  const sentNear = [];
+  for (const [bin, args] of r.spawned) {
+    if (bin === "near") { sentNear.push(args); continue; }
+    // The two testnet-deploy children: collect the near argv each would send.
+    const nearCalls = [];
+    const code = await deployRun(args.slice(1), APPROVED_ENV, {
+      out: () => {}, err: () => {}, hasNear: () => true, wasmExists: () => true,
+      exec: (b, argv) => { nearCalls.push(argv); return 0; },
+    });
+    assert.equal(code, 0);
+    sentNear.push(...nearCalls.filter((argv) => argv.at(-1) === "send"));
+  }
+  assert.equal(sentNear.length, TX_LABELS.length, "deploy, four mints, anchor_sheet");
+  for (const argv of sentNear) {
+    assert.ok(!argv.includes("--quiet"), JSON.stringify(argv));
+    assert.equal(argv[0], "contract");
+  }
+  removeTxFile();
+});
+
 test("--i-approve is never put on the anchor_sheet near argv (near-cli-rs would reject it)", async () => {
   const r = await go(SEND, APPROVED_ENV);
   assert.equal(r.code, 0);
@@ -433,7 +460,9 @@ test("--send with hashes missing from the CLI output warns, names them, and stil
   }
 });
 
-test("a failed step still saves the hashes sent before it and names the step", async () => {
+test("a failed step keeps the hashes of the steps before it, records none of its own, and is reported as failed", async () => {
+  // near-cli-rs prints a Transaction ID for a transaction that was executed and failed too, so a
+  // hash in a failed step's output is not a success: it must never be labelled as one.
   removeTxFile();
   const r = await go(SEND, APPROVED_ENV, { output: stageOutput, fail: (bin, args) => args.includes("mint") });
   try {
@@ -441,8 +470,12 @@ test("a failed step still saves the hashes sent before it and names the step", a
     assert.equal(r.spawned.length, 2);
     assert.match(r.errs, /^error: mint failed with exit 1; stopping\. Earlier transactions were not rolled back\.$/m);
     const txs = JSON.parse(readFileSync(TX_FILE, "utf8")).transactions;
-    assert.deepEqual(txs.map((t) => t.label), ["deploy", "mint aloof", "mint chaotic", "mint social", "mint skeptic"]);
-    assert.match(r.text, /WARN: no hash found in the near CLI output for: anchor_sheet\./);
+    assert.deepEqual(txs, [{ label: "deploy", hash: HASHES[0] }], "only the step that exited 0 is recorded");
+    for (const h of HASHES.slice(1)) assert.ok(!r.text.includes(h) && !r.errs.includes(h), "a failed step's id is never shown as a result");
+    assert.match(r.text, new RegExp(`^wrote 1 of ${TX_LABELS.length} transaction hashes to ${TX_FILE_LABEL}$`, "m"));
+    assert.match(r.text, /^FAILED: mint exited 1\. Not recorded \(not sent, or sent and failed\): mint aloof, mint chaotic, mint social, mint skeptic, anchor_sheet\./m);
+    assert.doesNotMatch(r.text, /WARN: no hash found/, "a failed step is not a success whose hash went missing");
+    assert.doesNotMatch(r.text, /^done/m);
     assert.equal(r.text.split("\n").at(-1), `  ${evidenceCommand(CONTRACT)}`);
   } finally {
     removeTxFile();

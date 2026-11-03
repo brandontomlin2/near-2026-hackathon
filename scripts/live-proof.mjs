@@ -11,9 +11,11 @@
 //                                      the gate is here, before deploy, not after it).
 //                                      Passes --i-approve on to the deploy and mint children,
 //                                      which refuse --send without it. Collects the transaction
-//                                      hashes the near CLI prints into out/live-proof/txs.json
-//                                      and prints the exact `npm run evidence` command that
-//                                      reads them. --out, --force and --update-example belong
+//                                      hashes the near CLI prints for every step that exited 0
+//                                      into out/live-proof/txs.json and prints the exact
+//                                      `npm run evidence` command that reads them. A failed
+//                                      step is reported as failed; its id, if one was printed,
+//                                      is never recorded. --out, --force and --update-example belong
 //                                      to the dry run and are refused with --send.
 //
 // Both modes refuse any NEAR_NETWORK other than unset or testnet before doing anything.
@@ -57,7 +59,8 @@ export const TX_LABELS = ["deploy", ...AGENTS.map((a) => `mint ${a.token_id}`), 
 // return value. The block goes to stderr through the tracing layer, which prefixes "├  ",
 // indents with "│    " and ends each event with an ANSI reset; colour codes are stripped and
 // CR line endings normalised before matching. In --quiet mode near-cli-rs installs no tracing
-// subscriber and prints only the raw return value, so no hash can be found at all.
+// subscriber and prints only the raw return value, so no hash can be found at all: that is why
+// no command sent here or by scripts/testnet-deploy.mjs carries --quiet.
 const ANSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 const TX_HASH_RE = /(?:Transaction ID:\s*|\/(?:transactions|txns)\/)([1-9A-HJ-NP-Za-km-z]{32,64})\b/g;
 
@@ -126,7 +129,7 @@ export function buildAnchorStep({ contract, owner }) {
   const gasTgas = `${Number(BigInt(p.gas) / 10n ** 12n)} Tgas`;
   const deposit = "0.01 NEAR";
   const argv = [
-    "--quiet", "contract", "call-function", "as-transaction", contract, p.methodName,
+    "contract", "call-function", "as-transaction", contract, p.methodName,
     "json-args", JSON.stringify(p.args),
     "prepaid-gas", gasTgas,
     "attached-deposit", deposit,
@@ -236,11 +239,13 @@ function parseArgs(argv) {
 
 // Runs a step, streaming its stdout and stderr to the terminal as they arrive while also
 // keeping a copy: near-cli-rs prints the transaction block to stderr (its tracing layer)
-// and a call's return value to stdout, so both streams are kept. Exported for the tests only.
-export function defaultExec(bin, argv) {
+// and a call's return value to stdout, so both streams are kept. The child gets the env the
+// run was given (the CLI passes process.env), so the testnet-deploy children read the same
+// NEAR_* variables and `near` is resolved from the same PATH. Exported for the tests only.
+export function defaultExec(bin, argv, { env = process.env } = {}) {
   return new Promise((resolve) => {
     const chunks = [];
-    const child = spawn(bin, argv, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(bin, argv, { stdio: ["ignore", "pipe", "pipe"], env });
     child.stdout.on("data", (d) => { chunks.push(d); process.stdout.write(d); });
     child.stderr.on("data", (d) => { chunks.push(d); process.stderr.write(d); });
     child.on("error", () => resolve({ code: 127, output: Buffer.concat(chunks).toString("utf8") }));
@@ -248,10 +253,12 @@ export function defaultExec(bin, argv) {
   });
 }
 
-// Pairs the hashes found in one stage's output with the labels that stage was expected to
-// produce (deploy: 1, mint: one per agent, anchor_sheet: 1). Extra hashes keep the stage name.
+// The labels one stage is expected to produce (deploy: 1, mint: one per agent, anchor_sheet: 1).
+const stageLabels = (stage) => TX_LABELS.filter((l) => (stage === "mint" ? l.startsWith("mint ") : l === stage));
+
+// Pairs the hashes found in one stage's output with that stage's labels. Extra hashes keep the stage name.
 function labelHashes(stage, hashes) {
-  const expected = TX_LABELS.filter((l) => (stage === "mint" ? l.startsWith("mint ") : l === stage));
+  const expected = stageLabels(stage);
   return hashes.map((hash, i) => ({ label: expected[i] ?? stage, hash }));
 }
 
@@ -261,8 +268,8 @@ function writeTxFile({ contract, owner, transactions }) {
 }
 
 /**
- * deps.exec(bin, argv) -> { code, output } (or a promise of it). Injected in tests so nothing
- * is spawned; `output` is what the step printed, scanned for transaction hashes.
+ * deps.exec(bin, argv, { env }) -> { code, output } (or a promise of it). Injected in tests so
+ * nothing is spawned; `output` is what the step printed, scanned for transaction hashes.
  */
 export async function run(argv, env = process.env, deps = {}) {
   const out = deps.out ?? ((l) => process.stdout.write(`${l}\n`));
@@ -298,25 +305,38 @@ export async function run(argv, env = process.env, deps = {}) {
         ["anchor_sheet", "near", anchor.argv],
       ];
       const transactions = [];
-      const finish = (code) => {
+      const completed = []; // stages that exited 0, in order
+      const finish = (code, failed = null) => {
         // Written even after a failed step: the earlier transactions are real and stay on chain.
         writeTxFile({ contract, owner, transactions });
-        const missing = TX_LABELS.filter((l) => !transactions.some((t) => t.label === l));
         out(`wrote ${transactions.length} of ${TX_LABELS.length} transaction hashes to ${TX_FILE_LABEL}`);
+        // A step that exited 0 but whose output held no id block: the transaction exists and
+        // its hash has to be looked up by hand.
+        const done = completed.flatMap(stageLabels);
+        const missing = done.filter((l) => !transactions.some((t) => t.label === l));
         if (missing.length) {
           out(`WARN: no hash found in the near CLI output for: ${missing.join(", ")}. Add each as {"label": ..., "hash": ...} to the transactions array in ${TX_FILE_LABEL} before running evidence.`);
         }
-        out(code === 0 ? "done. Next, with read-only RPC views (nothing signed):" : "Next, once every hash is in the file (read-only RPC views, nothing signed):");
+        if (failed) {
+          // The failed step and every step after it. near-cli-rs can print the Transaction ID of
+          // a transaction that executed and failed before it exits non-zero, so an id in a
+          // failed step's output is not a success and was not recorded.
+          const notRecorded = TX_LABELS.filter((l) => !done.includes(l));
+          out(`FAILED: ${failed} exited ${code}. Not recorded (not sent, or sent and failed): ${notRecorded.join(", ")}.`);
+        }
+        out(code === 0 ? "done. Next, with read-only RPC views (nothing signed):" : "Next, once the failed step has been redone and every hash is in the file (read-only RPC views, nothing signed):");
         out(`  ${evidenceCommand(contract)}`);
         return code;
       };
       for (const [stage, bin, args] of stages) {
-        const { code, output } = await exec(bin, args);
-        transactions.push(...labelHashes(stage, extractTransactionHashes(output)));
+        const { code, output } = await exec(bin, args, { env });
         if (code !== 0) {
           errOut(`error: ${stage} failed with exit ${code}; stopping. Earlier transactions were not rolled back.`);
-          return finish(code);
+          return finish(code, stage);
         }
+        // Only a step that exited 0 contributes hashes; see finish() for the failed case.
+        transactions.push(...labelHashes(stage, extractTransactionHashes(output)));
+        completed.push(stage);
       }
       return finish(0);
     }

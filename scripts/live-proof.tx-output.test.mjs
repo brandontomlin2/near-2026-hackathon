@@ -11,7 +11,8 @@
 //     to STDOUT, preceded by an eprintln'd heading. The "Here is your console command" echo
 //     repeats the full argv, media_hash and account ids included.
 //   - Quiet mode (--quiet): no tracing subscriber is installed, so on success ONLY the raw
-//     return value bytes reach stdout. No transaction id is printed at all.
+//     return value bytes reach stdout. No transaction id is printed at all. That is why no
+//     command this repo sends carries --quiet.
 //
 // Nothing here spawns the real near CLI. The stub executable below is a node script.
 import assert from "node:assert/strict";
@@ -204,7 +205,7 @@ test("--send with interactive near output (ANSI, CRLF, both streams) records all
   }
 });
 
-test("--send with --quiet-style output records no hash at all: a WARN naming every step, never a fake or empty one", async () => {
+test("--send with output lacking the id block (what --quiet would print) records no hash at all: a WARN naming every step, never a fake or empty one", async () => {
   removeTxFile();
   const output = (bin, args) => {
     if (args.includes("deploy")) return quietDeploy();
@@ -222,6 +223,65 @@ test("--send with --quiet-style output records no hash at all: a WARN naming eve
     assert.deepEqual(txs.transactions, []);
     assert.ok(!r.text.includes(B58_LOOKING_MEDIA_HASH), "the media_hash from the return value is not mistaken for a transaction");
   } finally {
+    removeTxFile();
+  }
+});
+
+test("a step that prints a Transaction ID but exits non-zero is reported as failed and its id is not recorded (stub near on PATH)", async () => {
+  // near-cli-rs prints the Transaction ID of an executed transaction whether it succeeded or
+  // failed, and exits non-zero for a failure. The anchor_sheet step here really spawns `near`
+  // from PATH through defaultExec; the two testnet-deploy children are canned (a real child
+  // would need the built wasm) and succeed.
+  removeTxFile();
+  const dir = mkdtempSync(path.join(tmpdir(), "live-proof-near-stub-"));
+  try {
+    const argvFile = path.join(dir, "argv.txt");
+    const stub = path.join(dir, "near");
+    writeFileSync(stub, [
+      "#!/bin/sh",
+      `printf '%s\\n' "$@" > '${argvFile}'`,
+      "cat >&2 <<'NEAR_STUB_EOF'",
+      txBlock(HASHES[5]),
+      "NEAR_STUB_EOF",
+      'exit "${STUB_NEAR_EXIT:-0}"',
+      "",
+    ].join("\n"));
+    chmodSync(stub, 0o755);
+    const canned = (args) => (args.includes("deploy")
+      ? interactiveDeploy(HASHES[0])
+      : ["aloof", "chaotic", "social", "skeptic"].map((id, i) => interactiveMint(id, HASHES[i + 1])).join("\n"));
+    const attempt = async (exit) => {
+      const lines = [];
+      const errs = [];
+      const env = { ...APPROVED_ENV, PATH: `${dir}${path.delimiter}${process.env.PATH}`, STUB_NEAR_EXIT: String(exit) };
+      const code = await run(SEND, env, {
+        out: (l) => lines.push(l),
+        err: (l) => errs.push(l),
+        exec: (bin, args, opts) => (bin === "near" ? defaultExec(bin, args, opts) : { code: 0, output: canned(args) }),
+      });
+      const argv = readFileSync(argvFile, "utf8").replace(/\n$/, "").split("\n");
+      return { code, text: lines.join("\n"), errs: errs.join("\n"), argv, txs: JSON.parse(readFileSync(TX_FILE, "utf8")) };
+    };
+
+    const failed = await attempt(1);
+    assert.equal(failed.code, 1);
+    assert.ok(failed.argv.includes("anchor_sheet") && failed.argv.at(-1) === "send", `the stub saw the anchor call: ${JSON.stringify(failed.argv)}`);
+    assert.ok(!failed.argv.includes("--quiet"), "the sent command is not quiet, so the id block above was printed");
+    assert.match(failed.errs, /^error: anchor_sheet failed with exit 1; stopping\./m);
+    assert.deepEqual(failed.txs.transactions, TX_LABELS.slice(0, 5).map((label, i) => ({ label, hash: HASHES[i] })), "the five steps that exited 0");
+    assert.ok(!JSON.stringify(failed.txs).includes(HASHES[5]), "the failed step's id is not in the file");
+    assert.match(failed.text, /^FAILED: anchor_sheet exited 1\. Not recorded \(not sent, or sent and failed\): anchor_sheet\./m);
+    assert.doesNotMatch(failed.text, /^done/m);
+    assert.doesNotMatch(failed.text, /WARN: no hash found/);
+
+    removeTxFile();
+    const ok = await attempt(0);
+    assert.equal(ok.code, 0, ok.errs);
+    assert.equal(ok.errs, "");
+    assert.deepEqual(ok.txs.transactions, TX_LABELS.map((label, i) => ({ label, hash: HASHES[i] })), "with exit 0 the same output is recorded");
+    assert.match(ok.text, /^done\. Next/m);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
     removeTxFile();
   }
 });
