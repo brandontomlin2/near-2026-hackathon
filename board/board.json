@@ -39,8 +39,8 @@
     "owner": "claude",
     "kind": "task",
     "lane": "any",
-    "notes": "",
-    "updated_at": "2026-11-03T02:07:35.166Z",
+    "notes": "src/inference/client.mjs: mock (default, deterministic) + live NEAR AI Cloud client; scripts/infer.mjs CLI; package.json with npm test; 41 tests pass",
+    "updated_at": "2026-11-03T02:15:41.642Z",
     "updated_by": "claude"
   },
   {
