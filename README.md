@@ -255,7 +255,7 @@ Testnet run. Do not put keys on the command line. The script never reads or prin
 NEAR_NETWORK=testnet NEAR_ACCOUNT_ID=<testnet-account> bash scripts/verify.sh --live
 ```
 
-PASS means the summary table has no `FAIL` row and the process exits 0. `SKIP` is not a failure. `swarm` and `demo` run with `MOCK_INFERENCE=1`. The `evidence` stage runs in mock mode and writes `out/evidence.json` with the memory loop (swarm, sheets, `anchor_sheet` dry-runs, final round hash) and MOCK entries (for example `"hash": "MOCK-deploy"`); it prints `mock, not on-chain proof`, and no chain was queried. Only `--live` needs transaction hashes and RPC views. `deploy nft` shows `SKIP` unless `--live` is given. The secret scan uses `gitleaks`, which is optional (`brew install gitleaks`): if it is not installed the scan prints `optional: brew install gitleaks` and shows `SKIP`, and the secret scan did not run in that case. A finding, a failed install, a failed test, a workflow file, or a live run without `NEAR_NETWORK=testnet` and `NEAR_ACCOUNT_ID` is a failure. The checks clone the committed `HEAD`, so commit your changes first.
+PASS means the summary table has no `FAIL` row and the process exits 0. `SKIP` is not a failure. `swarm` and `demo` run with `MOCK_INFERENCE=1`. The `evidence` stage runs in mock mode and writes `out/evidence.json` with the memory loop (swarm, sheets, `anchor_sheet` dry-runs, final round hash) and MOCK entries (for example `"hash": "MOCK-deploy"`); it prints `mock, not on-chain proof`, and no chain was queried. Only `--live` needs transaction hashes and RPC views. `deploy nft` shows `SKIP` unless `--live` is given. The secret scan uses `gitleaks`, which is optional (`brew install gitleaks`): if it is not installed the stage prints `WARN: secret scan did NOT run` lines with the install hint, records `SKIP` with `NOT RUN: gitleaks not installed`, and repeats the warning just above `result:`. A `PASS` without gitleaks means the tree was not scanned for secrets; install gitleaks and rerun for a scanned result. A finding, a failed install, a failed test, a workflow file, or a live run without `NEAR_NETWORK=testnet` and `NEAR_ACCOUNT_ID` is a failure. The checks clone the committed `HEAD`, so commit your changes first.
 
 A passing mock run looks like this (the commit sha and test file count change):
 
@@ -269,7 +269,7 @@ PASS      symlinks        tracked symlinks resolve
 PASS      secret files    no tracked env or key files
 PASS      npm install     npm ci
 PASS      tests           47 file(s)
-SKIP      secret scan     gitleaks not installed (warn)
+SKIP      secret scan     NOT RUN: gitleaks not installed (brew install gitleaks)
 SKIP      deploy nft      npm run deploy:nft exists; live testnet not requested
 PASS      mint            npm run mint (mock)
 PASS      swarm           npm run swarm (mock)
