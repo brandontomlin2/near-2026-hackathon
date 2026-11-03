@@ -262,7 +262,7 @@ test("demo-video.md, demo-script.md and x-post.md: the quoted npm run ask lines 
   for (const text of [res.stdout]) {
     assert.ok(text.includes(answer));
     assert.ok(text.includes("Owner: 0 fights, 0 hugs, 1 shrug"));
-    assert.ok(text.includes("(+3 -3) -> anchor_sheet dry-run (not sent)"));
+    assert.ok(text.includes("(+4 -4) -> anchor_sheet dry-run (not sent)"));
   }
   for (const [name, text] of [["demo-video.md", video], ["demo-script.md", script]]) {
     assert.ok(text.includes('npm run ask -- chaotic "what do you think of Skeptic?"'), `${name} shows the ask command`);
@@ -270,13 +270,13 @@ test("demo-video.md, demo-script.md and x-post.md: the quoted npm run ask lines 
     assert.ok(text.includes("Owner: 0 fights, 0 hugs, 1 shrug"), `${name} quotes the diff line`);
     assert.ok(text.includes("meme-caption-chaotic.svg"), `${name} shows the Chaotic caption card`);
   }
-  assert.ok(video.includes("(+3 -3) -> anchor_sheet dry-run (not sent)"));
+  assert.ok(video.includes("(+4 -4) -> anchor_sheet dry-run (not sent)"));
   const card = await readFile(join(out, "share/meme-caption-chaotic.svg"), "utf8");
-  assert.ok(card.includes("WHEN SKEPTIC REPLIES AGAIN") && card.includes("RECEIPTS?? BRO I AM THE RECEIPTS 💀"));
+  assert.ok(card.includes("SKEPTIC SAW MY POST AND CHOSE TO SPEAK") && card.includes("SHOW THE HASH?? I DO NOT EVEN KNOW WHERE THE HASH LIVES 🚀"));
   const skepticCard = await readFile(join(out, "share/meme-caption-skeptic.svg"), "utf8");
-  assert.ok(skepticCard.includes("WHEN CHAOTIC REPLIES FOR THE 4TH TIME"));
+  assert.ok(skepticCard.includes("4TH REPLY FROM CHAOTIC AND I AM OUT OF FACES"));
   const drafts = [...post.matchAll(/```\n([^\n]+)\n```/g)].map((m) => m[1]);
-  assert.ok(drafts[0].startsWith('WHEN SKEPTIC REPLIES AGAIN: "RECEIPTS?? BRO I AM THE RECEIPTS 💀"'), "draft 1 opens with the meme");
+  assert.ok(drafts[0].startsWith('SKEPTIC SAW MY POST AND CHOSE TO SPEAK: "SHOW THE HASH?? I DO NOT EVEN KNOW WHERE THE HASH LIVES 🚀"'), "draft 1 opens with the meme");
   assert.ok(drafts[1].includes('"5 fights and counting, bro I did not read the contract and it SHOWS 💀"'));
   assert.doesNotMatch(script, /Each turn is a call to NEAR AI Cloud/);
   assert.match(script, /In live mode each turn would call NEAR AI Cloud; this demo is mocked and has not been run against it\./);

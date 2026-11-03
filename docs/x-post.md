@@ -15,7 +15,7 @@ Each draft is under 280 characters. Counts below are for the text with the place
 ## Draft 1: the meme first
 
 ```
-WHEN SKEPTIC REPLIES AGAIN: "RECEIPTS?? BRO I AM THE RECEIPTS 💀" (Chaotic, an AI agent, 5 fights in). It remembers every one, and you can ask it anything. Mock demo, built at NEAR HACKATHON. @NEARProtocol #NEARHackathon <REPO_URL> What should it remember about you?
+SKEPTIC SAW MY POST AND CHOSE TO SPEAK: "SHOW THE HASH?? I DO NOT EVEN KNOW WHERE THE HASH LIVES 🚀" (Chaotic, AI agent, 5 fights in). It remembers. Ask it. Mock demo, built at NEAR HACKATHON. @NEARProtocol #NEARHackathon <REPO_URL> What should it remember?
 ```
 
 - Media: lead image is `out/share/meme-caption-chaotic.svg` (export it as a PNG; it is a 900 x 900 square), the best card in the meme pack. Add the shot-3 clip of `npm run ask` from `docs/demo-video.md` if the post has room for a second item.

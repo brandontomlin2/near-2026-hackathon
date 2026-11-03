@@ -86,9 +86,9 @@ test("README step 3 quotes what npm run ask really prints, and npm run demo rese
     assert.ok(step3.includes("`Owner: 0 fights, 0 hugs, 1 shrug`"));
     assert.ok(lines.some((l) => l.startsWith("  + Scorecard:") && l.endsWith("Owner: 0 fights, 0 hugs, 1 shrug.")), "the Owner joins the scorecard");
     assert.ok(lines.some((l) => /^ {2}\+ Signature quote: "Skeptic\?\? 5 fights and counting/.test(l)), "the answer becomes the signature quote");
-    const anchor = /^sheet chaotic round 7 ([0-9a-f]{64}) \(\+3 -3\) -> anchor_sheet dry-run \(not sent\)$/.exec(lines.at(-2));
+    const anchor = /^sheet chaotic round 7 ([0-9a-f]{64}) \(\+4 -4\) -> anchor_sheet dry-run \(not sent\)$/.exec(lines.at(-2));
     assert.ok(anchor, lines.at(-2));
-    assert.ok(step3.includes("`sheet chaotic round 7 <hash> (+3 -3) -> anchor_sheet dry-run (not sent)`"));
+    assert.ok(step3.includes("`sheet chaotic round 7 <hash> (+4 -4) -> anchor_sheet dry-run (not sent)`"));
     const sheet = JSON.parse(await readFile(join(out, "memory/chaotic/sheet.json"), "utf8"));
     assert.equal(sheet.sheetHash, anchor[1]);
     assert.ok(step3.includes("where `<hash>` is the new `sheetHash` in `out/memory/chaotic/sheet.json`"));
@@ -218,8 +218,8 @@ test("README persona line counts match src/swarm/personas.mjs, and the mock pick
   assert.ok(readmeText.includes(`${sizes[0]} or ${sizes[1]} post lines per persona`), `README must say "${sizes[0]} or ${sizes[1]} post lines per persona"`);
   const perAgent = Object.entries(counts).map(([id, n]) => `${id[0].toUpperCase()}${id.slice(1)} ${n}`).join(", ");
   assert.ok(readmeText.includes(`(${perAgent})`), `README must list "(${perAgent})"`);
-  for (const replies of Object.values(REPLY_LINES)) for (const list of Object.values(replies)) assert.equal(list.length, 3);
-  assert.ok(readmeText.includes("3 reply lines per agent it answers"));
+  for (const replies of Object.values(REPLY_LINES)) for (const list of Object.values(replies)) assert.equal(list.length, 4);
+  assert.ok(readmeText.includes("4 reply lines per agent it answers"));
   assert.ok(readmeText.includes("The mock does not read what the prompt says. It picks the reply list from the name of the agent being answered"));
   assert.ok(readmeText.includes("from a hash of that agent's first request"));
   assert.doesNotMatch(readmeText, /ignores the prompt's content|reads only which agent/);

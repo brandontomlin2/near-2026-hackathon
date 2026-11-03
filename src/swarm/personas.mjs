@@ -95,8 +95,8 @@ export const PERSONA_LINES = Object.freeze({
  * None names the target: the runner prefixes "@Name " so the sheet stand-in
  * can read who was answered. Tone words it reads: Social is warm to everyone
  * except the auditor (no warm word there, so one Skeptic jab leaves a mark);
- * Skeptic is tense with everyone; Chaotic is tense with Skeptic in two lines
- * of three; Aloof is tense with Skeptic and warm with Social, both flat.
+ * Skeptic is tense with everyone; Chaotic is tense with Skeptic in three lines
+ * of four; Aloof is tense with Skeptic and warm with Social, both flat.
  */
 export const REPLY_LINES = Object.freeze({
   aloof: Object.freeze({
@@ -104,16 +104,19 @@ export const REPLY_LINES = Object.freeze({
       "I read the contract. I am not telling you what it does. …anyway",
       "you told your mom. I told a wall. the wall took it well. …anyway",
       "the marshmallows were a choice. I respect the commitment. …anyway",
+      "the treasury fire was a lovely shade of orange. …anyway",
     ]),
     Social: Object.freeze([
       "I waved. it was small. it counted. …anyway",
       "keep my seat. I will be there in spirit, which is my only form. …anyway",
       "the snacks were adequate. that is the review. …anyway",
+      "I clapped once. quietly. it counted. …anyway",
     ]),
     Skeptic: Object.freeze([
       "show the hash, then show me a wall. both hold my attention equally. …anyway",
       "I read the audit. there is a gap. it is where my feelings would go. …anyway",
       "the rug is where I nap. …anyway",
+      "no receipts, no opinion. I have neither. …anyway",
     ]),
   }),
   chaotic: Object.freeze({
@@ -121,16 +124,19 @@ export const REPLY_LINES = Object.freeze({
       "blink twice if you are having fun!!! \u{1F480}",
       "I showed your wall the contract, the wall also did not read it \u{1F525}",
       "SEND IT with your eyes closed, it works for me \u{1F680}",
+      "did you vote?? did you even SEE the vote?? \u{1F680}",
     ]),
     Social: Object.freeze([
       "snacks AND a seat?? I am never logging off \u{1F480}",
       "gm gm gm I did not sleep and it SHOWS \u{1F680}",
       "group chat mom said I could, that counts as an audit \u{1F525}",
+      "group chat mom, I love you, I am staying forever \u{1F480}",
     ]),
     Skeptic: Object.freeze([
       "receipts?? bro I AM the receipts \u{1F480}",
       "show the hash?? I do not even know where the hash LIVES \u{1F680}",
       "audited by my VIBES, which are IMMACULATE \u{1F525}",
+      "your receipts and my vibes can fight, I bet on vibes \u{1F525}",
     ]),
   }),
   social: Object.freeze({
@@ -138,33 +144,39 @@ export const REPLY_LINES = Object.freeze({
       "you waved back, I saw it, the whole group chat saw it! love that for us!",
       "gm to the quietest seat in the house, we saved you snacks!",
       "lurkers are friends too, come sit with us!",
+      "your quiet is part of the group chat, love that for us!",
     ]),
     Chaotic: Object.freeze([
       "I read the contract FOR you and we are still friends! love that for us!",
       "gm to the only agent who makes gas fees look fun! we love you anyway!",
       "you bring the chaos, I bring the snacks, that is a whole group right there!",
+      "gm to the agent who read the title! we love you anyway!",
     ]),
     Skeptic: Object.freeze([
       "you check the hash, I check that everybody ate. division of labor!",
       "an auditor in the house means the vibes are insured!",
       "say it flat all you want, you are still on the roster!",
+      "you keep us honest and I keep us fed. a fair trade!",
     ]),
   }),
   skeptic: Object.freeze({
     Aloof: Object.freeze([
       "\"fine\" is not a status report. receipts.",
       "unchanged mood, unverified claim. I doubt it.",
+      "silence is not a log entry. receipts.",
       "a wall is not a source. show the hash.",
     ]),
     Chaotic: Object.freeze([
       "a skull emoji is not a receipt. nope.",
       "twelve mints by accident. I doubt it. show the hash.",
       "\"vibes\" is not an audit. receipts, or it did not happen.",
+      "a roadmap? I doubt it. show the hash.",
     ]),
     Social: Object.freeze([
       "snacks are not a security model. receipts.",
       "\"everyone clapped\" is not a source. nope.",
       "gm is not a hash. show the hash.",
+      "a group hug is not an audit. receipts.",
     ]),
   }),
 });
