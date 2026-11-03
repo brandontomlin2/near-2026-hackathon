@@ -31,7 +31,7 @@ const cleanEnv = (extra = {}) => {
 
 function runVerify(t, args, env) {
   const dir = tmp(t);
-  const base = cleanEnv({ TMPDIR: dir, NEAR_NETWORK: undefined, NEAR_ACCOUNT_ID: undefined, EVIDENCE_TX_FILE: undefined, ...env });
+  const base = cleanEnv({ TMPDIR: dir, NEAR_NETWORK: undefined, NEAR_ACCOUNT_ID: undefined, NEAR_CONTRACT_ACCOUNT_ID: undefined, EVIDENCE_TX_FILE: undefined, ...env });
   return spawnSync("/bin/bash", [VERIFY, ...args], { encoding: "utf8", env: base, cwd: dir });
 }
 
@@ -110,10 +110,11 @@ function stubNpm(t) {
   return bin;
 }
 
-function runRunner(runner, bin, mode, npmArgs, env) {
+// systemDirs: false puts only `bin` on PATH, so a real npm in /usr/bin or /bin can't be found.
+function runRunner(runner, bin, mode, npmArgs, env, { systemDirs = true } = {}) {
   const r = spawnSync(process.execPath, [runner, mode, ...npmArgs], {
     encoding: "utf8",
-    env: { PATH: `${bin}:/usr/bin:/bin`, PLAIN: "kept", ...env },
+    env: { PATH: systemDirs ? `${bin}:/usr/bin:/bin` : bin, PLAIN: "kept", ...env },
   });
   const seen = Object.fromEntries(r.stdout.split("\n").filter((l) => l.includes("=")).map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
   return { ...r, seen };
@@ -176,7 +177,7 @@ test("runner passes npm's exit status through, and reports a missing npm as exit
   const bin = stubNpm(t);
   assert.equal(runRunner(runner, bin, "mock", ["run", "x"], { STUB_EXIT: "7" }).status, 7);
   const empty = tmp(t, "verify-gaps14-nobin-");
-  const missing = runRunner(runner, empty, "mock", ["run", "x"], {});
+  const missing = runRunner(runner, empty, "mock", ["run", "x"], {}, { systemDirs: false });
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, /npm failed to start/);
 });
