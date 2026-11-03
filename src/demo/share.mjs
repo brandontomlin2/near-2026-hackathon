@@ -2,6 +2,7 @@
 // is nested as an <svg> element, so the card has no external references and
 // needs no scripts. Output is deterministic: no clocks, no randomness.
 
+import { MAX_TEXT_LENGTH } from "../channel/channel.mjs";
 import { escapeHtml } from "../viewer/render.mjs";
 
 const WIDTH = 900;
@@ -10,6 +11,10 @@ const PAD = 40;
 const TEXT_X = PAD + FACE + 36;
 const WRAP = 22;
 const LINE_H = 40;
+// A card shows one channel message, so a caption longer than a channel post can
+// only come from a hostile model reply. Cut it there (in code points, so the cut
+// never splits a pair) and the card's bytes and height stay bounded.
+const MAX_CAPTION = MAX_TEXT_LENGTH;
 
 /** Escape for XML text and attribute values (same five characters as HTML). */
 export const escapeXml = escapeHtml;
@@ -21,8 +26,15 @@ export function cleanText(value) {
   return String(value ?? "").replace(INVALID_XML, "").replace(/\s+/g, " ").trim();
 }
 
+/** Cut `text` to at most `max` code points, marking the cut with an ellipsis. */
+export function clipText(text, max = MAX_CAPTION) {
+  const points = [...String(text)];
+  return points.length > max ? `${points.slice(0, max).join("").trimEnd()}…` : text;
+}
+
 /** Greedy word wrap; a word longer than `width` is split. */
 export function wrapText(text, width = WRAP) {
+  if (!Number.isInteger(width) || width < 1) throw new RangeError(`wrapText: width must be a positive integer, got ${String(width)}`);
   const lines = [];
   let line = "";
   for (const word of String(text).split(/\s+/).filter(Boolean)) {
@@ -60,7 +72,7 @@ export function nest(faceSvg, x, y, size) {
  */
 export function renderShareCard(card) {
   const agentName = cleanText(card.agentName);
-  const text = cleanText(card.text);
+  const text = clipText(cleanText(card.text));
   const mood = cleanText(card.mood);
   const round = cleanText(String(card.round));
   const { faceSvg } = card;
