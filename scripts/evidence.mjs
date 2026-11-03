@@ -33,6 +33,20 @@ const MOCK_BANNER = [
   "#".repeat(64),
 ].join("\n");
 
+function evidenceAnchor(a) {
+  return {
+    mock: true,
+    status: a.status,
+    method: a.methodName,
+    contract: a.contractId,
+    args: { ...a.args },
+    gas: a.gas,
+    deposit_yocto: a.depositYocto,
+    transaction_hash: a.transactionHash,
+    linked_round_hash: a.linkedRoundHash,
+  };
+}
+
 /** Same code path as `npm run swarm` (5 rounds, seed 1), mock client, dry-run anchors. */
 async function mockMemoryLoop(contract) {
   const rounds = 5;
@@ -47,6 +61,7 @@ async function mockMemoryLoop(contract) {
     swarm: {
       rounds,
       seed,
+      every: loop.every,
       events: swarm.events.length,
       round_hashes: loop.roundHashes,
       final_round_hash: loop.finalRoundHash,
@@ -62,17 +77,14 @@ async function mockMemoryLoop(contract) {
         through_index: t.sheet.throughIndex,
         mode: t.sheet.mode,
       },
-      anchor: {
-        mock: true,
-        status: t.anchor.status,
-        method: t.anchor.methodName,
-        contract: t.anchor.contractId,
-        args: { ...t.anchor.args },
-        gas: t.anchor.gas,
-        deposit_yocto: t.anchor.depositYocto,
-        transaction_hash: t.anchor.transactionHash,
-        linked_round_hash: t.anchor.linkedRoundHash,
-      },
+      anchor: evidenceAnchor(t.anchor),
+      // Every sheet, oldest first: each with its own anchor_sheet dry-run and the hash of the round it was written at.
+      sheets: t.sheets.map((s) => ({
+        round: s.round,
+        sheet_hash: s.sheet.sheetHash,
+        previous_hash: s.diff.previousHash,
+        anchor: evidenceAnchor(s.anchor),
+      })),
     })),
   };
 }
