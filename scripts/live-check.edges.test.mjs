@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { check, RPC_URL } from "./live-check.mjs";
+import { defaultWasmPath } from "./testnet-deploy.mjs";
 import { runOffline } from "./test-helpers/run-offline.mjs";
 
 const SCRIPT = fileURLToPath(new URL("./live-check.mjs", import.meta.url));
@@ -115,4 +117,20 @@ test("ready case prints exactly 7 lines in stable order", async () => {
     "[ok]   NEAR_CONTRACT_ACCOUNT_ID exists on testnet",
     "ready: yes. Next: npm run live-proof (dry run), then the owner hosts the four SVGs and adds --send --i-approve --media-base <url>.",
   ]);
+});
+
+// Privacy audit L-4: `npm run live:check` output lands in pull requests. The wasm line
+// must name the repo-relative path, never the absolute one with the home directory.
+test("CLI from the repo root prints the repo-relative wasm path and no home directory", async () => {
+  const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+  const r = await runOffline([SCRIPT], { env: {}, cwd: repoRoot });
+  const [wasmLine] = r.stdout.split("\n");
+  assert.match(wasmLine, /^\[(ok|todo)\] +wasm (built|not found at|is empty at)[: ]+contracts\/personality-nft\/target\/near\/personality_nft\.wasm[ .]/);
+  assert.ok(!r.stdout.includes(homedir()), `home directory leaked: ${wasmLine}`);
+  assert.ok(!r.stdout.includes(repoRoot.replace(/\/$/, "")), `absolute repo path leaked: ${wasmLine}`);
+});
+
+test("check() without an injected wasm uses the same default the deploy CLI prints", async () => {
+  const r = await check(ENV, { statWasm: () => 7, fetch: exists });
+  assert.equal(r.lines[0], `[ok]   wasm built: ${defaultWasmPath()} (7 bytes)`);
 });

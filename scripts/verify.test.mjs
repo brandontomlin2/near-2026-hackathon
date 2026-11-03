@@ -410,6 +410,17 @@ test("summary refuses result: PASS when any stage has no row, naming the missing
   assert.doesNotMatch(complete.stdout, /no row was recorded/);
 });
 
+// Privacy audit L-4: the "wrote ..." line is pasted into every PR's Proof section, so it
+// must name the repo-relative file, not ${source_root}/... with the home directory.
+test("the evidence stage reports its file as a repo-relative path", () => {
+  const text = fs.readFileSync(VERIFY, "utf8");
+  assert.ok(text.includes('echo "wrote out/evidence.json"'), "expected a repo-relative wrote line");
+  assert.doesNotMatch(text, /echo "wrote \$\{?source_root/, "the wrote line must not print source_root");
+  for (const line of text.split("\n").filter((l) => /^\s*echo /.test(l))) {
+    assert.ok(!/\$\{?source_root/.test(line), `echo prints an absolute path: ${line.trim()}`);
+  }
+});
+
 test("package.json exposes evidence, viewer and verify scripts", () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package.json"), "utf8"));
   for (const name of ["evidence", "viewer", "verify"]) assert.ok(pkg.scripts[name], name);

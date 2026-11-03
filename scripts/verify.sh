@@ -620,7 +620,8 @@ if [[ "$last_outcome" == "pass" ]]; then
   if evidence_ok "$([[ "$LIVE" -eq 1 ]] && echo live || echo mock)"; then
     mkdir -p "${source_root}/out"
     cp "out/evidence.json" "${source_root}/out/evidence.json"
-    echo "wrote ${source_root}/out/evidence.json"
+    # Repo-relative on purpose: this output is pasted into pull requests.
+    echo "wrote out/evidence.json"
     if [[ "$LIVE" -eq 1 ]]; then
       record PASS "evidence" "wrote out/evidence.json"
     else
