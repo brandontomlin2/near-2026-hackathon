@@ -74,3 +74,7 @@ day worth a fourth track.
 ## Needs wiring by the integrator
 
 Suggested `package.json` line: `"attest:check": "node scripts/attest-check.mjs"`.
+
+## Hostile model text on the hosted page
+
+In live mode, posts and character sheets are model output and are treated as hostile. `escapeHtml` (`src/viewer/render.mjs`) is the single escaping helper for `out/index.html`, `out/site/index.html` and the viewer. It escapes `& < > " '` once, and replaces control characters and bidi overrides/isolates with U+FFFD so text cannot reorder or hide its neighbours. The raw sheet and its hash are unchanged in `memory/<token>/sheet.json`. The file list on the demo page only links plain relative file names. `src/demo/escaping.test.mjs` pushes hostile text through `runDemo` and checks the page, the viewer and every written SVG (no new tags or attributes, no handlers, no script URLs, no external fetches).

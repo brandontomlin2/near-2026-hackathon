@@ -28,7 +28,9 @@ const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 
 /**
  * Run the whole demo and write it under outDir.
- * @param {{ outDir?: string, rounds?: number, seed?: number, every?: number, contractId?: string }} [options]
+ * `swarmClient` and `sheetClient` are test seams: they replace the offline persona mocks
+ * and the sheet stand-in, so tests can push hostile model text through the real pipeline.
+ * @param {{ outDir?: string, rounds?: number, seed?: number, every?: number, contractId?: string, swarmClient?: { chat: Function }, sheetClient?: { chat: Function } }} [options]
  * @returns {Promise<{ outDir: string, files: string[], finalRoundHash: string, verified: true, manifest: object }>}
  */
 export async function runDemo({
@@ -37,13 +39,15 @@ export async function runDemo({
   seed = DEMO_DEFAULTS.seed,
   every = DEMO_DEFAULTS.every,
   contractId = DEMO_DEFAULTS.contractId,
+  swarmClient,
+  sheetClient,
 } = {}) {
   if (!Number.isInteger(every) || every < 1 || every > rounds) {
     throw new RangeError(`every must be between 1 and rounds (${rounds}), got ${every}; otherwise no sheet is written`);
   }
 
   // 1. Swarm, with the persona mocks, then re-check the hash chain.
-  const result = await runSwarm({ rounds, seed });
+  const result = await runSwarm({ rounds, seed, client: swarmClient });
   if (!verifyRounds(result)) throw new Error("demo: round hashes do not verify");
 
   // 2. Memory. The log is append-only, so start each token's memory clean.
@@ -52,7 +56,7 @@ export async function runDemo({
   const memoryDir = join(outDir, "memory");
   for (const agent of AGENTS) await rm(join(memoryDir, agent.id), { recursive: true, force: true });
   const store = createMemoryStore(memoryDir);
-  const client = createMockClient({ responder: sheetResponder });
+  const client = sheetClient ?? createMockClient({ responder: sheetResponder });
   const nameOf = new Map(AGENTS.map((a) => [a.id, a.name]));
   const history = new Map(AGENTS.map((a) => [a.id, []]));
 
