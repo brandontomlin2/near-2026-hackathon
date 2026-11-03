@@ -114,9 +114,13 @@ test("event text: unicode survives, unsafe code points are replaced, whitespace 
   assert.ok(!/[‮⁦‎\u0000]/.test(html));
 });
 
-test("an empty-string name renders an empty author span", () => {
-  const html = renderViewer(one([{ text: "x" }]), agentsNamed(""));
-  assert.ok(html.includes(`<span class="author"></span> x`));
+test("an empty-string name is rejected and nothing renders", () => {
+  let html;
+  assert.throws(
+    () => { html = renderViewer(one([{ text: "x" }]), agentsNamed("")); },
+    { name: "TypeError", message: "invalid swarm result: agent 0 needs a non-empty string name" },
+  );
+  assert.equal(html, undefined);
 });
 
 test("escapeHtml stringifies non-strings and double-escapes ampersands", () => {

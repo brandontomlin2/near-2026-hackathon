@@ -47,7 +47,8 @@ function parseArgs(argv) {
       throw new Error(`unknown argument ${JSON.stringify(flag)}`);
     }
   }
-  if (opts.every > opts.rounds) {
+  // --help wins over every other flag, so "--rounds 2 --help" prints usage, not an error.
+  if (!opts.help && opts.every > opts.rounds) {
     throw new Error(`--every (${opts.every}) must not exceed --rounds (${opts.rounds}), or no character sheet is written`);
   }
   return opts;
@@ -70,7 +71,6 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
   try {
     mode = parseMode(env.MOCK_INFERENCE);
   } catch (error) {
-    // An unrecognised MOCK_INFERENCE value is the user's mistake: one line, no stack trace.
     console.error(`${name}: ${error.message} (see --help)`);
     return 2;
   }
