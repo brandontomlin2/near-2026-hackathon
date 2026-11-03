@@ -1,0 +1,17 @@
+# Placeholder Authorization headers in the vendored NEAR AI Cloud skill doc.
+# File: .agents/skills/near-ai-cloud/references/specialized-endpoints.md
+# Rule: curl-auth-header. The value is the literal YOUR_API_KEY, not a credential.
+# Fingerprints only, one per finding. Do not add other paths or rules here.
+
+fd7bb18dbf00876cec8bcd86557d8203d7fb1fc1:.agents/skills/near-ai-cloud/references/specialized-endpoints.md:curl-auth-header:15
+fd7bb18dbf00876cec8bcd86557d8203d7fb1fc1:.agents/skills/near-ai-cloud/references/specialized-endpoints.md:curl-auth-header:31
+fd7bb18dbf00876cec8bcd86557d8203d7fb1fc1:.agents/skills/near-ai-cloud/references/specialized-endpoints.md:curl-auth-header:48
+fd7bb18dbf00876cec8bcd86557d8203d7fb1fc1:.agents/skills/near-ai-cloud/references/specialized-endpoints.md:curl-auth-header:65
+fd7bb18dbf00876cec8bcd86557d8203d7fb1fc1:.agents/skills/near-ai-cloud/references/specialized-endpoints.md:curl-auth-header:80
+fd7bb18dbf00876cec8bcd86557d8203d7fb1fc1:.agents/skills/near-ai-cloud/references/specialized-endpoints.md:curl-auth-header:104
+01b0859227a08740ea8919774318f434cc69bfd6:.agents/skills/near-ai-cloud/references/specialized-endpoints.md:curl-auth-header:15
+01b0859227a08740ea8919774318f434cc69bfd6:.agents/skills/near-ai-cloud/references/specialized-endpoints.md:curl-auth-header:31
+01b0859227a08740ea8919774318f434cc69bfd6:.agents/skills/near-ai-cloud/references/specialized-endpoints.md:curl-auth-header:48
+01b0859227a08740ea8919774318f434cc69bfd6:.agents/skills/near-ai-cloud/references/specialized-endpoints.md:curl-auth-header:65
+01b0859227a08740ea8919774318f434cc69bfd6:.agents/skills/near-ai-cloud/references/specialized-endpoints.md:curl-auth-header:80
+01b0859227a08740ea8919774318f434cc69bfd6:.agents/skills/near-ai-cloud/references/specialized-endpoints.md:curl-auth-header:104
