@@ -50,7 +50,7 @@ export function validateAccountId(value, label) {
 }
 
 export function parseCount(value) {
-  const n = Number(value);
+  const n = /^[0-9]+$/.test(value) ? Number(value) : Number.NaN;
   if (!Number.isInteger(n) || n < 1 || n > AGENTS.length) {
     throw new UsageError(`--count must be an integer from 1 to ${AGENTS.length}`);
   }
@@ -233,19 +233,13 @@ export async function run(argv, env = process.env, deps = {}) {
 
     const ownerRaw = env.NEAR_ACCOUNT_ID || "";
     const contractRaw = env.NEAR_CONTRACT_ACCOUNT_ID || ownerRaw;
-    let owner;
-    let contract;
-    let receiver;
-    if (opts.send) {
-      owner = validateAccountId(ownerRaw, "NEAR_ACCOUNT_ID");
-      contract = validateAccountId(contractRaw, "NEAR_CONTRACT_ACCOUNT_ID (or NEAR_ACCOUNT_ID)");
-      receiver = opts.receiver ? validateAccountId(opts.receiver, "--receiver") : owner;
-    } else {
-      // Dry run may use placeholders so the plan prints without any env set.
-      owner = ownerRaw || "<NEAR_ACCOUNT_ID>";
-      contract = contractRaw || "<NEAR_CONTRACT_ACCOUNT_ID>";
-      receiver = opts.receiver || owner;
-    }
+    // A value that is set must be valid in both modes, so a mistyped secret is
+    // refused (never echoed) instead of being printed into a dry-run plan.
+    // An unset value is only an error with --send; a dry run uses placeholders.
+    const checked = (value, label) => (value || opts.send ? validateAccountId(value, label) : null);
+    const owner = checked(ownerRaw, "NEAR_ACCOUNT_ID") ?? "<NEAR_ACCOUNT_ID>";
+    const contract = checked(contractRaw, "NEAR_CONTRACT_ACCOUNT_ID (or NEAR_ACCOUNT_ID)") ?? "<NEAR_CONTRACT_ACCOUNT_ID>";
+    const receiver = (opts.receiver ? validateAccountId(opts.receiver, "--receiver") : null) ?? owner;
 
     const steps = buildPlan({
       command: opts.command, contract, owner, receiver, count: opts.count, wasm: opts.wasm,
