@@ -275,3 +275,23 @@ describe("thenNowCaption", () => {
     assert.ok(html.includes('<span class="arc">Round 3: no enemies → Round 6: Public enemy #1 Chaotic</span>'));
   });
 });
+
+describe("renderDemoPage hero subtitle", () => {
+  const call = (over = {}) => ({ tokenId: "aloof", round: 1, method: "anchor_sheet", args: { sheet_hash: HASH }, depositYocto: "1", status: "dry-run", transactionHash: null, ...over });
+
+  it("says the hash is only prepared for anchoring when the anchors are dry runs", () => {
+    const html = render(baseManifest(), baseData({ anchors: { contractId: "c.testnet", signed: false, calls: [call()] } }));
+    assert.ok(html.includes("whose hash is prepared for anchoring on NEAR (dry run here, nothing sent)"));
+    assert.ok(!html.includes("is anchored on NEAR"));
+  });
+
+  it("does not claim anchoring when signed is set but a call is still a dry run", () => {
+    const html = render(baseManifest(), baseData({ anchors: { contractId: "c.testnet", signed: true, calls: [call({ status: "sent", transactionHash: "tx" }), call()] } }));
+    assert.ok(!html.includes("is anchored on NEAR"));
+  });
+
+  it("says anchored only when every call was signed and sent", () => {
+    const html = render(baseManifest(), baseData({ anchors: { contractId: "c.testnet", signed: true, calls: [call({ status: "sent", transactionHash: "tx" })] } }));
+    assert.ok(html.includes("whose hash is anchored on NEAR,"));
+  });
+});

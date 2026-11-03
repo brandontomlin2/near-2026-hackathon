@@ -2371,6 +2371,16 @@ mod tests {
         assert_eq!(transferred_to(&accounts(1)), 0);
     }
 
+    /// The README tells callers 0.01 NEAR (10^22 yocto) is plenty for anchor_sheet.
+    /// The first anchor on a token is the worst case (it also allocates the
+    /// token's anchor storage), so pin it below that.
+    #[test]
+    fn first_anchor_cost_is_below_one_hundredth_of_a_near() {
+        let cost = first_anchor_cost();
+        assert!(cost > 0);
+        assert!(cost < 10u128.pow(22), "first anchor costs {cost} yocto, README promises 0.01 NEAR is plenty");
+    }
+
     #[test]
     #[should_panic(expected = "Must attach")]
     fn anchor_one_yocto_below_storage_cost_panics() {
