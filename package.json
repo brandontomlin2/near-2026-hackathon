@@ -13,6 +13,9 @@
     "test:contract": "cd contracts/personality-nft && cargo test",
     "build:contract": "cd contracts/personality-nft && cargo near build non-reproducible-wasm",
     "infer": "node scripts/infer.mjs",
+    "evidence": "node scripts/evidence.mjs",
+    "viewer": "node scripts/viewer.mjs",
+    "verify": "bash scripts/verify.sh",
     "deploy:nft": "node scripts/testnet-deploy.mjs deploy",
     "mint": "node scripts/testnet-deploy.mjs mint"
   }
