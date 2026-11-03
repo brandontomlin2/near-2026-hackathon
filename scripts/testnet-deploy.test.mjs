@@ -199,7 +199,7 @@ test("dry run --json prints the plan as parseable JSON with the exact argv", asy
 });
 
 test("mainnet and other networks are refused, in both modes", async () => {
-  for (const argv of [["mint"], ["mint", "--send"]]) {
+  for (const argv of [["mint"], ["mint", "--send", "--i-approve"]]) {
     const c = collector();
     const code = await run(argv, { NEAR_NETWORK: "mainnet", NEAR_ACCOUNT_ID: OWNER }, {
       exec: forbiddenExec, out: c.out, err: c.err,
@@ -209,16 +209,35 @@ test("mainnet and other networks are refused, in both modes", async () => {
   }
 });
 
+test("--send without --i-approve is refused before any env or near check, even with a perfect env", async () => {
+  for (const argv of [["mint", "--send", "--media-base", "https://art.example"], ["deploy", "--send", "--wasm", WASM]]) {
+    const c = collector();
+    const code = await run(argv, { NEAR_ACCOUNT_ID: OWNER, NEAR_CONTRACT_ACCOUNT_ID: CONTRACT }, {
+      exec: forbiddenExec, hasNear: forbiddenExec, wasmExists: () => true, out: c.out, err: c.err,
+    });
+    assert.equal(code, 2);
+    assert.match(c.errors.join("\n"), /--send needs --i-approve/);
+    assert.match(c.errors.join("\n"), /Nothing was sent/);
+  }
+});
+
+test("--i-approve alone does not send: it stays a dry run that calls nothing", async () => {
+  const c = collector();
+  const code = await run(["mint", "--i-approve"], { NEAR_ACCOUNT_ID: OWNER }, { exec: forbiddenExec, hasNear: forbiddenExec, out: c.out, err: c.err });
+  assert.equal(code, 0);
+  assert.match(c.lines.join("\n"), /dry-run: nothing is signed or sent/);
+});
+
 test("--send refuses to run without a valid NEAR_ACCOUNT_ID and never calls near", async () => {
   const c = collector();
-  const code = await run(["mint", "--send"], {}, { exec: forbiddenExec, hasNear: () => true, out: c.out, err: c.err });
+  const code = await run(["mint", "--send", "--i-approve"], {}, { exec: forbiddenExec, hasNear: () => true, out: c.out, err: c.err });
   assert.equal(code, 2);
   assert.match(c.errors.join("\n"), /NEAR_ACCOUNT_ID is unset/);
 });
 
 test("--send stops before any transaction when near-cli-rs is missing or has no keychain key", async () => {
   const noBinary = collector();
-  assert.equal(await run(["mint", "--send", "--media-base", "https://art.example"], { NEAR_ACCOUNT_ID: OWNER }, {
+  assert.equal(await run(["mint", "--send", "--i-approve", "--media-base", "https://art.example"], { NEAR_ACCOUNT_ID: OWNER }, {
     exec: forbiddenExec, hasNear: () => false, out: noBinary.out, err: noBinary.err,
   }), 1);
 
@@ -228,7 +247,7 @@ test("--send stops before any transaction when near-cli-rs is missing or has no 
     calls.push(argv);
     return argv.includes("get-public-key") ? 1 : 0;
   };
-  const code = await run(["mint", "--send", "--media-base", "https://art.example"], { NEAR_ACCOUNT_ID: OWNER }, {
+  const code = await run(["mint", "--send", "--i-approve", "--media-base", "https://art.example"], { NEAR_ACCOUNT_ID: OWNER }, {
     exec, hasNear: () => true, out: noKey.out, err: noKey.err,
   });
   assert.equal(code, 1);
@@ -240,7 +259,7 @@ test("--send stops before any transaction when near-cli-rs is missing or has no 
 
 test("--send deploy checks the wasm first and does not sign if it is missing", async () => {
   const c = collector();
-  const code = await run(["deploy", "--send", "--wasm", "/no/such/file.wasm"], {
+  const code = await run(["deploy", "--send", "--i-approve", "--wasm", "/no/such/file.wasm"], {
     NEAR_ACCOUNT_ID: OWNER, NEAR_CONTRACT_ACCOUNT_ID: CONTRACT,
   }, { exec: forbiddenExec, hasNear: () => true, out: c.out, err: c.err });
   assert.equal(code, 1);
@@ -260,7 +279,7 @@ test("--send probes every signer, then sends mints in order; stops at the first 
     sent.push(argv);
     return sent.length === 2 ? 9 : 0; // second mint fails
   };
-  const code = await run(["mint", "--send", "--media-base", "https://art.example", "--count", "3"], {
+  const code = await run(["mint", "--send", "--i-approve", "--media-base", "https://art.example", "--count", "3"], {
     NEAR_ACCOUNT_ID: OWNER, NEAR_CONTRACT_ACCOUNT_ID: CONTRACT,
   }, { exec, hasNear: () => true, out: c.out, err: c.err });
   assert.equal(code, 9);
@@ -281,7 +300,7 @@ test("--send deploy signs the init call on the contract account with the wasm gi
       if (!opts?.quiet) sent.push(argv);
       return 0;
     };
-    const code = await run(["deploy", "--send", "--wasm", wasm], {
+    const code = await run(["deploy", "--send", "--i-approve", "--wasm", wasm], {
       NEAR_ACCOUNT_ID: OWNER, NEAR_CONTRACT_ACCOUNT_ID: CONTRACT,
     }, { exec, hasNear: () => true, out: c.out, err: c.err });
     assert.equal(code, 0, c.errors.join("\n"));
@@ -305,7 +324,7 @@ test("CLI dry run works with no near binary on PATH and no env", () => {
 });
 
 test("CLI --send without env exits 2 and prints usage, not a transaction", () => {
-  const result = spawnSync(process.execPath, [SCRIPT, "deploy", "--send"], {
+  const result = spawnSync(process.execPath, [SCRIPT, "deploy", "--send", "--i-approve"], {
     env: { PATH: path.dirname(process.execPath) },
     encoding: "utf8",
   });

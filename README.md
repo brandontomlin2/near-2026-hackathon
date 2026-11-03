@@ -64,7 +64,7 @@ Inference runs in mock mode (deterministic, offline) unless `MOCK_INFERENCE=0` a
 
 The mock transcript is scripted. In mock mode each agent's lines are drawn from fixed hand-written lists in `src/swarm/personas.mjs`: 12 or 13 post lines per persona (Aloof 13, Chaotic 13, Social 12, Skeptic 12) and 3 reply lines per agent it answers. The mock ignores the prompt's content; it reads only which agent is being answered, to pick the reply list, and the seed, to pick where in the list to start. Only `MOCK_INFERENCE=0` produces model-written replies. The character sheets are not model output either: `npm run demo` uses a counting stand-in and `npm run swarm` the generic mock responder (see the "Details" paragraph under [Try it](#try-it-judge-path)).
 
-Nothing in this repository is deployed or live on testnet. The contract is unit-tested locally; deploy, mint and anchor are dry runs that sign nothing unless a human adds `--send`. Every hash, transaction and chain value in the demo output is a MOCK stand-in. Design: [`PRODUCT.md`](PRODUCT.md). Libraries, AI-generated code and pre-hackathon code (none): [`docs/DISCLOSURE.md`](docs/DISCLOSURE.md).
+Nothing in this repository is deployed or live on testnet. The contract is unit-tested locally; deploy, mint and anchor are dry runs that sign nothing unless a human adds `--send --i-approve`. Every hash, transaction and chain value in the demo output is a MOCK stand-in. Design: [`PRODUCT.md`](PRODUCT.md). Libraries, AI-generated code and pre-hackathon code (none): [`docs/DISCLOSURE.md`](docs/DISCLOSURE.md).
 
 ## Repository layout
 
@@ -74,7 +74,7 @@ Nothing in this repository is deployed or live on testnet. The contract is unit-
 | `src/inference/client.mjs` | Inference client: mock by default, live mode calls NEAR AI Cloud. |
 | `src/swarm/runner.mjs` | The swarm: four trait-driven agents on one channel. |
 | `scripts/demo.mjs`, `src/demo/` | `npm run demo`, the offline end-to-end demo. |
-| `scripts/testnet-deploy.mjs` | `npm run deploy:nft` and `npm run mint`, dry run unless `--send`. |
+| `scripts/testnet-deploy.mjs` | `npm run deploy:nft` and `npm run mint`, dry run unless `--send --i-approve`. |
 | `scripts/verify.sh` | Local judge screen, replaces GitHub Actions. |
 | `docs/DISCLOSURE.md` | Libraries, AI-generated code and pre-hackathon code. |
 | `board/`, `.agents/`, `.claude/`, `skills-lock.json` | Agent tooling used to build this repository (build board, vendored NEAR skills), not part of the product. |
@@ -101,13 +101,13 @@ Build and test. Needs Rust 1.95.0 (pinned in the crate's `rust-toolchain.toml`, 
 
 ## Deploy to testnet
 
-`scripts/testnet-deploy.mjs` deploys the contract to NEAR testnet and mints the four agent tokens. It is a dry run unless you pass `--send`. Dry runs need no account, no keys and no `near` binary. A live run needs near-cli-rs v0.14 or later and a testnet account with its key in the near-cli-rs keychain (`near login`). Keys never go in `.env` or the repo.
+`scripts/testnet-deploy.mjs` deploys the contract to NEAR testnet and mints the four agent tokens. It is a dry run unless you pass both `--send` and `--i-approve` (the same explicit-approval gate as `live-proof`; `--send` alone is refused with exit 2 and nothing is sent). Dry runs need no account, no keys and no `near` binary. A live run needs near-cli-rs v0.14 or later and a testnet account with its key in the near-cli-rs keychain (`near login`). Keys never go in `.env` or the repo.
 
 1. Run `npm run build:contract`. See `contracts/personality-nft/target/near/personality_nft.wasm`.
 2. Run `npm run deploy:nft`. Step 1 must have run first: without the wasm it stops with `error: wasm not found at ... Run npm run build:contract first.` and exits 1. Otherwise see `[1/1] deploy`, a call to `<contract>.new_default_meta` and a `near --quiet contract deploy ... sign-with-keychain send` command printed. Nothing is sent.
 3. Run `npm run mint`. See `[1/4] mint aloof` through `[4/4] mint skeptic`, each an `nft_mint` call with full NEP-177 `token_metadata` (`extra` holds the trait JSON), a `0.05 NEAR` deposit and the near-cli-rs command. Without `--media-base`, `media` is a labelled placeholder URL.
-4. Run `npm run live:check`. It is read-only. See `[todo]` lines for what a live run still needs (wasm, `NEAR_ACCOUNT_ID`, `NEAR_CONTRACT_ACCOUNT_ID`), `[ok]`/`[skip]` lines for the rest (`NEAR_NETWORK`, the account existence check), then `ready: no. Fix the [todo] items above.` and exit 1 until it is all done. Values are never printed.
-5. To send: export those two variables, run `npm run deploy:nft -- --send` once, host the four SVGs, then run `npm run mint -- --send --media-base <url>`. Any `NEAR_NETWORK` other than `testnet` is refused.
+4. Run `npm run live:check`. It is read-only. See `[todo]` lines for what a live run still needs (wasm, `NEAR_ACCOUNT_ID`, `NEAR_CONTRACT_ACCOUNT_ID`), `[ok]`/`[skip]` lines for the rest (`NEAR_NETWORK`, the account existence check), then `ready: no. Fix the [todo] items above.` and exit 1 until it is all done. Values are never printed. With account variables set it makes one read-only RPC `view_account` call per account; `npm run live:check -- --offline` skips that call and touches no network.
+5. To send: export those two variables, run `npm run deploy:nft -- --send --i-approve` once, host the four SVGs, then run `npm run mint -- --send --i-approve --media-base <url>`. Any `NEAR_NETWORK` other than `testnet` is refused.
 
 ## Inference
 

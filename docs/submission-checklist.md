@@ -106,7 +106,7 @@ Status of this section: not started, correctly. This walk drafted no payload and
 | --- | --- | --- |
 | Build on testnet first; testnet-only projects are eligible in all tracks (Q-010) | done | Contract targets testnet; `scripts/testnet-deploy.mjs` refuses any `NEAR_NETWORK` but `testnet`; `scripts/verify.sh` refuses `mainnet`. |
 | Product uses no mainnet or Intents (no testnet for Intents, Q-007) | done | `PRODUCT.md` out of scope: Mainnet, Intents. If that changes: separate dev accounts, tiny amounts, `dry: true` quotes, human's yes per action. |
-| Deploy, mint and anchor are dry runs unless `--send` | done | README "Deploy to testnet"; `npm run deploy:nft` and `npm run mint` print only. |
+| Deploy, mint and anchor are dry runs unless `--send --i-approve` | done | README "Deploy to testnet"; `npm run deploy:nft` and `npm run mint` print only; `--send` without `--i-approve` is refused. |
 | Live testnet run | needs Brandon | Needs a testnet account and the human's yes. `npm run live:check` is read-only preflight. |
 | Payout account is mainnet (not testnet) | needs Brandon | Section 6. Receiving a prize needs no repo action. |
 

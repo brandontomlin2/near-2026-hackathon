@@ -18,12 +18,56 @@ import { fileURLToPath } from "node:url";
 import { createMockClient } from "../src/inference/client.mjs";
 import { runMemoryLoop } from "../src/memory/loop.mjs";
 import { runSwarm } from "../src/swarm/runner.mjs";
+import { validateAccountId } from "./testnet-deploy.mjs";
 
 export const AGENTS = ["Aloof", "Chaotic", "Social", "Skeptic"];
 export const DEFAULT_RPC_URL = "https://rpc.testnet.near.org";
 const BASE58_HASH = /^[1-9A-HJ-NP-Za-km-z]{32,64}$/;
 
 export class EvidenceError extends Error {}
+
+/**
+ * The form of an RPC URL that may be written to evidence.json: scheme, host and
+ * path only. Paid providers put API keys in userinfo or the query string, and
+ * verify.sh copies this file into PR "Proof" sections.
+ */
+export function publicRpcUrl(rpcUrl) {
+  let url;
+  try {
+    url = new URL(rpcUrl);
+  } catch {
+    throw new EvidenceError("NEAR_RPC_URL is not a valid URL (value not shown)");
+  }
+  return `${url.origin}${url.pathname === "/" ? "" : url.pathname}`;
+}
+
+/**
+ * Testnet evidence must be read from a testnet endpoint over https: the host
+ * must carry a "testnet" label and no "mainnet" anywhere. Returns the public
+ * form. The value is never echoed: it may contain a key.
+ */
+export function assertTestnetRpcUrl(rpcUrl) {
+  const recorded = publicRpcUrl(rpcUrl);
+  const { protocol, hostname } = new URL(rpcUrl);
+  const labels = hostname.toLowerCase().split(/[.-]/);
+  if (protocol !== "https:" || !labels.includes("testnet") || /mainnet/i.test(hostname)) {
+    throw new EvidenceError("NEAR_RPC_URL must be an https URL whose host names testnet (value not shown); mainnet or unlabelled endpoints are refused");
+  }
+  return recorded;
+}
+
+/** The contract account must be a named testnet account; mainnet and implicit ids are refused. Never echoes the value. */
+export function assertTestnetAccountId(contract) {
+  try {
+    validateAccountId(contract, "NEAR_ACCOUNT_ID");
+  } catch (err) {
+    throw new EvidenceError(err.message);
+  }
+  if (!contract.endsWith(".testnet")) {
+    throw new EvidenceError("NEAR_ACCOUNT_ID must be a named .testnet account (value not shown); mainnet and implicit accounts are refused");
+  }
+  return contract;
+}
 
 const MOCK_LABEL = "MOCK: dry-run only. Nothing signed, nothing sent, no chain queried. Not on-chain proof.";
 const MOCK_BANNER = [
@@ -152,7 +196,7 @@ export async function viewCall({ fetchImpl, rpcUrl, contract, method, args, extr
       args_base64: Buffer.from(JSON.stringify(args)).toString("base64"),
     },
   };
-  record.request = { rpc_url: rpcUrl, ...body };
+  record.request = { rpc_url: publicRpcUrl(rpcUrl), ...body };
   try {
     const res = await fetchImpl(rpcUrl, {
       method: "POST",
@@ -182,9 +226,8 @@ function agentFor(token, index) {
 
 export async function testnetEvidence({ contract, fetchImpl = globalThis.fetch, rpcUrl = DEFAULT_RPC_URL, txFile }) {
   if (!contract) throw new EvidenceError("NEAR_ACCOUNT_ID is required for testnet evidence");
-  if (/\.near$/.test(contract) && !/testnet/.test(contract)) {
-    throw new EvidenceError("refusing a mainnet-looking account id");
-  }
+  assertTestnetAccountId(contract);
+  const recordedRpcUrl = assertTestnetRpcUrl(rpcUrl);
   const transactions = txFile ? loadTransactions(txFile) : [];
   const views = [];
   const tokensView = await viewCall({
@@ -212,7 +255,7 @@ export async function testnetEvidence({ contract, fetchImpl = globalThis.fetch, 
     mock: false,
     network: "testnet",
     contract,
-    rpc_url: rpcUrl,
+    rpc_url: recordedRpcUrl,
     generated_at: new Date().toISOString(),
     transactions,
     views,
@@ -251,8 +294,10 @@ export async function main(env = process.env, { fetchImpl = globalThis.fetch, cw
 const USAGE = `Usage: node scripts/evidence.mjs
 Writes out/evidence.json. Takes no options; it is configured by the environment:
   EVIDENCE_NETWORK   mock (default) or testnet
-  NEAR_ACCOUNT_ID    contract account to query (testnet only)
-  NEAR_RPC_URL       RPC endpoint (default ${DEFAULT_RPC_URL})
+  NEAR_ACCOUNT_ID    contract account to query (testnet only; must be a named .testnet account)
+  NEAR_RPC_URL       RPC endpoint (default ${DEFAULT_RPC_URL}); https with a testnet host.
+                     Any userinfo, query or fragment (API keys) is used for the request
+                     but never written to the evidence file.
   EVIDENCE_TX_FILE   JSON file of transaction hashes to include (testnet only)
   EVIDENCE_OUT       output file (default out/evidence.json)
 Mock mode never touches the network. Testnet mode makes read-only view calls only:

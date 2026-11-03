@@ -85,7 +85,7 @@ test("dry run with a mistyped NEAR_CONTRACT_ACCOUNT_ID or --receiver is refused 
 test("--send names the missing variable when env is empty, whitespace or unset", async () => {
   for (const env of [{}, { NEAR_ACCOUNT_ID: "" }, { NEAR_ACCOUNT_ID: "   " }]) {
     const s = sink();
-    const code = await run(["mint", "--send"], env, { exec: never, hasNear: never, out: s.out, err: s.err });
+    const code = await run(["mint", "--send", "--i-approve"], env, { exec: never, hasNear: never, out: s.out, err: s.err });
     assert.equal(code, 2);
     assert.match(s.errText(), /NEAR_ACCOUNT_ID is unset or not a valid NEAR account id/);
   }
@@ -93,13 +93,13 @@ test("--send names the missing variable when env is empty, whitespace or unset",
 
 test("--send with a valid owner but a bad contract id names NEAR_CONTRACT_ACCOUNT_ID", async () => {
   const s = sink();
-  const code = await run(["deploy", "--send"], { NEAR_ACCOUNT_ID: OWNER, NEAR_CONTRACT_ACCOUNT_ID: "Bad_Id" }, { exec: never, hasNear: never, out: s.out, err: s.err });
+  const code = await run(["deploy", "--send", "--i-approve"], { NEAR_ACCOUNT_ID: OWNER, NEAR_CONTRACT_ACCOUNT_ID: "Bad_Id" }, { exec: never, hasNear: never, out: s.out, err: s.err });
   assert.equal(code, 2);
   assert.match(s.errText(), /NEAR_CONTRACT_ACCOUNT_ID/);
 });
 
 test("--send and --dry-run together is a usage error even with a perfect env", async () => {
-  const { code, s } = await dry(["mint", "--send", "--dry-run"], { NEAR_ACCOUNT_ID: OWNER });
+  const { code, s } = await dry(["mint", "--send", "--i-approve", "--dry-run"], { NEAR_ACCOUNT_ID: OWNER });
   assert.equal(code, 2);
   assert.match(s.errText(), /cannot be combined/);
 });
@@ -184,16 +184,22 @@ test("CLI dry run never launches a `near` binary, even when one is on PATH", () 
   }
 });
 
-test("CLI --send with a missing env exits 2 and never launches the stub `near`", () => {
+test("CLI --send with a missing env or without --i-approve exits 2 and never launches the stub `near`", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "deploy-edge-"));
   try {
     const marker = path.join(dir, "near-was-called");
     const stub = path.join(dir, "near");
     writeFileSync(stub, `#!/bin/sh\ntouch '${marker}'\nexit 0\n`);
     chmodSync(stub, 0o755);
-    const r = spawnSync(process.execPath, [SCRIPT, "mint", "--send"], { env: { PATH: `${dir}:${process.env.PATH}` }, encoding: "utf8" });
+    const r = spawnSync(process.execPath, [SCRIPT, "mint", "--send", "--i-approve"], { env: { PATH: `${dir}:${process.env.PATH}` }, encoding: "utf8" });
     assert.equal(r.status, 2);
     assert.match(r.stderr, /NEAR_ACCOUNT_ID/);
+    assert.equal(existsSync(marker), false);
+    const unapproved = spawnSync(process.execPath, [SCRIPT, "mint", "--send", "--media-base", "https://art.example"], {
+      env: { PATH: `${dir}:${process.env.PATH}`, NEAR_ACCOUNT_ID: OWNER }, encoding: "utf8",
+    });
+    assert.equal(unapproved.status, 2);
+    assert.match(unapproved.stderr, /--i-approve/);
     assert.equal(existsSync(marker), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -202,7 +208,7 @@ test("CLI --send with a missing env exits 2 and never launches the stub `near`",
 
 test("deploy --send refuses to default the contract account to the owner account", async () => {
   const s = sink();
-  const code = await run(["deploy", "--send"], { NEAR_ACCOUNT_ID: OWNER }, {
+  const code = await run(["deploy", "--send", "--i-approve"], { NEAR_ACCOUNT_ID: OWNER }, {
     exec: never, hasNear: never, out: s.out, err: s.err,
   });
   assert.equal(code, 2);
@@ -211,7 +217,7 @@ test("deploy --send refuses to default the contract account to the owner account
 
 test("deploy --send with an empty NEAR_CONTRACT_ACCOUNT_ID is also refused", async () => {
   const s = sink();
-  const code = await run(["deploy", "--send"], { NEAR_ACCOUNT_ID: OWNER, NEAR_CONTRACT_ACCOUNT_ID: "" }, {
+  const code = await run(["deploy", "--send", "--i-approve"], { NEAR_ACCOUNT_ID: OWNER, NEAR_CONTRACT_ACCOUNT_ID: "" }, {
     exec: never, hasNear: never, out: s.out, err: s.err,
   });
   assert.equal(code, 2);

@@ -164,7 +164,8 @@ add("testnet-deploy.mjs", [
   ["--media-base is a flag", ["mint", "--media-base", "--send"]],
   ["--media-base not a url", ["mint", "--media-base", "not a url"]],
   ["--media-base data uri", ["mint", "--media-base", "data:text/plain,x"]],
-  ["--send with --dry-run", ["mint", "--send", "--dry-run"]],
+  ["--send with --dry-run", ["mint", "--send", "--i-approve", "--dry-run"]],
+  ["--send without --i-approve", ["mint", "--send", "--media-base", "https://art.example"]],
   ["bad NEAR_NETWORK", ["mint"], { NEAR_NETWORK: "mainnet" }],
   ["bad NEAR_ACCOUNT_ID", ["mint"], { NEAR_ACCOUNT_ID: "NOT VALID!" }],
 ]);

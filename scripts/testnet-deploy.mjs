@@ -5,6 +5,8 @@
 // would make, and signs nothing.
 //
 // --send is the only switch that signs and broadcasts. It also requires:
+//   - --i-approve on the same command line (explicit human approval, same gate as
+//     live-proof; it cannot come from the environment),
 //   - NEAR_ACCOUNT_ID (a valid testnet account id),
 //   - NEAR_NETWORK unset or "testnet",
 //   - a key for each signing account in the near-cli-rs keychain. This script only
@@ -169,7 +171,8 @@ Commands:
 
 Options:
   --dry-run           print the plan (default)
-  --send              sign and broadcast on testnet (needs NEAR_ACCOUNT_ID and a keychain key)
+  --send              sign and broadcast on testnet (needs --i-approve, NEAR_ACCOUNT_ID and a keychain key)
+  --i-approve         explicit human approval for --send; refused without it, nothing is sent
   --json              print the plan as JSON (dry run)
   --count <1-${AGENTS.length}>     mint: how many agents, in the order ${AGENTS.map((a) => a.token_id).join(", ")}
   --receiver <acct>   mint: token receiver (default NEAR_ACCOUNT_ID)
@@ -185,7 +188,7 @@ Environment:
 
 export function parseArgs(argv) {
   const opts = {
-    command: null, send: false, dryRunFlag: false, json: false, help: false,
+    command: null, send: false, approve: false, dryRunFlag: false, json: false, help: false,
     count: AGENTS.length, receiver: null, wasm: DEFAULT_WASM,
     countGiven: false, receiverGiven: false, wasmGiven: false, mediaBase: null,
   };
@@ -203,6 +206,7 @@ export function parseArgs(argv) {
         opts.command = arg;
         break;
       case "--send": opts.send = true; break;
+      case "--i-approve": opts.approve = true; break;
       case "--dry-run": opts.dryRunFlag = true; break;
       case "--json": opts.json = true; break;
       case "-h":
@@ -217,6 +221,8 @@ export function parseArgs(argv) {
   if (opts.help) return opts;
   if (!opts.command) throw new UsageError("missing command: deploy or mint");
   if (opts.send && opts.dryRunFlag) throw new UsageError("--send and --dry-run cannot be combined");
+  // Same gate as live-proof: both flags must be literal argv tokens; no env var can supply approval.
+  if (opts.send && !opts.approve) throw new UsageError("--send needs --i-approve (explicit human approval). Nothing was sent.");
   if (opts.command === "deploy" && (opts.countGiven || opts.receiverGiven || opts.mediaBase)) {
     throw new UsageError("--count, --receiver and --media-base apply to mint only");
   }

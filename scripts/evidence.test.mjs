@@ -107,6 +107,48 @@ test("testnet mode makes only view calls and records responses and tx hashes", a
   assert.ok(ev.views[1].response.result.result.length > 0);
 });
 
+test("RPC URL credentials, query and fragment never reach evidence.json; only scheme, host and path are recorded", async () => {
+  const dir = tmp();
+  const calls = [];
+  const secretUrl = "https://user:hunter2@near-testnet.rpc.example/v1/path?apiKey=SECRET-KEY#frag";
+  const code = await main(
+    { EVIDENCE_NETWORK: "testnet", NEAR_ACCOUNT_ID: "dev.testnet", NEAR_RPC_URL: secretUrl },
+    { cwd: dir, fetchImpl: stubFetch(calls) },
+  );
+  assert.equal(code, 0);
+  assert.equal(calls.length, 5);
+  assert.ok(calls.every((c) => c.url === secretUrl), "the request itself still goes to the full URL");
+  const raw = fs.readFileSync(path.join(dir, "out/evidence.json"), "utf8");
+  for (const secret of ["hunter2", "SECRET-KEY", "apiKey", "frag", "user:"]) {
+    assert.ok(!raw.includes(secret), `${secret} leaked into evidence.json`);
+  }
+  const ev = JSON.parse(raw);
+  assert.equal(ev.rpc_url, "https://near-testnet.rpc.example/v1/path");
+  assert.ok(ev.views.every((v) => v.request.rpc_url === "https://near-testnet.rpc.example/v1/path"));
+});
+
+test("testnet mode refuses non-testnet RPC endpoints and account ids before any fetch, without echoing them", async () => {
+  const dir = tmp();
+  const noFetch = () => assert.fail("must refuse before fetching");
+  const base = { EVIDENCE_NETWORK: "testnet", NEAR_ACCOUNT_ID: "dev.testnet" };
+  const refused = (value) => (err) => err instanceof EvidenceError && !err.message.includes(value);
+  for (const url of [
+    "https://rpc.mainnet.near.org",
+    "https://rpc.near.org",
+    "http://rpc.testnet.near.org",
+    "https://rpc.testnet.near.org.mainnet.example",
+    "https://mainnet-testnet.example",
+    "not a url",
+  ]) {
+    await assert.rejects(main({ ...base, NEAR_RPC_URL: url }, { cwd: dir, fetchImpl: noFetch }), refused(url), `url ${JSON.stringify(url)}`);
+  }
+  for (const id of ["x.near", "dev.testnet.near", "ab".repeat(32), "dev.testnet ", "DEV.testnet", "dev.testnet.evil"]) {
+    await assert.rejects(main({ ...base, NEAR_ACCOUNT_ID: id }, { cwd: dir, fetchImpl: noFetch }), refused(id), `id ${JSON.stringify(id)}`);
+  }
+  // The bare top-level account is refused too (the word "testnet" legitimately appears in the message).
+  await assert.rejects(main({ ...base, NEAR_ACCOUNT_ID: "testnet" }, { cwd: dir, fetchImpl: noFetch }), EvidenceError);
+});
+
 test("a failing view is recorded and exits nonzero", async () => {
   const dir = tmp();
   const fetchImpl = async () => ({ ok: true, json: async () => ({ error: { name: "HANDLER_ERROR" } }) });
