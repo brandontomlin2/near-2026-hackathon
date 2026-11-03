@@ -97,9 +97,11 @@ test("the result is always one of the four moods and is accepted by assertMood",
 
 test("classification is linear enough: a very long post with no cues stays fast and neutral", () => {
   const long = "lorem ipsum dolor sit amet ".repeat(20000);
-  const start = Date.now();
+  // CPU time, not wall time: a loaded machine stretches the wall clock but not this.
+  const start = process.cpuUsage();
   assert.equal(moodForText(long), "neutral");
-  assert.ok(Date.now() - start < 1000, "took too long");
+  const cpu = process.cpuUsage(start);
+  assert.ok((cpu.user + cpu.system) / 1000 < 1000, "took too long");
 });
 
 test("non-string input is a TypeError, never a coerced string", () => {
