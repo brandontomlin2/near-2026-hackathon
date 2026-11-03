@@ -79,8 +79,10 @@ function hostileClients(payload) {
   };
 }
 
+// The baseline uses a plain sheet like the hostile runs (no "Public enemy" line), so
+// both pages carry the same meme cards and differ only in the text under test.
 const benign = mkdtemp(join(tmpdir(), "near-esc-base-")).then(async (dir) => {
-  await runDemo({ outDir: dir, rounds: 3, seed: 1, every: 3 });
+  await runDemo({ outDir: dir, rounds: 3, seed: 1, every: 3, sheetClient: createMockClient({ responder: () => "a plain benign sheet" }) });
   const page = await readFile(join(dir, "index.html"), "utf8");
   const viewer = renderViewer(JSON.parse(await readFile(join(dir, "events.json"), "utf8")));
   await rm(dir, { recursive: true, force: true });
