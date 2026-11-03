@@ -7,7 +7,7 @@ import test from "node:test";
 
 import { NOT_VERIFIED, VERDICT, checkAttestation, requestHash } from "./attestation.mjs";
 import { sha256Hex } from "../anchor/hash.mjs";
-import { MOCK_MODEL, MOCK_SIGNING_ADDRESS, mockAttestation } from "./fixture.mjs";
+import { MOCK_MODEL, MOCK_SIGNING_ADDRESS, mockAttestation, tdxV4Header } from "./fixture.mjs";
 
 const requestBody = JSON.stringify({ model: MOCK_MODEL, messages: [{ role: "user", content: "hi" }] });
 const run = (report, extra = {}) => checkAttestation(report, { requestBody, model: MOCK_MODEL, ...extra });
@@ -60,6 +60,7 @@ test("a hand-written report built without the fixture passes: the check is offli
   const nonce = requestHash(requestBody);
   const address = "0x" + "ab".repeat(20);
   const quote = Buffer.alloc(632);
+  tdxV4Header().copy(quote, 0);
   Buffer.from(address.slice(2), "hex").copy(quote, REPORT_DATA_OFFSET + 44);
   Buffer.from(nonce, "hex").copy(quote, REPORT_DATA_OFFSET);
   const forged = { model_attestations: [{ signing_address: address, nvidia_payload: {}, intel_quote: quote.toString("hex") }], model: MOCK_MODEL };
@@ -103,7 +104,7 @@ test("every node is checked under its own index and one bad node rejects the who
   assert.match(r.summary, /^REJECT: node\[1\]\.signing-key, node\[1\]\.intel-quote\.$/);
 });
 
-test("quote binding reads only REPORTDATA at bytes 568..632 and accepts either order, 0x prefix and upper case", () => {
+test("quote binding reads only REPORTDATA at bytes 568..632 of a v4 quote; anything it cannot confirm is unverifiable, never fail", () => {
   const nonce = requestHash(requestBody);
   const withQuote = (quote) => {
     const { report } = good();
@@ -112,6 +113,7 @@ test("quote binding reads only REPORTDATA at bytes 568..632 and accepts either o
   };
   const place = (nonceAt, addrAt, size = 632) => {
     const q = Buffer.alloc(size);
+    tdxV4Header().copy(q, 0);
     Buffer.from(nonce, "hex").copy(q, nonceAt);
     Buffer.from(MOCK_SIGNING_ADDRESS.slice(2), "hex").copy(q, addrAt);
     return q;
@@ -120,16 +122,22 @@ test("quote binding reads only REPORTDATA at bytes 568..632 and accepts either o
   assert.equal(withQuote(place(REPORT_DATA_OFFSET + 32, REPORT_DATA_OFFSET).toString("hex")).status, "pass", "address first");
   assert.equal(withQuote(place(REPORT_DATA_OFFSET + 32, REPORT_DATA_OFFSET, 2000).toString("hex")).status, "pass", "longer quotes are fine");
   assert.equal(withQuote("0x" + place(REPORT_DATA_OFFSET, REPORT_DATA_OFFSET + 32).toString("hex").toUpperCase()).status, "pass", "0x and upper case hex");
-  const outside = withQuote(place(0, 100).toString("hex"));
-  assert.equal(outside.status, "fail", "nonce and address outside REPORTDATA do not count");
-  assert.equal(outside.detail, "quote report data missing nonce and signing address");
-  const nonceOnly = withQuote(place(REPORT_DATA_OFFSET, 0).toString("hex"));
-  assert.equal(nonceOnly.detail, "quote report data missing signing address");
-  const addrOnly = withQuote(place(0, REPORT_DATA_OFFSET).toString("hex"));
-  assert.equal(addrOnly.detail, "quote report data missing nonce");
+  const outside = withQuote(place(100, 200).toString("hex"));
+  assert.equal(outside.status, "unverifiable", "nonce and address outside REPORTDATA do not count, but prove nothing either");
+  assert.equal(outside.detail, "TDX v4 report data does not hold the raw nonce and signing address; the docs say both are bound but not how (a hash would also be valid), so this is not evidence of forgery");
+  const nonceOnly = withQuote(place(REPORT_DATA_OFFSET, 100).toString("hex"));
+  assert.equal(nonceOnly.status, "unverifiable");
+  assert.match(nonceOnly.detail, /^TDX v4 report data does not hold the raw signing address; /);
+  const addrOnly = withQuote(place(100, REPORT_DATA_OFFSET).toString("hex"));
+  assert.equal(addrOnly.status, "unverifiable");
+  assert.match(addrOnly.detail, /^TDX v4 report data does not hold the raw nonce; /);
   const straddle = withQuote(place(REPORT_DATA_OFFSET + 40, REPORT_DATA_OFFSET).toString("hex"));
-  assert.equal(straddle.status, "fail", "a nonce that runs past byte 632 is not inside REPORTDATA");
-  assert.equal(withQuote("abc").detail, "intel_quote is not hex", "odd length");
+  assert.equal(straddle.status, "unverifiable", "a nonce that runs past byte 632 is not inside REPORTDATA");
+  const noHeader = place(REPORT_DATA_OFFSET, REPORT_DATA_OFFSET + 32); noHeader.fill(0, 0, 48);
+  assert.equal(withQuote(noHeader.toString("hex")).status, "unverifiable", "raw bytes in place but no v4 header: offsets unknown");
+  assert.match(withQuote(noHeader.toString("hex")).detail, /not the assumed TDX v4/);
+  assert.equal(withQuote("abc").status, "unverifiable", "odd length");
+  assert.match(withQuote("abc").detail, /^intel_quote is not hex; /);
   assert.equal(withQuote("0x" + "00".repeat(631)).status, "unverifiable");
   assert.equal(withQuote("00".repeat(631)).detail, "intel_quote is 631 bytes, too short to hold TDX report data");
 });
@@ -145,7 +153,8 @@ test("an explicit nonce replaces the request-hash nonce for echo and binding, no
   assert.equal(status(r, "signature-text"), "pass", "signature text is bound to the request hash, whatever the nonce");
   const without = run(report, { chatSignature });
   assert.equal(status(without, "nonce-echo"), "fail", "the default nonce is sha256(requestBody)");
-  assert.equal(status(without, "node[0].quote-binding"), "fail");
+  assert.equal(status(without, "node[0].quote-binding"), "unverifiable", "the quote holds another nonce, which proves nothing about the layout");
+  assert.equal(without.verdict, VERDICT.REJECT, "the echo check alone rejects it");
   const nonceOnly = run(report, { nonce });
   assert.equal(nonceOnly.checks.filter((c) => c.id.startsWith("signature-")).length, 0, "no signature checks without a signature");
 });

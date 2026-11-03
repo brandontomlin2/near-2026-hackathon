@@ -25,11 +25,24 @@ export const NOT_VERIFIED = Object.freeze([
   "Whether the report came from a real TEE rather than being hand written",
 ]);
 
-// Layout assumption for the TDX quote: a v4 quote is a 48-byte header, then
-// the TD report body. REPORTDATA is the last 64 bytes of the 584-byte body,
-// so it sits at bytes 568..632. We read it without authenticating it.
+// Layout assumption for the TDX quote (Intel DCAP quote format v4, TDX TD
+// report 1.0): a 48-byte header whose first u16 LE is the version (4) and
+// whose u32 LE at byte 4 is the TEE type (0x81 = TDX), then the 584-byte TD
+// report body. REPORTDATA is the last 64 bytes of the body, so it sits at
+// bytes 568..632. We read it without authenticating it.
+//
+// What NEAR AI puts in those 64 bytes is NOT documented. The vendored docs
+// (.agents/skills/near-ai-cloud) only say the signing address and the nonce
+// are "bound" in the report data, not how. We look for the raw nonce and the
+// raw 20-byte address. If the header is not v4/TDX, the quote is too short,
+// or the raw bytes are absent, the binding is "unverifiable": a hashed
+// binding or a v5 quote would look exactly like that, so it is not evidence
+// of forgery. The binding check never returns "fail".
+const TDX_QUOTE_VERSION = 4;
+const TDX_TEE_TYPE = 0x81;
 const TDX_REPORT_DATA_OFFSET = 568;
 const TDX_REPORT_DATA_LENGTH = 64;
+const TDX_V4_QUOTE_MIN_LENGTH = TDX_REPORT_DATA_OFFSET + TDX_REPORT_DATA_LENGTH;
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
@@ -55,11 +68,22 @@ function toBytes(hex) {
   return Buffer.from(clean, "hex");
 }
 
+// Returns ["pass" | "unverifiable", detail]. Never "fail": see the layout note.
 function checkQuoteReportData(quote, nonce, signingAddress) {
   const bytes = toBytes(quote);
-  if (!bytes) return ["fail", "intel_quote is not hex"];
-  if (bytes.length < TDX_REPORT_DATA_OFFSET + TDX_REPORT_DATA_LENGTH) {
+  if (!bytes) {
+    return ["unverifiable", "intel_quote is not hex; the docs do not state its encoding, so the report data cannot be located"];
+  }
+  if (bytes.length < TDX_V4_QUOTE_MIN_LENGTH) {
     return ["unverifiable", `intel_quote is ${bytes.length} bytes, too short to hold TDX report data`];
+  }
+  const version = bytes.readUInt16LE(0);
+  const teeType = bytes.readUInt32LE(4);
+  if (version !== TDX_QUOTE_VERSION || teeType !== TDX_TEE_TYPE) {
+    return [
+      "unverifiable",
+      `intel_quote header is version ${version}, tee_type 0x${teeType.toString(16)}, not the assumed TDX v4 (version 4, tee_type 0x81); report data offset unknown, binding not checked`,
+    ];
   }
   const reportData = bytes.subarray(
     TDX_REPORT_DATA_OFFSET,
@@ -69,9 +93,13 @@ function checkQuoteReportData(quote, nonce, signingAddress) {
   const addr = toBytes(signingAddress);
   const hasAddress = addr !== null && reportData.includes(addr);
   if (hasNonce && hasAddress) {
-    return ["pass", "quote report data contains our nonce and the signing address (quote itself unauthenticated)"];
+    return ["pass", "TDX v4 quote; report data holds our nonce and the signing address as raw bytes (quote itself unauthenticated)"];
   }
-  return ["fail", `quote report data missing ${[!hasNonce && "nonce", !hasAddress && "signing address"].filter(Boolean).join(" and ")}`];
+  const missing = [!hasNonce && "nonce", !hasAddress && "signing address"].filter(Boolean).join(" and ");
+  return [
+    "unverifiable",
+    `TDX v4 report data does not hold the raw ${missing}; the docs say both are bound but not how (a hash would also be valid), so this is not evidence of forgery`,
+  ];
 }
 
 /**
@@ -83,6 +111,9 @@ function checkQuoteReportData(quote, nonce, signingAddress) {
  *   requestBody is the exact request string we send. nonce defaults to
  *   requestHash(requestBody). model is the model id we asked for.
  * @returns {{ verdict: string, verified: false, checks: object[], notVerified: string[], summary: string }}
+ *   Each check has status "pass", "fail", "skip" or "unverifiable". Only
+ *   "fail" rejects; "unverifiable" means the input could not be read under
+ *   our assumptions and is listed in the summary instead.
  */
 export function checkAttestation(report, expected) {
   const checks = [];
@@ -162,11 +193,19 @@ export function checkAttestation(report, expected) {
   return finish(checks);
 }
 
+// Only "fail" rejects. "unverifiable" checks do not reject, but a consistent
+// summary names them so "fields agree" is never read as "every field agreed".
 function finish(checks) {
+  const ids = (list) => list.map((c) => c.id).join(", ");
   const failed = checks.filter((c) => c.status === "fail");
+  const unverifiable = checks.filter((c) => c.status === "unverifiable");
   const verdict = failed.length === 0 ? VERDICT.CONSISTENT : VERDICT.REJECT;
-  const summary = failed.length === 0
-    ? "CONSISTENT, NOT VERIFIED: offline fields agree, but no TEE signature or certificate was checked."
-    : `REJECT: ${failed.map((c) => c.id).join(", ")}.`;
+  let summary;
+  if (failed.length > 0) {
+    summary = `REJECT: ${ids(failed)}.`;
+  } else {
+    summary = "CONSISTENT, NOT VERIFIED: offline fields agree, but no TEE signature or certificate was checked.";
+    if (unverifiable.length > 0) summary += ` Unverifiable, not counted either way: ${ids(unverifiable)}.`;
+  }
   return { verdict, verified: false, checks, notVerified: [...NOT_VERIFIED], summary };
 }

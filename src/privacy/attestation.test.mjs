@@ -26,12 +26,12 @@ test("rejects empty or malformed reports", () => {
   assert.equal(run({ model_attestations: [] }).verdict, VERDICT.REJECT);
 });
 
-test("rejects a report bound to a different request", () => {
+test("rejects a report bound to a different request, on the nonce echo; the binding is unverifiable, not failed", () => {
   const { report } = mockAttestation({ requestBody: requestBody + " " });
   const r = run(report);
   assert.equal(r.verdict, VERDICT.REJECT);
   assert.equal(status(r, "nonce-echo"), "fail");
-  assert.equal(status(r, "node[0].quote-binding"), "fail");
+  assert.equal(status(r, "node[0].quote-binding"), "unverifiable");
 });
 
 test("rejects wrong model, missing key, bad address", () => {
@@ -102,23 +102,26 @@ test("nvidia_payload: parsed object passes; null or number fails", () => {
   assert.equal(status(set(7), "node[0].nvidia-payload"), "fail");
 });
 
-test("non-hex intel_quote fails quote-binding with 'not hex'", () => {
+test("non-hex intel_quote is unverifiable with 'not hex' (the docs do not state the encoding)", () => {
   const { report } = good();
   report.model_attestations[0].intel_quote = "zz";
-  const c = run(report).checks.find((x) => x.id === "node[0].quote-binding");
-  assert.equal(c.status, "fail");
+  const r = run(report);
+  const c = r.checks.find((x) => x.id === "node[0].quote-binding");
+  assert.equal(c.status, "unverifiable");
   assert.match(c.detail, /not hex/);
+  assert.equal(r.verdict, VERDICT.CONSISTENT);
+  assert.match(r.summary, /Unverifiable, not counted either way: node\[0\]\.quote-binding\.$/);
 });
 
-test("quote with the nonce but not the signing address names only the address", () => {
+test("quote with the nonce but not the signing address names only the address, as unverifiable", () => {
   const { report } = good();
   const quote = Buffer.from(report.model_attestations[0].intel_quote, "hex");
   quote.fill(0, 568, 588);
   report.model_attestations[0].intel_quote = quote.toString("hex");
   const c = run(report).checks.find((x) => x.id === "node[0].quote-binding");
-  assert.equal(c.status, "fail");
-  assert.match(c.detail, /missing signing address$/);
-  assert.doesNotMatch(c.detail, /nonce/);
+  assert.equal(c.status, "unverifiable");
+  assert.match(c.detail, /does not hold the raw signing address;/);
+  assert.doesNotMatch(c.detail, /raw nonce/);
 });
 
 test("explicit malformed nonce fails nonce-format and emits no quote-binding", () => {
