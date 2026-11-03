@@ -300,7 +300,21 @@ if (!live) {
       return t && typeof t.token_id === "string" && t.sheet && hex64.test(String(t.sheet.sheet_hash))
         && a && a.status === "dry-run" && a.mock === true && a.transaction_hash === null
         && a.method === "anchor_sheet" && a.args && a.args.sheet_hash === t.sheet.sheet_hash
-        && a.args.token_id === t.token_id && a.linked_round_hash === finalHash;
+        && a.args.token_id === t.token_id && a.linked_round_hash === finalHash
+        // Every sheet, not just the latest: its own dry-run, linked to its own round hash,
+        // in order, chained to the one before, and the last one is the latest sheet.
+        && Array.isArray(t.sheets) && t.sheets.length > 0
+        && t.sheets.every((s, i) => {
+          const sa = s && s.anchor;
+          return s && hex64.test(String(s.sheet_hash)) && sa && sa.status === "dry-run" && sa.mock === true
+            && sa.transaction_hash === null && sa.method === "anchor_sheet" && sa.args
+            && sa.args.sheet_hash === s.sheet_hash && sa.args.token_id === t.token_id
+            && Number.isInteger(s.round) && s.round >= 1 && s.round <= ml.swarm.rounds
+            && sa.linked_round_hash === ml.swarm.round_hashes[s.round - 1]
+            && s.previous_hash === (i === 0 ? null : t.sheets[i - 1].sheet_hash)
+            && (i === 0 || s.round > t.sheets[i - 1].round);
+        })
+        && t.sheets.at(-1).sheet_hash === t.sheet.sheet_hash;
     });
   if (!mlOk) {
     console.error("mock evidence needs a memory_loop of anchor_sheet dry-runs linked to the final round hash");
