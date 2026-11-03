@@ -9,7 +9,7 @@ import {
   validateTraits,
   assertTraits,
 } from "./validate.mjs";
-import { AGENTS } from "./agents.mjs";
+import { AGENTS, agentById } from "./agents.mjs";
 
 const schema = JSON.parse(readFileSync(new URL("./schema.json", import.meta.url), "utf8"));
 const good = { temperament: "cool", role: "observer", risk: "low", voice: "dry", memory_depth: 1 };
@@ -20,6 +20,8 @@ test("all four agents validate", () => {
     assert.deepEqual(validateTraits(a.traits), { valid: true, errors: [] });
     assert.ok(Object.isFrozen(a) && Object.isFrozen(a.traits));
   }
+  assert.equal(agentById("social").personality, "Connector");
+  assert.throws(() => agentById("nope"));
 });
 
 const bad = [

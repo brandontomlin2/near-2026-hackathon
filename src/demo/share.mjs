@@ -2,6 +2,7 @@
 // is nested as an <svg> element, so the card has no external references and
 // needs no scripts. Output is deterministic: no clocks, no randomness.
 
+import { MAX_TEXT_LENGTH } from "../channel/channel.mjs";
 import { escapeHtml } from "../viewer/render.mjs";
 
 const WIDTH = 900;
@@ -10,10 +11,10 @@ const PAD = 40;
 const TEXT_X = PAD + FACE + 36;
 const WRAP = 22;
 const LINE_H = 40;
-// A card shows one channel message. The caption is cut at MAX_CAPTION code
-// points (so the cut never splits a pair), which keeps the card's bytes and
-// height bounded whatever the model replied.
-const MAX_CAPTION = 500;
+// A card shows one channel message, so a caption longer than a channel post can
+// only come from a hostile model reply. Cut it there (in code points, so the cut
+// never splits a pair) and the card's bytes and height stay bounded.
+const MAX_CAPTION = MAX_TEXT_LENGTH;
 
 /** Escape for XML text and attribute values (same five characters as HTML). */
 export const escapeXml = escapeHtml;

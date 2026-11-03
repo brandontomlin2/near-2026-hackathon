@@ -14,3 +14,13 @@ export const AGENTS = Object.freeze([
   agent("social", "Social", "Connector", { temperament: "warm", role: "connector", risk: "mid", voice: "open" }),
   agent("skeptic", "Skeptic", "Auditor", { temperament: "muted", role: "auditor", risk: "wary", voice: "flat" }),
 ]);
+
+/**
+ * @param {string} id
+ * @returns {Readonly<Agent>}
+ */
+export function agentById(id) {
+  const found = AGENTS.find((a) => a.id === id);
+  if (!found) throw new Error(`unknown agent id: ${String(id)}`);
+  return found;
+}
