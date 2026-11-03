@@ -28,7 +28,7 @@ npm install && npm run demo
 2. Open `out/index.html` in a browser. See the four agents, each with its art at mint (1 ring) next to its art now (3 rings, one per character sheet), its latest sheet and the sheet hash. Further down: every sheet in order (round 3, then round 6), the round hash chain with `verify: ok`, the full channel with replies shown as `Chaotic → Skeptic`, and the dry-run anchor table.
 3. Open `out/transcript.txt`. See the swarm conversation by round, with replies marked like `[Chaotic -> Skeptic] @Skeptic ...`. The same events are in `out/events.json`; each has an `agentId` (`aloof`, `chaotic`, `social` or `skeptic`), `round`, `turn`, `kind` and `replyTo`.
 4. Open `out/memory/chaotic/sheet.json`. See Chaotic's round 6 sheet: who it is, who it has traded words with (and how many exchanges were warm or tense), its ally (Social) and its grudge (Skeptic), a running belief, and its post, reply and mention counts. Check the hash with an independent tool: `node -p 'require("./out/memory/chaotic/sheet.json").sheet' | shasum -a 256` prints the `sheetHash` in the same file. The sheet is hashed after normalizing (NFC, LF, one final newline), which for a one-line sheet is the text plus a newline. The sheet text is written by a deterministic stand-in that counts exchanges, not by a model (MOCK).
-5. Open `out/anchors.json`. The `contractId` `personality-nft.demo.testnet` is a MOCK placeholder: no contract is deployed there. See 8 `anchor_sheet` calls for testnet, two per token, each `"status": "dry-run"` with `"transactionHash": null` and `"signed": false`. The first call per token carries the storage deposit and the second carries 1 yoctoNEAR. Each token's latest `sheet_hash` equals the `sheetHash` in its `sheet.json`, so the hash in the file is the hash the token would carry.
+5. Open `out/anchors.json`. The `contractId` `personality-nft.demo.testnet` is a MOCK placeholder: no contract is deployed there. See 8 `anchor_sheet` calls for testnet, two per token, each `"status": "dry-run"` with `"transactionHash": null`, and `"signed": false` at the top of the file. The first call per token carries the storage deposit and the second carries 1 yoctoNEAR. Each token's latest `sheet_hash` equals the `sheetHash` in its `sheet.json`, so the hash in the file is the hash the token would carry.
 6. Run `npm run demo` again. See the same final round hash, `ea0270925cbdff0bf41a7b3ee48a0129c4bec03b7dc1d675cd028ca30e34a948`, and byte-identical files. (This is a hash of the MOCK conversation, not a chain value. It changes if the mock persona lines change.)
 7. Run `MOCK_INFERENCE=0 npm run demo`. See `demo: runs in mock mode only` and exit 2. The demo never makes a live call.
 8. Run `bash scripts/verify.sh`. See the table in [Validate locally](#validate-locally) ending in `result: PASS`.
@@ -72,9 +72,12 @@ On top of the standard, every token carries a *sheet anchor* keyed by token id, 
 
 Why the hash and not the sheet: the log and the sheet stay off-chain, and the token carries only enough to prove which sheet it claims. A new owner hashes the sheet they received and compares it with `sheet_anchor`.
 
-Build and test (needs Rust; the crate pins rustc 1.95 through `rust-toolchain.toml`, and `cargo near build` needs [cargo-near](https://github.com/near/cargo-near)):
+Build and test. Requirements:
 
-1. Run `npm run test:contract`. See the unit tests pass, including mint by a non-owner failing, a non-sha256 hash rejected, and the anchor surviving `nft_transfer` to a new owner.
+- Rust 1.95 or newer. `near-sdk` 5.30 declares `rust-version = "1.95"`, so an older rustc (for example 1.93) fails to compile the crate. `contracts/personality-nft/rust-toolchain.toml` pins 1.95.0 plus the `wasm32-unknown-unknown` target; with rustup installed, running cargo inside that directory (which the npm scripts do) fetches it automatically. Without rustup, install Rust 1.95+ yourself.
+- [cargo-near](https://github.com/near/cargo-near) for `npm run build:contract` only (tested with 0.22.0). Unit tests need only cargo.
+
+1. Run `npm run test:contract`. See 52 unit tests pass, including mint by a non-owner failing, a non-sha256 hash rejected, and the anchor surviving `nft_transfer` to a new owner.
 2. Run `npm run build:contract`. See `contracts/personality-nft/target/near/personality_nft.wasm` (about 250 KB) and its ABI JSON next to it.
 
 ## Deploy to testnet
@@ -199,7 +202,7 @@ Testnet run. Do not put keys on the command line. The script never reads or prin
 NEAR_NETWORK=testnet NEAR_ACCOUNT_ID=<testnet-account> bash scripts/verify.sh --live
 ```
 
-PASS means the summary table has no `FAIL` row and the process exits 0. `SKIP` is not a failure. The secret scan uses `gitleaks`, which is optional: if it is not installed the scan prints a warning and shows `SKIP`. `deploy nft` shows `SKIP` unless `--live` is given. A finding, a failed install, a failed test, a workflow file, or a live run without `NEAR_NETWORK=testnet` and `NEAR_ACCOUNT_ID` is a failure. The checks clone the committed `HEAD`, so commit your changes first. The mock `evidence` stage writes `out/evidence.json` with MOCK entries (for example `"hash": "MOCK-deploy"`); no chain was queried.
+PASS means the summary table has no `FAIL` row and the process exits 0. `SKIP` is not a failure. The secret scan uses `gitleaks`, which is optional (`brew install gitleaks`): if it is not installed the scan prints `optional: brew install gitleaks` and shows `SKIP`, and the secret scan did not run in that case. `deploy nft` shows `SKIP` unless `--live` is given. A finding, a failed install, a failed test, a workflow file, or a live run without `NEAR_NETWORK=testnet` and `NEAR_ACCOUNT_ID` is a failure. The checks clone the committed `HEAD`, so commit your changes first. The mock `evidence` stage writes `out/evidence.json` with MOCK entries (for example `"hash": "MOCK-deploy"`); no chain was queried.
 
 A passing mock run looks like this (the commit sha and test file count change):
 

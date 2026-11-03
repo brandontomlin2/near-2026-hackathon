@@ -2,6 +2,7 @@
 name = "personality-nft"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.95"
 publish = false
 description = "NEP-171 personality NFT with an on-token character sheet anchor"
 license = "MIT"
