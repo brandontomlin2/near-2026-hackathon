@@ -2,7 +2,6 @@
 // is nested as an <svg> element, so the card has no external references and
 // needs no scripts. Output is deterministic: no clocks, no randomness.
 
-import { MAX_TEXT_LENGTH } from "../channel/channel.mjs";
 import { escapeHtml } from "../viewer/render.mjs";
 
 const WIDTH = 900;
@@ -11,10 +10,10 @@ const PAD = 40;
 const TEXT_X = PAD + FACE + 36;
 const WRAP = 22;
 const LINE_H = 40;
-// A card shows one channel message, so a caption longer than a channel post can
-// only come from a hostile model reply. Cut it there (in code points, so the cut
+// A card shows one channel message; mock lines are under 100 characters, so a
+// caption longer than this can only come from a hostile model reply. Cut it there (in code points, so the cut
 // never splits a pair) and the card's bytes and height stay bounded.
-const MAX_CAPTION = MAX_TEXT_LENGTH;
+export const MAX_CAPTION = 500;
 
 /** Project link and hashtag printed on every share and meme card. */
 export const PROJECT_FOOTER = "github.com/brandontomlin2/near-2026-hackathon #NEARHackathon";

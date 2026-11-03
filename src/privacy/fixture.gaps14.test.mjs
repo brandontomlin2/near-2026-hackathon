@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { requestHash } from "./attestation.mjs";
-import { MOCK_MODEL, MOCK_SIGNING_ADDRESS, mockAttestation } from "./fixture.mjs";
+import { MOCK_MODEL, MOCK_SIGNING_ADDRESS, mockAttestation, tdxV4Header } from "./fixture.mjs";
 
 const body = '{"model":"mock-tee-model","messages":[]}';
 
@@ -35,13 +35,14 @@ test("the nonce defaults to requestHash(body); an explicit nonce replaces it in 
   assert.equal(custom.chatSignature.text, dflt.chatSignature.text, "the signature text is bound to the request, not the nonce");
 });
 
-test("the quote is 632 bytes with the address at 568..588 and the nonce at 600..632, zeros elsewhere", () => {
+test("the quote is 632 bytes: TDX v4 header at 0..48, the address at 568..588 and the nonce at 600..632, zeros elsewhere", () => {
   const { report } = mockAttestation({ requestBody: body });
   const quote = Buffer.from(report.model_attestations[0].intel_quote, "hex");
   assert.equal(quote.length, 632);
   assert.equal(quote.subarray(568, 588).toString("hex"), MOCK_SIGNING_ADDRESS.slice(2));
   assert.equal(quote.subarray(600, 632).toString("hex"), requestHash(body));
-  assert.ok(quote.subarray(0, 568).every((x) => x === 0));
+  assert.equal(quote.subarray(0, 48).toString("hex"), tdxV4Header().toString("hex"));
+  assert.ok(quote.subarray(48, 568).every((x) => x === 0));
   assert.ok(quote.subarray(588, 600).every((x) => x === 0));
 });
 

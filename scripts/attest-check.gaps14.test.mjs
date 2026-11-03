@@ -1,5 +1,5 @@
 // Further behaviour of `node scripts/attest-check.mjs`: determinism, stderr silence,
-// the effect of --tamper on exactly the checks that depend on the signing address,
+// the effect of --tamper on exactly the checks that depend on the signing address (quote binding, signer),
 // and that unrecognised arguments do not switch the check into the tamper path.
 
 import assert from "node:assert/strict";
@@ -29,9 +29,13 @@ test("two clean runs print byte-identical output, with nothing on stderr", async
 test("--tamper changes only the signing-address checks: the others keep their clean-run status", async () => {
   const clean = rows((await runOffline([script])).stdout);
   const tampered = rows((await runOffline([script, "--tamper"])).stdout);
-  assert.equal(tampered["node[0].signing-key"], "fail");
+  // The tampered address is well-formed, so the format check still passes; the
+  // quote binding (the quote's report data holds the real address) and the
+  // signer match are what catch it.
+  assert.equal(clean["node[0].quote-binding"], "pass");
+  assert.equal(tampered["node[0].quote-binding"], "fail");
   assert.equal(tampered["signature-signer"], "fail");
-  for (const id of ["structure", "nonce-format", "nonce-echo", "node[0].signing-algo", "node[0].model", "signature-text"]) {
+  for (const id of ["structure", "nonce-format", "nonce-echo", "node[0].signing-key", "node[0].signing-algo", "node[0].model", "signature-text"]) {
     assert.equal(tampered[id], clean[id], id);
     assert.equal(clean[id], "pass", id);
   }
@@ -43,7 +47,7 @@ test("an unrecognised argument (e.g. a --tamper typo) exits 2 with one stderr li
     const odd = await runOffline([script, ...args]);
     assert.equal(odd.code, 2, args.join(" "));
     assert.equal(odd.stdout, "");
-    assert.equal(odd.stderr, `attest-check: unknown argument ${JSON.stringify(args.at(-1))} (usage: node scripts/attest-check.mjs [--tamper])\n`);
+    assert.equal(odd.stderr, `attest-check: unknown argument ${JSON.stringify(args.at(-1))} (usage: node scripts/attest-check.mjs [--tamper | --unreadable-quote])\n`);
   }
 });
 

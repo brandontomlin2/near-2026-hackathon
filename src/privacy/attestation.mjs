@@ -25,11 +25,38 @@ export const NOT_VERIFIED = Object.freeze([
   "Whether the report came from a real TEE rather than being hand written",
 ]);
 
-// Layout assumption for the TDX quote: a v4 quote is a 48-byte header, then
-// the TD report body. REPORTDATA is the last 64 bytes of the 584-byte body,
-// so it sits at bytes 568..632. We read it without authenticating it.
+// Layout assumption for the TDX quote (Intel DCAP quote format v4, TDX TD
+// report 1.0): a 48-byte header whose first u16 LE is the version (4) and
+// whose u32 LE at byte 4 is the TEE type (0x81 = TDX), then the 584-byte TD
+// report body. REPORTDATA is the last 64 bytes of the body, so it sits at
+// bytes 568..632. We read it without authenticating it.
+//
+// What NEAR AI puts in those 64 bytes is NOT documented. The vendored docs
+// (.agents/skills/near-ai-cloud) only say the signing address and the nonce
+// are "bound" in the report data, not how. We look for the raw nonce and the
+// raw 20-byte address.
+//
+// Outcomes, never weaker than origin/main:
+//  - not hex                      -> FAIL (as on main; never "unverifiable")
+//  - hex, >= 632 bytes            -> checked at offset 568 whatever the header
+//                                    says (as on main): FAIL if the nonce or
+//                                    address is missing, PASS if both found.
+//                                    The header only decides the wording.
+//  - hex, < 632 bytes             -> "unverifiable" (as on main, where it was
+//                                    silently counted as OK). This is the ONLY
+//                                    input that reaches BINDING UNREAD / exit 2:
+//                                    a well-formed hex quote too short to hold
+//                                    a v4 report body, e.g. a truncated quote.
+//                                    A caller only gets CONSISTENT then if the
+//                                    report also echoes our nonce
+//                                    (see request-binding in checkAttestation).
+// (A genuine report that hashes the binding would fail too; we accept that
+// rather than let a replayed quote through.)
+const TDX_QUOTE_VERSION = 4;
+const TDX_TEE_TYPE = 0x81;
 const TDX_REPORT_DATA_OFFSET = 568;
 const TDX_REPORT_DATA_LENGTH = 64;
+const TDX_V4_QUOTE_MIN_LENGTH = TDX_REPORT_DATA_OFFSET + TDX_REPORT_DATA_LENGTH;
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
@@ -56,12 +83,17 @@ function toBytes(hex) {
   return Buffer.from(clean, "hex");
 }
 
+// Returns ["pass" | "fail" | "unverifiable", detail]: see the layout note.
 function checkQuoteReportData(quote, nonce, signingAddress) {
   const bytes = toBytes(quote);
   if (!bytes) return ["fail", "intel_quote is not hex"];
-  if (bytes.length < TDX_REPORT_DATA_OFFSET + TDX_REPORT_DATA_LENGTH) {
+  if (bytes.length < TDX_V4_QUOTE_MIN_LENGTH) {
     return ["unverifiable", `intel_quote is ${bytes.length} bytes, too short to hold TDX report data`];
   }
+  const version = bytes.readUInt16LE(0);
+  const teeType = bytes.readUInt32LE(4);
+  const isV4 = version === TDX_QUOTE_VERSION && teeType === TDX_TEE_TYPE;
+  const kind = isV4 ? "TDX v4 quote" : `quote header version ${version}, tee_type 0x${teeType.toString(16)} (not TDX v4)`;
   const reportData = bytes.subarray(
     TDX_REPORT_DATA_OFFSET,
     TDX_REPORT_DATA_OFFSET + TDX_REPORT_DATA_LENGTH,
@@ -70,9 +102,10 @@ function checkQuoteReportData(quote, nonce, signingAddress) {
   const addr = toBytes(signingAddress);
   const hasAddress = addr !== null && reportData.includes(addr);
   if (hasNonce && hasAddress) {
-    return ["pass", "quote report data contains our nonce and the signing address (quote itself unauthenticated)"];
+    return ["pass", `${kind}; bytes 568..632 hold our nonce and the signing address as raw bytes (quote itself unauthenticated)`];
   }
-  return ["fail", `quote report data missing ${[!hasNonce && "nonce", !hasAddress && "signing address"].filter(Boolean).join(" and ")}`];
+  const missing = [!hasNonce && "nonce", !hasAddress && "signing address"].filter(Boolean).join(" and ");
+  return ["fail", `${kind}; bytes 568..632 do not hold the raw ${missing} (stale, replayed or another node's quote)`];
 }
 
 /**
@@ -83,7 +116,11 @@ function checkQuoteReportData(quote, nonce, signingAddress) {
  *   chatSignature?: { text: string, signature: string, signing_address: string } }} expected
  *   requestBody is the exact request string we send. nonce defaults to
  *   requestHash(requestBody). model is the model id we asked for.
- * @returns {{ verdict: string, verified: false, checks: object[], notVerified: string[], summary: string }}
+ * @returns {{ verdict: string, verified: false, checks: object[], unverifiable: string[], notVerified: string[], summary: string }}
+ *   Each check has status "pass", "fail", "skip" or "unverifiable". Only
+ *   "fail" rejects; "unverifiable" means the input could not be read under
+ *   our assumptions. Its ids are in `unverifiable` so callers can tell
+ *   "binding confirmed" from "binding unread".
  */
 export function checkAttestation(report, expected) {
   const checks = [];
@@ -148,6 +185,12 @@ export function checkAttestation(report, expected) {
     }
   });
 
+  // With no echoed nonce, only a confirmed quote binding ties the report to
+  // this request. Without either, nothing does, so it cannot be consistent.
+  if (typeof report.nonce !== "string" && !checks.some((c) => c.id.endsWith(".quote-binding") && c.status === "pass")) {
+    add(checks, "request-binding", "fail", "no nonce echo and no confirmed quote binding: nothing ties this report to our request");
+  }
+
   const sig = expected.chatSignature;
   if (sig) {
     const parts = String(sig.text ?? "").split(":");
@@ -163,11 +206,19 @@ export function checkAttestation(report, expected) {
   return finish(checks);
 }
 
+// Only "fail" rejects. "unverifiable" checks do not reject, but a consistent
+// summary names them so "fields agree" is never read as "every field agreed".
 function finish(checks) {
+  const ids = (list) => list.map((c) => c.id).join(", ");
   const failed = checks.filter((c) => c.status === "fail");
+  const unverifiable = checks.filter((c) => c.status === "unverifiable");
   const verdict = failed.length === 0 ? VERDICT.CONSISTENT : VERDICT.REJECT;
-  const summary = failed.length === 0
-    ? "CONSISTENT, NOT VERIFIED: offline fields agree, but no TEE signature or certificate was checked."
-    : `REJECT: ${failed.map((c) => c.id).join(", ")}.`;
-  return { verdict, verified: false, checks, notVerified: [...NOT_VERIFIED], summary };
+  let summary;
+  if (failed.length > 0) {
+    summary = `REJECT: ${ids(failed)}.`;
+  } else {
+    summary = `CONSISTENT, NOT VERIFIED${unverifiable.length > 0 ? ", BINDING UNREAD" : ""}: offline fields agree, but no TEE signature or certificate was checked.`;
+    if (unverifiable.length > 0) summary += ` Unverifiable, not counted either way: ${ids(unverifiable)}.`;
+  }
+  return { verdict, verified: false, checks, unverifiable: unverifiable.map((c) => c.id), notVerified: [...NOT_VERIFIED], summary };
 }
