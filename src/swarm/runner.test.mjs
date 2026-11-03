@@ -104,7 +104,7 @@ test("default mock speaks each agent's own lines: posts from its persona list, r
   }
 });
 
-test("reply lines: 12 pairs of 3 whole lines, none naming the target, each in the agent's mood", () => {
+test("reply lines: 12 pairs of 4 whole lines, none naming the target, each in the agent's mood", () => {
   const expectedMood = { aloof: ["neutral", "shade"], chaotic: ["hype"], social: ["hype"], skeptic: ["shade"] };
   assert.deepEqual(Object.keys(REPLY_LINES).sort(), AGENTS.map((a) => a.id).sort());
   let pairs = 0;
@@ -113,8 +113,8 @@ test("reply lines: 12 pairs of 3 whole lines, none naming the target, each in th
     assert.deepEqual(Object.keys(REPLY_LINES[agent.id]).sort(), others, `${agent.id} answers every other agent`);
     for (const [target, lines] of Object.entries(REPLY_LINES[agent.id])) {
       pairs++;
-      assert.equal(lines.length, 3, `${agent.id} -> ${target}`);
-      assert.equal(new Set(lines).size, 3, `${agent.id} -> ${target} has a duplicate`);
+      assert.equal(lines.length, 4, `${agent.id} -> ${target}`);
+      assert.equal(new Set(lines).size, 4, `${agent.id} -> ${target} has a duplicate`);
       for (const line of lines) {
         assert.ok(!line.includes("@") && !line.includes(target), `${agent.id} -> ${target}: the runner adds the name: ${line}`);
         assert.ok(!PERSONA_LINES[agent.id].includes(line), `${agent.id}: reply line is also a post line: ${line}`);

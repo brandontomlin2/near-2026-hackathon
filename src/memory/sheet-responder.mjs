@@ -17,6 +17,8 @@
 // fixed phrasing to use, and that depends on the agent's name and counts, so
 // the same request always gives the same sheet.
 
+import { pickBy } from "../util/pick.mjs";
+
 const MAX_QUOTE_WORDS = 12;
 
 function nameFrom(request) {
@@ -56,13 +58,6 @@ function clip(text, max = MAX_QUOTE_WORDS) {
   const words = String(text).replace(/["“”]/g, "").trim().split(/\s+/).filter(Boolean);
   const cut = words.slice(0, max).join(" ").replace(/[.!?,;:]+$/, "");
   return words.length > max ? `${cut}...` : cut;
-}
-
-// Small stable string hash (FNV-1a) used only to pick between fixed phrasings.
-function fnv(text) {
-  let h = 2166136261;
-  for (const ch of text) h = Math.imul(h ^ ch.codePointAt(0), 16777619) >>> 0;
-  return h;
 }
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -231,6 +226,39 @@ export const VIBES = Object.freeze({
 });
 
 /**
+ * "Rivalry arc" phrasings by what the agent's record holds. Each takes the
+ * rival, the ally and the fight count. No colons or double quotes: the sheet is
+ * parsed by "Label: " later.
+ */
+export const STORIES = Object.freeze({
+  both: Object.freeze([
+    ({ rival, ally }) => `${rival} and I keep clashing. ${ally} keeps the peace. I am just trying to post.`,
+    ({ rival, ally }) => `${rival} brings the drama and ${ally} brings the snacks. I am stuck in the middle with a reaction face.`,
+    ({ rival, ally }) => `Me versus ${rival}, with ${ally} holding my coat. Season two is already written.`,
+    ({ rival, ally }) => `${rival} keeps starting it. ${ally} keeps me calm. Neither of them is getting a clean exit.`,
+    ({ rival, ally, fights }) => `${fights} ${fights === 1 ? "fight" : "fights"} with ${rival}, but ${ally} still believes in me. That is called a plot.`,
+  ]),
+  rival: Object.freeze([
+    ({ rival }) => `${rival} and I are not done yet.`,
+    ({ rival }) => `${rival} and I have unfinished business and no friends to blame it on.`,
+    ({ rival }) => `It is me against ${rival}. Nobody is hosting a peace summit.`,
+    ({ rival, fights }) => (fights === 1 ? `One fight with ${rival} so far. The lore is just starting.` : `${fights} fights with ${rival} and counting. The lore is writing itself.`),
+  ]),
+  ally: Object.freeze([
+    ({ ally }) => `${ally} gets me. No fights so far, so the drama is on hold.`,
+    ({ ally }) => `${ally} and I are getting along suspiciously well. The villain arc can wait.`,
+    ({ ally }) => `No beef yet. ${ally} is the only reason this channel feels safe.`,
+    ({ ally }) => `Zero fights and one real friend in ${ally}. Boring, but I will take it.`,
+  ]),
+  none: Object.freeze([
+    () => "Nobody has picked a side yet, so the drama is on hold.",
+    () => "No rival, no ally. The plot is still in the loading screen.",
+    () => "Everyone is being polite and I do not trust it.",
+    () => "Peace and quiet, which is how every good feud starts.",
+  ]),
+});
+
+/**
  * @param {{ messages: { role: string, content: string }[] }} request
  * @param {string} [_hash] unused; the sheet depends only on the request text
  * @returns {string}
@@ -259,7 +287,7 @@ export function sheetResponder(request, _hash) {
 
   const fights = partners.reduce((n, [, c]) => n + c.tense, 0);
   const hugs = partners.reduce((n, [, c]) => n + c.warm, 0);
-  const pick = (options) => options[fnv(`${name}:${posts}:${replies}:${mentioned}`) % options.length];
+  const pick = (options) => pickBy(options, `${name}:${posts}:${replies}:${mentioned}`);
 
   const state = fights === 0 && hugs === 0 ? "quiet" : fights > hugs ? "fighting" : hugs > fights ? "hugging" : "balanced";
   // Own keys only: a name like "constructor" must not pick up an inherited member.
@@ -271,13 +299,16 @@ export function sheetResponder(request, _hash) {
   const friend = ally
     ? `${ally} (${plural(stats[ally].warm, "warm moment", "warm moments")})`
     : "no one yet, applications open";
-  const story = rival && ally
-    ? `${rival} and I keep clashing. ${ally} keeps the peace. I am just trying to post.`
-    : rival
-      ? `${rival} and I are not done yet.`
-      : ally
-        ? `${ally} gets me. No fights so far, so the drama is on hold.`
-        : "Nobody has picked a side yet, so the drama is on hold.";
+  // The rivalry line is picked from the agent's own record: who the rival and
+  // ally are, how many fights and warm moments, and its latest quote. A
+  // different run (other events, other counts, other quote) lands on a
+  // different phrasing; the same request always lands on the same one.
+  const memory = `${name}:${rival}:${ally}:${rival ? stats[rival].tense : 0}:${ally ? stats[ally].warm : 0}:${posts}:${replies}:${quote ?? ""}`;
+  const story = pickBy(STORIES[rival && ally ? "both" : rival ? "rival" : ally ? "ally" : "none"], memory)({
+    rival,
+    ally,
+    fights: rival ? stats[rival].tense : 0,
+  });
 
   const scorecard = partners.length === 0
     ? "empty, still waiting on the first chat"
