@@ -232,6 +232,26 @@ test("a fetch implementation whose own error mentions the key is scrubbed before
   assert.ok(!containsKeyFragment(errorText(err)), errorText(err));
 });
 
+test("a cause that hides the key past util.inspect's default truncation is still scrubbed", async () => {
+  // inspect() shows 100 array items and 10,000 characters of a string by default; a
+  // check that trusts it keeps a cause whose key sits past either limit, and anything
+  // that walks err.cause programmatically then reads the key.
+  const fetch = async () => {
+    const e = new TypeError("fetch failed");
+    e.headers = [...Array.from({ length: 150 }, () => "x"), `authorization: Bearer ${KEY}`];
+    e.detail = `${"y".repeat(20000)} ${KEY}`;
+    throw e;
+  };
+  const err = await caught(createLiveClient({ apiKey: KEY, model: MODEL, sleep: noSleep, maxRetries: 0, fetch }).chat(ask));
+  assert.equal(err.code, "network");
+  assert.ok(err.cause instanceof Error);
+  assert.equal(err.cause.name, "TypeError");
+  assert.equal(err.cause.message, "fetch failed");
+  const full = inspect(err, { depth: Infinity, maxArrayLength: Infinity, maxStringLength: Infinity, showHidden: true });
+  assert.ok(!containsKeyFragment(full), full.slice(0, 400));
+  assert.ok(!JSON.stringify(err.cause, Object.getOwnPropertyNames(err.cause)).includes(KEY));
+});
+
 test("the client never writes to the console, on success or on any failure", async () => {
   const calls = [];
   const names = ["log", "error", "warn", "info", "debug", "trace"];
