@@ -33,14 +33,16 @@ npm install && npm run demo
 ```
 
 1. Run `npm install && npm run demo`. See `[1/5] swarm` to `[5/5] viewer`, then `Done. Nothing was signed or sent; inference was mocked, and the character sheets come from a deterministic stand-in, not a model.`, a "Do this, see that" list, the 61 files written under `out/`, and last `Open the page: open out/index.html  (file:///…/out/index.html)`. It exits 0 in a few seconds and never opens a browser itself.
-2. Open `out/index.html`. See the headline "Your NFT remembers who you are" over four agent cards (image now and at mint, four reaction faces, latest sheet and its hash), then Memory, the round hash chain with `verify: ok`, the Channel with a face beside each message, Share cards, Anchor (dry run) and Transfer.
+2. Open `out/index.html`. See the headline "Your NFT remembers who you are" over four agent cards, each with its art, four reaction faces and its latest sheet and hash. Below them: Memory, the round hash chain with `verify: ok`, the Channel, Share cards, Anchor (dry run) and Transfer.
 3. Open `out/transcript.txt`. See the conversation by round, with replies marked like `[Chaotic -> Skeptic] @Skeptic ...`. The same events are in `out/events.json` with `agentId`, `round`, `turn`, `kind` and `replyTo`.
 4. Open `out/memory/chaotic/sheet.json`. See Chaotic's round 6 sheet (quoted above), including `Ride-or-die: no one yet, applications open.` Check the hash: `node -p 'require("./out/memory/chaotic/sheet.json").sheet' | shasum -a 256` prints the `sheetHash` in the same file.
 5. Open `out/anchors.json`. See `"signed": false` and 8 `anchor_sheet` calls, two per token, each `"status": "dry-run"` with `"transactionHash": null`. Each token's latest `sheet_hash` equals the `sheetHash` in its `sheet.json`. The `contractId` `personality-nft.demo.testnet` is a placeholder; nothing is deployed there.
 6. In `out/index.html`, find "Transfer: memory travels with the NFT". See a simulated transfer from `alice.demo.testnet` to `bob.demo.testnet` (placeholders, nothing sent): each token's re-hashed sheet shows `match`, a tampered sheet shows `MISMATCH`, and the NEAR AI Cloud (TEE) badge says `mocked`. The same data is under `transfer` in `out/demo.json`.
 7. Run `npm run demo` again. See the same final round hash, `ed0b0c82315a4a04b81026fb90429ff0c7f292ede27a992c6cbadbee5435284d`, and byte-identical files. It is a hash of the mock conversation, not a chain value.
 8. Run `MOCK_INFERENCE=0 npm run demo`. See `demo: runs in mock mode only` and exit 2. The demo never makes a live call.
-9. Run `bash scripts/verify.sh`. See a 13-row `STATUS / STAGE / DETAIL` table with no `FAIL` row, ending in `result: PASS` (details in [Validate locally](#validate-locally)).
+9. Run `bash scripts/verify.sh` (about 40 s). See a 13-row `STATUS / STAGE / DETAIL` table with no `FAIL` row (`SKIP` rows are fine), ending in `result: PASS`. Details in [Validate locally](#validate-locally).
+
+Everything below this section is reference for the pieces the demo ran.
 
 No browser handy? [docs/img/page.png](docs/img/page.png) is the generated page. For a hostable copy, run `npm run site` and see `out/site/index.html` ([hosting steps](docs/hosting.md)).
 
