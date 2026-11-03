@@ -12,6 +12,8 @@
     "test": "node --test 'scripts/**/*.test.mjs' 'src/**/*.test.mjs'",
     "test:contract": "cd contracts/personality-nft && cargo test",
     "build:contract": "cd contracts/personality-nft && cargo near build non-reproducible-wasm",
-    "infer": "node scripts/infer.mjs"
+    "infer": "node scripts/infer.mjs",
+    "deploy:nft": "node scripts/testnet-deploy.mjs deploy",
+    "mint": "node scripts/testnet-deploy.mjs mint"
   }
 }

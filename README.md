@@ -22,6 +22,7 @@ Numbered "do X, see Y" steps for judges will go here.
 | `contracts/personality-nft/` | The NEP-171 contract (Rust, near-sdk 5.30). Each token is an agent and carries a character sheet anchor. See [Contract](#contract). |
 | `src/inference/client.mjs` | Inference client. Mock mode by default (deterministic, no keys); live mode calls NEAR AI Cloud. See [Inference](#inference). |
 | `scripts/infer.mjs` | `npm run infer -- "<prompt>"`: one chat turn through the client. |
+| `scripts/testnet-deploy.mjs` | `npm run deploy:nft` and `npm run mint`: testnet deploy and agent mint. Dry run unless `--send`. See [Deploy to testnet](#deploy-to-testnet). |
 | `skills-lock.json` | Pinned versions of the installed agent skills. |
 
 ## Contract
@@ -45,7 +46,29 @@ Build and test (needs Rust; the crate pins rustc 1.95 through `rust-toolchain.to
 1. Run `npm run test:contract`. See 13 unit tests pass, including mint by a non-owner failing, a non-sha256 hash rejected, and the anchor surviving `nft_transfer` to a new owner.
 2. Run `npm run build:contract`. See `contracts/personality-nft/target/near/personality_nft.wasm` (about 250 KB) and its ABI JSON next to it.
 
-Testnet deploy and the `mint` script are separate board items and are not in this repository yet.
+## Deploy to testnet
+
+`scripts/testnet-deploy.mjs` deploys the contract to NEAR testnet and mints the four agent tokens (Aloof, Chaotic, Social, Skeptic). It is a dry run unless you pass `--send`. Dry runs need no account, no keys, and no `near` binary.
+
+Before you start, you need:
+
+- near-cli-rs v0.14 or later on your PATH (`near --version`).
+- A testnet account you control, created outside this repo (for example with the near-cli-rs testnet faucet). The contract is deployed to `NEAR_CONTRACT_ACCOUNT_ID`, which defaults to `NEAR_ACCOUNT_ID`. The script does not create accounts.
+- That account's key in the near-cli-rs keychain (`near login` or `near account import-account`). Keys never go in `.env` or the repo. The script asks near-cli-rs only for the public key, to confirm the key exists before it sends anything.
+
+Steps:
+
+1. Run `npm run build:contract`. See `contracts/personality-nft/target/near/personality_nft.wasm`. This needs cargo-near.
+2. Run `npm run deploy:nft`. See `[1/1] deploy`, a call to `<contract>.new_default_meta`, and a `near --quiet contract deploy ... sign-with-keychain send` command printed. Nothing is sent.
+3. Run `npm run mint`. See four steps, `mint aloof` through `mint skeptic`. Each shows an `nft_mint` call with `token_metadata.extra` holding the trait JSON and a deposit of `0.05 NEAR`. The contract refunds whatever the token does not use. Use `npm run mint -- --count 3` for three agents, or `--receiver <acct>` to send the tokens elsewhere.
+4. Export `NEAR_ACCOUNT_ID=<your testnet account>`, and `NEAR_CONTRACT_ACCOUNT_ID` if the contract lives on another account. Leave `NEAR_NETWORK` unset or set it to `testnet`. Any other value is refused.
+5. Run `npm run deploy:nft -- --send`. See near-cli-rs print a transaction hash for the deploy, then `done`. If the keychain has no key for the account, see `error: no testnet key for <acct>` and nothing is sent. Run deploy once per contract account. The init call panics if the contract is already initialized.
+6. Run `npm run mint -- --send`. See one transaction hash per agent. Re-running with the same token ids fails on chain at the first duplicate, and the script stops there. Earlier mints are not rolled back.
+7. Check the tokens with `near contract call-function as-read-only <contract> nft_total_supply json-args '{}' network-config testnet now`. See `4`. Then run `near contract call-function as-read-only <contract> nft_token json-args '{"token_id":"aloof"}' network-config testnet now`. See `owner_id` set to your account and `extra` holding the Aloof traits.
+
+`npm run mint` and `npm run deploy:nft` in `scripts/verify.sh --live` run as dry runs too, because the script sends only with `--send`. A live verify run does not put transactions on testnet.
+
+Tests for argument building and dry-run output: `node --test scripts/testnet-deploy.test.mjs`.
 
 ## Inference
 
@@ -95,7 +118,7 @@ Testnet run. Do not put keys on the command line. The script never reads or prin
 NEAR_NETWORK=testnet NEAR_ACCOUNT_ID=<testnet-account> bash scripts/verify.sh --live
 ```
 
-PASS means the summary table has no `FAIL` row and the process exits 0. `SKIP` is expected until `package.json` and the planned npm scripts exist: `deploy:nft` (testnet deploy), `mint` (4 tokens), `swarm` (`MOCK_INFERENCE=1`, `--rounds N`), and `evidence` (`out/evidence.json` with transaction hashes and RPC views). If `gitleaks` is not installed, the secret scan prints a warning and `SKIP`; it does not fail. A finding, a failed install, a failed test, a workflow file, or a live run without `NEAR_NETWORK=testnet` and `NEAR_ACCOUNT_ID` is a failure.
+PASS means the summary table has no `FAIL` row and the process exits 0. `SKIP` is expected until the remaining planned npm scripts exist: `swarm` (`MOCK_INFERENCE=1`, `--rounds N`), and `evidence` (`out/evidence.json` with transaction hashes and RPC views). `deploy:nft` and `mint` exist now and run as dry runs unless `--send` is given. If `gitleaks` is not installed, the secret scan prints a warning and `SKIP`; it does not fail. A finding, a failed install, a failed test, a workflow file, or a live run without `NEAR_NETWORK=testnet` and `NEAR_ACCOUNT_ID` is a failure.
 
 A passing mock run before those scripts exist looks like this:
 
