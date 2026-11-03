@@ -102,8 +102,9 @@ function strideFor(n) {
  * @returns {import("../inference/client.mjs").MockResponder | undefined}
  */
 export function personaResponder(agent) {
+  // Own keys only: an id like "toString" must not pick up an inherited function.
+  if (!Object.hasOwn(PERSONA_LINES, agent.id)) return undefined;
   const lines = PERSONA_LINES[agent.id];
-  if (!lines) return undefined;
   const stride = strideFor(lines.length);
   // One responder serves one agent for one run. Its first request hash (which
   // carries the seed) fixes a starting point; each later call steps forward
