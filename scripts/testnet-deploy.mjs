@@ -5,6 +5,8 @@
 // would make, and signs nothing.
 //
 // --send is the only switch that signs and broadcasts. It also requires:
+//   - --i-approve on the same command line (explicit human approval, same gate as
+//     live-proof; it cannot come from the environment),
 //   - NEAR_ACCOUNT_ID (a valid testnet account id),
 //   - NEAR_NETWORK unset or "testnet",
 //   - a key for each signing account in the near-cli-rs keychain. This script only
@@ -48,6 +50,30 @@ export function validateAccountId(value, label) {
     throw new UsageError(`${label} is unset or not a valid NEAR account id (value not shown)`);
   }
   return value;
+}
+
+// A named testnet account: a valid id ending in ".testnet". Mainnet (.near) and
+// implicit (64-hex) ids are refused. This is the contract-account rule every tool
+// that signs (deploy, mint, live-proof) and the evidence script share, so a run
+// can never be sent and then refused at the evidence step. Never echoes the value.
+export function validateTestnetAccountId(value, label) {
+  validateAccountId(value, label);
+  if (!value.endsWith(`.${NETWORK}`)) {
+    throw new UsageError(`${label} must be a named .${NETWORK} account (value not shown); mainnet and implicit accounts are refused`);
+  }
+  return value;
+}
+
+// The one definition of an acceptable NEAR_NETWORK: unset, empty or "testnet".
+// Shared by testnet-deploy, live-proof and live-check so the three stay in sync.
+export function isTestnetNetwork(env) {
+  return env.NEAR_NETWORK === undefined || env.NEAR_NETWORK === "" || env.NEAR_NETWORK === NETWORK;
+}
+
+export function assertTestnetNetwork(env) {
+  if (!isTestnetNetwork(env)) {
+    throw new UsageError(`NEAR_NETWORK must be unset or ${NETWORK}; this script refuses other networks`);
+  }
 }
 
 export function parseCount(value) {
@@ -103,10 +129,13 @@ export function tokenMetadata(agent, { mediaBase = MEDIA_PLACEHOLDER_BASE } = {}
   return metadata;
 }
 
+// The sent commands never carry --quiet: in quiet mode near-cli-rs installs no tracing
+// subscriber and prints no "Transaction ID" block, which scripts/live-proof.mjs reads
+// to record each step's hash. Only the keychain probe in run() is quiet.
 export function buildDeployStep({ contract, owner, wasm }) {
   const args = { owner_id: owner };
   const argv = [
-    "--quiet", "contract", "deploy", contract,
+    "contract", "deploy", contract,
     "use-file", wasm,
     "with-init-call", INIT_METHOD,
     "json-args", JSON.stringify(args),
@@ -134,7 +163,7 @@ export function buildMintStep({ contract, owner, receiver, agent, mediaBase }) {
     token_metadata: tokenMetadata(agent, { mediaBase }),
   };
   const argv = [
-    "--quiet", "contract", "call-function", "as-transaction", contract, MINT_METHOD,
+    "contract", "call-function", "as-transaction", contract, MINT_METHOD,
     "json-args", JSON.stringify(args),
     "prepaid-gas", GAS,
     "attached-deposit", MINT_DEPOSIT,
@@ -177,7 +206,8 @@ Commands:
 
 Options:
   --dry-run           print the plan (default)
-  --send              sign and broadcast on testnet (needs NEAR_ACCOUNT_ID and a keychain key)
+  --send              sign and broadcast on testnet (needs --i-approve, NEAR_ACCOUNT_ID and a keychain key)
+  --i-approve         explicit human approval for --send; refused without it, nothing is sent
   --json              print the plan as JSON (dry run)
   --count <1-${AGENTS.length}>     mint: how many agents, in the order ${AGENTS.map((a) => a.token_id).join(", ")}
   --receiver <acct>   mint: token receiver (default NEAR_ACCOUNT_ID)
@@ -187,13 +217,14 @@ Options:
 
 Environment:
   NEAR_ACCOUNT_ID           owner and signer (required with --send)
-  NEAR_CONTRACT_ACCOUNT_ID  account the contract lives on (default NEAR_ACCOUNT_ID)
+  NEAR_CONTRACT_ACCOUNT_ID  account the contract lives on (default NEAR_ACCOUNT_ID);
+                            with --send it must be a named .testnet account
   NEAR_NETWORK              unset or testnet; anything else is refused
 `;
 
 export function parseArgs(argv) {
   const opts = {
-    command: null, send: false, dryRunFlag: false, json: false, help: false,
+    command: null, send: false, approve: false, dryRunFlag: false, json: false, help: false,
     count: AGENTS.length, receiver: null, wasm: DEFAULT_WASM,
     countGiven: false, receiverGiven: false, wasmGiven: false, mediaBase: null,
   };
@@ -211,6 +242,7 @@ export function parseArgs(argv) {
         opts.command = arg;
         break;
       case "--send": opts.send = true; break;
+      case "--i-approve": opts.approve = true; break;
       case "--dry-run": opts.dryRunFlag = true; break;
       case "--json": opts.json = true; break;
       case "-h":
@@ -225,6 +257,8 @@ export function parseArgs(argv) {
   if (opts.help) return opts;
   if (!opts.command) throw new UsageError("missing command: deploy or mint");
   if (opts.send && opts.dryRunFlag) throw new UsageError("--send and --dry-run cannot be combined");
+  // Same gate as live-proof: both flags must be literal argv tokens; no env var can supply approval.
+  if (opts.send && !opts.approve) throw new UsageError("--send needs --i-approve (explicit human approval). Nothing was sent.");
   if (opts.command === "deploy" && (opts.countGiven || opts.receiverGiven || opts.mediaBase)) {
     throw new UsageError("--count, --receiver and --media-base apply to mint only");
   }
@@ -271,9 +305,7 @@ export async function run(argv, env = process.env, deps = {}) {
       out(USAGE);
       return 0;
     }
-    if (env.NEAR_NETWORK !== undefined && env.NEAR_NETWORK !== "" && env.NEAR_NETWORK !== NETWORK) {
-      throw new UsageError(`NEAR_NETWORK must be unset or ${NETWORK}; this script refuses other networks`);
-    }
+    assertTestnetNetwork(env);
 
     const ownerRaw = env.NEAR_ACCOUNT_ID || "";
     const contractRaw = env.NEAR_CONTRACT_ACCOUNT_ID || ownerRaw;
@@ -289,7 +321,12 @@ export async function run(argv, env = process.env, deps = {}) {
         "NEAR_CONTRACT_ACCOUNT_ID must be set explicitly for deploy --send (it will not default to NEAR_ACCOUNT_ID, which would overwrite the owner account's code)",
       );
     }
-    const contract = checked(contractRaw, "NEAR_CONTRACT_ACCOUNT_ID (or NEAR_ACCOUNT_ID)") ?? "<NEAR_CONTRACT_ACCOUNT_ID>";
+    const contractLabel = env.NEAR_CONTRACT_ACCOUNT_ID ? "NEAR_CONTRACT_ACCOUNT_ID" : "NEAR_CONTRACT_ACCOUNT_ID (or NEAR_ACCOUNT_ID)";
+    const contract = checked(contractRaw, contractLabel) ?? "<NEAR_CONTRACT_ACCOUNT_ID>";
+    // Review L-b: the account that is signed to must be a named .testnet account, the
+    // same rule scripts/evidence.mjs applies, so nothing is sent that evidence refuses.
+    // A dry run keeps the looser check: it prints a plan and signs nothing.
+    if (opts.send) validateTestnetAccountId(contract, contractLabel);
     if (opts.mediaBase) validateMediaBase(opts.mediaBase);
     if (opts.send && opts.command === "mint" && !opts.mediaBase) {
       throw new UsageError("mint --send needs --media-base <url>: the tokens' media must point at hosted art, not the placeholder");
@@ -316,7 +353,7 @@ export async function run(argv, env = process.env, deps = {}) {
           steps: steps.map(({ argv, ...rest }) => ({ ...rest, command: ["near", ...argv] })),
         }, null, 2));
       } else {
-        out(`dry-run: nothing is signed or sent. Add --send to broadcast on ${NETWORK}.`);
+        out(`dry-run: nothing is signed or sent. Add --send --i-approve to broadcast on ${NETWORK}.`);
         out(`network: ${NETWORK}   owner: ${owner}   contract: ${contract}`);
         out("");
         steps.forEach((step, i) => out(`${formatStep(step, i, steps.length)}\n`));

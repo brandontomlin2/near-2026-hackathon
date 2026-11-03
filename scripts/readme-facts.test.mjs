@@ -72,6 +72,13 @@ test("README timing claim is cold-run safe and deploy step orders build before d
   assert.match(readmeText, /deploy:nft`\. Step 1 must have run first/);
 });
 
+test("README quotes the deploy command without --quiet: quiet near-cli-rs prints no Transaction ID for live-proof to record", () => {
+  const deployStep = readme.match(/^2\. Run `npm run deploy:nft`\..*$/m);
+  assert.ok(deployStep, "README must have a 'Run npm run deploy:nft' step");
+  assert.ok(deployStep[0].includes("`near contract deploy ... sign-with-keychain send`"), deployStep[0]);
+  assert.ok(!readme.includes("near --quiet"), "no README command may be quiet");
+});
+
 test("README does not pin a contract unit-test count; it claims only 'ok' and '0 failed'", () => {
   // `cargo test` prints "N passed; 0 failed" and N changes with every contract PR.
   const contractStep = readme.match(/^1\. Run `npm run test:contract`\..*$/m);
@@ -266,17 +273,30 @@ test("README hash normalisation summary matches normalizeSheet, and the TEE badg
 });
 
 test("README and verify.sh give the same --live command, with the contract account and an absolute EVIDENCE_TX_FILE", async () => {
-  const command = 'NEAR_NETWORK=testnet NEAR_ACCOUNT_ID=<contract-account> EVIDENCE_TX_FILE="$PWD/out/live-proof/txs.json" bash scripts/verify.sh --live';
+  // The contract account goes in NEAR_CONTRACT_ACCOUNT_ID, the variable deploy uses for it
+  // (NEAR_ACCOUNT_ID is the signer there and only a fallback here).
+  const command = 'NEAR_NETWORK=testnet NEAR_CONTRACT_ACCOUNT_ID=<contract-account> EVIDENCE_TX_FILE="$PWD/out/live-proof/txs.json" bash scripts/verify.sh --live';
   assert.ok(readme.includes(`\n${command}\n`), "README 'Validate locally' must show the full --live command");
-  assert.doesNotMatch(readme, /NEAR_ACCOUNT_ID=<testnet-account> bash scripts\/verify\.sh --live/);
+  assert.doesNotMatch(readme, /NEAR_ACCOUNT_ID=<(testnet|contract)-account> [^\n]*bash scripts\/verify\.sh --live/);
   const verify = await readFile(join(root, "scripts/verify.sh"), "utf8");
   assert.ok(verify.includes(`  ${command}\n`), "verify.sh usage must show the same command");
-  assert.ok(readmeText.includes("which reads `NEAR_ACCOUNT_ID` as the contract account to query"));
+  const skill = await readFile(join(root, ".agents/skills/verify-near-2026/SKILL.md"), "utf8");
+  assert.ok(skill.includes(`\n${command}\n`), "the verify skill must show the same command");
+  // Review L-d: the evidence stage reads NEAR_CONTRACT_ACCOUNT_ID (NEAR_ACCOUNT_ID is its fallback);
+  // the docs must name that variable, not the fallback, everywhere they describe the stage.
+  assert.ok(readmeText.includes("which reads `NEAR_CONTRACT_ACCOUNT_ID` as the contract account to query"));
+  assert.ok(readmeText.includes("a live run without `NEAR_NETWORK=testnet` and `NEAR_CONTRACT_ACCOUNT_ID` is a failure"));
+  const checklistText = await readFile(join(root, "docs/submission-checklist.md"), "utf8");
+  for (const [name, text] of [["README", readmeText], ["docs/submission-checklist.md", checklistText]]) {
+    assert.doesNotMatch(text, /reads `NEAR_ACCOUNT_ID` as the contract account/, `${name} must not say the evidence stage reads NEAR_ACCOUNT_ID`);
+    assert.doesNotMatch(text, /NEAR_ACCOUNT_ID=<NEAR_CONTRACT_ACCOUNT_ID>/, `${name} must not put the contract id in NEAR_ACCOUNT_ID`);
+  }
   assert.ok(readmeText.includes("Give that path as an absolute path, because the script runs inside a fresh clone in a temp directory."));
   assert.ok(readmeText.includes("Without it the stage records `FAIL` with `out/evidence.json missing tx hashes or RPC views`."));
   assert.ok(verify.includes('record FAIL "evidence" "out/evidence.json missing tx hashes or RPC views"'));
   const evidence = await readFile(join(root, "scripts/evidence.mjs"), "utf8");
-  assert.match(evidence, /NEAR_ACCOUNT_ID\s+contract account to query/);
+  assert.match(evidence, /NEAR_CONTRACT_ACCOUNT_ID\n\s+contract account to query/);
+  assert.match(evidence, /Falls back to NEAR_ACCOUNT_ID when unset/);
   assert.match(evidence, /fs\.readFileSync\(file, "utf8"\)/, "the tx file is read relative to the clone's cwd, hence the absolute path");
   assert.match(verify, /git clone --local[\s\S]*cd "\$work\/repo"/, "verify.sh cd's into the fresh clone");
 });
@@ -285,7 +305,9 @@ test("the submission checklist and live:check name the complete owner command, w
   const { SEND_COMMAND } = await import("./live-proof.mjs");
   const checklist = await readFile(join(root, "docs/submission-checklist.md"), "utf8");
   assert.ok(checklist.includes(`\`${SEND_COMMAND}\``), `docs/submission-checklist.md must quote ${SEND_COMMAND}`);
-  assert.doesNotMatch(checklist, /--i-approve`/);
+  // A quoted command that stops at --i-approve is incomplete (mint --send needs --media-base).
+  // Naming the flag on its own (`--i-approve`) is fine: it is what the low-level tools require.
+  assert.doesNotMatch(checklist, /--send --i-approve`/, "an owner command that stops at --i-approve is incomplete: mint --send needs --media-base");
   const { check } = await import("./live-check.mjs");
   const r = await check({ NEAR_ACCOUNT_ID: "alice.testnet", NEAR_CONTRACT_ACCOUNT_ID: "nft.alice.testnet" }, {
     statWasm: () => 1, fetch: async () => ({ json: async () => ({ result: { amount: "1" } }) }), wasm: "/w.wasm",

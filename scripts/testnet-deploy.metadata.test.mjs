@@ -74,7 +74,7 @@ test("dry-run text and --json both show the full metadata", async () => {
 test("mint --send refuses to run without --media-base, before touching near", async () => {
   const io = capture();
   let called = false;
-  const code = await run(["mint", "--send"], { NEAR_ACCOUNT_ID: "o.testnet" }, { ...io, hasNear: () => true, exec: () => { called = true; return 0; } });
+  const code = await run(["mint", "--send", "--i-approve"], { NEAR_ACCOUNT_ID: "o.testnet" }, { ...io, hasNear: () => true, exec: () => { called = true; return 0; } });
   assert.notEqual(code, 0);
   assert.equal(called, false);
 });
