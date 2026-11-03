@@ -21,6 +21,7 @@ with gitleaks when that binary is installed. Planned npm scripts are:
   deploy:nft   testnet deploy of the NFT contract (live only)
   mint         mint 4 tokens (mock unless --live)
   swarm        N rounds with MOCK_INFERENCE=1 (default N=5, or SWARM_ROUNDS)
+  demo         the offline end-to-end demo with MOCK_INFERENCE=1 (out/index.html)
   evidence     write out/evidence.json (mock placeholders; real hashes and RPC views with --live)
   anchor       dry-run round-hash determinism check (always mock, never signs)
 
@@ -486,7 +487,7 @@ fi
 echo
 echo "==> secret scan"
 if ! command -v gitleaks >/dev/null 2>&1; then
-  echo "WARN: gitleaks is not installed; secret scan skipped. Install gitleaks so leaked secrets fail this script." >&2
+  echo "WARN: secret scan did NOT run (gitleaks not found). optional: brew install gitleaks" >&2
   record SKIP "secret scan" "gitleaks not installed (warn)"
 else
   gitleaks_args=(detect --source . --redact --no-banner --verbose)
@@ -515,6 +516,7 @@ else
   planned "swarm" "swarm" mock --rounds "$rounds"
 fi
 
+planned "demo" "demo" mock
 planned "round hash" "anchor" mock --dry-run --check
 
 planned "evidence" "evidence" auto

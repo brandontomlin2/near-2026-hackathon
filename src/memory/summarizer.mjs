@@ -11,9 +11,10 @@
 // full log. The summary call goes through src/inference/client.mjs, so mock
 // mode (the default) stays deterministic and needs no keys.
 
-import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile, appendFile } from "node:fs/promises";
 import { join } from "node:path";
+
+import { hashSheet } from "../anchor/hash.mjs";
 
 export const DEFAULT_SUMMARY_EVERY_N_ROUNDS = 5;
 export const DEFAULT_WAKE_EVENTS = 8;
@@ -107,12 +108,15 @@ export function clampWords(text, max = MAX_SHEET_WORDS) {
 }
 
 /**
- * Hash of a sheet's text. This is the value anchored on the token.
+ * Hash of a sheet's text. This is the value anchored on the token, so it is
+ * the anchor module's hashSheet (sha256 of the normalized sheet: NFC, LF, one
+ * final newline). A new owner who hashes the sheet they received gets the same
+ * value that sheet.json records and that anchor_sheet stores.
  * @param {string} sheet
  * @returns {string} 64-char hex sha256
  */
 export function sheetHash(sheet) {
-  return createHash("sha256").update(sheet, "utf8").digest("hex");
+  return hashSheet(sheet);
 }
 
 // Cut at MAX_EVENT_TEXT_CHARS without splitting a surrogate pair (emoji).

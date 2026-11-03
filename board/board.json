@@ -27,17 +27,17 @@
   {
     "id": "fresh-clone-test-demo-video",
     "title": "fresh-clone test + demo video",
-    "status": "todo",
-    "owner": "",
+    "status": "doing",
+    "owner": "claude-lead",
     "kind": "task",
     "lane": "human",
     "depends_on": [
       "testnet-deploy-mint-3-agents",
       "viewer"
     ],
-    "notes": "",
-    "updated_at": "2026-11-03T00:00:00.000Z",
-    "updated_by": "seed"
+    "notes": "npm run demo on claude/demo-command: offline end-to-end demo, verify.sh demo stage, docs/demo-script.md rewritten around it. Video recording is still for the human.",
+    "updated_at": "2026-11-03T04:09:07.630Z",
+    "updated_by": "claude-lead"
   },
   {
     "id": "inference-client-mock-mode",
