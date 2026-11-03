@@ -120,7 +120,7 @@ test("stdout is the transcript, then the hash and verify lines, then one sheet l
   ]);
   const printed = r.stdout.split("\n").filter((l) => l.startsWith("sheet "));
   assert.deepEqual(printed, expected);
-  assert.match(r.stdout.trimEnd().split("\n").at(-1), /^final round hash [0-9a-f]{64} linked to 12 anchor dry-runs \(MOCK, not on-chain\)$/);
+  assert.match(r.stdout.trimEnd().split("\n").at(-1), /^12 anchor dry-runs, each linked to its round hash; final round hash [0-9a-f]{64} \(MOCK, not on-chain\)$/);
 });
 
 test("live mode: sheets are written by the model, the closing line says so, and one request is made per turn and per sheet", async (t) => {
@@ -143,7 +143,7 @@ test("live mode: sheets are written by the model, the closing line says so, and 
   const r = await swarm(["--rounds", "2", "--out", "o"], { cwd, env, preload: false });
   assert.equal(r.code, 0, r.stderr);
   assert.equal(requests, 2 * 4 + 4, "8 agent turns plus one sheet per agent at the final round");
-  assert.match(r.stdout.trimEnd().split("\n").at(-1), /^final round hash [0-9a-f]{64} linked to 4 anchor dry-runs \(live inference, dry-run anchors, not on-chain\)$/);
+  assert.match(r.stdout.trimEnd().split("\n").at(-1), /^4 anchor dry-runs, each linked to its round hash; final round hash [0-9a-f]{64} \(live inference, dry-run anchors, not on-chain\)$/);
   assert.doesNotMatch(r.stdout, /MOCK/);
   const sheet = JSON.parse(await readFile(join(cwd, "o", "sheets", "aloof.json"), "utf8"));
   assert.equal(sheet.sheet, "Stub model says hello.");
