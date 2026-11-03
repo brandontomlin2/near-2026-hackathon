@@ -112,6 +112,9 @@ const STYLE = `
   .author { font-weight: 600; margin-right: 6px; }
 `;
 
+/** "1 round", "2 rounds", "0 posts". */
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
 /**
  * @param {any} result canonical swarm output
  * @param {readonly { id: string, name: string, personality: string, traits: object }[]} [agents]
@@ -155,7 +158,7 @@ export function renderViewer(result, agents = AGENTS) {
 <body>
   <main>
     <h1>Swarm run</h1>
-    <p class="meta">seed: ${escapeHtml(result.seed ?? "unknown")} · ${result.roundHashes.length} rounds · ${result.events.length} posts · ${chainLabel}</p>
+    <p class="meta">seed: ${escapeHtml(result.seed ?? "unknown")} · ${plural(result.roundHashes.length, "round")} · ${plural(result.events.length, "post")} · ${chainLabel}</p>
 
     <h2>Agents</h2>
     <table>
