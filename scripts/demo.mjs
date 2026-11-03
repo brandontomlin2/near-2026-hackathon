@@ -48,7 +48,8 @@ function parseArgs(argv) {
       throw new Error(`unknown argument ${JSON.stringify(flag)}`);
     }
   }
-  if (opts.every > opts.rounds) {
+  // --help wins over every other flag, so "--rounds 2 --help" prints usage, not an error.
+  if (!opts.help && opts.every > opts.rounds) {
     throw new Error(`--every (${opts.every}) must not exceed --rounds (${opts.rounds}), or no character sheet is written`);
   }
   return opts;
