@@ -448,7 +448,7 @@ if (Object.prototype.hasOwnProperty.call(data, "network") && data.network !== "t
 }
 const txs = Array.isArray(data.transactions) ? data.transactions : [];
 const views = Array.isArray(data.views) ? data.views : [];
-const hashOk = txs.some((tx) => {
+const hashOk = txs.length > 0 && txs.every((tx) => {
   return tx && typeof tx.hash === "string" && /^[1-9A-HJ-NP-Za-km-z]{32,}$/.test(tx.hash);
 });
 const viewOk = views.some((view) => {
