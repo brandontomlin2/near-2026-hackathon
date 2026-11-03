@@ -68,7 +68,7 @@ test("README Try-it steps are numbered 1 to 10 and the npm run ask step is last,
   const checklist = await readFile(join(root, "docs/submission-checklist.md"), "utf8");
   assert.ok(checklist.includes('README "Try it (judge path)" steps 1-10.'), "the submission checklist counts the Try-it steps");
   const script = await readFile(join(root, "docs/demo-script.md"), "utf8");
-  assert.ok(script.includes("`npm run ask -- <agentId> \"<question>\"` also exists (README step 10)"), "demo-script.md Command status names npm run ask");
+  assert.ok(script.includes("`npm run ask -- <agentId> \"<question>\"` exists (README step 10, the shot 3 command)"), "demo-script.md Command status names npm run ask");
 });
 
 test("README step 10 quotes what npm run ask really prints, and npm run demo resets the memory", async () => {
