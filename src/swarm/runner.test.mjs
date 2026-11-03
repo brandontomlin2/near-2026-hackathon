@@ -5,17 +5,17 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runSwarm, hashRound, verifyRounds, GENESIS_HASH, personaPrompt } from "./runner.mjs";
-import { PERSONA_LINES, TOPICS } from "./personas.mjs";
+import { PERSONA_LINES, CATCHPHRASES } from "./personas.mjs";
 import { AGENTS } from "../traits/agents.mjs";
 import { main } from "../../scripts/swarm.mjs";
 
 const nameOf = (id) => AGENTS.find((a) => a.id === id).name;
 
 const GOLDEN_ROUND_1 = `== Round 1 ==
-[Skeptic] Receipts. The numbers on the airdrop rumor do not add up yet.
-[Chaotic -> Skeptic] @Skeptic Brilliant, truly! I dare someone to defend the new charter with a straight face.
-[Aloof] Quietly. I will wait on the summary rule before I say more.
-[Social] Glad to see this. The treasury proposal goes better when we all show up, so please do.
+[Skeptic] DAO vote passed 99 to 1? I doubt it. show the hash.
+[Chaotic -> Skeptic] @Skeptic hash mismatch? sounds like a tomorrow problem!! \u{1F480}
+[Aloof] the DAO vote closes in an hour. I will be asleep. \u2026anyway
+[Social] someone verified a hash and the whole room clapped. love that for us!
 `;
 
 test("same seed is byte-identical, different seed differs", async () => {
@@ -87,17 +87,20 @@ test("verifyRounds accepts a run and rejects a tampered one", async () => {
 test("default mock speaks each agent's own persona lines, one voice per agent", async () => {
   const { events } = await runSwarm({ seed: 9, rounds: 6 });
   assert.deepEqual(Object.keys(PERSONA_LINES).sort(), AGENTS.map((a) => a.id).sort());
+  assert.deepEqual(Object.keys(CATCHPHRASES).sort(), AGENTS.map((a) => a.id).sort());
   for (const e of events) {
-    const { openers, bodies } = PERSONA_LINES[e.agentId];
     const text = e.text.replace(/^@\w+ /, "");
-    const opener = openers.find((o) => text.startsWith(`${o} `));
-    assert.ok(opener, `${e.agentId}: unexpected opener in ${JSON.stringify(e.text)}`);
-    const rest = text.slice(opener.length + 1);
-    const fits = bodies.some((body) => TOPICS.some((topic) => {
-      const line = body.replace("{topic}", topic);
-      return rest === line[0].toUpperCase() + line.slice(1);
-    }));
-    assert.ok(fits, `${e.agentId}: unexpected body in ${JSON.stringify(e.text)}`);
+    assert.ok(PERSONA_LINES[e.agentId].includes(text), `${e.agentId}: unexpected line ${JSON.stringify(e.text)}`);
+  }
+});
+
+test("every agent has 10+ whole lines and its catchphrase runs through them", () => {
+  for (const [id, lines] of Object.entries(PERSONA_LINES)) {
+    assert.ok(lines.length >= 10, `${id} has only ${lines.length} lines`);
+    assert.equal(new Set(lines).size, lines.length, `${id} has duplicate lines`);
+    for (const line of lines) assert.ok(!line.includes("{topic}"), `${id}: unfilled template in ${line}`);
+    const withBit = lines.filter((l) => l.toLowerCase().includes(CATCHPHRASES[id].toLowerCase()));
+    assert.ok(withBit.length >= lines.length / 3, `${id}: catchphrase in only ${withBit.length} of ${lines.length} lines`);
   }
 });
 
@@ -169,7 +172,7 @@ test("mock personas vary across 8+ rounds: no consecutive repeats, deterministic
         assert.notEqual(lines[i], lines[i - 1], `${id} repeats in rounds ${i} and ${i + 1} (seed ${seed})`);
       }
       assert.ok(new Set(lines.slice(0, 8)).size === 8, `${id}: first 8 rounds not all distinct (seed ${seed})`);
-      assert.ok(new Set(lines.map((l) => l.split(" ")[0])).size >= 4, `${id}: openers too samey`);
+      assert.ok(lines.every((l) => PERSONA_LINES[id].includes(l)), `${id}: line outside its persona list`);
     }
   }
 });
