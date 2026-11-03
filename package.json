@@ -15,6 +15,7 @@
     "infer": "node scripts/infer.mjs",
     "render": "node scripts/render-agents.mjs",
     "swarm": "node scripts/swarm.mjs",
+    "demo": "node scripts/demo.mjs",
     "deploy:nft": "node scripts/testnet-deploy.mjs deploy",
     "mint": "node scripts/testnet-deploy.mjs mint"
   }
