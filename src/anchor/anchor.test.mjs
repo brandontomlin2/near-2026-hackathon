@@ -217,3 +217,12 @@ test("contract source declares the same token id rules as the JS builder", async
   assert.match(src, /MAX_TOKEN_ID_LEN: usize = 64;/);
   assert.match(src, /b\.is_ascii_lowercase\(\) \|\| b\.is_ascii_digit\(\) \|\| b == b'_' \|\| b == b'-'/);
 });
+
+test("the official sheet hash definition is pinned", () => {
+  // sha256 of "Café one\ntwo\n": NFC, LF endings, trailing spaces and edge blank lines removed, one final newline.
+  const pinned = "049238c7e9dcd9a7829c45c1ab6ab8fe64f1c1a9ea66fd00655ae162ac445217";
+  assert.equal(hashSheet("Café one  \r\ntwo\r\n\r\n"), pinned);
+  assert.equal(hashSheet("Café one\ntwo"), pinned);
+  assert.equal(hashSheet("Café one\ntwo\n"), pinned);
+  assert.notEqual(hashSheet("Café one\n\ntwo"), pinned);
+});
