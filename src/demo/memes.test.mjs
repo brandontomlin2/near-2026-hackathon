@@ -273,9 +273,10 @@ describe("memes: default demo run", () => {
     }
   });
 
-  it("is data driven end to end: 2 captions and 1 villain", () => {
+  it("is data driven end to end: 2 captions and 3 villains, one card or more per agent", () => {
     const count = (f) => result.manifest.memes.filter((m) => m.format === f).length;
-    assert.deepEqual([count("caption"), count("villain")], [2, 1]);
+    assert.deepEqual([count("caption"), count("villain")], [2, 3]);
+    assert.deepEqual([...new Set(result.manifest.memes.map((m) => m.agentId))].sort(), AGENTS.map((a) => a.id).sort());
     const events = JSON.parse(fs.readFileSync(path.join(dir, "events.json"), "utf8")).events;
     const skeptic = fs.readFileSync(path.join(dir, "share/meme-caption-skeptic.svg"), "utf8");
     const n = events.filter((e) => e.kind === "reply" && e.agentId === "chaotic" && events.find((x) => x.id === e.replyTo)?.agentId === "skeptic").length;
@@ -296,7 +297,7 @@ describe("memes: default demo run", () => {
     const d2 = fs.mkdtempSync(path.join(os.tmpdir(), "memes-test-"));
     try {
       const r = await runDemo({ outDir: d2, style: "default" });
-      assert.equal(r.manifest.memes.length, 3);
+      assert.equal(r.manifest.memes.length, 5);
       assert.ok(r.manifest.memes.every((m) => m.mood === "neutral"));
     } finally {
       fs.rmSync(d2, { recursive: true, force: true });
