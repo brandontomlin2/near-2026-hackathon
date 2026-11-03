@@ -15,6 +15,8 @@
     "infer": "node scripts/infer.mjs",
     "anchor": "node scripts/anchor.mjs",
     "verify": "bash scripts/verify.sh",
+    "render": "node scripts/render-agents.mjs",
+    "swarm": "node scripts/swarm.mjs",
     "deploy:nft": "node scripts/testnet-deploy.mjs deploy",
     "mint": "node scripts/testnet-deploy.mjs mint"
   }

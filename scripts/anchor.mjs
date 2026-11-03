@@ -9,24 +9,19 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { prepareAnchor, submitAnchor } from "../src/anchor/anchor.mjs";
 import { hashSheet } from "../src/anchor/hash.mjs";
-import { createChannel } from "../src/channel/channel.mjs";
+import { runSwarm, verifyRounds } from "../src/swarm/runner.mjs";
 
 const MOCK_SHEET = "Aloof. Observer. Watches the channel, speaks rarely.\nAllies: none yet.\n";
 
-/** A fixed two-round channel. No clock, no randomness. */
+/** A fixed offline swarm run (persona mocks, fixed seed). No clock, no randomness. */
 export function buildMockRun() {
-  const channel = createChannel({ id: "mock" });
-  const a = channel.post({ round: 0, author: "aloof", text: "Noted." });
-  const b = channel.post({ round: 0, author: "chaotic", text: "Chaos reigns!", replyTo: a.seq });
-  channel.post({ round: 1, author: "social", text: "Hello, everyone.", replyTo: b.seq });
-  channel.post({ round: 1, author: "skeptic", text: "Evidence?" });
-  return channel;
+  return runSwarm({ rounds: 3, seed: 1 });
 }
 
-/** Round hash (off-chain channel digest) per round, plus the sheet anchor payload. */
+/** Round hashes (the swarm's hash chain) per round, plus the sheet anchor payload. */
 export async function mockReport() {
-  const channel = buildMockRun();
-  const rounds = [...new Set(channel.entries().map((e) => e.round))];
+  const run = await buildMockRun();
+  if (!verifyRounds(run)) throw new Error("swarm hash chain does not verify");
   const prepared = prepareAnchor({
     contractId: "mock-contract.testnet",
     tokenId: "aloof",
@@ -38,7 +33,7 @@ export async function mockReport() {
     mode: "dry-run",
     status,
     transactionHash,
-    roundHashes: rounds.map((round) => ({ round, hash: channel.roundDigest(round) })),
+    roundHashes: run.roundHashes.map((hash, i) => ({ round: i + 1, hash })),
     sheetHash: hashSheet(MOCK_SHEET),
     anchor: prepared,
   };

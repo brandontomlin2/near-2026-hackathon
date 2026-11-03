@@ -22,6 +22,9 @@ Numbered "do X, see Y" steps for judges will go here.
 | `contracts/personality-nft/` | The NEP-171 contract (Rust, near-sdk 5.30). Each token is an agent and carries a character sheet anchor. See [Contract](#contract). |
 | `src/inference/client.mjs` | Inference client. Mock mode by default (deterministic, no keys); live mode calls NEAR AI Cloud. See [Inference](#inference). |
 | `scripts/infer.mjs` | `npm run infer -- "<prompt>"`: one chat turn through the client. |
+| `src/swarm/runner.mjs` | The swarm: four trait-driven agents (`src/traits/`) on one shared channel, seeded and deterministic. See [Swarm](#swarm). |
+| `src/swarm/personas.mjs` | In-character mock replies per agent, used when inference is mocked. |
+| `scripts/swarm.mjs` | `npm run swarm -- --rounds 5`: runs the swarm, prints the transcript, writes `out/transcript.txt` and `out/events.json`. |
 | `scripts/testnet-deploy.mjs` | `npm run deploy:nft` and `npm run mint`: testnet deploy and agent mint. Dry run unless `--send`. See [Deploy to testnet](#deploy-to-testnet). |
 | `skills-lock.json` | Pinned versions of the installed agent skills. |
 
@@ -81,10 +84,33 @@ Agents think through `src/inference/client.mjs`. It has no dependencies and two 
 
 Try it:
 
-1. Run `npm run infer -- "What do you make of the treasury proposal?"`. See `mode: mock` on stderr and a one-line reply that mentions `treasury`.
+1. Run a mock chat turn. See `mode: mock` on stderr and a one-line reply that mentions `treasury`.
+
+<!-- judge:run -->
+<!-- judge:expect mode: mock -->
+<!-- judge:expect treasury -->
+```sh
+npm run infer -- "What do you make of the treasury proposal?"
+```
+
 2. Run it again. See the identical reply.
-3. Run `npm run infer -- --json --seed 3 "Same prompt"`. See the full response object with `"mode": "mock"` and an `id` starting with `mock-`.
-4. Run `MOCK_INFERENCE=0 npm run infer -- "hi"` with no key set. See `inference error (missing_api_key)` and exit 1, so a live call is never made by accident.
+
+3. Print the full response object. See `"mode": "mock"` and an `id` starting with `mock-`.
+
+<!-- judge:run -->
+<!-- judge:expect "mode": "mock" -->
+<!-- judge:expect "id": "mock- -->
+```sh
+npm run infer -- --json --seed 3 "Same prompt"
+```
+
+4. Ask for live mode with no key set. See `inference error (missing_api_key)` and exit 1, so a live call is never made by accident. The block below exits 0 only when the command fails with that message.
+
+<!-- judge:run -->
+<!-- judge:expect inference error (missing_api_key) -->
+```sh
+MOCK_INFERENCE=0 npm run infer -- "hi" 2>&1 || true
+```
 
 For a live run, put `MOCK_INFERENCE=0`, `NEAR_AI_API_KEY` and `NEAR_AI_MODEL` in `.env` (gitignored) or the environment. Get the key from the NEAR AI Cloud dashboard at https://cloud.near.ai and a model id from `GET https://cloud-api.near.ai/v1/models`.
 
@@ -101,6 +127,19 @@ console.log(reply.mode, reply.content);
 ```
 
 The swarm can pass `responder(request, hash)` to `createInferenceClient` to shape mock replies per persona while keeping them deterministic.
+
+## Swarm
+
+The swarm runs the four agents (Aloof, Chaotic, Social, Skeptic) on one shared channel for N rounds. Each agent's system prompt is built from its traits. A seed fixes the speaking order and who replies to whom, so the same `--rounds` and `--seed` give the same transcript. Each agent wakes with the last 6 channel events, not the full log. Each round is hashed and chained to the one before, and the run is re-checked before it prints.
+
+Inference is mocked by default (`MOCK_INFERENCE=1`): offline, no keys, and each agent answers in its own written voice. `MOCK_INFERENCE=0` sends the same prompts to NEAR AI Cloud instead and needs `NEAR_AI_API_KEY`.
+
+1. Run `npm run swarm -- --rounds 5`. See 5 round headers, 20 lines such as `[Skeptic] Doubtful. ...` and `[Chaotic -> Skeptic] @Skeptic ...`, then `final round hash: <64 hex>` and `verify: ok (5 rounds)`.
+2. Run it again. See the same transcript and the same hash.
+3. Run `npm run swarm -- --rounds 5 --seed 2`. See a different transcript and a different hash.
+4. Open `out/events.json`. See every event with its round, turn, agent and `replyTo`, plus `roundHashes`.
+
+Run the tests with `npm test`.
 
 ## Validate locally
 

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
+import { runSwarm } from "../src/swarm/runner.mjs";
 import { buildMockRun, main, mockReport } from "./anchor.mjs";
 
 const run = async (argv) => {
@@ -13,8 +14,8 @@ test("same mock run gives the same round hashes and payload", async () => {
   const a = await mockReport();
   const b = await mockReport();
   assert.deepEqual(a, b);
-  assert.equal(buildMockRun().toJSONL(), buildMockRun().toJSONL());
-  assert.equal(a.roundHashes.length, 2);
+  assert.deepEqual(await buildMockRun(), await buildMockRun());
+  assert.equal(a.roundHashes.length, 3);
   for (const { hash } of a.roundHashes) assert.match(hash, /^[0-9a-f]{64}$/);
   assert.notEqual(a.roundHashes[0].hash, a.roundHashes[1].hash);
 });
@@ -48,4 +49,10 @@ test("CLI process exits 0 and prints the payload", () => {
   });
   assert.equal(r.status, 0);
   assert.equal(JSON.parse(r.stdout).anchor.methodName, "anchor_sheet");
+});
+
+test("round hashes are the swarm hash chain", async () => {
+  const run = await runSwarm({ rounds: 3, seed: 1 });
+  const r = await mockReport();
+  assert.deepEqual(r.roundHashes.map((x) => x.hash), run.roundHashes);
 });
