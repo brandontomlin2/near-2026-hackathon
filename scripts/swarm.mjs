@@ -1,5 +1,6 @@
-// Run the swarm and write out/transcript.txt and out/events.json, then run the
-// memory loop (dry run only): out/sheets/<token>.json and out/memory-loop.json.
+// Run the swarm and write out/swarm/transcript.txt and out/swarm/events.json, then run
+// the memory loop (dry run only): out/swarm/sheets/<token>.json and out/swarm/memory-loop.json.
+// (npm run demo owns out/ itself, so the two never overwrite each other.)
 // Usage: node scripts/swarm.mjs [--rounds N] [--seed N] [--every N] [--out DIR]
 // A sheet is written every N rounds (default 3, like npm run demo; or set
 // SUMMARY_EVERY_N_ROUNDS) and at the final round. --every beats the env var.
@@ -15,7 +16,7 @@ import { DEFAULT_LOOP_EVERY, runMemoryLoop } from "../src/memory/loop.mjs";
 import { parseSummaryEvery } from "../src/memory/summarizer.mjs";
 
 function parseArgs(argv) {
-  const opts = { rounds: 5, seed: 1, every: undefined, out: "out" };
+  const opts = { rounds: 5, seed: 1, every: undefined, out: "out/swarm" };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     const value = argv[i + 1];

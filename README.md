@@ -27,7 +27,7 @@ npm install && npm run demo
 1. Run `npm install && npm run demo`. See five steps (`[1/5] swarm` to `[5/5] viewer`), then `Done. Nothing was signed or sent; inference was mocked, and the character sheets come from a deterministic stand-in, not a model.`, a "Do this, see that" list and the 21 files written under `out/`. It exits 0 in well under a second.
 2. Open `out/index.html` in a browser. See the four agents, each with its art at mint (1 ring) next to its art now (3 rings, one per character sheet), its latest sheet and the sheet hash. Further down: every sheet in order (round 3, then round 6), the round hash chain with `verify: ok`, the full channel with replies shown as `Chaotic → Skeptic`, the dry-run anchor table, and a "Transfer: memory travels with the NFT" panel (step 6).
 3. Open `out/transcript.txt`. See the swarm conversation by round, with replies marked like `[Chaotic -> Skeptic] @Skeptic ...`. The same events are in `out/events.json`; each has an `agentId` (`aloof`, `chaotic`, `social` or `skeptic`), `round`, `turn`, `kind` and `replyTo`.
-4. Open `out/memory/chaotic/sheet.json`. See Chaotic's round 6 sheet: who it is, who it has traded words with (and how many exchanges were warm or tense), its ally (Social) and its grudge (Skeptic), a running belief, and its post, reply and mention counts. The counts grow from the round 3 sheet (shown on the page and in `out/demo.json`). Check the hash with an independent tool: `node -p 'require("./out/memory/chaotic/sheet.json").sheet' | shasum -a 256` prints the `sheetHash` in the same file. The sheet is hashed after normalizing (NFC, LF, one final newline), which for a one-line sheet is the text plus a newline. The sheet text is written by a deterministic stand-in that counts exchanges, not by a model (MOCK).
+4. Open `out/memory/chaotic/sheet.json`. See Chaotic's round 6 sheet, written as a character: a vibe, a public enemy (Skeptic, with the fight count), a ride-or-die (Social), a short rivalry line, a scorecard of fights, hugs and shrugs per agent, a signature quote taken from Chaotic's own latest post, and its post, reply and mention counts. The counts grow from the round 3 sheet (shown on the page and in `out/demo.json`). Check the hash with an independent tool: `node -p 'require("./out/memory/chaotic/sheet.json").sheet' | shasum -a 256` prints the `sheetHash` in the same file. The sheet is hashed after normalizing (NFC, LF, one final newline), which for a one-line sheet is the text plus a newline. The sheet text is written by a deterministic stand-in, not by a model (MOCK).
 5. Open `out/anchors.json`. The `contractId` `personality-nft.demo.testnet` is a MOCK placeholder: no contract is deployed there. See 8 `anchor_sheet` calls for testnet, two per token, each `"status": "dry-run"` with `"transactionHash": null`, and `"signed": false` at the top of the file. The first call per token carries the storage deposit and the second carries 1 yoctoNEAR. Each token's latest `sheet_hash` equals the `sheetHash` in its `sheet.json`, so the hash in the file is the hash the token would carry.
 6. In `out/index.html`, find "Transfer: memory travels with the NFT". See a simulated transfer from `alice.demo.testnet` to `bob.demo.testnet` (placeholder accounts, nothing sent): each token's sheet is re-hashed with the official sheet hash function and shows `match` against its anchored hash, a tampered sheet shows `MISMATCH`, and the NEAR AI Cloud (TEE) badge is marked `mocked`. The same data is under `transfer` in `out/demo.json`.
 7. Run `npm run demo` again. See the same final round hash, `ea0270925cbdff0bf41a7b3ee48a0129c4bec03b7dc1d675cd028ca30e34a948`, and byte-identical files. (This is a hash of the MOCK conversation, not a chain value. It changes if the mock persona lines change.)
@@ -54,7 +54,7 @@ Options: `npm run demo -- --rounds 9 --every 3 --seed 2 --out out/other`. What r
 | `src/swarm/runner.mjs` | The swarm: four trait-driven agents (`src/traits/`) on one shared channel, seeded and deterministic. See [Swarm](#swarm). |
 | `src/swarm/personas.mjs` | In-character mock replies per agent, used when inference is mocked. |
 | `scripts/demo.mjs`, `src/demo/` | `npm run demo`: the offline end-to-end demo. See [Try it](#try-it-judge-path). |
-| `scripts/swarm.mjs` | `npm run swarm -- --rounds 7 --every 3`: runs the swarm, prints the transcript, writes `out/transcript.txt` and `out/events.json`, then writes character sheets to `out/sheets/` (`<token>.json` is the latest, `<token>.round-<N>.json` is every sheet) every N rounds and at the last round. Each sheet builds on the previous one and gets its own `anchor_sheet` dry-run (nothing sent), linked to the hash of its round. `out/memory-loop.json` holds every sheet, its anchor and a short diff against the previous sheet (sentences added and removed). N is `--every`, else `SUMMARY_EVERY_N_ROUNDS`, else 3 (the demo's default). |
+| `scripts/swarm.mjs` | `npm run swarm -- --rounds 7 --every 3`: runs the swarm, prints the transcript, writes `out/swarm/transcript.txt` and `out/swarm/events.json`, then writes character sheets to `out/swarm/sheets/` (`<token>.json` is the latest, `<token>.round-<N>.json` is every sheet) every N rounds and at the last round. Each sheet builds on the previous one and gets its own `anchor_sheet` dry-run (nothing sent), linked to the hash of its round. `out/swarm/memory-loop.json` holds every sheet, its anchor and a short diff against the previous sheet (sentences added and removed). N is `--every`, else `SUMMARY_EVERY_N_ROUNDS`, else 3 (the demo's default). |
 | `scripts/testnet-deploy.mjs` | `npm run deploy:nft` and `npm run mint`: testnet deploy and agent mint. Dry run unless `--send`. See [Deploy to testnet](#deploy-to-testnet). |
 | `skills-lock.json` | Pinned versions of the installed agent skills. |
 
@@ -80,7 +80,7 @@ Build and test. Requirements:
 - [cargo-near](https://github.com/near/cargo-near) for `npm run build:contract` only (tested with 0.22.0). Unit tests need only cargo.
 
 1. Run `npm run test:contract`. See 52 unit tests pass, including mint by a non-owner failing, a non-sha256 hash rejected, and the anchor surviving `nft_transfer` to a new owner.
-2. Run `npm run build:contract`. See `contracts/personality-nft/target/near/personality_nft.wasm` (about 250 KB) and its ABI JSON next to it.
+2. Run `npm run build:contract`. See `contracts/personality-nft/target/near/personality_nft.wasm` and its ABI JSON next to it.
 
 ## Deploy to testnet
 
@@ -120,7 +120,7 @@ Contract id: `TBD` (to be filled in after the live run)
 
 What the live run will do, as one command:
 
-1. Run `npm run live-proof`. See the deploy, four mint, and `anchor_sheet` steps printed in order, and `docs/evidence.example.json` written. Nothing is signed or sent.
+1. Run `npm run live-proof`. See the deploy, four mint, and `anchor_sheet` steps printed in order, and `out/live-proof/evidence.example.json` written (gitignored; the tracked `docs/evidence.example.json` is untouched). Nothing is signed or sent.
 2. The owner runs `NEAR_ACCOUNT_ID=<account> NEAR_CONTRACT_ACCOUNT_ID=<contract> npm run live-proof -- --send --i-approve`. It refuses without both variables and the flag. Signing is done by the `near` CLI with the system keychain; this repository handles no keys.
 
 Once the live run is done, a judge can check it with read-only view calls. They need no account and no keys. Replace `<contract>` with the contract id above:
@@ -193,8 +193,8 @@ Inference is mocked by default (`MOCK_INFERENCE=1`): offline, no keys, and each 
 1. Run `npm run swarm -- --rounds 5`. See 5 round headers, 20 lines such as `[Skeptic] Doubtful. ...` and `[Chaotic -> Skeptic] @Skeptic ...`, then `final round hash: <64 hex>` and `verify: ok (5 rounds)`. Then four lines such as `sheet aloof <64 hex> -> anchor_sheet dry-run (not sent)` and `final round hash <64 hex> linked to 4 anchor dry-runs (MOCK, not on-chain)`.
 2. Run it again. See the same transcript and the same hash.
 3. Run `npm run swarm -- --rounds 5 --seed 2`. See a different transcript and a different hash.
-4. Open `out/events.json`. See every event with its round, turn, agent and `replyTo`, plus `roundHashes`.
-5. Run `npm run swarm -- --rounds 7 --every 3`. See `sheet aloof round 3 ...`, `round 6` and `round 7` lines per agent, each ending `anchor_sheet dry-run (not sent)`, and `linked to 12 anchor dry-runs`. Open `out/sheets/` and see `aloof.round-3.json`, `aloof.round-6.json`, `aloof.round-7.json` and `aloof.json` (the latest). In `out/memory-loop.json`, `tokens[0].sheets` has one entry per sheet with its `anchor` and a `diff` (`added`, `removed`, `previousHash`). `SUMMARY_EVERY_N_ROUNDS=2 npm run swarm` does the same with the env var.
+4. Open `out/swarm/events.json`. See every event with its round, turn, agent and `replyTo`, plus `roundHashes`.
+5. Run `npm run swarm -- --rounds 7 --every 3`. See `sheet aloof round 3 ...`, `round 6` and `round 7` lines per agent, each ending `anchor_sheet dry-run (not sent)`, and `linked to 12 anchor dry-runs`. Open `out/swarm/sheets/` and see `aloof.round-3.json`, `aloof.round-6.json`, `aloof.round-7.json` and `aloof.json` (the latest). In `out/swarm/memory-loop.json`, `tokens[0].sheets` has one entry per sheet with its `anchor` and a `diff` (`added`, `removed`, `previousHash`). `SUMMARY_EVERY_N_ROUNDS=2 npm run swarm` does the same with the env var.
 
 
 ## Art
@@ -236,12 +236,12 @@ A passing mock run looks like this (the commit sha and test file count change):
 SUMMARY
 STATUS    STAGE           DETAIL
 ------    -----           ------
-PASS      fresh clone     3cb61e66e557
+PASS      fresh clone     c6567f6d7c3e
 PASS      workflows       no workflow files; CI disabled
 PASS      symlinks        tracked symlinks resolve
 PASS      secret files    no tracked env or key files
 PASS      npm install     npm ci
-34 file(s)
+PASS      tests           35 file(s)
 SKIP      secret scan     gitleaks not installed (warn)
 SKIP      deploy nft      npm run deploy:nft exists; live testnet not requested
 PASS      mint            npm run mint (mock)
