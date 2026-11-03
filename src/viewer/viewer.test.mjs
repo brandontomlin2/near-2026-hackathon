@@ -78,6 +78,15 @@ test("markup in agent fields passed to the renderer is escaped", async () => {
   assert.ok(!html.includes(evil));
 });
 
+test("an agent without a string name is refused, so the page never shows \"undefined\"", async () => {
+  const result = await runSwarm({ rounds: 1 });
+  for (const name of [undefined, null, 7, ""]) {
+    const agents = AGENTS.map((a, i) => (i === 0 ? { ...a, name } : a));
+    assert.throws(() => renderViewer(result, agents), /name/, `name ${JSON.stringify(name)}`);
+  }
+  assert.doesNotMatch(renderViewer(result), /undefined/);
+});
+
 test("unicode and very long text are rendered whole", async () => {
   const result = await runSwarm({ rounds: 1 });
   const long = "z".repeat(100_000);
