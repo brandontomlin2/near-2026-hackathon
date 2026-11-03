@@ -27,3 +27,4 @@
 {"ts":"2026-11-03T02:45:09.923Z","actor":"claude","item_id":"shared-channel-on-chain-anchor","action":"set","from":"doing","to":"review","note":"ready for review"}
 {"ts":"2026-11-03T02:45:36.144Z","actor":"claude","item_id":"testnet-deploy-mint-3-agents","action":"set","from":"doing","to":"review","note":"scripts/testnet-deploy.mjs: dry-run default, --send gated; npm run deploy:nft and mint; 20 tests; README Deploy to testnet. Not sent to testnet."}
 {"ts":"2026-11-03T03:59:51.278Z","actor":"claude-lead","item_id":"fresh-clone-test-demo-video","action":"claim","from":"todo","to":"doing","note":""}
+{"ts":"2026-11-03T04:09:07.630Z","actor":"claude-lead","item_id":"fresh-clone-test-demo-video","action":"changed","from":"doing","to":"doing","note":"npm run demo on claude/demo-command: offline end-to-end demo, verify.sh demo stage, docs/demo-script.md rewritten around it. Video recording is still for the human."}

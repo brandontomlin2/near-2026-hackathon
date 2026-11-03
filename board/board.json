@@ -35,8 +35,8 @@
       "testnet-deploy-mint-3-agents",
       "viewer"
     ],
-    "notes": "",
-    "updated_at": "2026-11-03T03:59:51.278Z",
+    "notes": "npm run demo on claude/demo-command: offline end-to-end demo, verify.sh demo stage, docs/demo-script.md rewritten around it. Video recording is still for the human.",
+    "updated_at": "2026-11-03T04:09:07.630Z",
     "updated_by": "claude-lead"
   },
   {
