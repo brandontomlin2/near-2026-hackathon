@@ -201,7 +201,7 @@ ${manifest.agents.map((a) => agentCard(a, moods)).join("\n")}
 </div>
 
 <h2>Memory</h2>
-<p class="mut">Each agent's sheets in order, oldest first. In this demo the sheet writer is a deterministic stand-in for the model (<code>src/demo/sheet-responder.mjs</code>): it counts exchanges, reads warm or tense words for allies and grudges, and quotes the agent's latest line. With <code>MOCK_INFERENCE=0</code> the summarizer sends the same prompt to NEAR AI Cloud instead.</p>
+<p class="mut">Each agent's sheets in order, oldest first. In this demo the sheet writer is a deterministic stand-in for the model (<code>src/memory/sheet-responder.mjs</code>): it counts exchanges, reads warm or tense words for allies and grudges, and quotes the agent's latest line. With <code>MOCK_INFERENCE=0</code> the summarizer sends the same prompt to NEAR AI Cloud instead.</p>
 ${manifest.agents.map(memorySection).join("\n")}
 
 ${memeSection}${transferSection(manifest)}

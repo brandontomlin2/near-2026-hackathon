@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { sheetResponder, VIBES } from "./sheet-responder.mjs";
-import { buildSummaryMessages, MAX_SHEET_WORDS } from "../memory/summarizer.mjs";
+import { buildSummaryMessages, MAX_SHEET_WORDS } from "./summarizer.mjs";
 
 const ev = (kind, from, text, round = 1) => ({ round, kind, from, text });
 const request = (name, previous, events) => ({ messages: buildSummaryMessages({ name, previous, events }) });

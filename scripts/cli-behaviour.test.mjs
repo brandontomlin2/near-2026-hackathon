@@ -232,7 +232,7 @@ test("swarm: stdout shape for one round, hash agrees with events.json, stderr em
   assert.equal(out[h - 1], "", "blank line before the hash");
   const hash = /^final round hash: ([0-9a-f]{64})$/.exec(out[h])?.[1];
   assert.ok(hash);
-  assert.equal(out[h + 1], "verify: ok (1 rounds)");
+  assert.equal(out[h + 1], "verify: ok (1 round)");
   const sheets = out.slice(h + 2, -1);
   assert.equal(sheets.length, 4);
   for (const l of sheets) assert.match(l, /^sheet \S+ round 1 [0-9a-f]{64} \(\+\d+ -\d+\) -> anchor_sheet dry-run \(not sent\)$/);
