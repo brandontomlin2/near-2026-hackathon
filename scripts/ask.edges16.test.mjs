@@ -18,7 +18,7 @@ const SCRIPT = fileURLToPath(new URL("./ask.mjs", import.meta.url));
 const DEMO = fileURLToPath(new URL("./demo.mjs", import.meta.url));
 const SCRUB = ["NEAR_AI_API_KEY", "NEAR_AI_MODEL", "NEAR_AI_BASE_URL", "NEAR_NETWORK", "NEAR_ACCOUNT_ID", "NEAR_CONTRACT_ACCOUNT_ID", "EVIDENCE_NETWORK", "EVIDENCE_OUT", "SWARM_ROUNDS", "SUMMARY_EVERY_N_ROUNDS"];
 const MODE_LINE = "mode: mock model: mock-persona\n";
-const FAKE_KEY = "sk-edges16-SECRET-KEY-do-not-print";
+const FAKE_KEY = "test-fake-key-edges16-SECRET-KEY-do-not-print";
 
 const dirs = [];
 const scratch = (prefix = "ask-e16-") => {

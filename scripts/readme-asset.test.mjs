@@ -10,6 +10,8 @@ import { generateAssets, parseArgs, writeAssets, ASSET_DIR, DEFAULT_OUT_DIR, SHA
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SCRIPT = fileURLToPath(new URL("./readme-asset.mjs", import.meta.url));
+// A source archive (git archive, zip) has no .git; git-state checks cannot run there.
+const NO_GIT = fs.existsSync(path.join(ROOT, ".git")) ? false : "needs a git work tree (no .git here: source archive); run from a git clone";
 const assets = generateAssets(); // one demo run shared by the tests below
 
 test("committed README assets match what the demo generates (refresh: npm run readme-asset -- --update-docs)", async () => {
@@ -30,16 +32,16 @@ test("README embeds the committed image and quotes the committed sheet", () => {
 test("parseArgs: default is the gitignored out/readme-asset; --update-docs is the tracked docs/img", () => {
   assert.equal(parseArgs([]).dir, DEFAULT_OUT_DIR);
   assert.ok(path.relative(ROOT, DEFAULT_OUT_DIR).startsWith("out" + path.sep), DEFAULT_OUT_DIR);
-  assert.equal(execFileSync("git", ["ls-files", "--", DEFAULT_OUT_DIR], { cwd: ROOT, encoding: "utf8" }).trim(), "", "default output dir must hold no tracked files");
+  if (!NO_GIT) assert.equal(execFileSync("git", ["ls-files", "--", DEFAULT_OUT_DIR], { cwd: ROOT, encoding: "utf8" }).trim(), "", "default output dir must hold no tracked files");
   assert.equal(parseArgs(["--update-docs"]).dir, ASSET_DIR);
-  assert.match(execFileSync("git", ["ls-files", "--", ASSET_DIR], { cwd: ROOT, encoding: "utf8" }), /chaotic-share\.svg/);
+  if (!NO_GIT) assert.match(execFileSync("git", ["ls-files", "--", ASSET_DIR], { cwd: ROOT, encoding: "utf8" }), /chaotic-share\.svg/);
   assert.equal(parseArgs(["--out", "assets/x"]).dir, path.resolve("assets/x"));
   assert.throws(() => parseArgs(["--bogus"]), /unknown argument --bogus/);
   assert.throws(() => parseArgs(["--out"]), /--out needs a directory/);
   assert.throws(() => parseArgs(["--out", "x", "--update-docs"]), /not both/);
 });
 
-test("default run writes under out/ and leaves git-tracked files unchanged", async (t) => {
+test("default run writes under out/ and leaves git-tracked files unchanged", { skip: NO_GIT }, async (t) => {
   const snap = () => execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: ROOT, encoding: "utf8" });
   const before = snap();
   const tracked = Object.fromEntries([SHARE_NAME, SHEET_NAME].map((n) => [n, fs.readFileSync(path.join(ASSET_DIR, n), "utf8")]));
