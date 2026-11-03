@@ -133,6 +133,21 @@ test("rejects bad input", async () => {
   await assert.rejects(main({ EVIDENCE_NETWORK: "mainnet" }, { cwd: dir }), /must be mock or testnet/);
 });
 
+test("evidence covers every sheet, each with its own anchor dry-run", async () => {
+  const ev = await mockEvidence();
+  const { swarm, tokens } = ev.memory_loop;
+  assert.ok(swarm.every >= 1);
+  for (const t of tokens) {
+    assert.ok(t.sheets.length >= 1);
+    assert.equal(t.sheets.at(-1).sheet_hash, t.sheet.sheet_hash);
+    for (const s of t.sheets) {
+      assert.equal(s.anchor.args.sheet_hash, s.sheet_hash);
+      assert.equal(s.anchor.status, "dry-run");
+      assert.equal(s.anchor.linked_round_hash, swarm.round_hashes[s.round - 1]);
+    }
+  }
+});
+
 test("one sheet hash: sheet record, anchor_sheet dry-run args and evidence.json agree", async () => {
   const swarm = await runSwarm({ rounds: 5, seed: 1 });
   const loop = await runMemoryLoop({ swarm, client: createMockClient() });

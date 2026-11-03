@@ -49,7 +49,15 @@ function assertInertPage(html, baseline, label) {
   const tags = tagsOf(html).join("\n");
   assert.doesNotMatch(tags, /\son[a-z]+\s*=/i, `${label}: event handler`);
   assert.doesNotMatch(tags, /javascript:|data:text\/html|vbscript:/i, `${label}: script URL`);
-  assert.doesNotMatch(tags, /\b(?:src|srcset|action|formaction|poster|xlink:href)\s*=/i, `${label}: fetching attribute`);
+  assert.doesNotMatch(tags, /\b(?:srcset|action|formaction|poster|xlink:href)\s*=/i, `${label}: fetching attribute`);
+  // src is allowed only on <img>, and only as a relative path to a file the demo wrote.
+  for (const t of tagsOf(html)) {
+    for (const m of t.matchAll(/\ssrc\s*=\s*"([^"]*)"/gi)) {
+      assert.match(t, /^<img\b/i, `${label}: src on a non-img tag`);
+      assert.match(m[1], /^[A-Za-z0-9_./-]+$/, `${label}: img src ${m[1]}`);
+    }
+    assert.doesNotMatch(t, /\ssrc\s*=\s*[^"\s]/i, `${label}: unquoted src`);
+  }
   assert.doesNotMatch(html.match(/<style\b[^>]*>[\s\S]*?<\/style>/i)[0], /url\(|@import|https?:/i, `${label}: css fetch`);
   assert.equal((html.match(/<style\b/gi) ?? []).length, 1, `${label}: one style block`);
   // http(s) only as the SVG namespace identifier or the explorer host text.
@@ -92,15 +100,39 @@ for (const [i, payload] of PAYLOADS.entries()) {
       const transcript = await readFile(join(dir, "transcript.txt"), "utf8");
       assert.ok(transcript.includes(payload.slice(0, 100)), "transcript keeps raw text");
 
-      // Written SVGs: only our renderer's markup.
+      // Written SVGs: only our renderer's markup. Art and faces carry no text at all;
+      // share cards carry the (hostile) post text, so they may add <text>/<tspan> and
+      // nested <svg>, and nothing else beyond the tags and attributes the art uses.
       const svgFiles = run.files.filter((f) => f.endsWith(".svg"));
-      assert.equal(svgFiles.length, AGENTS.length * 2);
-      for (const f of svgFiles) {
+      const shareFiles = svgFiles.filter((f) => f.startsWith("share/"));
+      const artFiles = svgFiles.filter((f) => !f.startsWith("share/"));
+      assert.equal(shareFiles.length, run.manifest.shares.length);
+      // per agent: signature, mint and one face per mood; plus one share card per manifest share.
+      assert.equal(svgFiles.length, AGENTS.length * (2 + run.manifest.moods.length) + run.manifest.shares.length);
+      const artTags = new Set();
+      const artAttrs = new Set();
+      for (const f of artFiles) {
         const svg = await readFile(join(dir, f), "utf8");
         assert.doesNotMatch(svg, /<script|<foreignObject|<text|<style|<image|<use|<a[\s>]|<!\[CDATA\[|\]\]>|<!--/i, f);
         assert.doesNotMatch(svg, /<[^>]*\s(?:on[a-z]+|href|xlink:href)\s*=/i, f);
         assert.doesNotMatch(svg.replace(/xmlns="http:\/\/www\.w3\.org\/2000\/svg"/, ""), /https?:|javascript:|url\(\s*['"]?[^#\s'")]/i, f);
         assert.ok(!svg.includes("evil.example") && !svg.includes("alert"), f);
+        for (const n of tagNames(svg)) artTags.add(n);
+        for (const n of attrNames(svg)) artAttrs.add(n);
+      }
+      for (const f of shareFiles) {
+        const svg = await readFile(join(dir, f), "utf8");
+        assert.doesNotMatch(svg, /<script|<foreignObject|<style|<image|<use|<a[\s>]|<!\[CDATA\[|\]\]>|<!--|<iframe|<meta|<base/i, f);
+        // Quoted attribute values (aria-label carries escaped model text) are inert; check names only.
+        const shell = svg.replace(/="[^"]*"/g, '=""');
+        assert.doesNotMatch(shell, /<[^>]*\s(?:on[a-z]+|href|xlink:href|src)\s*=/i, f);
+        // Escaped text nodes may show "https:" or "javascript:" as visible words; tags never may.
+        assert.doesNotMatch(tagsOf(shell).join("\n").replace(/xmlns=""/g, ""), /https?:|javascript:|url\(/i, f);
+        assert.doesNotMatch(svg, BIDI_OR_CONTROL, `${f}: bidi/control char`);
+        const extraTags = [...tagNames(shell)].filter((n) => !artTags.has(n) && n !== "text" && n !== "tspan" && n !== "rect");
+        assert.deepEqual(extraTags, [], `${f}: injected tag names`);
+        const extraAttrs = [...attrNames(shell)].filter((n) => !artAttrs.has(n) && !["x", "y", "font-family", "font-size", "font-weight", "fill", "rx", "width", "height", "viewbox", "role", "aria-label", "data-mood", "stroke", "stroke-width", "text-anchor"].includes(n));
+        assert.deepEqual(extraAttrs, [], `${f}: injected attributes`);
       }
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -141,7 +173,7 @@ test("hostile agent ids cannot reach file paths or hrefs", async () => {
   try {
     const run = await runDemo({ outDir: dir, rounds: 3, every: 3, ...hostileClients("x") });
     for (const f of run.files) assert.match(f, /^[A-Za-z0-9_./-]+$/);
-    assert.deepEqual((await readdir(dir)).sort(), ["anchors.json", "art", "demo.json", "events.json", "index.html", "memory", "transcript.txt"]);
+    assert.deepEqual((await readdir(dir)).sort(), ["anchors.json", "art", "demo.json", "events.json", "index.html", "memory", "share", "transcript.txt"]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
