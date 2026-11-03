@@ -228,6 +228,19 @@ test("PRODUCT.md: every `npm run X` is a package.json script and every repo path
   }
 });
 
+test("PRODUCT.md: track claims match docs/tracks.md and it does not imply real NEAR AI calls", async () => {
+  const product = await readFile(join(root, "PRODUCT.md"), "utf8");
+  const tracks = await readFile(join(root, "docs/tracks.md"), "utf8");
+  for (const t of ["nfts", "swarms", "agents"]) {
+    assert.ok(tracks.includes(`## ${t}`) && product.includes(`\`${t}\``), t);
+  }
+  assert.match(tracks, /^## privacy \(not claimed\)/m);
+  assert.match(product, /`privacy`: not claimed/);
+  assert.match(product, /no real NEAR AI call has been made/);
+  assert.match(product, /`docs\/tracks\.md`/);
+  assert.doesNotMatch(product, /Planned, no such npm script|renderer is not on `main`|live run is scheduled/);
+});
+
 test("audit row 13 opens with the current lock design and keeps the removed block-height expiry as history", async () => {
   const audit = await readFile(join(root, "docs/audit/personality-nft.md"), "utf8");
   const row = audit.split("\n").find((l) => l.startsWith("| 13 |"));

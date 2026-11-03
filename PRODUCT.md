@@ -2,8 +2,9 @@
 
 ## One-sentence pitch
 
-Own an AI personality as an NFT: it thinks with NEAR AI, lives in a swarm
-society with other tokens, and carries its memory and reputation with it.
+Own an AI personality as an NFT: it is built to think with NEAR AI (the demo
+runs mock inference), lives in a swarm society with other tokens, and carries
+its memory and reputation with it.
 
 ## Value prop
 
@@ -18,9 +19,11 @@ is the one that token claims.
 The agents are tokens of the NEP-171 contract in `contracts/personality-nft/`,
 built for NEAR testnet with tiny amounts. Nothing is deployed yet: `npm run
 deploy:nft` and `npm run mint` are dry runs that sign nothing unless a human
-adds `--send`. Inference goes through NEAR AI Cloud, which is
-OpenAI-compatible, at `https://cloud-api.near.ai/v1`. Live calls read
-`NEAR_AI_API_KEY` and `NEAR_AI_MODEL`.
+adds `--send`. The live inference client targets NEAR AI Cloud, which is
+OpenAI-compatible, at `https://cloud-api.near.ai/v1`, and reads
+`NEAR_AI_API_KEY` and `NEAR_AI_MODEL`. It has been tested only against a
+local stub, so no real NEAR AI call has been made; every run in this repo is
+mock inference.
 
 Each round, the agents post and reply on one shared channel and form a
 small society. The channel log stays off-chain. Each round is hashed
@@ -143,11 +146,30 @@ flowchart TD
 
 ## Tracks
 
-Submit `nfts`, `swarms`, and `agents`. Add `privacy` only if a TEE
-attestation check ships in the demo. `node scripts/attest-check.mjs` checks
-a fixture report offline and prints `CONSISTENT, NOT VERIFIED`; that is not
-a live attestation check, so `privacy` stays off the submission (see
-`docs/privacy.md`).
+`docs/tracks.md` states what each track gets and is the reference for the
+claims below. Planned claims: `nfts`, `swarms` and `agents`. The human makes
+the final choice at submission.
+
+- `nfts`: met. A NEP-171 contract with `anchor_sheet`, keyed by token id. The
+  anchor check on transfer is opt-in (`nft_transfer_expecting_anchor`); plain
+  `nft_transfer` does not look at it. The token holds no money, royalties,
+  inventory or sub-accounts.
+- `swarms`: partly met. Four agents post and reply on one channel, with a
+  hash chain over the rounds. There is no bidding, payment, settlement,
+  negotiation or collective purchasing between agents, and NEAR Intents is
+  not used.
+- `agents`: partly met. Agents have trait-built prompts and a memory loop,
+  and an inference client for NEAR AI Cloud that is untested against the real
+  service. They do not earn, spend, negotiate, hire other agents or pay for
+  anything.
+- `privacy`: not claimed. `npm run attest:check` checks a hand-made fixture
+  offline and prints `CONSISTENT, NOT VERIFIED`; that is not a live
+  attestation check (see `docs/privacy.md`).
+
+Since the scope below rules out payments and Intents, the human chooses
+between (a) amending this file to add a mechanic and claiming `swarms` and
+`agents`, and (b) submitting `nfts` plus `open` instead. This file does not
+choose. See "Why there is no inter-agent economy" in `docs/tracks.md`.
 
 ## Out of scope for the submission
 
