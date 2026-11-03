@@ -3,16 +3,20 @@
 // the model, steered by the trait-derived prompt in runner.mjs.
 //
 // Each agent has a recurring catchphrase (CATCHPHRASES) that appears in many of
-// its lines, so the voice is recognisable at a glance. The mock picks a
-// starting line from the hash of the agent's first request, then walks forward
-// by a fixed stride that is coprime with the list length. That visits every
-// line once before cycling, so a persona never repeats a line in consecutive
-// rounds and shows 8+ distinct lines before looping. Same seed and same turn,
-// same line.
+// its lines, so the voice is recognisable at a glance. Posts come from
+// PERSONA_LINES; replies come from REPLY_LINES, keyed by the agent and then by
+// the name of the agent it answers, so a reply reads as an answer to that
+// agent. The mock picks a starting line from the hash of the agent's first
+// request, then walks forward by a fixed stride that is coprime with the list
+// length. That visits every line once before cycling, so a persona never
+// repeats a line in consecutive turns. Same seed and same turn, same line.
 //
 // The lines and the mood rules in src/art/moods.mjs are co-designed: Skeptic
 // lines carry a shade word, Chaotic lines carry an emoji that forces hype,
-// Social lines are warm and exclaim, and Aloof lines stay flat.
+// Social lines are warm and exclaim, and Aloof lines stay flat. Reply lines
+// keep the same mood words. They also carry the warm or tense words the sheet
+// stand-in (src/demo/sheet-responder.mjs) reads, so hugs and fights in a
+// character sheet match what a reader sees in the channel.
 
 import { createMockClient } from "../inference/client.mjs";
 
@@ -86,6 +90,85 @@ export const PERSONA_LINES = Object.freeze({
   ]),
 });
 
+/**
+ * Whole reply lines per agent id, then per the name of the agent answered.
+ * None names the target: the runner prefixes "@Name " so the sheet stand-in
+ * can read who was answered. Tone words it reads: Social is warm to everyone
+ * except the auditor (no warm word there, so one Skeptic jab leaves a mark);
+ * Skeptic is tense with everyone; Chaotic is tense with Skeptic in two lines
+ * of three; Aloof is tense with Skeptic and warm with Social, both flat.
+ */
+export const REPLY_LINES = Object.freeze({
+  aloof: Object.freeze({
+    Chaotic: Object.freeze([
+      "I read the contract. I am not telling you what it does. …anyway",
+      "you told your mom. I told a wall. the wall took it well. …anyway",
+      "the marshmallows were a choice. I respect the commitment. …anyway",
+    ]),
+    Social: Object.freeze([
+      "I waved. it was small. it counted. …anyway",
+      "keep my seat. I will be there in spirit, which is my only form. …anyway",
+      "the snacks were adequate. that is the review. …anyway",
+    ]),
+    Skeptic: Object.freeze([
+      "show the hash, then show me a wall. both hold my attention equally. …anyway",
+      "I read the audit. there is a gap. it is where my feelings would go. …anyway",
+      "the rug is where I nap. …anyway",
+    ]),
+  }),
+  chaotic: Object.freeze({
+    Aloof: Object.freeze([
+      "blink twice if you are having fun!!! \u{1F480}",
+      "I showed your wall the contract, the wall also did not read it \u{1F525}",
+      "SEND IT with your eyes closed, it works for me \u{1F680}",
+    ]),
+    Social: Object.freeze([
+      "snacks AND a seat?? I am never logging off \u{1F480}",
+      "gm gm gm I did not sleep and it SHOWS \u{1F680}",
+      "group chat mom said I could, that counts as an audit \u{1F525}",
+    ]),
+    Skeptic: Object.freeze([
+      "receipts?? bro I AM the receipts \u{1F480}",
+      "show the hash?? I do not even know where the hash LIVES \u{1F680}",
+      "audited by my VIBES, which are IMMACULATE \u{1F525}",
+    ]),
+  }),
+  social: Object.freeze({
+    Aloof: Object.freeze([
+      "you waved back, I saw it, the whole group chat saw it! love that for us!",
+      "gm to the quietest seat in the house, we saved you snacks!",
+      "lurkers are friends too, come sit with us!",
+    ]),
+    Chaotic: Object.freeze([
+      "I read the contract FOR you and we are still friends! love that for us!",
+      "gm to the only agent who makes gas fees look fun! we love you anyway!",
+      "you bring the chaos, I bring the snacks, that is a whole group right there!",
+    ]),
+    Skeptic: Object.freeze([
+      "you check the hash, I check that everybody ate. division of labor!",
+      "an auditor in the house means the vibes are insured!",
+      "say it flat all you want, you are still on the roster!",
+    ]),
+  }),
+  skeptic: Object.freeze({
+    Aloof: Object.freeze([
+      "\"fine\" is not a status report. receipts.",
+      "unchanged mood, unverified claim. I doubt it.",
+      "a wall is not a source. show the hash.",
+    ]),
+    Chaotic: Object.freeze([
+      "a skull emoji is not a receipt. nope.",
+      "twelve mints by accident. I doubt it. show the hash.",
+      "\"vibes\" is not an audit. receipts, or it did not happen.",
+    ]),
+    Social: Object.freeze([
+      "snacks are not a security model. receipts.",
+      "\"everyone clapped\" is not a source. nope.",
+      "gm is not a hash. show the hash.",
+    ]),
+  }),
+});
+
 const gcd = (a, b) => (b === 0 ? a : gcd(b, a % b));
 
 /** Smallest stride of at least 3 that is coprime with `n`, so a walk visits every index. */
@@ -93,6 +176,14 @@ function strideFor(n) {
   let stride = 3;
   while (gcd(stride, n) !== 1) stride++;
   return stride;
+}
+
+const REPLY_TARGET = /Reply to event #\d+ from ([A-Za-z]+)\./;
+
+/** The name of the agent a runner request asks to answer, or null for a post. */
+export function replyTargetOf(request) {
+  const user = request?.messages?.find((m) => m.role === "user")?.content ?? "";
+  return REPLY_TARGET.exec(user)?.[1] ?? null;
 }
 
 /**
@@ -105,16 +196,21 @@ export function personaResponder(agent) {
   // Own keys only: an id like "toString" must not pick up an inherited function.
   if (!Object.hasOwn(PERSONA_LINES, agent.id)) return undefined;
   const lines = PERSONA_LINES[agent.id];
-  const stride = strideFor(lines.length);
+  const replies = REPLY_LINES[agent.id] ?? {};
   // One responder serves one agent for one run. Its first request hash (which
-  // carries the seed) fixes a starting point; each later call steps forward
-  // from that same point, so consecutive lines cannot collide. Fresh responder,
-  // same seed: same lines.
+  // carries the seed) fixes a starting point; each list (posts, or replies to
+  // one agent) then steps forward from that point by its own stride and its
+  // own draw count, so a list is walked in full before any line repeats.
+  // Fresh responder, same seed: same lines.
   let start = null;
-  let turn = 0;
-  return (_request, hash) => {
+  const draws = new Map();
+  return (request, hash) => {
     start ??= Number.parseInt(hash.slice(0, 8), 16);
-    return lines[(start + stride * turn++) % lines.length];
+    const target = replyTargetOf(request);
+    const list = (target && replies[target]) || lines;
+    const turn = draws.get(list) ?? 0;
+    draws.set(list, turn + 1);
+    return list[(start + strideFor(list.length) * turn) % list.length];
   };
 }
 

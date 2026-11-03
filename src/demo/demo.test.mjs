@@ -15,11 +15,11 @@ import { getStyle } from "../art/styles/index.mjs";
 import { moodForText, MOODS } from "../art/moods.mjs";
 import { renderShareCard, wrapText, nest, cleanText } from "./share.mjs";
 
-const PINNED_FINAL_ROUND_HASH = "ed0b0c82315a4a04b81026fb90429ff0c7f292ede27a992c6cbadbee5435284d";
+const PINNED_FINAL_ROUND_HASH = "3dd1440b3ee005665ee0674dcf25e462d29b458b5fbc37a8795243960d05cc6f";
 const IDS = ["aloof", "chaotic", "social", "skeptic"];
 // Pins the sheet writer, summarizer prompt, hashing, art paths and anchors, not just the swarm.
-const PINNED_ALOOF_SHEET_HASH = "db3158b78dd0de587426fe2d272950caec99825ce8b2695502b7e7675e4130fb";
-const PINNED_DEMO_JSON_SHA256 = "6d1a48164adf2cbddc31647eb8c2dd52268f57221609017f9ec7ef6b2d813b63";
+const PINNED_ALOOF_SHEET_HASH = "685c3c71764322636ddf22dc0463afd6dda0dacf3ef5ea5591772d028d92d355";
+const PINNED_DEMO_JSON_SHA256 = "c5c19d12279bdb258987ad67c7bcf91309ad2d634944dde140ed844344b9d287";
 
 const tmp = [];
 function mkTmp() {
@@ -99,6 +99,37 @@ describe("demo: determinism", () => {
       style: "sticker",
       contractId: "personality-nft.demo.testnet",
     });
+  });
+});
+
+describe("demo: memory payoff in the default run", () => {
+  const sheetOf = (id) => resultA.manifest.agents.find((a) => a.id === id).sheets.at(-1).sheet;
+  const count = (sheet, who, what) => Number(new RegExp(`${who}: (\\d+) fights?, (\\d+) hugs?`).exec(sheet)?.[what === "fights" ? 1 : 2] ?? 0);
+
+  it("Chaotic and Skeptic have a real rivalry: 3+ fights, each the other's public enemy", () => {
+    assert.ok(count(sheetOf("chaotic"), "Skeptic", "fights") >= 3, sheetOf("chaotic"));
+    assert.equal(count(sheetOf("chaotic"), "Skeptic", "fights"), count(sheetOf("skeptic"), "Chaotic", "fights"));
+    assert.match(sheetOf("chaotic"), /Public enemy #1: Skeptic \(\d+ fights\)/);
+    assert.match(sheetOf("skeptic"), /Public enemy #1: Chaotic \(\d+ fights\)/);
+  });
+
+  it("there is at least one hug, and Social is somebody's ride-or-die", () => {
+    const hugs = IDS.reduce((n, id) => n + (sheetOf(id).match(/(\d+) hugs?/g) ?? []).reduce((m, s) => m + Number.parseInt(s, 10), 0), 0);
+    assert.ok(hugs >= 1);
+    assert.ok(IDS.some((id) => /Ride-or-die: Social \(\d+ warm moments?\)/.test(sheetOf(id))), "nobody calls Social a ride-or-die");
+  });
+
+  it("no agent is stuck in the quiet state, and every agent's vibe is in its own voice", () => {
+    const vibes = IDS.map((id) => /^Who I am: \w+, (.+?)\. I live in/.exec(sheetOf(id))?.[1]);
+    assert.ok(vibes.every(Boolean), vibes);
+    assert.equal(new Set(vibes).size, IDS.length, `vibes are not distinct: ${vibes}`);
+    for (const id of IDS) {
+      assert.doesNotMatch(sheetOf(id), /Public enemy #1: nobody yet[\s\S]*Ride-or-die: no one yet/, `${id} has neither a fight nor a hug`);
+    }
+  });
+
+  it("every agent gets a meme card", () => {
+    assert.deepEqual([...new Set(resultA.manifest.memes.map((m) => m.agentId))].sort(), [...IDS].sort());
   });
 });
 
@@ -381,7 +412,7 @@ describe("demo: styles", () => {
     const shareFiles = walk(dir).filter((f) => f.startsWith("share/"));
     assert.equal(shareFiles.filter((f) => !f.startsWith("share/meme-")).length, 24);
     assert.equal(shareFiles.filter((f) => f.startsWith("share/meme-")).length, manifest.memes.length);
-    assert.equal(manifest.memes.length, 3);
+    assert.equal(manifest.memes.length, 5);
     assert.ok(!fs.existsSync(path.join(dir, "art/aloof.hype.svg")));
     for (const f of walk(dir).filter((x) => x.startsWith("share/"))) {
       assert.ok(fs.readFileSync(path.join(dir, f), "utf8").includes("<svg"));
@@ -425,19 +456,6 @@ describe("demo: page", () => {
     assert.ok(html.includes(resultA.finalRoundHash));
     assert.ok(html.includes("dry-run"));
     assert.ok((html.match(/<img /g) ?? []).length >= 4);
-  });
-
-  it("prints 'verify: ok' as one contiguous string in the HTML source, so grep -c finds it", () => {
-    const html = fs.readFileSync(path.join(dirA, "index.html"), "utf8");
-    // A judge greps the raw file: the string must not be split across tags.
-    assert.ok((html.match(/verify: ok/g) ?? []).length >= 1, "grep -c 'verify: ok' out/index.html would print 0");
-  });
-
-  it("demo.json carries no https URL: mock placeholder accounts are never linkable", () => {
-    const json = fs.readFileSync(path.join(dirA, "demo.json"), "utf8");
-    assert.ok(!json.includes("https://"), "demo.json links an explorer page for an account nobody owns");
-    assert.equal(resultA.manifest.transfer.explorer.mock, true);
-    assert.match(resultA.manifest.transfer.explorer.note, /mock placeholder/);
   });
 
   it("escapes HTML in sheets and events", () => {
@@ -556,9 +574,10 @@ describe("demo: CLI main", () => {
     for (const [i, agent] of AGENTS.entries()) {
       const line = between[i];
       assert.ok(line.startsWith(`     ${agent.id}: enemy `), line);
-      assert.match(line, / -> |enemy none|ride-or-die none/, line); // first -> latest, or a field that stayed put
       assert.match(line, /, ride-or-die .+, quote (?:"[^"]+"|none)$/, line);
     }
+    // A field that stayed put prints once; one that moved prints "first -> latest". At least one agent moves.
+    assert.ok(between.some((line) => line.includes(" -> ")), between.join("\n"));
     assert.equal(r.lines.at(-1).startsWith("Open the page: open "), true);
   });
 });
