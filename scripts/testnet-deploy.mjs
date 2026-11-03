@@ -14,9 +14,11 @@
 // Never targets mainnet.
 
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { renderSvg } from "../src/art/render.mjs";
 
 export const NETWORK = "testnet";
 export const INIT_METHOD = "new_default_meta";
@@ -31,10 +33,10 @@ export const DEFAULT_WASM = fileURLToPath(
 
 // The four agents from PRODUCT.md. Trait keys match the contract's `extra` example.
 export const AGENTS = [
-  { token_id: "aloof", title: "Aloof", traits: { temperament: "cool", role: "observer", risk: "low", voice: "dry" } },
-  { token_id: "chaotic", title: "Chaotic", traits: { temperament: "neon", role: "trickster", risk: "high", voice: "loud" } },
-  { token_id: "social", title: "Social", traits: { temperament: "warm", role: "connector", risk: "mid", voice: "open" } },
-  { token_id: "skeptic", title: "Skeptic", traits: { temperament: "muted", role: "auditor", risk: "wary", voice: "flat" } },
+  { token_id: "aloof", description: "I watch. I rarely speak. When I do, it is because the room already got it wrong.", title: "Aloof", traits: { temperament: "cool", role: "observer", risk: "low", voice: "dry" } },
+  { token_id: "chaotic", description: "LOUD IDEAS, NO BRAKES. I poke the swarm until something interesting breaks!", title: "Chaotic", traits: { temperament: "neon", role: "trickster", risk: "high", voice: "loud" } },
+  { token_id: "social", description: "Hey, come in! I will introduce you to everyone and keep the whole swarm talking.", title: "Social", traits: { temperament: "warm", role: "connector", risk: "mid", voice: "open" } },
+  { token_id: "skeptic", description: "Show me the receipt. Until then I will assume nothing, and I will check twice.", title: "Skeptic", traits: { temperament: "muted", role: "auditor", risk: "wary", voice: "flat" } },
 ];
 
 const ACCOUNT_RE = /^(?=.{2,64}$)(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
@@ -61,10 +63,23 @@ export function shellQuote(arg) {
   return /^[A-Za-z0-9_@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, "'\\''")}'`;
 }
 
-export function tokenMetadata(agent) {
+// The contract caps `media` at 512 bytes and the rendered SVGs are 1.6-3.2 KB, so
+// a data: URI cannot fit. `media` is therefore a URL under --media-base (the human
+// hosts the art), or a clearly labelled placeholder in a dry run. `media_hash` is
+// the base64 sha256 of the exact SVG bytes, so it is verifiable wherever it is hosted.
+export const MEDIA_PLACEHOLDER_BASE = "https://media-host-not-set.invalid/PLACEHOLDER-pass---media-base";
+
+// The art the contract renders for a fresh token (memory depth starts at 1).
+export function agentSvg(agent) {
+  return renderSvg({ ...agent.traits, memory_depth: 1 });
+}
+
+export function tokenMetadata(agent, { mediaBase = MEDIA_PLACEHOLDER_BASE } = {}) {
   return {
     title: agent.title,
-    description: `${agent.title} agent. Role: ${agent.traits.role}.`,
+    description: agent.description,
+    media: `${mediaBase.replace(/\/+$/, "")}/${agent.token_id}.svg`,
+    media_hash: createHash("sha256").update(agentSvg(agent)).digest("base64"),
     extra: JSON.stringify(agent.traits),
   };
 }
@@ -93,11 +108,11 @@ export function buildDeployStep({ contract, owner, wasm }) {
   };
 }
 
-export function buildMintStep({ contract, owner, receiver, agent }) {
+export function buildMintStep({ contract, owner, receiver, agent, mediaBase }) {
   const args = {
     token_id: agent.token_id,
     receiver_id: receiver,
-    token_metadata: tokenMetadata(agent),
+    token_metadata: tokenMetadata(agent, { mediaBase }),
   };
   const argv = [
     "--quiet", "contract", "call-function", "as-transaction", contract, MINT_METHOD,
@@ -121,13 +136,13 @@ export function buildMintStep({ contract, owner, receiver, agent }) {
 }
 
 // Pure: same inputs, same steps.
-export function buildPlan({ command, contract, owner, receiver, count = AGENTS.length, wasm = DEFAULT_WASM }) {
+export function buildPlan({ command, contract, owner, receiver, count = AGENTS.length, wasm = DEFAULT_WASM, mediaBase }) {
   if (command === "deploy") {
     return [buildDeployStep({ contract, owner, wasm })];
   }
   if (command === "mint") {
     return AGENTS.slice(0, count).map((agent) =>
-      buildMintStep({ contract, owner, receiver, agent }),
+      buildMintStep({ contract, owner, receiver, agent, mediaBase }),
     );
   }
   throw new UsageError(`unknown command: ${command}`);
@@ -147,6 +162,7 @@ Options:
   --json              print the plan as JSON (dry run)
   --count <1-${AGENTS.length}>     mint: how many agents, in the order ${AGENTS.map((a) => a.token_id).join(", ")}
   --receiver <acct>   mint: token receiver (default NEAR_ACCOUNT_ID)
+  --media-base <url>  mint: base URL where <token_id>.svg is hosted (required with --send)
   --wasm <path>       deploy: wasm to deploy (default ${path.relative(process.cwd(), DEFAULT_WASM) || DEFAULT_WASM})
   -h, --help          show this help
 
@@ -160,7 +176,7 @@ export function parseArgs(argv) {
   const opts = {
     command: null, send: false, dryRunFlag: false, json: false, help: false,
     count: AGENTS.length, receiver: null, wasm: DEFAULT_WASM,
-    countGiven: false, receiverGiven: false, wasmGiven: false,
+    countGiven: false, receiverGiven: false, wasmGiven: false, mediaBase: null,
   };
   const need = (i, flag) => {
     if (argv[i + 1] === undefined) throw new UsageError(`${flag} needs a value`);
@@ -181,6 +197,7 @@ export function parseArgs(argv) {
       case "--help": opts.help = true; break;
       case "--count": opts.count = parseCount(need(i, arg)); opts.countGiven = true; i += 1; break;
       case "--receiver": opts.receiver = need(i, arg); opts.receiverGiven = true; i += 1; break;
+      case "--media-base": opts.mediaBase = need(i, arg); i += 1; break;
       case "--wasm": opts.wasm = need(i, arg); opts.wasmGiven = true; i += 1; break;
       default: throw new UsageError(`unknown argument: ${arg}`);
     }
@@ -188,8 +205,8 @@ export function parseArgs(argv) {
   if (opts.help) return opts;
   if (!opts.command) throw new UsageError("missing command: deploy or mint");
   if (opts.send && opts.dryRunFlag) throw new UsageError("--send and --dry-run cannot be combined");
-  if (opts.command === "deploy" && (opts.countGiven || opts.receiverGiven)) {
-    throw new UsageError("--count and --receiver apply to mint only");
+  if (opts.command === "deploy" && (opts.countGiven || opts.receiverGiven || opts.mediaBase)) {
+    throw new UsageError("--count, --receiver and --media-base apply to mint only");
   }
   if (opts.command === "mint" && opts.wasmGiven) throw new UsageError("--wasm applies to deploy only");
   return opts;
@@ -203,12 +220,18 @@ function defaultExec(bin, argv, { quiet = false } = {}) {
   return result.status ?? 1;
 }
 
+function formatMetadata(m) {
+  const lines = Object.entries(m).map(([k, v]) => `    ${k}: ${v}`);
+  return `  token_metadata (NEP-177)\n${lines.join("\n")}`;
+}
+
 function formatStep(step, index, total) {
   return [
     `[${index + 1}/${total}] ${step.name}`,
     `  signer   ${step.signer}`,
     `  call     ${step.receiver_id}.${step.method}`,
     `  args     ${JSON.stringify(step.args)}`,
+    ...(step.args.token_metadata ? [formatMetadata(step.args.token_metadata)] : []),
     `  deposit  ${step.deposit}   gas ${step.gas}`,
     `  command  near ${step.argv.map(shellQuote).join(" ")}`,
   ].join("\n");
@@ -246,10 +269,17 @@ export async function run(argv, env = process.env, deps = {}) {
       );
     }
     const contract = checked(contractRaw, "NEAR_CONTRACT_ACCOUNT_ID (or NEAR_ACCOUNT_ID)") ?? "<NEAR_CONTRACT_ACCOUNT_ID>";
+    if (opts.mediaBase && !/^(https?|ipfs|ar):\/\/\S+$/.test(opts.mediaBase)) {
+      throw new UsageError("--media-base must be an http(s), ipfs or ar URL");
+    }
+    if (opts.send && opts.command === "mint" && !opts.mediaBase) {
+      throw new UsageError("mint --send needs --media-base <url>: the tokens' media must point at hosted art, not the placeholder");
+    }
     const receiver = (opts.receiver ? validateAccountId(opts.receiver, "--receiver") : null) ?? owner;
 
     const steps = buildPlan({
       command: opts.command, contract, owner, receiver, count: opts.count, wasm: opts.wasm,
+      mediaBase: opts.mediaBase ?? undefined,
     });
 
     if (!opts.send) {
