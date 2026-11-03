@@ -103,7 +103,9 @@ export function buildTransfer(agents, anchors, { contractId, mode }) {
     to: TRANSFER_TO,
     contractId,
     explorer: explorerInfo(contractId, mode),
-    teeInference: { label: "NEAR AI Cloud (TEE) in live mode", status: mode === "mock" ? "mocked" : "live" },
+      // A mode label only. No attestation is checked here, so the status never claims one: a non-mock
+    // mode reads "live (unattested)", and the page renders it in a neutral class, never the green one.
+    teeInference: { label: "Inference (NEAR AI Cloud)", status: mode === "mock" ? "mocked" : "live (unattested)" },
     tokens,
     tamper,
   };

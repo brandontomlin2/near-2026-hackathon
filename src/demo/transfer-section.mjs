@@ -4,11 +4,6 @@ import { escapeHtml as esc } from "../viewer/render.mjs";
 
 const verdict = (match) => (match ? '<span class="ok">match</span>' : "<strong>MISMATCH</strong>");
 
-// The TEE inference badge is a label set from the inference mode, not an
-// attestation check. "mocked" is neutral (grey) so it never reads as a pass.
-const teeBadge = ({ label, status }) =>
-  `<strong>${esc(label)}</strong>: <span class="${status === "mocked" ? "neutral" : "ok"}">${esc(status)}</span>${status === "mocked" ? " (this demo makes no inference call)" : ""}`;
-
 // href is a URL context, where HTML escaping is not enough. Only the testnet
 // explorer host followed by a plain NEAR account id is ever linked.
 const SAFE_EXPLORER_URL = /^https:\/\/testnet\.nearblocks\.io\/address\/[a-z0-9._-]+$/;
@@ -48,6 +43,6 @@ ${x ? `<h3>Tampered sheet</h3>
 ${meta}
 <h3>On testnet</h3>
 ${explorerLine(t)}
-<p>${teeBadge(t.teeInference)}</p>
+<p><strong>${esc(t.teeInference.label)}</strong>: <span class="mut">${esc(t.teeInference.status)}</span>${t.teeInference.status === "mocked" ? " (this demo makes no inference call)" : ""}</p>
 `;
 }

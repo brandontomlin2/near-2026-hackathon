@@ -225,6 +225,39 @@ test("a base URL that is not an absolute http(s) URL is refused without being ec
   assert.equal(live(async () => ok(), { baseUrl: "http://127.0.0.1:1/v1/" }).baseUrl, "http://127.0.0.1:1/v1");
 });
 
+// Audit L-1 (privacy): plain http to a remote host would send the bearer key and the prompt
+// in cleartext. http is for the local stub servers only; everything else must be https.
+test("plain http is refused for every host except loopback, without echoing the URL or the key", () => {
+  const refused = [
+    "http://cloud-api.near.ai/v1", // the real endpoint with the wrong scheme (a copied typo)
+    "http://example.com/v1",
+    "http://10.0.0.7:8080/v1",
+    "http://localhost.example.com/v1", // loopback-looking names are not loopback
+    "http://127.0.0.1.nip.io/v1",
+    "http://0.0.0.0:1/v1",
+    "http://[::ffff:127.0.0.1]:1/v1",
+  ];
+  for (const baseUrl of refused) {
+    const err = (() => { try { live(async () => ok(), { baseUrl }); } catch (e) { return e; } })();
+    assert.ok(err instanceof InferenceError, baseUrl);
+    assert.equal(err.code, "bad_config", baseUrl);
+    assert.match(err.message, /https/, baseUrl);
+    assert.ok(!err.message.includes(baseUrl), err.message);
+    assert.ok(!err.message.includes(new URL(baseUrl).hostname), err.message);
+    assert.ok(!err.message.includes(KEY) && !err.stack.includes(KEY), err.message);
+  }
+  const accepted = ["http://localhost:1/v1", "http://LOCALHOST:1/v1", "http://127.0.0.1:1/v1", "http://[::1]:1/v1", "https://cloud-api.near.ai/v1", "https://example.com/v1"];
+  for (const baseUrl of accepted) {
+    assert.equal(live(async () => ok(), { baseUrl }).baseUrl, baseUrl); // kept as given (host matching is case-insensitive)
+  }
+  // Through the env, exactly as the CLI builds it: still bad_config, key and URL absent.
+  const env = { MOCK_INFERENCE: "0", NEAR_AI_API_KEY: KEY, NEAR_AI_MODEL: "m", NEAR_AI_BASE_URL: "http://cloud-api.near.ai/v1" };
+  const err = (() => { try { createInferenceClient({ env }); } catch (e) { return e; } })();
+  assert.equal(err.code, "bad_config");
+  assert.ok(!err.message.includes(KEY) && !err.message.includes("cloud-api.near.ai"), err.message);
+  assert.equal(createInferenceClient({ env: { ...env, NEAR_AI_BASE_URL: "http://127.0.0.1:1/v1" } }).baseUrl, "http://127.0.0.1:1/v1");
+});
+
 // Audit L-2: model text reaches the terminal unfiltered. The client is the chokepoint:
 // no reply content carries ANSI, OSC or bidi control characters, in either mode.
 const HOSTILE = "\u001b[2J\u001b[H\u001b]0;pwned\u0007\u001b]8;;http://evil.example\u0007click\u001b]8;;\u0007 \u202ereversed\u202c \u0000\u009c end";
