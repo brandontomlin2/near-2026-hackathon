@@ -493,7 +493,7 @@ test("README says the transfer anchor check is opt-in", () => {
 });
 
 test("README swarm steps read out/swarm before the seed 2 run overwrites it, and anchoring wording and verify.sh timing are true", () => {
-  const sec = readmeText.split("\n## Swarm\n")[1].split("\n## ")[0];
+  const sec = readme.split("\n## Swarm\n")[1].split("\n## ")[0];
   const steps = [...sec.matchAll(/^(\d+)\. (.*)$/gm)].map((m) => ({ n: Number(m[1]), text: m[2] }));
   assert.deepEqual(steps.map((s) => s.n), steps.map((_, i) => i + 1), "swarm steps are numbered in order");
   const seed2 = steps.findIndex((s) => s.text.includes("--seed 2"));
