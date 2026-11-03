@@ -7,7 +7,7 @@ the limits stated plainly. If we only ship the mock fixture, **no-go**:
 
 ## What NEAR AI Cloud offers
 
-Inference runs in Intel TDX confidential VMs with NVIDIA TEE GPUs. For a
+Per NEAR AI's documentation (not verified here), inference runs in Intel TDX confidential VMs with NVIDIA TEE GPUs. For a
 model, `GET /v1/attestation/report?model=...&signing_algo=ecdsa&nonce=<64 hex>`
 (API key required, free) returns per node a `signing_address`,
 `nvidia_payload` and `intel_quote`. Each chat reply is signed by that key;
@@ -101,9 +101,11 @@ would take; it is not evidence that NEAR AI binds the values that way.
 
 ## Does it qualify for the privacy track?
 
-Honestly, only weakly today. The track is about private/verifiable AI. Our
-use of NEAR AI Cloud is private inference by construction, but a judge will
-ask "how do I know?". Offline consistency checks do not answer that. A
+Honestly, only weakly today. The track is about private/verifiable AI. NEAR
+AI Cloud documents that inference runs inside TEEs; this repository does not
+verify that, and an operator who overrides `NEAR_AI_BASE_URL` leaves that
+guarantee (the client now refuses plain `http://` except to loopback). A judge
+will ask "how do I know?". Offline consistency checks do not answer that. A
 credible entry needs the three online steps: NRAS, `dcap-qvl`, and signature
 recovery, run once against a live report and shown in the demo.
 

@@ -57,7 +57,7 @@ describe("transfer verify", () => {
     assert.equal(t.placeholder, true);
     assert.equal(t.explorer.placeholder, true);
     assert.equal(t.teeInference.status, "mocked");
-    assert.match(t.teeInference.label, /NEAR AI Cloud \(TEE\)/);
+    assert.equal(t.teeInference.label, "Inference (NEAR AI Cloud)");
     // Mock mode never carries an explorer URL: the contract is not deployed, so a link would point at an account nobody owns.
     assert.equal(t.explorer.mock, true);
     assert.equal(t.explorer.contractUrl, undefined);
@@ -72,17 +72,7 @@ describe("transfer verify", () => {
     assert.ok(html.includes("alice.demo.testnet") && html.includes("bob.demo.testnet"));
     assert.ok(html.includes("MISMATCH"));
     assert.ok(html.includes("mock placeholder"));
-    assert.match(html, /NEAR AI Cloud \(TEE\) in live mode<\/strong>: <span class="neutral">mocked/);
-  });
-
-  it("the mocked TEE badge is styled neutral (grey), not like a passing check", () => {
-    const html = fs.readFileSync(path.join(dir, "index.html"), "utf8");
-    // The page CSS gives .neutral the muted colour, and .ok keeps the accent colour for real passes.
-    assert.ok(html.includes(".neutral{color:var(--mut)"), "page CSS lacks a .neutral rule");
-    assert.ok(html.includes(".ok{color:var(--acc)"), "page CSS lost the .ok rule");
-    assert.doesNotMatch(html, /<span class="ok">mocked</);
-    // Real pass styling is unchanged: the hash matches still use .ok.
-    assert.ok(html.includes('<span class="ok">match</span>'));
+    assert.match(html, /Inference \(NEAR AI Cloud\)<\/strong>: <span class="mut">mocked/);
   });
 });
 
@@ -122,21 +112,20 @@ describe("buildTransfer / transferSection (unit)", () => {
     const mock = buildTransfer([], { calls: [] }, { ...opts, mode: "mock" });
     const live = buildTransfer([], { calls: [] }, { ...opts, mode: "live" });
     assert.equal(mock.teeInference.status, "mocked");
-    assert.equal(live.teeInference.status, "live");
+    assert.equal(live.teeInference.status, "live (unattested)");
     assert.ok(transferSection({ transfer: mock }).includes("(this demo makes no inference call)"));
     assert.ok(!transferSection({ transfer: live }).includes("(this demo makes no inference call)"));
   });
 
-  it("a mocked TEE badge never gets the success class; live keeps it", () => {
-    const badge = (mode) => transferSection({ transfer: buildTransfer([], { calls: [] }, { ...opts, mode }) }).match(/<strong>NEAR AI Cloud \(TEE\) in live mode<\/strong>: <span class="([^"]*)">([^<]*)<\/span>/);
-    const mock = badge("mock");
-    assert.ok(mock, "mock badge not rendered");
-    assert.equal(mock[2], "mocked");
-    assert.equal(mock[1], "neutral");
-    assert.ok(!mock[1].split(/\s+/).includes("ok"), "mocked badge must not carry the success class");
-    const live = badge("live");
-    assert.ok(live, "live badge not rendered");
-    assert.deepEqual([live[1], live[2]], ["ok", "live"]);
+  it("the inference badge is never green and never says TEE without an attestation result", () => {
+    for (const mode of ["mock", "live"]) {
+      const t = buildTransfer([], { calls: [] }, { ...opts, mode });
+      const html = transferSection({ transfer: t });
+      const line = html.split("\n").find((l) => l.includes(t.teeInference.label));
+      assert.ok(line, `${mode}: badge line present`);
+      assert.doesNotMatch(line, /class="ok"/, `${mode}: badge must not use the green class`);
+      assert.doesNotMatch(`${t.teeInference.label} ${t.teeInference.status}`, /TEE|attested(?!\))|verified/i, `${mode}: no TEE or verified wording`);
+    }
   });
 
   it("transferSection returns empty string without a transfer", () => {

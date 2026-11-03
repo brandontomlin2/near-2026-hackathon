@@ -51,8 +51,9 @@ const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
 /**
  * The attestation nonce we send, derived from the exact request body.
- * Choosing nonce = sha256(request body) ties the fetched attestation to this
- * one request. It is our own convention; the server only needs 32 random-looking
+ * Choosing nonce = sha256(request body) is intended to tie the fetched attestation
+ * to this one request, once the quote is actually verified (this module does not
+ * verify the quote signature, so the tie is nominal today). It is our own convention; the server only needs 32 random-looking
  * bytes. The chat signature text also carries this same request hash.
  */
 export function requestHash(requestBody) {
