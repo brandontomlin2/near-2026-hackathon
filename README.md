@@ -80,7 +80,7 @@ Build and test. Requirements:
 - [cargo-near](https://github.com/near/cargo-near) for `npm run build:contract` only (tested with 0.22.0). Unit tests need only cargo.
 
 1. Run `npm run test:contract`. See 52 unit tests pass, including mint by a non-owner failing, a non-sha256 hash rejected, and the anchor surviving `nft_transfer` to a new owner.
-2. Run `npm run build:contract`. See `contracts/personality-nft/target/near/personality_nft.wasm` (about 250 KB) and its ABI JSON next to it.
+2. Run `npm run build:contract`. See `contracts/personality-nft/target/near/personality_nft.wasm` and its ABI JSON next to it.
 
 ## Deploy to testnet
 
@@ -236,12 +236,12 @@ A passing mock run looks like this (the commit sha and test file count change):
 SUMMARY
 STATUS    STAGE           DETAIL
 ------    -----           ------
-PASS      fresh clone     3cb61e66e557
+PASS      fresh clone     c6567f6d7c3e
 PASS      workflows       no workflow files; CI disabled
 PASS      symlinks        tracked symlinks resolve
 PASS      secret files    no tracked env or key files
 PASS      npm install     npm ci
-34 file(s)
+PASS      tests           35 file(s)
 SKIP      secret scan     gitleaks not installed (warn)
 SKIP      deploy nft      npm run deploy:nft exists; live testnet not requested
 PASS      mint            npm run mint (mock)
