@@ -88,7 +88,7 @@ Nothing in this repository is deployed or live on testnet. The contract is unit-
 
 Build and test. Needs Rust 1.95 or newer (the crate's `rust-toolchain.toml` pins it, so rustup fetches it) and [cargo-near](https://github.com/near/cargo-near) for the build only (tested with 0.22.0).
 
-1. Run `npm run test:contract`. See 62 unit tests pass, including mint by a non-owner failing, a non-sha256 hash rejected, and the anchor surviving `nft_transfer` to a new owner.
+1. Run `npm run test:contract`. See every unit test pass, `test result: ok.` with `0 failed`, including mint by a non-owner failing, a non-sha256 hash rejected, and the anchor surviving `nft_transfer` to a new owner.
 2. Run `npm run build:contract`. See `contracts/personality-nft/target/near/personality_nft.wasm` and its ABI JSON next to it.
 
 ## Deploy to testnet
@@ -177,7 +177,7 @@ Every pull request must paste the real `bash scripts/verify.sh` output in a `## 
 
 ## Live on testnet
 
-Not run yet: no contract has been deployed to testnet from this repository, and there are no transaction hashes to show. `npm run live-proof` prints the deploy, four mint and `anchor_sheet` steps and writes `out/live-proof/evidence.example.json` (gitignored, marked `"example": true`); nothing is signed. Only the owner can run it live (`npm run live-proof -- --send --i-approve` with the account variables set). When that has happened, this section will list the contract id and transaction hashes for a judge to check with read-only `near contract call-function as-read-only` calls.
+Not run yet. Nothing from this repository is deployed to testnet, so there is no contract id and no transaction hash to check, and every hash above is a mock or a dry run. Only the owner can change that, with `npm run live-proof -- --send --i-approve` (refused unless `NEAR_ACCOUNT_ID` and `NEAR_CONTRACT_ACCOUNT_ID` are set); it deploys, mints the four tokens and anchors one sheet, then `npm run evidence` writes the real transaction hashes and RPC views to `out/evidence.json`. When that has happened, this section will quote that file.
 
 ## Disclosure
 

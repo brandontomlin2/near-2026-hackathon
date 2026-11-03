@@ -71,3 +71,28 @@ test("README timing claim is cold-run safe and deploy step orders build before d
   assert.match(readmeText, /It exits 0 in a few seconds/);
   assert.match(readmeText, /deploy:nft`\. Step 1 must have run first/);
 });
+
+test("README does not pin a contract unit-test count; it claims only 'ok' and '0 failed'", () => {
+  // `cargo test` prints "N passed; 0 failed" and N changes with every contract PR.
+  const contractStep = readme.match(/^1\. Run `npm run test:contract`\..*$/m);
+  assert.ok(contractStep, "README must have a 'Run npm run test:contract' step");
+  assert.doesNotMatch(readmeText, /\b\d+ (unit )?tests? pass/i);
+  assert.match(contractStep[0], /test result: ok\./);
+  assert.match(contractStep[0], /0 failed/);
+});
+
+test("README 'Live on testnet' is one short paragraph after the working sections, with the owner-only command", () => {
+  const headings = [...readme.matchAll(/^## (.+)$/gm)].map((m) => m[1]);
+  const liveIdx = headings.indexOf("Live on testnet");
+  assert.ok(liveIdx >= 0, "README must have a 'Live on testnet' section");
+  for (const h of ["Try it (judge path)", "Contract", "Deploy to testnet", "Inference", "Swarm", "Art"]) {
+    assert.ok(headings.indexOf(h) >= 0 && headings.indexOf(h) < liveIdx, `'${h}' must come before 'Live on testnet'`);
+  }
+  const body = readme.split("## Live on testnet\n")[1].split(/\n## /)[0].trim();
+  assert.equal(body.split(/\n\s*\n/).length, 1, "section must be a single paragraph");
+  assert.doesNotMatch(body, /^\|/m, "section must not contain a table");
+  assert.doesNotMatch(body, /TBD/);
+  assert.match(body, /^Not run yet\./);
+  assert.ok(body.includes("`npm run live-proof -- --send --i-approve`"), "must name the exact owner-approved command");
+  assert.ok(body.includes("`out/evidence.json`"), "must say where the evidence will appear");
+});
