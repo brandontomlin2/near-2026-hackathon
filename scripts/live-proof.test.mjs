@@ -1,16 +1,29 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { run } from "./live-proof.mjs";
+import { TX_FILE, TX_FILE_LABEL, TX_LABELS, evidenceCommand, extractTransactionHashes, run } from "./live-proof.mjs";
 
 const OWNER = "agent-owner.testnet";
 const CONTRACT = "agent-nft.testnet";
 const APPROVED_ENV = { NEAR_ACCOUNT_ID: OWNER, NEAR_CONTRACT_ACCOUNT_ID: CONTRACT };
+// Six distinct base58 hashes, one per planned transaction.
+const HASHES = TX_LABELS.map((_, i) => `${"ABCDEF"[i]}${"x".repeat(43)}`.replace(/x/g, "2"));
 
-async function go(argv, env = {}) {
+// What near-cli-rs prints for a sent transaction: the id line and the explorer link, both naming the same hash.
+const nearOutput = (hashes) => hashes.map((h) => `Transaction ID: ${h}\nTo see the transaction in the transaction explorer, please open this url in your browser:\nhttps://explorer.testnet.near.org/transactions/${h}\n`).join("");
+
+// Mocked stage output in send order: deploy prints one hash, mint prints four, anchor_sheet one.
+const stageOutput = (bin, args) => {
+  if (args.includes("deploy")) return nearOutput(HASHES.slice(0, 1));
+  if (args.includes("mint")) return nearOutput(HASHES.slice(1, 5));
+  if (bin === "near") return nearOutput(HASHES.slice(5));
+  return "";
+};
+
+async function go(argv, env = {}, { output = () => "", fail = () => false } = {}) {
   const lines = [];
   const errs = [];
   const spawned = [];
@@ -18,10 +31,12 @@ async function go(argv, env = {}) {
   const code = await run([...argv, ...(argv.includes("--send") ? [] : ["--out", file])], env, {
     out: (l) => lines.push(l),
     err: (l) => errs.push(l),
-    exec: (bin, args) => { spawned.push([bin, args]); return 0; },
+    exec: (bin, args) => { spawned.push([bin, args]); return { code: fail(bin, args) ? 1 : 0, output: output(bin, args) }; },
   });
   return { code, text: lines.join("\n"), errs: errs.join("\n"), spawned, file };
 }
+
+const removeTxFile = () => rmSync(TX_FILE, { force: true });
 
 test("dry run lists deploy, 4 mints, anchor_sheet in order and spawns nothing", async () => {
   const r = await go([]);
@@ -117,16 +132,112 @@ test("--send --i-approve with env runs deploy, mint, anchor in order (mocked spa
   assert.ok(r.spawned[1][1].includes("mint"));
   assert.equal(r.spawned[2][0], "near");
   assert.ok(r.spawned[2][1].includes("anchor_sheet"));
+  removeTxFile();
 });
 
 test("a failing step stops the run", async () => {
   const spawned = [];
   const code = await run(["--send", "--i-approve"], APPROVED_ENV, {
     out: () => {}, err: () => {},
-    exec: (bin, args) => { spawned.push(args); return 1; },
+    exec: (bin, args) => { spawned.push(args); return { code: 1, output: "" }; },
   });
   assert.equal(code, 1);
   assert.equal(spawned.length, 1);
+  removeTxFile();
+});
+
+test("the evidence command is exactly what scripts/evidence.mjs reads", () => {
+  assert.equal(TX_FILE_LABEL, "out/live-proof/txs.json");
+  assert.equal(evidenceCommand(CONTRACT), "EVIDENCE_NETWORK=testnet NEAR_ACCOUNT_ID=agent-nft.testnet EVIDENCE_TX_FILE=out/live-proof/txs.json npm run evidence");
+  assert.deepEqual(TX_LABELS, ["deploy", "mint aloof", "mint chaotic", "mint social", "mint skeptic", "anchor_sheet"]);
+});
+
+test("extractTransactionHashes takes the near CLI id line and explorer link once each, nothing else", () => {
+  const [a, b] = HASHES;
+  assert.deepEqual(extractTransactionHashes(nearOutput([a, b])), [a, b]);
+  assert.deepEqual(extractTransactionHashes(`Transaction ID: ${a}`), [a]);
+  assert.deepEqual(extractTransactionHashes(`https://explorer.testnet.near.org/transactions/${b}`), [b]);
+  // A bare base58-looking string (account ids, a base64 media_hash echoed in args) is not a hash.
+  assert.deepEqual(extractTransactionHashes(`args {"media_hash":"${a}"} signer ${b}`), []);
+  assert.deepEqual(extractTransactionHashes("Transaction ID: not-base58-0OIl"), []);
+  assert.deepEqual(extractTransactionHashes(""), []);
+});
+
+test("--send writes every hash it collected to out/live-proof/txs.json and prints the exact evidence command", async () => {
+  removeTxFile();
+  const r = await go(["--send", "--i-approve"], APPROVED_ENV, { output: stageOutput });
+  try {
+    assert.equal(r.code, 0);
+    assert.equal(r.errs, "");
+    const tail = r.text.split("\n").slice(-3);
+    assert.deepEqual(tail, [
+      `wrote 6 of 6 transaction hashes to ${TX_FILE_LABEL}`,
+      "done. Next, with read-only RPC views (nothing signed):",
+      `  ${evidenceCommand(CONTRACT)}`,
+    ]);
+    assert.doesNotMatch(r.text, /WARN/);
+    const txs = JSON.parse(readFileSync(TX_FILE, "utf8"));
+    assert.deepEqual(txs, {
+      network: "testnet",
+      contract: CONTRACT,
+      owner: OWNER,
+      transactions: TX_LABELS.map((label, i) => ({ label, hash: HASHES[i] })),
+    });
+    // The printed command names a path npm run resolves from the package root: the file we wrote.
+    const root = path.resolve(path.dirname(TX_FILE), "..", "..");
+    assert.equal(path.resolve(root, r.text.match(/EVIDENCE_TX_FILE=(\S+)/)[1]), TX_FILE);
+  } finally {
+    removeTxFile();
+  }
+});
+
+test("--send file is accepted by scripts/evidence.mjs loadTransactions", async () => {
+  removeTxFile();
+  const { loadTransactions } = await import("./evidence.mjs");
+  await go(["--send", "--i-approve"], APPROVED_ENV, { output: stageOutput });
+  try {
+    assert.deepEqual(loadTransactions(TX_FILE).map((t) => t.label), TX_LABELS);
+  } finally {
+    removeTxFile();
+  }
+});
+
+test("--send with hashes missing from the CLI output warns, names them, and still prints the command", async () => {
+  removeTxFile();
+  const r = await go(["--send", "--i-approve"], APPROVED_ENV, { output: (bin, args) => (args.includes("deploy") ? stageOutput(bin, args) : "") });
+  try {
+    assert.equal(r.code, 0);
+    assert.match(r.text, new RegExp(`^wrote 1 of 6 transaction hashes to ${TX_FILE_LABEL}$`, "m"));
+    assert.match(r.text, /^WARN: no hash found in the near CLI output for: mint aloof, mint chaotic, mint social, mint skeptic, anchor_sheet\./m);
+    assert.equal(r.text.split("\n").at(-1), `  ${evidenceCommand(CONTRACT)}`);
+    assert.deepEqual(JSON.parse(readFileSync(TX_FILE, "utf8")).transactions, [{ label: "deploy", hash: HASHES[0] }]);
+  } finally {
+    removeTxFile();
+  }
+});
+
+test("a failed step still saves the hashes sent before it and names the step", async () => {
+  removeTxFile();
+  const r = await go(["--send", "--i-approve"], APPROVED_ENV, { output: stageOutput, fail: (bin, args) => args.includes("mint") });
+  try {
+    assert.equal(r.code, 1);
+    assert.equal(r.spawned.length, 2);
+    assert.match(r.errs, /^error: mint failed with exit 1; stopping\. Earlier transactions were not rolled back\.$/m);
+    const txs = JSON.parse(readFileSync(TX_FILE, "utf8")).transactions;
+    assert.deepEqual(txs.map((t) => t.label), ["deploy", "mint aloof", "mint chaotic", "mint social", "mint skeptic"]);
+    assert.match(r.text, /WARN: no hash found in the near CLI output for: anchor_sheet\./);
+    assert.equal(r.text.split("\n").at(-1), `  ${evidenceCommand(CONTRACT)}`);
+  } finally {
+    removeTxFile();
+  }
+});
+
+test("a dry run never writes the transaction file", async () => {
+  removeTxFile();
+  const r = await go([], APPROVED_ENV);
+  assert.equal(r.code, 0);
+  assert.ok(!existsSync(TX_FILE));
+  assert.doesNotMatch(r.text, /txs\.json|npm run evidence/);
 });
 
 test("default dry run leaves git-tracked files unchanged and writes under out/", async () => {
