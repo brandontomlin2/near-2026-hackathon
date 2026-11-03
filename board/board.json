@@ -57,13 +57,13 @@
   {
     "id": "nep-171-contract",
     "title": "NEP-171 contract",
-    "status": "todo",
-    "owner": "",
+    "status": "doing",
+    "owner": "claude",
     "kind": "task",
     "lane": "any",
     "notes": "",
-    "updated_at": "2026-11-03T00:00:00.000Z",
-    "updated_by": "seed"
+    "updated_at": "2026-11-03T02:20:00.121Z",
+    "updated_by": "claude"
   },
   {
     "id": "readme-x-post-draft",
