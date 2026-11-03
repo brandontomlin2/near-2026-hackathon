@@ -18,6 +18,14 @@ bash scripts/claude-loop.sh
 
 A passing item is pushed on `claude/<id>` and set to `review`. `main` is never committed or pushed.
 
+To run one specific item instead of the first eligible one, set `CLAUDE_LOOP_ONLY`:
+
+```sh
+CLAUDE_LOOP_ONLY=nep-171-contract bash scripts/claude-loop.sh
+```
+
+The loop takes exactly that item when it is `todo`, or `doing` with owner `claude`, and its notes do not contain `blocked` or `attempts=2` or higher. The lane is not checked. Otherwise it prints one line to stderr with the reason (`blocked`, `attempts=2`, `doing for grok`, `status review`, `not on the board`), sets `last_result` to `only_skipped`, and exits 0 without claiming anything. Unset, the loop picks as described below.
+
 ## Stop
 
 ```sh
@@ -85,6 +93,7 @@ The prompt is the item JSON plus instructions to read `CLAUDE.md` and `PRODUCT.m
 | `CLAUDE_LOOP_HEARTBEAT_SEC` | `60` | How often `last_activity` is refreshed |
 | `CLAUDE_LOOP_BACKOFF_SEC` | `900` | Pause after a rate-limit or auth error |
 | `CLAUDE_LOOP_REPO` | git toplevel of the working directory | Control checkout |
+| `CLAUDE_LOOP_ONLY` | unset | Take exactly this item id, or exit 0 with a reason on stderr |
 
 ## Tests
 

@@ -22,6 +22,7 @@ const STRIP = [
   "CLAUDE_LOOP_BACKOFF_SEC",
   "CLAUDE_LOOP_REPO",
   "CLAUDE_LOOP_HEARTBEAT_SEC",
+  "CLAUDE_LOOP_ONLY",
   "CLAUDE_STUB_MODE",
   "CLAUDE_STUB_LOG",
   "CLAUDE_BIN",
@@ -147,11 +148,29 @@ esac
   fs.writeFileSync(file, script, { mode: 0o755 });
 }
 
+// Installed as both gtimeout and timeout so the log is written whichever the
+// loop prefers. It execs the first real gtimeout or timeout later in PATH.
 function writeTimeoutWrapper(file) {
   const script = `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> "\${TIMEOUT_LOG:?}"
-exec /bin/timeout "\$@"
+self_dir=\$(cd "\$(dirname "\$0")" && pwd)
+real=""
+IFS=: read -ra dirs <<< "\$PATH"
+for dir in "\${dirs[@]}"; do
+  [[ "\$dir" == "\$self_dir" ]] && continue
+  for name in gtimeout timeout; do
+    if [[ -x "\$dir/\$name" ]]; then
+      real="\$dir/\$name"
+      break 2
+    fi
+  done
+done
+if [[ -z "\$real" ]]; then
+  printf 'no real gtimeout or timeout in PATH\\n' >&2
+  exit 127
+fi
+exec "\$real" "\$@"
 `;
   fs.writeFileSync(file, script, { mode: 0o755 });
 }
@@ -211,6 +230,7 @@ function initRepo(t, { verify, items, stubMode }) {
   fs.mkdirSync(path.join(repo, "board"), { recursive: true });
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   writeClaudeStub(path.join(bin, "claude"));
+  writeTimeoutWrapper(path.join(bin, "gtimeout"));
   writeTimeoutWrapper(path.join(bin, "timeout"));
   fs.copyFileSync(BOARD, path.join(repo, "scripts", "board.mjs"));
   fs.writeFileSync(path.join(repo, "scripts", "verify.sh"), verify);
@@ -453,6 +473,54 @@ test("success moves the item to review and does not push main", { timeout: 20000
     itemById(showBoard(fixture.origin, "claude/demo-task", fixture.env), "demo-task").status,
     "review",
   );
+});
+
+test("CLAUDE_LOOP_ONLY takes the named item instead of the first eligible one", { timeout: 20000 }, (t) => {
+  const fixture = initRepo(t, {
+    verify: PASS_VERIFY,
+    stubMode: "success",
+    items: [task("aaa-first", "Would be picked first", "any"), task("zzz-target", "Named item", "any")],
+  });
+  const mainBefore = git(fixture.origin, ["rev-parse", "main"], fixture.env);
+  const result = runLoop(fixture.repo, fixture.home, loopEnv(fixture, { CLAUDE_LOOP_ONLY: "zzz-target" }));
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /zzz-target review/);
+  assert.equal(claudeRuns(fixture.stubLog), 1);
+  const refs = git(fixture.origin, ["for-each-ref", "--format=%(refname)", "refs/heads"], fixture.env);
+  assert.deepEqual(
+    refs.split("\n").filter((ref) => ref.startsWith("refs/heads/claude/")),
+    ["refs/heads/claude/zzz-target"],
+  );
+  const board = showBoard(fixture.origin, "claude/zzz-target", fixture.env);
+  assert.equal(itemById(board, "zzz-target").status, "review");
+  assert.equal(itemById(board, "aaa-first").status, "todo");
+  assert.equal(itemById(board, "aaa-first").owner, "");
+  assert.equal(readStatus(fixture.home).item, "zzz-target");
+  assert.equal(git(fixture.origin, ["rev-parse", "main"], fixture.env), mainBefore);
+});
+
+test("CLAUDE_LOOP_ONLY on an ineligible item exits 0 without claiming", { timeout: 20000 }, (t) => {
+  const fixture = initRepo(t, {
+    verify: PASS_VERIFY,
+    stubMode: "success",
+    items: [task("open-task", "Still open", "any"), task("stuck-task", "Blocked", "any", "attempts=2\nblocked")],
+  });
+  const mainBefore = git(fixture.origin, ["rev-parse", "main"], fixture.env);
+  const result = runLoop(fixture.repo, fixture.home, loopEnv(fixture, { CLAUDE_LOOP_ONLY: "stuck-task" }));
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.equal(result.stdout, "");
+  assert.equal(result.stderr.trim().split("\n").length, 1);
+  assert.match(result.stderr, /CLAUDE_LOOP_ONLY=stuck-task skipped: blocked/);
+  assert.equal(claudeRuns(fixture.stubLog), 0);
+  const refs = git(fixture.origin, ["for-each-ref", "--format=%(refname)", "refs/heads"], fixture.env);
+  assert.equal(refs.includes("refs/heads/claude/"), false);
+  assert.equal(git(fixture.origin, ["rev-parse", "main"], fixture.env), mainBefore);
+  assert.equal(git(fixture.repo, ["status", "--porcelain"], fixture.env), "");
+  const status = readStatus(fixture.home);
+  assert.equal(status.state, "idle");
+  assert.equal(status.last_result, "only_skipped");
+  assert.equal(status.item, null);
+  assert.equal(fs.existsSync(path.join(fixture.home, ".claude-loop", "lock")), false);
 });
 
 test("verify pass with no product diff increments attempts", { timeout: 20000 }, (t) => {

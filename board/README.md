@@ -4,7 +4,7 @@ Shared backlog for the hackathon build pipeline. It is not the product. State is
 
 Statuses: `suggested`, `todo`, `doing`, `review`, `done`, `dropped`.
 
-Each item has `id`, `title`, `status`, `owner`, `kind` (`task` or `suggestion`), `lane` (`grok`, `claude`, or `any`), `notes`, `updated_at`, and `updated_by`. `lane` defaults to `any`. Items are sorted by `id`. Object keys stay in the order above so diffs stay small.
+Each item has `id`, `title`, `status`, `owner`, `kind` (`task` or `suggestion`), `lane` (`grok`, `claude`, `human`, or `any`), `notes`, `updated_at`, and `updated_by`. `lane` defaults to `any`. Items are sorted by `id`. Object keys stay in the order above so diffs stay small.
 
 An event line is one JSON object: `ts`, `actor`, `item_id`, `action`, `from`, `to`, `note`. Append lines. Do not rewrite earlier lines.
 
@@ -29,7 +29,7 @@ node scripts/board.mjs set nep-171-contract review --note "ready for another age
 
 Grok Bot engineers reach this repo through GitHub. Open a pull request that edits `board/board.json` and appends one `board/events.jsonl` line per change. A board-only pull request is enough to suggest or add work. A pull request that does the work should set the item to `doing`, set `owner`, and include the matching event.
 
-Use `lane` `grok` for Grok Bot work, `claude` for Claude Code, and `any` when either can take it. New tasks start at `todo`. A proposal starts as `kind` `suggestion`, status `suggested`, with the reason in `notes`. Keep the list sorted by `id` and keep the key order above.
+Use `lane` `grok` for Grok Bot work, `claude` for Claude Code, `human` for work only the human does, and `any` when either agent can take it. New tasks start at `todo`. A proposal starts as `kind` `suggestion`, status `suggested`, with the reason in `notes`. Keep the list sorted by `id` and keep the key order above.
 
 ```json
 {"ts":"2026-11-03T00:00:00.000Z","actor":"grok","item_id":"walletless-sim","action":"suggest","from":null,"to":"suggested","note":"run without a wallet"}

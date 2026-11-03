@@ -267,7 +267,7 @@ test("board json stays sorted and list --json is stable", (t) => {
   for (const item of seeded) {
     assert.equal(item.status, "todo");
     assert.equal(item.kind, "task");
-    assert.equal(item.lane, "any");
+    assert.ok(["grok", "claude", "human", "any"].includes(item.lane), `${item.id} lane ${item.lane}`);
     assert.deepEqual(Object.keys(item), ITEM_KEYS);
   }
 });

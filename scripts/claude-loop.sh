@@ -22,6 +22,7 @@ MAX_USD=${CLAUDE_LOOP_MAX_USD:-5}
 TIMEOUT_DUR=${CLAUDE_LOOP_TIMEOUT:-45m}
 DAILY_USD=${CLAUDE_LOOP_DAILY_USD:-25}
 BACKOFF_SEC=${CLAUDE_LOOP_BACKOFF_SEC:-900}
+ONLY_ID=${CLAUDE_LOOP_ONLY:-}
 LOOP_DIR="$HOME/.claude-loop"
 STATUS_FILE="$LOOP_DIR/status.json"
 STATUS_LOCK="$LOOP_DIR/status.lock"
@@ -675,13 +676,19 @@ pick_item() {
   local pick_file="$2"
   (
     cd "$REPO" || exit 1
-    node scripts/board.mjs list --status todo --json
+    if [[ -n "$ONLY_ID" ]]; then
+      node scripts/board.mjs list --json
+    else
+      node scripts/board.mjs list --status todo --json
+    fi
   ) > "$list_file"
-  CLAUDE_LOOP_REPO="$REPO" CLAUDE_LOOP_TODOS="$list_file" node > "$pick_file" <<'JS'
+  CLAUDE_LOOP_REPO="$REPO" CLAUDE_LOOP_TODOS="$list_file" CLAUDE_LOOP_ONLY="$ONLY_ID" \
+    node > "$pick_file" <<'JS'
 const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 
 const repo = process.env.CLAUDE_LOOP_REPO;
+const only = process.env.CLAUDE_LOOP_ONLY || "";
 const todos = JSON.parse(fs.readFileSync(process.env.CLAUDE_LOOP_TODOS, "utf8"));
 
 function attemptsOf(notes) {
@@ -718,25 +725,35 @@ function branchItem(id) {
   }
 }
 
-let picked = null;
-for (const item of todos) {
-  if (item.lane !== "claude" && item.lane !== "any") continue;
+// Notes and status on origin/claude/<id> win over the control checkout.
+function eligibility(item) {
   const remote = branchItem(item.id);
   const notes = remote ? remote.notes : item.notes;
   const status = remote ? remote.status : item.status;
   const owner = remote ? remote.owner : item.owner;
-  if (attemptsOf(notes) >= 2 || blocked(notes)) continue;
-  if (status === "review" || status === "done" || status === "dropped") continue;
-  if (status === "doing") {
-    if (owner === "claude") {
-      picked = { id: item.id, mode: "resume" };
+  if (blocked(notes)) return { reason: "blocked" };
+  const attempts = attemptsOf(notes);
+  if (attempts >= 2) return { reason: `attempts=${attempts}` };
+  if (status === "todo") return { mode: "claim" };
+  if (status === "doing" && owner === "claude") return { mode: "resume" };
+  if (status === "doing") return { reason: `doing for ${owner || "nobody"}` };
+  return { reason: `status ${status}` };
+}
+
+let picked = null;
+if (only) {
+  const item = todos.find((entry) => entry.id === only);
+  const result = item ? eligibility(item) : { reason: "not on the board" };
+  picked = result.mode ? { id: only, mode: result.mode } : { reason: result.reason };
+} else {
+  for (const item of todos) {
+    if (item.lane !== "claude" && item.lane !== "any") continue;
+    const result = eligibility(item);
+    if (result.mode) {
+      picked = { id: item.id, mode: result.mode };
       break;
     }
-    continue;
   }
-  if (status !== "todo") continue;
-  picked = { id: item.id, mode: "claim" };
-  break;
 }
 process.stdout.write(JSON.stringify(picked));
 JS
@@ -796,6 +813,12 @@ case "${CLAUDE_LOOP_HEARTBEAT_SEC:-60}" in
     ;;
 esac
 require_number_setting CLAUDE_LOOP_BACKOFF_SEC "$BACKOFF_SEC"
+case "$ONLY_ID" in
+  "") ;;
+  *[!a-z0-9-]* | -*)
+    die "CLAUDE_LOOP_ONLY must be a board item id"
+    ;;
+esac
 
 if [[ -n "${ANTHROPIC_API_KEY:-}" && -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
   printf 'error: both ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN are set\n' >&2
@@ -858,6 +881,10 @@ const fs = require("node:fs");
 const raw = fs.readFileSync(process.env.CLAUDE_LOOP_PICK, "utf8").trim();
 if (!raw || raw === "null") process.exit(2);
 const pick = JSON.parse(raw);
+if (pick && typeof pick.reason === "string") {
+  process.stdout.write(pick.reason.replace(/\s+/g, " "));
+  process.exit(3);
+}
 if (!pick || !pick.id || !pick.mode) process.exit(1);
 process.stdout.write(`${pick.id}\n${pick.mode}`);
 JS
@@ -867,6 +894,10 @@ set -e
 if [[ "$pick_code" -eq 2 ]]; then
   printf 'claude-loop: no eligible todo item\n'
   finish 0 idle "no_item"
+fi
+if [[ "$pick_code" -eq 3 ]]; then
+  printf 'claude-loop: CLAUDE_LOOP_ONLY=%s skipped: %s\n' "$ONLY_ID" "$pick_out" >&2
+  finish 0 idle "only_skipped"
 fi
 if [[ "$pick_code" -ne 0 ]]; then
   die "failed to choose a todo item"

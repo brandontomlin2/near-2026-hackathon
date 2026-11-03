@@ -3,14 +3,14 @@ import fs from "node:fs";
 import path from "node:path";
 
 const STATUSES = ["suggested", "todo", "doing", "review", "done", "dropped"];
-const LANES = ["grok", "claude", "any"];
+const LANES = ["grok", "claude", "human", "any"];
 const BOOLEAN_FLAGS = new Set(["json", "help"]);
 
 const USAGE = `usage: node scripts/board.mjs [--actor NAME] <command> [args]
 
 commands:
   list [--status STATUS] [--lane LANE] [--json]
-  add <title> [--owner NAME] [--lane grok|claude|any]
+  add <title> [--owner NAME] [--lane grok|claude|human|any]
   suggest <title> --note TEXT
   accept <id>
   claim <id> --owner NAME
