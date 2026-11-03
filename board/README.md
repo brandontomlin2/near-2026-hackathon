@@ -4,7 +4,7 @@ Shared backlog for the hackathon build pipeline. It is not the product. State is
 
 Statuses: `suggested`, `todo`, `doing`, `review`, `done`, `dropped`.
 
-Each item has `id`, `title`, `status`, `owner`, `kind` (`task` or `suggestion`), `lane` (`grok`, `claude`, `human`, or `any`), `notes`, `updated_at`, and `updated_by`. `lane` defaults to `any`. Items are sorted by `id`. Object keys stay in the order above so diffs stay small.
+Each item has `id`, `title`, `status`, `owner`, `kind` (`task` or `suggestion`), `lane` (`grok`, `claude`, `human`, or `any`), an optional `depends_on`, `notes`, `updated_at`, and `updated_by`. `lane` defaults to `any`. `depends_on` is a list of item ids; the Claude loop skips an item until every id in it is `done` on `main`. The field is written only when the list is non-empty, between `lane` and `notes`. Items are sorted by `id`. Object keys stay in the order above so diffs stay small.
 
 An event line is one JSON object: `ts`, `actor`, `item_id`, `action`, `from`, `to`, `note`. Append lines. Do not rewrite earlier lines.
 

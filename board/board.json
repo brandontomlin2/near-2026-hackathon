@@ -6,6 +6,9 @@
     "owner": "",
     "kind": "task",
     "lane": "human",
+    "depends_on": [
+      "nep-171-contract"
+    ],
     "notes": "",
     "updated_at": "2026-11-03T00:00:00.000Z",
     "updated_by": "seed"
@@ -28,6 +31,10 @@
     "owner": "",
     "kind": "task",
     "lane": "human",
+    "depends_on": [
+      "testnet-deploy-mint-3-agents",
+      "viewer"
+    ],
     "notes": "",
     "updated_at": "2026-11-03T00:00:00.000Z",
     "updated_by": "seed"
@@ -35,12 +42,12 @@
   {
     "id": "inference-client-mock-mode",
     "title": "inference client + mock mode",
-    "status": "review",
+    "status": "done",
     "owner": "claude",
     "kind": "task",
     "lane": "any",
-    "notes": "src/inference/client.mjs: mock (default, deterministic) + live NEAR AI Cloud client; scripts/infer.mjs CLI; package.json with npm test; 41 tests pass\nsession_id=66491c6e-4771-4550-9deb-c7c0ff895bd5\ntotal_cost_usd=2.855098\nsubtype=success\nverify=PASS",
-    "updated_at": "2026-11-03T02:17:18.849Z",
+    "notes": "src/inference/client.mjs: mock (default, deterministic) + live NEAR AI Cloud client; scripts/infer.mjs CLI; package.json with npm test; 41 tests pass\nsession_id=66491c6e-4771-4550-9deb-c7c0ff895bd5\ntotal_cost_usd=2.855098\nsubtype=success\nverify=PASS\nmerged to main in #11",
+    "updated_at": "2026-11-03T02:29:03.487Z",
     "updated_by": "claude"
   },
   {
@@ -50,6 +57,9 @@
     "owner": "",
     "kind": "task",
     "lane": "any",
+    "depends_on": [
+      "inference-client-mock-mode"
+    ],
     "notes": "",
     "updated_at": "2026-11-03T00:00:00.000Z",
     "updated_by": "seed"
@@ -83,6 +93,10 @@
     "owner": "",
     "kind": "task",
     "lane": "any",
+    "depends_on": [
+      "inference-client-mock-mode",
+      "nep-171-contract"
+    ],
     "notes": "",
     "updated_at": "2026-11-03T00:00:00.000Z",
     "updated_by": "seed"
@@ -94,6 +108,9 @@
     "owner": "",
     "kind": "task",
     "lane": "any",
+    "depends_on": [
+      "inference-client-mock-mode"
+    ],
     "notes": "",
     "updated_at": "2026-11-03T00:00:00.000Z",
     "updated_by": "seed"
@@ -116,6 +133,9 @@
     "owner": "",
     "kind": "task",
     "lane": "any",
+    "depends_on": [
+      "nep-171-contract"
+    ],
     "notes": "",
     "updated_at": "2026-11-03T00:00:00.000Z",
     "updated_by": "seed"
@@ -127,6 +147,9 @@
     "owner": "",
     "kind": "task",
     "lane": "any",
+    "depends_on": [
+      "inference-client-mock-mode"
+    ],
     "notes": "",
     "updated_at": "2026-11-03T00:00:00.000Z",
     "updated_by": "seed"
