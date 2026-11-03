@@ -49,14 +49,22 @@ export const SEND_COMMAND = "npm run live-proof -- --send --i-approve --media-ba
 export const evidenceCommand = (contract) => `EVIDENCE_NETWORK=${NETWORK} NEAR_CONTRACT_ACCOUNT_ID=${contract} EVIDENCE_TX_FILE=${TX_FILE_LABEL} npm run evidence`;
 // The labels evidence.mjs will show, one per transaction, in send order.
 export const TX_LABELS = ["deploy", ...AGENTS.map((a) => `mint ${a.token_id}`), "anchor_sheet"];
-// near-cli-rs reports a sent transaction as "Transaction ID: <hash>" and as an explorer link
-// ending in /transactions/<hash>. Only those two contexts count: a bare base58 scan would also
-// pick up account ids and the base64 media_hash echoed in the printed args.
-const TX_HASH_RE = /(?:Transaction ID:\s*|\/transactions\/)([1-9A-HJ-NP-Za-km-z]{32,64})\b/g;
+// near-cli-rs (src/common.rs print_transaction_status) reports a sent transaction as
+// "Transaction ID: <hash>" followed by explorer_transaction_url + hash: by default
+// https://explorer.testnet.near.org/transactions/<hash>, or .../txns/<hash> when the user's
+// config.toml points at nearblocks. Only those contexts count: a bare base58 scan would also
+// pick up account ids and the base64 media_hash echoed in the console-command line and the
+// return value. The block goes to stderr through the tracing layer, which prefixes "├  ",
+// indents with "│    " and ends each event with an ANSI reset; colour codes are stripped and
+// CR line endings normalised before matching. In --quiet mode near-cli-rs installs no tracing
+// subscriber and prints only the raw return value, so no hash can be found at all.
+const ANSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
+const TX_HASH_RE = /(?:Transaction ID:\s*|\/(?:transactions|txns)\/)([1-9A-HJ-NP-Za-km-z]{32,64})\b/g;
 
 /** Unique transaction hashes in the order the near CLI printed them. Pure. */
 export function extractTransactionHashes(output) {
-  return [...new Set([...String(output).matchAll(TX_HASH_RE)].map((m) => m[1]))];
+  const text = String(output).replace(ANSI_RE, "").replace(/\r\n?/g, "\n");
+  return [...new Set([...text.matchAll(TX_HASH_RE)].map((m) => m[1]))];
 }
 const RELATIVE_WASM = "contracts/personality-nft/target/near/personality_nft.wasm";
 const SHEET = "Aloof. Observer. Watches the channel, speaks rarely.\nAllies: none yet.\n";
@@ -227,8 +235,9 @@ function parseArgs(argv) {
 }
 
 // Runs a step, streaming its stdout and stderr to the terminal as they arrive while also
-// keeping a copy: near-cli-rs prints the transaction hash to either stream.
-function defaultExec(bin, argv) {
+// keeping a copy: near-cli-rs prints the transaction block to stderr (its tracing layer)
+// and a call's return value to stdout, so both streams are kept. Exported for the tests only.
+export function defaultExec(bin, argv) {
   return new Promise((resolve) => {
     const chunks = [];
     const child = spawn(bin, argv, { stdio: ["ignore", "pipe", "pipe"] });
