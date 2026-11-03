@@ -140,10 +140,10 @@ test("empty block, js block, and curl block (not executed)", (t) => {
 
 test("--timeout-ms kills a slow block and reports timed out", (t) => {
   const t0 = Date.now();
-  const r = run(t, block("sleep 5"), ["--timeout-ms", "500"]);
+  const r = run(t, block("sleep 60"), ["--timeout-ms", "500"]);
   assert.equal(r.status, 1);
-  assert.match(r.stdout, /FAIL\s+README:2\s+sleep 5: timed out/);
-  assert.ok(Date.now() - t0 < 4000, `took ${Date.now() - t0}ms`);
+  assert.match(r.stdout, /FAIL\s+README:2\s+sleep 60: timed out/);
+  assert.ok(Date.now() - t0 < 50_000, `took ${Date.now() - t0}ms`);
 });
 
 test("child env is scrubbed, mocked, with a throwaway HOME", (t) => {

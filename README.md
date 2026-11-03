@@ -49,7 +49,7 @@ npm install && npm run demo
 7. In `out/index.html`, find "Transfer: memory travels with the NFT". See a simulated transfer from `alice.demo.testnet` to `bob.demo.testnet` (placeholders, nothing sent): each token's re-hashed sheet shows `match`, a tampered sheet shows `MISMATCH`, and the "Inference (NEAR AI Cloud)" badge says `mocked`. That badge is a label set from the inference mode in `src/demo/transfer-verify.mjs`, not an attestation check: nothing in the demo or in `verify.sh` verifies a TEE. The offline attestation checker, `node scripts/attest-check.mjs`, runs only on a hand-built fixture (see `docs/privacy.md`). The same data is under `transfer` in `out/demo.json`.
 8. Run `npm run demo` again. See the same final round hash, `3dd1440b3ee005665ee0674dcf25e462d29b458b5fbc37a8795243960d05cc6f`, and byte-identical files. It is a hash of the mock conversation, not a chain value.
 9. Run `MOCK_INFERENCE=0 npm run demo`. See `demo: runs in mock mode only` and exit 2. The demo never makes a live call.
-10. Run `bash scripts/verify.sh` (about a minute). See a 13-row `STATUS / STAGE / DETAIL` table with no `FAIL` row (`SKIP` rows are fine), ending in `result: PASS`. Details in [Validate locally](#validate-locally).
+10. Run `bash scripts/verify.sh` (about 20 to 30 seconds measured on an Apple-silicon Mac; allow a few minutes on a busy machine). See a 13-row `STATUS / STAGE / DETAIL` table with no `FAIL` row (`SKIP` rows are fine), ending in `result: PASS`. Details in [Validate locally](#validate-locally).
 
 Everything below this section is reference for the pieces the demo ran.
 
