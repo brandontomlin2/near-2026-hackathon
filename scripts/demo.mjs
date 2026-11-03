@@ -75,7 +75,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     log(`[4/5] anchor (dry run): ${callCount} calls prepared, 0 signed`);
     log(`[5/5] viewer: ${at("index.html")}`);
     log("");
-    log("Done. Nothing was signed or sent; inference was mocked.");
+    log("Done. Nothing was signed or sent; inference was mocked, and the character sheets come from a deterministic stand-in, not a model.");
     log("");
     log("Do this, see that:");
     log(`  1. Open ${at("index.html")} in a browser. See four agents, their art at mint and now, their character sheets, the channel and the dry-run anchor table.`);

@@ -16,10 +16,10 @@ npm install && npm run demo
 
 Then open `out/index.html` in a browser.
 
-1. Run `npm install && npm run demo`. See five steps (`[1/5] swarm` to `[5/5] viewer`), then `Done. Nothing was signed or sent; inference was mocked.`, a "Do this, see that" list and the 21 files written under `out/`. It exits 0 in well under a second.
+1. Run `npm install && npm run demo`. See five steps (`[1/5] swarm` to `[5/5] viewer`), then `Done. Nothing was signed or sent; inference was mocked, and the character sheets come from a deterministic stand-in, not a model.`, a "Do this, see that" list and the 21 files written under `out/`. It exits 0 in well under a second.
 2. Open `out/index.html`. See the four agents, each with its art at mint (1 ring) next to its art now (3 rings, one per character sheet), its latest sheet and the sheet hash. Further down: every sheet in order (round 3, then round 6), the round hash chain with `verify: ok`, the full channel with replies shown as `Chaotic → Skeptic`, and the dry-run anchor table.
 3. Open `out/memory/chaotic/sheet.json`. See Chaotic's round 6 sheet: who it is, who it has traded words with (and how many exchanges were warm or tense), its ally (Social) and its grudge (Skeptic), a running belief, and its post, reply and mention counts. The counts grow from the round 3 sheet (shown on the page and in `out/demo.json`). Check the hash with an independent tool: `node -p 'require("./out/memory/chaotic/sheet.json").sheet' | shasum -a 256` prints the `sheetHash` in the same file. The sheet is hashed after normalizing (NFC, LF, one final newline), which for a one-line sheet is the text plus a newline.
-4. Open `out/anchors.json`. See 8 `anchor_sheet` calls for testnet, two per token, each `"status": "dry-run"` with `"transactionHash": null` and `"signed": false`. The first call per token carries the storage deposit and the second carries 1 yoctoNEAR. Each token's latest `sheet_hash` equals the `sheetHash` in its `sheet.json`, so the hash in the file is the hash the token would carry.
+4. Open `out/anchors.json`. The `contractId` `personality-nft.demo.testnet` is a placeholder: no contract is deployed there. See 8 `anchor_sheet` calls for testnet, two per token, each `"status": "dry-run"` with `"transactionHash": null` and `"signed": false`. The first call per token carries the storage deposit and the second carries 1 yoctoNEAR. Each token's latest `sheet_hash` equals the `sheetHash` in its `sheet.json`, so the hash in the file is the hash the token would carry.
 5. Run `npm run demo` again. See the same final round hash, `5431286c1f732a32bd736e24344895cb0b2ea43a551e459f3b3ed80dd48e4afe`, and byte-identical files.
 6. Run `MOCK_INFERENCE=0 npm run demo`. See `demo: runs in mock mode only` and exit 2. The demo never makes a live call.
 
@@ -204,6 +204,10 @@ Every pull request must paste the real `bash scripts/verify.sh` output in a `## 
 - Starter prompts per track: https://github.com/nearai/near-hackathon-prompt-examples
 - Track walkthrough video: https://www.youtube.com/watch?v=bND1ioWBf3g
 - Submissions close 2026-11-14 23:59 UTC. One submission per repository, not editable after sending.
+
+## Disclosure
+
+Libraries used, AI-generated code, and pre-hackathon code (none exists): see [`docs/DISCLOSURE.md`](docs/DISCLOSURE.md).
 
 ## License
 
