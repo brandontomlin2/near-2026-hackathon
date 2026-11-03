@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Read-only preflight for a live testnet run. Prints a checklist of what is missing.
 //
-// Checks: the contract wasm is built (path + size), NEAR_ACCOUNT_ID and
-// NEAR_CONTRACT_ACCOUNT_ID are set and valid (names only, values never printed),
+// Checks: the contract wasm is built (repo-relative path + size), NEAR_ACCOUNT_ID and
+// NEAR_CONTRACT_ACCOUNT_ID are set and valid (names only, account ids are never printed),
 // NEAR_NETWORK is unset or testnet, and, when online, that the accounts exist via a
 // read-only RPC `view_account` call (skipped with --offline). Never reads .env or
 // key files, never signs.
@@ -12,7 +12,7 @@
 import { statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_WASM, NETWORK, isTestnetNetwork, validateAccountId } from "./testnet-deploy.mjs";
+import { NETWORK, defaultWasmPath, isTestnetNetwork, validateAccountId } from "./testnet-deploy.mjs";
 
 export const RPC_URL = "https://rpc.testnet.near.org";
 export const BUILD_HINT = "Run npm run build:contract first.";
@@ -54,7 +54,8 @@ async function rpcViewAccount(fetchFn, account) {
 export async function check(env = process.env, deps = {}) {
   const statWasm = deps.statWasm ?? ((p) => statSync(p).size);
   const fetchFn = deps.fetch ?? globalThis.fetch;
-  const wasm = deps.wasm ?? DEFAULT_WASM;
+  // Repo-relative under `npm run`, so the printed line carries no home directory.
+  const wasm = deps.wasm ?? defaultWasmPath();
   const lines = [];
   let ready = true;
   const add = (ok, text) => { lines.push(`${ok ? "[ok]  " : "[todo]"} ${text}`); if (!ok) ready = false; };
@@ -102,8 +103,8 @@ export async function check(env = process.env, deps = {}) {
 
 const USAGE = `Usage: node scripts/live-check.mjs [--offline]
 Read-only preflight for a live testnet run. Reads NEAR_ACCOUNT_ID,
-NEAR_CONTRACT_ACCOUNT_ID and NEAR_NETWORK from the environment (values are never
-printed). Without --offline it makes one read-only RPC view_account call per set
+NEAR_CONTRACT_ACCOUNT_ID and NEAR_NETWORK from the environment (account ids are never
+printed; the wasm path is). Without --offline it makes one read-only RPC view_account call per set
 account; --offline skips that call and touches no network at all.
 Exits 0 when ready, 1 when something is missing.`;
 

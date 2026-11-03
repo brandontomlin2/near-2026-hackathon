@@ -34,6 +34,21 @@ export const DEFAULT_WASM = fileURLToPath(
   new URL("../contracts/personality-nft/target/near/personality_nft.wasm", import.meta.url),
 );
 
+const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url)).replace(/[\\/]+$/, "");
+
+/**
+ * The wasm path the CLIs print and pass to near-cli-rs when --wasm is not given.
+ * Dry-run output and live:check lines get pasted into pull requests, so from the repo
+ * root (where `npm run` executes) this is the repo-relative path, identical on every
+ * machine and free of the home directory. From any other cwd it is the absolute path,
+ * so the printed command still resolves where it was printed. (A path relative to an
+ * arbitrary cwd is not enough: from `/` it would start with the home directory again.)
+ * @param {string} [cwd]
+ */
+export function defaultWasmPath(cwd = process.cwd()) {
+  return path.resolve(cwd) === REPO_ROOT ? path.relative(REPO_ROOT, DEFAULT_WASM) : DEFAULT_WASM;
+}
+
 // The four agents from PRODUCT.md. Trait keys match the contract's `extra` example.
 export const AGENTS = [
   { token_id: "aloof", description: "I watch. I rarely speak. When I do, it is because the room already got it wrong.", title: "Aloof", traits: { temperament: "cool", role: "observer", risk: "low", voice: "dry" } },
@@ -212,7 +227,7 @@ Options:
   --count <1-${AGENTS.length}>     mint: how many agents, in the order ${AGENTS.map((a) => a.token_id).join(", ")}
   --receiver <acct>   mint: token receiver (default NEAR_ACCOUNT_ID)
   --media-base <url>  mint: base URL where <token_id>.svg is hosted (required with --send)
-  --wasm <path>       deploy: wasm to deploy (default ${path.relative(process.cwd(), DEFAULT_WASM) || DEFAULT_WASM})
+  --wasm <path>       deploy: wasm to deploy (default ${defaultWasmPath()})
   -h, --help          show this help
 
 Environment:
@@ -225,7 +240,7 @@ Environment:
 export function parseArgs(argv) {
   const opts = {
     command: null, send: false, approve: false, dryRunFlag: false, json: false, help: false,
-    count: AGENTS.length, receiver: null, wasm: DEFAULT_WASM,
+    count: AGENTS.length, receiver: null, wasm: defaultWasmPath(),
     countGiven: false, receiverGiven: false, wasmGiven: false, mediaBase: null,
   };
   const need = (i, flag) => {
