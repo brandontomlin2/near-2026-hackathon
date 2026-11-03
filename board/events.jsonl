@@ -10,3 +10,4 @@
 {"ts":"2026-11-03T00:00:00.000Z","actor":"seed","item_id":"fresh-clone-test-demo-video","action":"add","from":null,"to":"todo","note":""}
 {"ts":"2026-11-03T00:00:00.000Z","actor":"seed","item_id":"readme-x-post-draft","action":"add","from":null,"to":"todo","note":""}
 {"ts":"2026-11-03T00:00:00.000Z","actor":"seed","item_id":"submission-buffer-nov-14","action":"add","from":null,"to":"todo","note":""}
+{"ts":"2026-11-03T02:07:35.166Z","actor":"claude","item_id":"inference-client-mock-mode","action":"claim","from":"todo","to":"doing","note":""}

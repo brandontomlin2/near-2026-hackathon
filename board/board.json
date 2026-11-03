@@ -35,13 +35,13 @@
   {
     "id": "inference-client-mock-mode",
     "title": "inference client + mock mode",
-    "status": "todo",
-    "owner": "",
+    "status": "doing",
+    "owner": "claude",
     "kind": "task",
     "lane": "any",
     "notes": "",
-    "updated_at": "2026-11-03T00:00:00.000Z",
-    "updated_by": "seed"
+    "updated_at": "2026-11-03T02:07:35.166Z",
+    "updated_by": "claude"
   },
   {
     "id": "memory-summarizer",
