@@ -19,8 +19,8 @@ Agents never do the items marked **HUMAN**. Without an explicit yes, agents must
 - [ ] What the product is, the problem, and how NEAR fits in. No marketing.
 - [ ] Numbered "do X, see Y" steps a judge can follow from a fresh clone. Every command in them exists in `package.json`.
 - [ ] Works with no keys (`MOCK_INFERENCE=1`). Live mode and its env vars are documented.
-- [ ] Libraries, templates and AI-generated code are listed (Q-005).
-- [ ] Pre-hackathon code is disclosed (Q-002, Q-003). If any exists, README links the diff.
+- [x] Libraries, templates and AI-generated code are listed (Q-005). Evidence: `docs/DISCLOSURE.md`, linked from the README.
+- [x] Pre-hackathon code is disclosed (Q-002, Q-003). If any exists, README links the diff. Evidence: none exists; `docs/DISCLOSURE.md`.
 - [ ] Planned features are not described as shipped.
 - [ ] Names the other project if the lead submits a second one (see section 5).
 
@@ -28,9 +28,9 @@ Agents never do the items marked **HUMAN**. Without an explicit yes, agents must
 
 Hackathon window starts 2026-11-01. Earlier commits are baseline.
 
-- [ ] Decide whether any code predates 2026-11-01. Check: `git log --reverse --format='%h %ad %s' --date=short | head`.
+- [x] Decide whether any code predates 2026-11-01. Result: none, first commit 2026-11-02. Check: `git log --reverse --format='%h %ad %s' --date=short | head`.
 - [ ] If yes: tag the last pre-hackathon commit `pre-hackathon`, tag the final commit `hackathon-submission`, and add a README section linking the diff (`<repo>/compare/pre-hackathon...hackathon-submission`).
-- [ ] If no: say so in the README in one line.
+- [x] If no: say so in the README in one line. The README Disclosure section links to `docs/DISCLOSURE.md`, which says none.
 - [ ] **HUMAN** Pushing tags needs the human's yes.
 
 ## 4. Demo post on X (**HUMAN** writes and publishes)
