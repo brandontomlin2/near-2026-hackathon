@@ -16,7 +16,8 @@ Testnet run (never mainnet; do not put keys on the command line):
 
 The script clones HEAD into a temp directory, installs dependencies when
 package.json exists, runs node --test on test files that exist, and scans
-with gitleaks when that binary is installed. Planned npm scripts are:
+with gitleaks when that binary is installed (when it is not, the secret scan
+stage prints WARN lines and records SKIP; it never fails). Planned npm scripts are:
 
   deploy:nft   testnet deploy of the NFT contract (live only)
   mint         mint 4 tokens (mock unless --live)
@@ -76,10 +77,44 @@ print_summary() {
     done < "$results_file"
   fi
   echo
+  if [[ "$secret_scan_skipped" -eq 1 ]]; then
+    echo "WARN: the secret scan did NOT run because gitleaks is not installed; install it (brew install gitleaks) and rerun for a scanned result."
+  fi
   if [[ "$failed" -eq 0 ]]; then
     echo "result: PASS"
   else
     echo "result: FAIL"
+  fi
+}
+
+# Set to 1 when gitleaks is missing so the summary repeats the warning next to the result.
+secret_scan_skipped=0
+
+# Runs gitleaks on the fresh clone (current directory). Missing gitleaks is a loud
+# SKIP, never a FAIL: judges may not have it, and the WARN lines go to stdout so
+# they survive in pasted output. CI is not involved here; this is the local screen.
+secret_scan() {
+  local gitleaks_args
+  echo
+  echo "==> secret scan"
+  if ! command -v gitleaks >/dev/null 2>&1; then
+    secret_scan_skipped=1
+    echo "WARN: secret scan did NOT run: gitleaks is not installed on this machine."
+    echo "WARN: install gitleaks (brew install gitleaks, or a release from https://github.com/gitleaks/gitleaks/releases) and rerun bash scripts/verify.sh to scan."
+    echo "WARN: this stage is SKIP, not FAIL, so result: PASS below does not mean the tree was scanned for secrets."
+    record SKIP "secret scan" "NOT RUN: gitleaks not installed (brew install gitleaks)"
+    return 0
+  fi
+  gitleaks_args=(detect --source . --redact --no-banner --verbose)
+  if [[ -f .gitleaks.toml ]]; then
+    gitleaks_args+=(--config .gitleaks.toml)
+  fi
+  if gitleaks "${gitleaks_args[@]}"; then
+    record PASS "secret scan" "no findings"
+  else
+    echo "FAIL: gitleaks reported findings or failed"
+    record FAIL "secret scan" "gitleaks reported findings or failed"
+    failed=1
   fi
 }
 
@@ -516,24 +551,7 @@ else
   failed=1
 fi
 
-echo
-echo "==> secret scan"
-if ! command -v gitleaks >/dev/null 2>&1; then
-  echo "WARN: secret scan did NOT run (gitleaks not found). optional: brew install gitleaks" >&2
-  record SKIP "secret scan" "gitleaks not installed (warn)"
-else
-  gitleaks_args=(detect --source . --redact --no-banner --verbose)
-  if [[ -f .gitleaks.toml ]]; then
-    gitleaks_args+=(--config .gitleaks.toml)
-  fi
-  if gitleaks "${gitleaks_args[@]}"; then
-    record PASS "secret scan" "no findings"
-  else
-    echo "FAIL: gitleaks reported findings or failed"
-    record FAIL "secret scan" "gitleaks reported findings or failed"
-    failed=1
-  fi
-fi
+secret_scan
 
 planned "deploy nft" "deploy:nft" live
 planned "mint" "mint" auto

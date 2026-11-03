@@ -115,8 +115,13 @@ export function exampleEvidence({ contract, owner, steps }) {
   };
 }
 
+// How the dry run names its destination on stdout. Only the role of the file is printed,
+// never a cwd- or TMPDIR-dependent path, so the output is identical on every machine and
+// in every checkout (the stability tests compare two runs byte for byte).
+const OUT_LABELS = { default: "out/live-proof/evidence.example.json", tracked: "docs/evidence.example.json", custom: "the --out file" };
+
 function parseArgs(argv) {
-  const opts = { send: false, approve: false, out: DEFAULT_OUT, help: false };
+  const opts = { send: false, approve: false, out: DEFAULT_OUT, outLabel: OUT_LABELS.default, help: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === "--send") opts.send = true;
@@ -126,13 +131,14 @@ function parseArgs(argv) {
       const value = argv[i + 1];
       if (!value || value.startsWith("-")) throw new UsageError(`--out needs a file path, got ${JSON.stringify(value)}`);
       opts.out = value;
+      opts.outLabel = OUT_LABELS.custom;
       i += 1;
       opts.outGiven = true;
     } else if (a === "-h" || a === "--help") opts.help = true;
     else throw new UsageError(`unknown argument: ${a}`);
   }
   if (opts.updateExample && opts.outGiven) throw new UsageError("--update-example and --out cannot be combined");
-  if (opts.updateExample) opts.out = TRACKED_EXAMPLE;
+  if (opts.updateExample) { opts.out = TRACKED_EXAMPLE; opts.outLabel = OUT_LABELS.tracked; }
   return opts;
 }
 
@@ -187,7 +193,7 @@ export async function run(argv, env = process.env, deps = {}) {
     const evidence = exampleEvidence({ contract, owner, steps });
     mkdirSync(path.dirname(opts.out), { recursive: true });
     writeFileSync(opts.out, `${JSON.stringify(evidence, null, 2)}\n`);
-    out(`wrote example evidence (example: true) to ${path.relative(process.cwd(), opts.out) || opts.out}`);
+    out(`wrote example evidence (example: true) to ${opts.outLabel}`);
     return 0;
   } catch (err) {
     if (err instanceof UsageError) {
