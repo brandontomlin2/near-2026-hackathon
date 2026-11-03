@@ -6,8 +6,10 @@
 // latest post, never text from other agents, so instructions hidden in events
 // are not echoed. Pure: same request, same sheet.
 //
-// The summarizer collapses whitespace, so the sections arrive on one line,
-// separated by spaces. Each section is one sentence-ended label.
+// The responder writes one section per line; the summarizer collapses
+// whitespace, so the stored sheet is one line with "Label: ..." sections.
+// Allies and grudges come from the tone of each exchange (warm or tense
+// words), so they agree with what a reader sees in the channel.
 
 const MAX_QUOTE_WORDS = 12;
 
@@ -61,24 +63,50 @@ function section(sheet, label, next) {
   return end < 0 ? rest : rest.slice(0, end);
 }
 
+// Tone of one exchange, read from the words used. Tense wins over warm.
+const TENSE = /\b(nope|no|doubtful|not me|show me|source\?|dare|joke|bets against|flip the table|panics|do not add up|will not|unproven|gap)\b/i;
+const WARM = /\b(glad|friends|happy to help|good point|warmly|connect|agree|together|whole group|hear from everyone)\b/i;
+const toneOf = (text) => (TENSE.test(text) ? "tense" : WARM.test(text) ? "warm" : "neutral");
+
 /**
- * Who this agent has traded words with, and how often, carried forward from
- * the previous sheet: mentions received plus replies sent ("@Name ...").
- * Sorted by count, then name, so ties break the same way every run.
+ * Who this agent has traded words with: how often, and how many of those
+ * exchanges were warm or tense. Counts carry forward from the previous sheet;
+ * new ones come from mentions received and replies sent ("@Name ..."). Sorted
+ * by count, then name, so ties break the same way every run.
+ * @returns {[string, { total: number, warm: number, tense: number }][]}
  */
 function interactions(previous, name, events) {
   const counts = new Map();
-  const add = (who, n = 1) => counts.set(who, (counts.get(who) ?? 0) + n);
+  const add = (who, total, warm, tense) => {
+    const c = counts.get(who) ?? { total: 0, warm: 0, tense: 0 };
+    counts.set(who, { total: c.total + total, warm: c.warm + warm, tense: c.tense + tense });
+  };
+  const addTone = (who, text) => {
+    const tone = toneOf(String(text));
+    add(who, 1, tone === "warm" ? 1 : 0, tone === "tense" ? 1 : 0);
+  };
   const before = section(previous, "Relationships", "Grudges and allies");
-  for (const [, who, n] of before.matchAll(/([A-Z][A-Za-z]*) (\d+) times?/g)) add(who, Number(n));
+  for (const [, who, n, warm, tense] of before.matchAll(/([A-Z][A-Za-z]*) (\d+) times? \((\d+) warm, (\d+) tense\)/g)) {
+    add(who, Number(n), Number(warm), Number(tense));
+  }
   for (const e of events) {
-    if (e.kind === "mention" && e.from !== name) add(String(e.from));
+    if (e.kind === "mention" && e.from !== name) addTone(String(e.from), e.text);
     if (e.kind === "reply" && e.from === name) {
       const target = /@([A-Z][A-Za-z]*)/.exec(String(e.text))?.[1];
-      if (target && target !== name) add(target);
+      if (target && target !== name) addTone(target, e.text);
     }
   }
-  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  return [...counts.entries()].sort((a, b) => b[1].total - a[1].total || a[0].localeCompare(b[0]));
+}
+
+// The partner with the largest lead of `more` over `less`, if any has a lead.
+function strongest(partners, more, less) {
+  let best;
+  for (const [who, c] of partners) {
+    const lead = c[more] - c[less];
+    if (lead > 0 && (!best || lead > best[1])) best = [who, lead];
+  }
+  return best?.[0];
 }
 
 /**
@@ -100,8 +128,8 @@ export function sheetResponder(request, _hash) {
   const mentioned = mentions + (prior ? Number(prior[3]) : 0);
 
   const partners = interactions(previous, name, events);
-  const ally = partners[0];
-  const distant = partners.length > 1 && partners.at(-1)[1] < ally[1] ? partners.at(-1) : undefined;
+  const ally = strongest(partners, "warm", "tense");
+  const grudge = strongest(partners, "tense", "warm");
 
   const latest = own.at(-1);
   const priorBelief = /Running beliefs: I still hold to "([^"]*)"/.exec(previous)?.[1];
@@ -109,10 +137,13 @@ export function sheetResponder(request, _hash) {
 
   const relationships = partners.length === 0
     ? "nobody has traded words with me yet"
-    : `I have traded words with ${partners.map(([n, c]) => `${n} ${plural(c, "time", "times")}`).join(", ")}`;
-  const allies = ally
-    ? `${ally[0]} is my closest ally${distant ? `; ${distant[0]} is the one I keep at a distance` : ""}`
-    : "I have no allies yet";
+    : `I have traded words with ${partners
+      .map(([n, c]) => `${n} ${plural(c.total, "time", "times")} (${c.warm} warm, ${c.tense} tense)`)
+      .join(", ")}`;
+  const allies = [
+    ally ? `${ally} is my ally` : "I have no ally yet",
+    grudge ? `I hold a grudge against ${grudge}` : "I hold no grudges yet",
+  ].join("; ");
 
   return [
     `Who I am: I am ${name}, a personality that lives in a shared channel with three other agents.`,

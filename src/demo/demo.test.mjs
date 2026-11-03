@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { runDemo, DEMO_DEFAULTS } from "./pipeline.mjs";
-import { renderDemoPage } from "./page.mjs";
+import { formatDeposit, renderDemoPage } from "./page.mjs";
 import { main } from "../../scripts/demo.mjs";
 import { AGENTS } from "../traits/agents.mjs";
 import { verifyRounds } from "../swarm/runner.mjs";
@@ -278,6 +278,12 @@ describe("demo: CLI main", () => {
     assert.ok(r.errors.length > 0);
   });
 
+  it("rejects --every larger than --rounds, since no sheet would be written", async () => {
+    const r = await run(["--rounds", "2", "--every", "3"]);
+    assert.equal(r.code, 2);
+    assert.match(r.errors.join("\n"), /--every \(3\) must not exceed --rounds \(2\)/);
+  });
+
   it("rejects an unknown flag", async () => {
     assert.equal((await run(["--bogus"])).code, 2);
   });
@@ -304,5 +310,28 @@ describe("demo: CLI main", () => {
     assert.ok(out.includes("Do this, see that:"));
     for (const f of walk(dir)) assert.ok(out.includes(`${dir}/${f}`), `output lacks ${f}`);
     assert.ok(out.includes(PINNED_FINAL_ROUND_HASH));
+  });
+});
+
+describe("demo: guards and formatting", () => {
+  it("runDemo rejects every > rounds before writing anything", async () => {
+    const dir = path.join(mkTmp(), "out");
+    await assert.rejects(runDemo({ outDir: dir, rounds: 2, every: 3 }), RangeError);
+    assert.equal(fs.existsSync(dir), false);
+  });
+
+  it("formatDeposit shows NEAR for storage deposits and yoctoNEAR for 1 yocto", () => {
+    assert.equal(formatDeposit("10000000000000000000000"), "0.01 NEAR");
+    assert.equal(formatDeposit("1000000000000000000000000"), "1 NEAR");
+    assert.equal(formatDeposit("1"), "1 yoctoNEAR");
+  });
+
+  it("the page names the placeholder contract, shows deposits in NEAR and how to check a hash", () => {
+    const html = fs.readFileSync(path.join(dirA, "index.html"), "utf8");
+    assert.ok(html.includes("placeholder contract id"));
+    assert.ok(html.includes("0.01 NEAR") && html.includes("1 yoctoNEAR"));
+    assert.ok(html.includes("shasum -a 256"));
+    assert.ok(html.includes("memory_depth: 1 at mint, 3 now"));
+    assert.ok(!html.includes('href="index.html"'));
   });
 });

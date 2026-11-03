@@ -21,12 +21,26 @@ code,.hash{font:12px/1.4 ui-monospace,Menlo,monospace;word-break:break-all}
 figcaption{font-size:12px;color:var(--mut)}
 table{border-collapse:collapse;width:100%;font-size:14px}th,td{border-bottom:1px solid var(--line);padding:4px 8px;text-align:left;vertical-align:top}
 .msg{margin:.2em 0}.who{font-weight:600}
+.banner{border:2px solid var(--acc);border-radius:8px;padding:8px 12px;font-weight:600}
+.pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-bottom:12px}
+pre{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:8px;overflow-x:auto;font-size:12px}
 `;
 
-const short = (h) => `${h.slice(0, 12)}…`;
+const YOCTO_PER_NEAR = 10n ** 24n;
+
+/** "10000000000000000000000" -> "0.01 NEAR", "1" -> "1 yoctoNEAR". */
+export function formatDeposit(yocto) {
+  const y = BigInt(yocto);
+  if (y < 10n ** 18n) return `${y} yoctoNEAR`;
+  const whole = y / YOCTO_PER_NEAR;
+  const frac = (y % YOCTO_PER_NEAR).toString().padStart(24, "0").replace(/0+$/, "");
+  return `${whole}${frac ? `.${frac}` : ""} NEAR`;
+}
 
 function agentCard(a, svg) {
-  const traits = Object.entries(a.traits).map(([k, v]) => `${esc(k)}: ${esc(v)}`).join(" · ");
+  const traits = Object.entries(a.traits)
+    .map(([k, v]) => (k === "memory_depth" ? `memory_depth: ${esc(v)} at mint, ${esc(a.memoryDepth)} now` : `${esc(k)}: ${esc(v)}`))
+    .join(" · ");
   const latest = a.sheets.at(-1);
   const n = a.sheets.length;
   return `<div class="card">
@@ -42,10 +56,11 @@ function agentCard(a, svg) {
 }
 
 function memorySection(a) {
-  const rows = a.sheets.map((s) => `<tr><td>${esc(s.round)}</td><td>${esc(s.words)}</td><td><div class="hash">sheet hash ${esc(s.sheetHash)}</div><p>${esc(s.sheet)}</p></td></tr>`).join("\n");
+  const cells = a.sheets.map((s, i) => `<div class="card"><div class="mut">${i === 0 ? "first sheet" : "then"}, round ${esc(s.round)} · ${esc(s.words)} words</div>
+<p>${esc(s.sheet)}</p>
+<div class="hash">sheet hash ${esc(s.sheetHash)}</div></div>`).join("\n");
   return `<h3>${esc(a.name)}</h3>
-<table><tr><th>Round</th><th>Words</th><th>Hash and sheet</th></tr>
-${rows || '<tr><td colspan="3">No sheets.</td></tr>'}</table>`;
+<div class="pair">${cells || '<div class="mut">No sheets yet.</div>'}</div>`;
 }
 
 function channel(manifest, events) {
@@ -73,14 +88,15 @@ function channel(manifest, events) {
  */
 export function renderDemoPage(manifest, { events, anchors, svgs }) {
   const chain = manifest.roundHashes.map((h, i) => `<tr><td>${i + 1}</td><td class="hash">${esc(h)}</td></tr>`).join("\n");
-  const calls = anchors.calls.map((c) => `<tr><td>${esc(c.tokenId)}</td><td>${esc(c.round)}</td><td>${esc(c.method)}</td><td class="hash">${esc(c.args.sheet_hash)}</td><td>${esc(c.depositYocto)}</td><td>${esc(c.status)}</td></tr>`).join("\n");
-  const files = manifest.files.map((f) => `<li><a href="${esc(f)}">${esc(f)}</a></li>`).join("\n");
+  const calls = anchors.calls.map((c) => `<tr><td>${esc(c.tokenId)}</td><td>${esc(c.round)}</td><td>${esc(c.method)}</td><td class="hash">${esc(c.args.sheet_hash)}</td><td>${esc(formatDeposit(c.depositYocto))}</td><td>${esc(c.status)}</td></tr>`).join("\n");
+  const files = manifest.files.filter((f) => f !== "index.html").map((f) => `<li><a href="${esc(f)}">${esc(f)}</a></li>`).join("\n");
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Personality NFT swarm — offline demo</title>
 <style>${CSS}</style></head><body><main>
 <h1>Personality NFT swarm — offline demo</h1>
-<p class="mut">mode: ${esc(manifest.mode)} · ${esc(manifest.rounds)} rounds · seed ${esc(manifest.seed)} · nothing signed, nothing sent</p>
+<p class="banner">Offline demo: inference mocked, nothing signed, nothing sent, no network.</p>
+<p class="mut">mode: ${esc(manifest.mode)} · ${esc(manifest.rounds)} rounds · seed ${esc(manifest.seed)} · a sheet every ${esc(manifest.every)} rounds</p>
 <ol>
 <li>Four AI personalities talk on one shared channel. Each round has a hash that chains to the one before.</li>
 <li>Every ${esc(manifest.every)} rounds each agent rewrites its character sheet, and its art gains a ring.</li>
@@ -93,6 +109,7 @@ ${manifest.agents.map((a) => agentCard(a, svgs[a.id])).join("\n")}
 </div>
 
 <h2>Memory</h2>
+<p class="mut">Each agent's sheets in order, oldest first. In this demo the sheet writer is a deterministic stand-in for the model (<code>src/demo/sheet-responder.mjs</code>): it counts exchanges, reads warm or tense words for allies and grudges, and quotes the agent's latest line. With <code>MOCK_INFERENCE=0</code> the summarizer sends the same prompt to NEAR AI Cloud instead.</p>
 ${manifest.agents.map(memorySection).join("\n")}
 
 <h2>Round hash chain</h2>
@@ -105,10 +122,15 @@ ${chain}</table>
 ${channel(manifest, events)}
 
 <h2>Anchor (dry run)</h2>
-<table><tr><th>Token</th><th>Round</th><th>Method</th><th>sheet_hash</th><th>Deposit (yocto)</th><th>Status</th></tr>
+<table><tr><th>Token</th><th>Round</th><th>Method</th><th>sheet_hash</th><th>Deposit</th><th>Status</th></tr>
 ${calls}</table>
 <p class="mut">Each <code>sheet_hash</code> is the sha256 of the normalized sheet, the same value recorded in <code>memory/&lt;token&gt;/sheet.json</code>. A new owner recomputes it from the sheet they receive and compares it with the token's <code>sheet_anchor</code>.</p>
-<p>A live run would call <code>anchor_sheet</code> on ${esc(anchors.contractId)} on testnet with these arguments. This demo never signs and never connects to a network.</p>
+<p>A live run would call <code>anchor_sheet</code> on testnet with these arguments. <code>${esc(anchors.contractId)}</code> is a placeholder contract id; nothing is deployed or signed by this demo. The first anchor per token carries a storage deposit (the contract refunds the unused part); later ones carry 1 yoctoNEAR.</p>
+<h3>Check a hash yourself</h3>
+<p>The sheet is normalized before hashing (Unicode NFC, LF line endings, no trailing spaces, exactly one final newline). A one-line sheet is the text plus a newline, so from the repository root:</p>
+<pre>node -p 'require("./out/memory/aloof/sheet.json").sheet' | shasum -a 256
+node -p 'require("./out/memory/aloof/sheet.json").sheetHash'</pre>
+<p>Both lines print the same hash, and it is Aloof's last <code>sheet_hash</code> in the table above.</p>
 
 <h2>Files</h2>
 <ul>

@@ -34,6 +34,9 @@ function parseArgs(argv) {
       throw new Error(`unknown argument ${JSON.stringify(flag)}`);
     }
   }
+  if (opts.every > opts.rounds) {
+    throw new Error(`--every (${opts.every}) must not exceed --rounds (${opts.rounds}), or no character sheet is written`);
+  }
   return opts;
 }
 
@@ -73,8 +76,9 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     log(`  1. Open ${at("index.html")} in a browser. See four agents, their art at mint and now, their character sheets, the channel and the dry-run anchor table.`);
     log(`  2. Open ${at("transcript.txt")}. See the swarm conversation, round by round, with replies marked.`);
     log(`  3. Open ${at("memory/aloof/sheet.json")}. See Aloof's latest character sheet and its sha256 hash.`);
-    log(`  4. Open ${at("anchors.json")}. See ${callCount} anchor_sheet calls, each "dry-run" with a null transaction hash.`);
-    log(`  5. Run npm run demo again. See the same final round hash: ${run.finalRoundHash}.`);
+    log(`     Check the hash: node -p 'require("./${at("memory/aloof/sheet.json")}").sheet' | shasum -a 256`);
+    log(`  4. Open ${at("anchors.json")}. See ${callCount} anchor_sheet calls for testnet, each "dry-run" with a null transaction hash; Aloof's last sheet_hash is the hash from step 3.`);
+    log(`  5. Run the same command again. See the same final round hash (same --rounds, --seed and --every): ${run.finalRoundHash}.`);
     log("");
     log(`Files written (${run.files.length}):`);
     for (const f of run.files) log(`  ${at(f)}`);

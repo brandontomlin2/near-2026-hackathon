@@ -37,6 +37,10 @@ export async function runDemo({
   every = DEMO_DEFAULTS.every,
   contractId = DEMO_DEFAULTS.contractId,
 } = {}) {
+  if (!Number.isInteger(every) || every < 1 || every > rounds) {
+    throw new RangeError(`every must be between 1 and rounds (${rounds}), got ${every}; otherwise no sheet is written`);
+  }
+
   // 1. Swarm, with the persona mocks, then re-check the hash chain.
   const result = await runSwarm({ rounds, seed });
   if (!verifyRounds(result)) throw new Error("demo: round hashes do not verify");

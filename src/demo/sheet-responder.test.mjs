@@ -28,30 +28,40 @@ describe("sheetResponder", () => {
       ev("reply", "Aloof", "@Social Hi."),
       ev("mention", "Skeptic", "@Aloof hm."),
     ]);
-    assert.match(first, /Skeptic 1 time, Social 1 time/);
+    assert.match(first, /Skeptic 1 time \(0 warm, 0 tense\), Social 1 time \(0 warm, 0 tense\)/);
     const second = respond("Aloof", first, [
       ev("post", "Aloof", "Two.", 4),
-      ev("mention", "Skeptic", "@Aloof again.", 4),
-      ev("mention", "Skeptic", "@Aloof once more.", 4),
+      ev("mention", "Skeptic", "@Aloof Doubtful. again.", 4),
+      ev("mention", "Skeptic", "@Aloof Friends. once more.", 4),
     ]);
     assert.match(second, /Reputation: 2 posts, 1 reply, mentioned 3 times\./);
-    assert.match(second, /Skeptic 3 times, Social 1 time/);
+    assert.match(second, /Skeptic 3 times \(1 warm, 1 tense\), Social 1 time \(0 warm, 0 tense\)/);
   });
 
-  it("picks the most frequent partner as ally with an alphabetical tie-break", () => {
-    const tie = respond("Aloof", null, [
-      ev("mention", "Social", "@Aloof a"),
-      ev("mention", "Chaotic", "@Aloof b"),
+  it("picks allies and grudges from the tone of exchanges, not their count", () => {
+    const sheet = respond("Aloof", null, [
+      ev("mention", "Skeptic", "@Aloof Doubtful. Who verified it? Not me."),
+      ev("mention", "Skeptic", "@Aloof Show me the log."),
+      ev("mention", "Skeptic", "@Aloof Good point, Aloof."),
+      ev("mention", "Social", "@Aloof Friends. Let's agree a plan together."),
+      ev("reply", "Aloof", "@Chaotic Noted."),
     ]);
-    assert.match(tie, /Chaotic is my closest ally\./);
-    assert.ok(!tie.includes("keep at a distance"));
+    assert.match(sheet, /Skeptic 3 times \(1 warm, 2 tense\)/);
+    assert.match(sheet, /Grudges and allies: Social is my ally; I hold a grudge against Skeptic\./);
 
-    const winner = respond("Aloof", null, [
-      ev("mention", "Social", "@Aloof a"),
-      ev("mention", "Social", "@Aloof b"),
-      ev("mention", "Chaotic", "@Aloof c"),
+    const neutral = respond("Aloof", null, [ev("mention", "Social", "@Aloof a"), ev("mention", "Chaotic", "@Aloof b")]);
+    assert.match(neutral, /I have no ally yet; I hold no grudges yet\./);
+  });
+
+  it("breaks tone ties alphabetically and carries tone forward", () => {
+    const first = respond("Aloof", null, [
+      ev("mention", "Social", "@Aloof Glad to see this."),
+      ev("mention", "Chaotic", "@Aloof Good point."),
     ]);
-    assert.match(winner, /Social is my closest ally; Chaotic is the one I keep at a distance\./);
+    assert.match(first, /Chaotic is my ally/);
+    const second = respond("Aloof", first, [ev("mention", "Social", "@Aloof Warmly.", 4)]);
+    assert.match(second, /Social 2 times \(2 warm, 0 tense\)/);
+    assert.match(second, /Social is my ally/);
   });
 
   it("uses singular and plural forms", () => {
@@ -64,7 +74,7 @@ describe("sheetResponder", () => {
     assert.match(one, /Social 2 times/);
     const two = respond("Aloof", null, [ev("post", "Aloof", "a"), ev("post", "Aloof", "b")]);
     assert.match(two, /2 posts, 0 replies, mentioned 0 times\./);
-    assert.match(respond("Aloof", null, [ev("mention", "Social", "@Aloof z")]), /Social 1 time[,.]/);
+    assert.match(respond("Aloof", null, [ev("mention", "Social", "@Aloof z")]), /Social 1 time \(/);
   });
 
   it("is deterministic for the same request", () => {
