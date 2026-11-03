@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import test from "node:test";
 
-import { InferenceError, createInferenceClient, createLiveClient, createMockClient } from "./client.mjs";
+import { DEFAULT_MAX_TOKENS, InferenceError, MAX_CONTENT_BYTES, createInferenceClient, createLiveClient, createMockClient } from "./client.mjs";
 
 const KEY = "sk-hardening-secret-0123456789";
 const REQ = { messages: [{ role: "user", content: "hello there" }] };
@@ -193,4 +193,92 @@ test("mock mode: concurrent calls are independent and deterministic", async () =
   const one = await Promise.all(reqs.map((r) => client.chat(r)));
   const two = await Promise.all(reqs.map((r) => client.chat(r)));
   assert.deepEqual(one, two);
+});
+
+// Audit L-1: credentials in NEAR_AI_BASE_URL. A base URL with userinfo is refused when the
+// client is created, and the error never echoes it, so it cannot reach "request to <url> failed".
+test("a base URL with user:password@ is refused at creation and never echoed", () => {
+  const secret = "s3cr3t-userinfo-pw";
+  for (const baseUrl of [`http://alice:${secret}@127.0.0.1:1/v1`, `https://${secret}@cloud-api.near.ai/v1`, `http://alice:@127.0.0.1:1/v1`]) {
+    const err = (() => { try { live(async () => ok(), { baseUrl }); } catch (e) { return e; } })();
+    assert.ok(err instanceof InferenceError, baseUrl);
+    assert.equal(err.code, "bad_config", baseUrl);
+    assert.match(err.message, /credentials|user:password/);
+    assert.ok(!err.message.includes(secret) && !err.message.includes("alice"), err.message);
+    assert.ok(!err.stack.includes(secret));
+  }
+  // Through the env, exactly as the CLI builds it.
+  const env = { MOCK_INFERENCE: "0", NEAR_AI_API_KEY: KEY, NEAR_AI_MODEL: "m", NEAR_AI_BASE_URL: `http://bob:${secret}@127.0.0.1:1/v1` };
+  const err = (() => { try { createInferenceClient({ env }); } catch (e) { return e; } })();
+  assert.equal(err.code, "bad_config");
+  assert.ok(!err.message.includes(secret) && !err.message.includes(KEY), err.message);
+});
+
+test("a base URL that is not an absolute http(s) URL is refused without being echoed", () => {
+  for (const baseUrl of ["not a url", "ftp://host/v1", "file:///etc/passwd", "//host/v1"]) {
+    const err = (() => { try { live(async () => ok(), { baseUrl }); } catch (e) { return e; } })();
+    assert.ok(err instanceof InferenceError, baseUrl);
+    assert.equal(err.code, "bad_config", baseUrl);
+    assert.ok(!err.message.includes(baseUrl), err.message);
+  }
+  // Plain URLs still work, with or without a trailing slash.
+  assert.equal(live(async () => ok(), { baseUrl: "http://127.0.0.1:1/v1/" }).baseUrl, "http://127.0.0.1:1/v1");
+});
+
+// Audit L-2: model text reaches the terminal unfiltered. The client is the chokepoint:
+// no reply content carries ANSI, OSC or bidi control characters, in either mode.
+const HOSTILE = "\u001b[2J\u001b[H\u001b]0;pwned\u0007\u001b]8;;http://evil.example\u0007click\u001b]8;;\u0007 \u202ereversed\u202c \u0000\u009c end";
+const UNSAFE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/;
+
+test("live reply: control, OSC and bidi characters are replaced before the caller sees them", async () => {
+  const reply = await live(async () => ok(HOSTILE)).chat(REQ);
+  assert.doesNotMatch(reply.content, UNSAFE);
+  assert.ok(reply.content.includes("\uFFFD[2J"), "ESC became U+FFFD, the rest of the text is kept");
+  assert.ok(reply.content.includes("click") && reply.content.includes("reversed") && reply.content.endsWith(" end"));
+  assert.equal(reply.content.length, HOSTILE.length, "replacement is one for one");
+});
+
+test("mock reply: a responder's control and bidi characters are replaced too", async () => {
+  const reply = await createMockClient({ responder: () => HOSTILE }).chat(REQ);
+  assert.doesNotMatch(reply.content, UNSAFE);
+  assert.ok(reply.content.includes("click"));
+});
+
+// Audit L-3: no cap on a live reply's size, and no max_tokens on the request.
+test("a 4 MiB reply is cut to MAX_CONTENT_BYTES on a code point boundary", async () => {
+  const huge = "é".repeat(2 * 1024 * 1024); // 2 bytes each: 4 MiB
+  const reply = await live(async () => ok(huge)).chat(REQ);
+  const bytes = Buffer.byteLength(reply.content, "utf8");
+  assert.ok(bytes <= MAX_CONTENT_BYTES, `${bytes} bytes`);
+  assert.ok(bytes > MAX_CONTENT_BYTES - 4, "cut close to the cap, not far below it");
+  assert.ok(!reply.content.includes("\uFFFD"), "no split code point");
+  assert.ok([...reply.content].every((c) => c === "é"));
+  const emoji = "\u{1F480}".repeat(MAX_CONTENT_BYTES); // 4 bytes each, surrogate pairs
+  const cut = await live(async () => ok(emoji)).chat(REQ);
+  assert.equal(Buffer.byteLength(cut.content, "utf8") % 4, 0, "never splits a surrogate pair");
+  assert.equal(cut.content.length, (MAX_CONTENT_BYTES / 4) * 2);
+  const mock = await createMockClient({ responder: () => huge }).chat(REQ);
+  assert.ok(Buffer.byteLength(mock.content, "utf8") <= MAX_CONTENT_BYTES);
+});
+
+test("every live request carries max_tokens: the default when unset, the caller's value otherwise", async () => {
+  const bodies = [];
+  const client = live(async (_url, init) => { bodies.push(JSON.parse(init.body)); return ok(); });
+  await client.chat(REQ);
+  await client.chat({ ...REQ, maxTokens: 32 });
+  assert.equal(bodies[0].max_tokens, DEFAULT_MAX_TOKENS);
+  assert.equal(bodies[1].max_tokens, 32);
+  assert.ok(Number.isInteger(DEFAULT_MAX_TOKENS) && DEFAULT_MAX_TOKENS > 0);
+});
+
+test("provider model, id and error bodies are terminal-safe and short as well", async () => {
+  const reply = await live(async () => json(200, { id: `c\u001b]0;x\u0007${"i".repeat(500)}`, model: `m\u202E${"o".repeat(500)}`, choices: [{ message: { content: "hi" } }] })).chat(REQ);
+  assert.doesNotMatch(reply.id, UNSAFE);
+  assert.doesNotMatch(reply.model, UNSAFE);
+  assert.ok(reply.id.startsWith("c\uFFFD") && reply.model.startsWith("m\uFFFD"));
+  assert.ok(Buffer.byteLength(reply.id, "utf8") <= 200 && Buffer.byteLength(reply.model, "utf8") <= 200);
+  const err = await caught(live(async () => json(400, "bad\u001b[2J\u001b]8;;http://evil.example\u0007x"), { maxRetries: 0 }).chat(REQ));
+  assert.equal(err.status, 400);
+  assert.doesNotMatch(err.message, UNSAFE);
+  assert.ok(err.message.includes("bad\uFFFD[2J"), err.message);
 });
