@@ -38,10 +38,10 @@ export const NOT_VERIFIED = Object.freeze([
 //
 // Outcomes, never weaker than origin/main:
 //  - not hex                      -> FAIL (as on main; never "unverifiable")
-//  - hex, >= 632 bytes            -> checked at offset 568 whatever the header
-//                                    says (as on main): FAIL if the nonce or
-//                                    address is missing, PASS if both found.
-//                                    The header only decides the wording.
+//  - hex, >= 632 bytes            -> header must say version 4 and TDX tee_type
+//                                    0x81, else FAIL before report data is read.
+//                                    Then FAIL if the nonce or address is
+//                                    missing at offset 568, PASS if both found.
 //  - hex, < 632 bytes             -> "unverifiable" (as on main, where it was
 //                                    silently counted as OK). This is the ONLY
 //                                    input that reaches BINDING UNREAD / exit 2:
@@ -92,8 +92,10 @@ function checkQuoteReportData(quote, nonce, signingAddress) {
   }
   const version = bytes.readUInt16LE(0);
   const teeType = bytes.readUInt32LE(4);
-  const isV4 = version === TDX_QUOTE_VERSION && teeType === TDX_TEE_TYPE;
-  const kind = isV4 ? "TDX v4 quote" : `quote header version ${version}, tee_type 0x${teeType.toString(16)} (not TDX v4)`;
+  if (version !== TDX_QUOTE_VERSION || teeType !== TDX_TEE_TYPE) {
+    return ["fail", `intel_quote header says version ${version}, tee_type 0x${teeType.toString(16)}, not a TDX v4 quote (version ${TDX_QUOTE_VERSION}, tee_type 0x${TDX_TEE_TYPE.toString(16)}); report data not read`];
+  }
+  const kind = "TDX v4 quote";
   const reportData = bytes.subarray(
     TDX_REPORT_DATA_OFFSET,
     TDX_REPORT_DATA_OFFSET + TDX_REPORT_DATA_LENGTH,

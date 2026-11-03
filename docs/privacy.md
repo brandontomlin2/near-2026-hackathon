@@ -58,15 +58,16 @@ appear somewhere inside those 64 bytes.
 How `quote-binding` reports, given that:
 
 - `pass` when `intel_quote` is hex, at least 632 bytes, and both raw values
-  are found in bytes 568..632. The header is not required to be v4: a quote
-  with another header that holds both values passes, as it did before, and the
-  detail names the header it saw. The detail always says the quote is
-  unauthenticated.
+  are found in bytes 568..632, and the 48-byte header says version 4 with TEE
+  type `0x81` (TDX). The detail always says the quote is unauthenticated.
 - `fail` when `intel_quote` is not hex (the report claims a quote we cannot even
-  read as bytes), or when it is 632+ bytes and bytes 568..632 lack our nonce or
-  the signing address, whatever the header says (stale, replayed, another
-  node's quote, or a v5 quote we have no layout for). A genuine report that
-  hashes the binding, or a genuine v5 quote, would also fail here; we accept
+  read as bytes); when it is 632+ bytes and the header does not say version 4
+  and TDX (checked first, with the version and TEE type it did say, and the
+  report data is not read, so correct bytes at 568..632 do not save it); or when
+  the header is v4/TDX and bytes 568..632 lack our nonce or the signing address
+  (stale, replayed, another node's quote). A genuine v5 quote, and a genuine
+  report that
+  hashes the binding, would also fail here; we accept
   that rather than let a replayed quote through.
 - `unverifiable`, with the reason, only when `intel_quote` is valid hex but
   shorter than 632 bytes (a truncated quote). That is the one input that
@@ -90,7 +91,11 @@ would take; it is not evidence that NEAR AI binds the values that way.
 
 - The TDX quote's signature and Intel certificate chain. Needs `dcap-qvl` and
   Intel collateral. Without it, the REPORTDATA check above reads
-  unauthenticated bytes: anyone can write a JSON file that passes it.
+  unauthenticated bytes: anyone can write a JSON file that passes it. What the
+  check does verify about a quote is only: it is hex, at least 632 bytes, its
+  header says version 4 and TEE type TDX, and bytes 568..632 hold our nonce and
+  the signing address. It does not verify the quote signature, the certificate
+  chain, the measurements (MRTD, RTMRs, `mr_config`) or the TCB status.
 - NVIDIA NRAS. Needs a POST to `nras.attestation.nvidia.com`; then JWT
   claims (`x-nvidia-overall-att-result`, `eat_nonce`, `secboot`, `dbgstat`).
 - Compose manifest hash against `mr_config`.
