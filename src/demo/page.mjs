@@ -34,6 +34,8 @@ table{border-collapse:collapse;width:100%;font-size:14px}th,td{border-bottom:1px
 pre{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:8px;overflow-x:auto;font-size:12px}
 `;
 
+const SAFE_FILE = /^[A-Za-z0-9_][A-Za-z0-9_./-]*$/;
+
 const YOCTO_PER_NEAR = 10n ** 24n;
 
 /** "10000000000000000000000" -> "0.01 NEAR", "1" -> "1 yoctoNEAR". */
@@ -120,6 +122,11 @@ ${memes}
   const hero = manifest.agents.map((a) => `<figure><img src="${esc(a.art)}" alt="${esc(a.name)}"><figcaption>${esc(a.name)}</figcaption></figure>`).join("");
   const chain = manifest.roundHashes.map((h, i) => `<tr><td>${i + 1}</td><td class="hash">${esc(h)}</td></tr>`).join("\n");
   const calls = anchors.calls.map((c) => `<tr><td>${esc(c.tokenId)}</td><td>${esc(c.round)}</td><td>${esc(c.method)}</td><td class="hash">${esc(c.args.sheet_hash)}</td><td>${esc(formatDeposit(c.depositYocto))}</td><td>${esc(c.status)}</td></tr>`).join("\n");
+  // href is a URL context, where HTML escaping is not enough ("javascript:" survives it).
+  // Only plain relative file names are linked.
+  for (const f of manifest.files) {
+    if (!SAFE_FILE.test(f) || f.split("/").includes("..")) throw new TypeError(`manifest file is not a plain relative path: ${JSON.stringify(f)}`);
+  }
   const files = manifest.files.filter((f) => f !== "index.html").map((f) => `<li><a href="${esc(f)}">${esc(f)}</a></li>`).join("\n");
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

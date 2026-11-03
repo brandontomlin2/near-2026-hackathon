@@ -12,7 +12,7 @@ export const VIEW_METHOD = "sheet_anchor";
 // 1e22 yocto = 0.01 NEAR. A generous upper bound on the storage an anchor adds
 // (every anchor records its hash in a seen-hash set). The contract refunds the
 // unused part.
-export const FIRST_ANCHOR_DEPOSIT_YOCTO = "10000000000000000000000";
+export const ANCHOR_DEPOSIT_YOCTO = "10000000000000000000000";
 export const DEFAULT_GAS = "30000000000000"; // 30 Tgas
 
 const ACCOUNT_RE = /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
@@ -122,7 +122,7 @@ export function prepareAnchor({ contractId, tokenId, sheet, sheetHash, currentAn
     methodName: ANCHOR_METHOD,
     args: Object.freeze({ token_id: tokenId, sheet_hash: hash }),
     gas: gas ?? DEFAULT_GAS,
-    depositYocto: FIRST_ANCHOR_DEPOSIT_YOCTO,
+    depositYocto: ANCHOR_DEPOSIT_YOCTO,
     sheetHash: hash,
     firstAnchor,
     signing: "required",

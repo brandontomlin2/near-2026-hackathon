@@ -11,9 +11,16 @@ import { AGENTS } from "../traits/agents.mjs";
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
-/** @param {unknown} value */
+// C0/C1 controls (except tab, LF, CR) and bidi overrides/isolates. A model could use
+// them to reorder or hide the text around it (trojan-source style); show U+FFFD instead.
+const UNSAFE_CHARS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+
+/**
+ * The one HTML escaping helper: element text and double- or single-quoted attribute values.
+ * @param {unknown} value
+ */
 export function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (ch) => ({
+  return String(value).replace(UNSAFE_CHARS, "\uFFFD").replace(/[&<>"']/g, (ch) => ({
     "&": "&amp;",
     "<": "&lt;",
     ">": "&gt;",
