@@ -92,15 +92,6 @@ struct EventLog<T> {
     data: Vec<T>,
 }
 
-/// An in-flight lock older than this many blocks counts as expired. The
-/// `release_lock` callback (chained after the standard `nft_resolve_transfer`)
-/// normally runs within a handful of blocks (the receiver call is gas-bounded),
-/// so if it ever fails and never clears the lock, the anchor would stay frozen
-/// forever. ~1000 blocks (about 17 minutes at ~1 s/block) is far beyond any
-/// legitimate resolution time and keeps the freeze short without an admin
-/// backdoor.
-pub const IN_FLIGHT_EXPIRY_BLOCKS: u64 = 1000;
-
 /// Gas reserved for the standard resolve callback. Same budget the SDK uses.
 const GAS_FOR_RESOLVE_TRANSFER: Gas = Gas::from_tgas(5);
 
@@ -109,15 +100,21 @@ const GAS_FOR_RESOLVE_TRANSFER: Gas = Gas::from_tgas(5);
 /// resolve budget and leaves ample headroom.
 const GAS_FOR_RELEASE_LOCK: Gas = Gas::from_tgas(5);
 
-/// An in-flight lock: when it was set and which transfer set it.
+/// An in-flight lock: which `nft_transfer_call` set it.
+///
+/// The lock has no expiry. It is cleared only by the `release_lock` callback
+/// chained after the standard `nft_resolve_transfer`, which the runtime always
+/// executes once the receiver's promise settles, however long that takes and
+/// however it ends. A time-based unlock would let a receiver that stalls its
+/// `nft_on_transfer` (chained yields or congested hops) outlive the window,
+/// anchor as the recorded owner, and then return the token with a foreign
+/// anchor, which is exactly what the lock exists to prevent.
 #[near(serializers = [borsh])]
 #[derive(Clone, Copy)]
 pub struct InFlightLock {
-    /// Block height at which the lock was set; see `IN_FLIGHT_EXPIRY_BLOCKS`.
-    set_at: u64,
     /// Unique per `nft_transfer_call`. Only the callback of the transfer that
-    /// set the lock may clear it, so a late callback from an earlier transfer
-    /// cannot release the lock of a later one.
+    /// set the lock may clear it, so a stale or replayed callback carrying
+    /// another transfer's nonce leaves the lock alone.
     nonce: u64,
 }
 
@@ -314,7 +311,11 @@ impl Contract {
 
     /// Like `nft_transfer`, but panics unless the token's anchor is exactly
     /// `(expected_hash, expected_depth)`. Sellers and marketplaces use it so a
-    /// sale cannot land after the anchor was swapped. Requires 1 yoctoNEAR.
+    /// sale cannot land after the anchor was swapped. Also refuses a token
+    /// whose `nft_transfer_call` is still in flight: its pending
+    /// `nft_resolve_transfer` may still hand the token back to the previous
+    /// owner, so a buyer cannot rely on the anchor it pinned. Requires
+    /// 1 yoctoNEAR.
     #[payable]
     pub fn nft_transfer_expecting_anchor(
         &mut self,
@@ -333,15 +334,27 @@ impl Contract {
             anchor.sheet_hash == expected_hash && anchor.memory_depth == expected_depth,
             "sheet anchor does not match the expected anchor"
         );
+        require!(
+            !self.is_in_flight(&token_id),
+            "token is in an nft_transfer_call; transfer after it resolves"
+        );
         self.tokens
             .nft_transfer(receiver_id, token_id, approval_id, memo);
     }
 
-    /// True while a non-expired `nft_transfer_call` lock is set on the token.
+    /// True while an `nft_transfer_call` on the token has not resolved yet.
+    /// While true, `anchor_sheet`, `nft_transfer_expecting_anchor` and a nested
+    /// `nft_transfer_call` are refused, and the pending `nft_resolve_transfer`
+    /// may still return the token to its previous owner. Buyers should treat
+    /// such a token as not for sale until this returns false.
+    pub fn nft_in_flight(&self, token_id: TokenId) -> bool {
+        self.is_in_flight(&token_id)
+    }
+
+    /// True while an `nft_transfer_call` lock is set on the token. The lock
+    /// never expires; only `release_lock` clears it.
     fn is_in_flight(&self, token_id: &TokenId) -> bool {
-        self.in_flight.get(token_id).is_some_and(|lock| {
-            env::block_height().saturating_sub(lock.set_at) < IN_FLIGHT_EXPIRY_BLOCKS
-        })
+        self.in_flight.contains_key(token_id)
     }
 
     /// The account allowed to mint.
@@ -367,6 +380,16 @@ impl NonFungibleTokenCore for Contract {
             .nft_transfer(receiver_id, token_id, approval_id, memo);
     }
 
+    /// Standard `nft_transfer_call` with an in-flight lock on the token.
+    ///
+    /// Deviations from a stock NEP-171 contract, all documented in the README:
+    /// a second `nft_transfer_call` on a token whose first one has not
+    /// resolved panics instead of settling as a no-op (so an escrow that
+    /// forwards the token with `nft_transfer_call` from inside its
+    /// `nft_on_transfer` fails here); the lock's storage (prefix, token id and
+    /// an 8-byte nonce) is paid from the contract account's balance until
+    /// `release_lock` frees it, since this method takes exactly 1 yocto; and
+    /// `true` is also returned when the resolve callback itself failed.
     #[payable]
     fn nft_transfer_call(
         &mut self,
@@ -396,13 +419,8 @@ impl NonFungibleTokenCore for Contract {
         // panic: a panic here would revert the whole transfer.
         let nonce = self.next_lock_nonce;
         self.next_lock_nonce = nonce.wrapping_add(1);
-        self.in_flight.insert(
-            token_id.clone(),
-            InFlightLock {
-                set_at: env::block_height(),
-                nonce,
-            },
-        );
+        self.in_flight
+            .insert(token_id.clone(), InFlightLock { nonce });
         ext_nft_receiver::ext(receiver_id.clone())
             .with_unused_gas_weight(1)
             .nft_on_transfer(sender_id, old_owner.clone(), token_id.clone(), msg)
@@ -452,16 +470,20 @@ impl NonFungibleTokenResolver for Contract {
 impl Contract {
     /// Second callback of `nft_transfer_call`, chained after the standard
     /// `nft_resolve_transfer`. Releases the in-flight lock, but only if the lock
-    /// still belongs to this transfer (`nonce` matches), so a late callback of an
-    /// earlier transfer leaves a newer transfer's lock alone. Never panics: a
-    /// missing or foreign lock is simply left as is (an uncleared lock expires
-    /// after `IN_FLIGHT_EXPIRY_BLOCKS`).
+    /// still belongs to this transfer (`nonce` matches), so a stale or replayed
+    /// callback carrying another transfer's nonce leaves the lock alone. Never
+    /// panics (a panic would revert the removal and leave the token locked): a
+    /// missing or foreign lock is simply left as is. This callback is the only
+    /// thing that clears a lock; there is no expiry, so it must stay cheap and
+    /// panic-free.
     ///
     /// Returns the resolve result so the promise `nft_transfer_call` returns
     /// still yields the NEP-171 bool. Should the resolve callback itself have
     /// failed (only possible by running out of its fixed gas), ownership has
     /// already moved to the receiver and was not rolled back, so the transfer
-    /// counts as completed and `true` is returned.
+    /// counts as completed and `true` is returned. Callers that must tell that
+    /// case apart from a receiver that kept the token can read the receipt
+    /// outcomes of the `nft_resolve_transfer` receipt.
     #[private]
     pub fn release_lock(&mut self, token_id: TokenId, nonce: U64) -> bool {
         if self
@@ -1259,7 +1281,14 @@ mod tests {
     }
 
     fn resolve_with_nonce(contract: &mut Contract, receiver_reverts: bool, nonce: u64) -> bool {
-        resolve_chain(contract, accounts(2), accounts(3), receiver_reverts, nonce, 0)
+        resolve_chain(
+            contract,
+            accounts(2),
+            accounts(3),
+            receiver_reverts,
+            nonce,
+            0,
+        )
     }
 
     /// Runs the two callbacks `nft_transfer_call` schedules, in order, with the
@@ -1273,16 +1302,9 @@ mod tests {
         nonce: u64,
         block_height: u64,
     ) -> bool {
-        callback_env(
-            receiver_reverts.to_string().into_bytes(),
-            block_height,
-        );
-        let kept = contract.nft_resolve_transfer(
-            previous_owner,
-            receiver,
-            "aloof".to_string(),
-            None,
-        );
+        callback_env(receiver_reverts.to_string().into_bytes(), block_height);
+        let kept =
+            contract.nft_resolve_transfer(previous_owner, receiver, "aloof".to_string(), None);
         callback_env(kept.to_string().into_bytes(), block_height);
         contract.release_lock("aloof".to_string(), U64(nonce))
     }
@@ -1349,8 +1371,14 @@ mod tests {
             action_log_index.push(action_log_index.last().unwrap() + 1 + r.actions.len());
         }
         assert_eq!(receipts[0].receipt_indices, Vec::<u64>::new());
-        assert_eq!(receipts[1].receipt_indices, vec![action_log_index[0] as u64]);
-        assert_eq!(receipts[2].receipt_indices, vec![action_log_index[1] as u64]);
+        assert_eq!(
+            receipts[1].receipt_indices,
+            vec![action_log_index[0] as u64]
+        );
+        assert_eq!(
+            receipts[2].receipt_indices,
+            vec![action_log_index[1] as u64]
+        );
 
         let calls = function_calls(&receipts);
         let names: Vec<&str> = calls.iter().map(|(n, _, _)| n.as_str()).collect();
@@ -1455,62 +1483,215 @@ mod tests {
         contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
     }
 
+    /// Audit 3, M-1, inverted. A receiver that stalls its `nft_on_transfer`
+    /// (chained yields, congested hops) is the recorded owner for as long as
+    /// it likes, but the lock never expires: at every height it can neither
+    /// anchor, nest a transfer call, nor sell with a pinned anchor. When it
+    /// finally returns the token, the previous owner gets it back with the
+    /// anchor untouched and no hash burned in `seen_hashes`.
     #[test]
-    fn stale_in_flight_lock_expires_after_the_window() {
+    fn receiver_cannot_anchor_at_any_height_while_locked() {
         let mut contract = minted_contract();
         testing_env!(context(accounts(2), ONE_YOCTO)
             .block_height(1_000)
             .prepaid_gas(near_sdk::Gas::from_tgas(100))
             .build());
         let _ = contract.nft_transfer_call(accounts(3), "aloof".to_string(), None, None, "".into());
-        // Resolve never ran. Just inside the window the anchor is still frozen.
-        testing_env!(context(accounts(3), MINT_DEPOSIT)
-            .block_height(1_000 + IN_FLIGHT_EXPIRY_BLOCKS - 1)
+        // Resolution never runs. The heights cover the old 1000-block window
+        // (1_999 inside, 2_000 at, 11_000 far past) and the maximum height.
+        for height in [1_000u64, 1_999, 2_000, 11_000, u64::MAX] {
+            testing_env!(context(accounts(3), MINT_DEPOSIT)
+                .block_height(height)
+                .build());
+            assert!(
+                contract.nft_in_flight("aloof".to_string()),
+                "height {height}"
+            );
+            assert_eq!(
+                contract.nft_token("aloof".to_string()).unwrap().owner_id,
+                accounts(3)
+            );
+            assert!(
+                panics(|| {
+                    contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+                }),
+                "receiver anchored at height {height}"
+            );
+            testing_env!(context(accounts(3), ONE_YOCTO)
+                .block_height(height)
+                .prepaid_gas(near_sdk::Gas::from_tgas(100))
+                .build());
+            assert!(
+                panics(|| {
+                    let _ = contract.nft_transfer_call(
+                        accounts(4),
+                        "aloof".to_string(),
+                        None,
+                        None,
+                        "".into(),
+                    );
+                }),
+                "receiver nested a transfer call at height {height}"
+            );
+            assert!(
+                panics(|| {
+                    contract.nft_transfer_expecting_anchor(
+                        accounts(4),
+                        "aloof".to_string(),
+                        None,
+                        None,
+                        None,
+                        INITIAL_MEMORY_DEPTH,
+                    );
+                }),
+                "receiver sold with a pinned anchor at height {height}"
+            );
+        }
+        // The receiver finally asks for the return, far past the old window.
+        assert!(!resolve_chain(
+            &mut contract,
+            accounts(2),
+            accounts(3),
+            true,
+            0,
+            u64::MAX
+        ));
+        assert!(!contract.nft_in_flight("aloof".to_string()));
+        let token = contract.nft_token("aloof".to_string()).unwrap();
+        assert_eq!(token.owner_id, accounts(2));
+        let anchor = contract.sheet_anchor("aloof".to_string()).unwrap();
+        assert_eq!(anchor.sheet_hash, None);
+        assert_eq!(anchor.memory_depth, INITIAL_MEMORY_DEPTH);
+        // Nothing was burned: the owner can still anchor the hash the receiver
+        // tried to plant.
+        testing_env!(context(accounts(2), MINT_DEPOSIT).build());
+        let anchor = contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+        assert_eq!(anchor.sheet_hash.as_deref(), Some(HASH_A));
+        assert_eq!(anchor.memory_depth, 2);
+    }
+
+    /// With no expiry a lock is replaced only after `release_lock` cleared the
+    /// previous one, so the nonce check guards the one remaining ordering: a
+    /// stale or replayed callback of an earlier transfer arriving while a later
+    /// transfer's lock is set.
+    #[test]
+    fn stale_callback_cannot_clear_a_later_transfers_lock() {
+        let mut contract = minted_contract();
+        // Transfer 1 (nonce 0): account 2 -> 3, resolved and released.
+        testing_env!(context(accounts(2), ONE_YOCTO)
+            .block_height(1_000)
+            .prepaid_gas(near_sdk::Gas::from_tgas(100))
+            .build());
+        let _ = contract.nft_transfer_call(accounts(3), "aloof".to_string(), None, None, "".into());
+        assert!(resolve_chain(
+            &mut contract,
+            accounts(2),
+            accounts(3),
+            false,
+            0,
+            1_001
+        ));
+        assert!(!contract.nft_in_flight("aloof".to_string()));
+        // Transfer 2 (nonce 1): account 3 sends the token on to account 4.
+        testing_env!(context(accounts(3), ONE_YOCTO)
+            .block_height(1_002)
+            .prepaid_gas(near_sdk::Gas::from_tgas(100))
+            .build());
+        let _ = contract.nft_transfer_call(accounts(4), "aloof".to_string(), None, None, "".into());
+        assert_eq!(contract.in_flight.get("aloof").unwrap().nonce, 1);
+        // Transfer 1's callbacks run again with a "return the token" answer.
+        // The token has moved on, so the standard resolve is a no-op, and
+        // `release_lock` sees a foreign nonce and leaves transfer 2's lock.
+        assert!(resolve_chain(
+            &mut contract,
+            accounts(2),
+            accounts(3),
+            true,
+            0,
+            1_003
+        ));
+        assert!(contract.nft_in_flight("aloof".to_string()));
+        assert_eq!(
+            contract.nft_token("aloof".to_string()).unwrap().owner_id,
+            accounts(4)
+        );
+        testing_env!(context(accounts(4), MINT_DEPOSIT)
+            .block_height(1_004)
             .build());
         assert!(panics(|| {
             contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
         }));
-        // At the window the lock counts as expired and the owner can anchor.
-        testing_env!(context(accounts(3), MINT_DEPOSIT)
-            .block_height(1_000 + IN_FLIGHT_EXPIRY_BLOCKS)
+        // Transfer 2's own callbacks (nonce 1) clear it.
+        assert!(resolve_chain(
+            &mut contract,
+            accounts(3),
+            accounts(4),
+            false,
+            1,
+            1_005
+        ));
+        assert!(!contract.nft_in_flight("aloof".to_string()));
+        testing_env!(context(accounts(4), MINT_DEPOSIT)
+            .block_height(1_006)
             .build());
         let anchor = contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
         assert_eq!(anchor.memory_depth, 2);
     }
 
     #[test]
-    fn stale_callback_cannot_clear_a_later_transfers_lock() {
+    fn nft_in_flight_view_tracks_the_lock() {
         let mut contract = minted_contract();
-        // Transfer 1 (nonce 0) at height 1000: its callback is delayed.
+        assert!(!contract.nft_in_flight("aloof".to_string()));
+        assert!(!contract.nft_in_flight("no-such-token".to_string()));
         testing_env!(context(accounts(2), ONE_YOCTO)
-            .block_height(1_000)
             .prepaid_gas(near_sdk::Gas::from_tgas(100))
             .build());
         let _ = contract.nft_transfer_call(accounts(3), "aloof".to_string(), None, None, "".into());
-        // The lock expires; account 3 sends the token on (nonce 1).
-        let later = 1_000 + IN_FLIGHT_EXPIRY_BLOCKS;
-        testing_env!(context(accounts(3), ONE_YOCTO)
-            .block_height(later)
+        assert!(contract.nft_in_flight("aloof".to_string()));
+        assert!(resolve(&mut contract, false));
+        assert!(!contract.nft_in_flight("aloof".to_string()));
+    }
+
+    #[test]
+    fn transfer_expecting_anchor_refuses_an_in_flight_token_and_works_after() {
+        let mut contract = minted_contract();
+        testing_env!(context(accounts(2), ONE_YOCTO)
             .prepaid_gas(near_sdk::Gas::from_tgas(100))
             .build());
-        let _ = contract.nft_transfer_call(accounts(4), "aloof".to_string(), None, None, "".into());
-        // The stale callbacks of transfer 1 finally run. They must not clear
-        // the lock of transfer 2 (the token has moved on, so the standard
-        // resolve settles as a no-op and `release_lock` sees a foreign nonce).
-        resolve_chain(&mut contract, accounts(2), accounts(3), false, 0, later + 1);
-        testing_env!(context(accounts(4), MINT_DEPOSIT)
-            .block_height(later + 2)
-            .build());
+        let _ = contract.nft_transfer_call(accounts(3), "aloof".to_string(), None, None, "".into());
+        // The receiver owns the token and the pinned anchor matches, but the
+        // pending resolve may still take the token back, so the sale is refused.
+        testing_env!(context(accounts(3), ONE_YOCTO).build());
         assert!(panics(|| {
-            contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+            contract.nft_transfer_expecting_anchor(
+                accounts(4),
+                "aloof".to_string(),
+                None,
+                None,
+                None,
+                INITIAL_MEMORY_DEPTH,
+            );
         }));
-        // Transfer 2's own callbacks (nonce 1) clear it.
-        resolve_chain(&mut contract, accounts(3), accounts(4), false, 1, later + 3);
-        testing_env!(context(accounts(4), MINT_DEPOSIT)
-            .block_height(later + 4)
-            .build());
-        let anchor = contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
-        assert_eq!(anchor.memory_depth, 2);
+        assert_eq!(
+            contract.nft_token("aloof".to_string()).unwrap().owner_id,
+            accounts(3)
+        );
+        // Once the receiver has kept the token and the lock is released, the
+        // same sale goes through.
+        assert!(resolve(&mut contract, false));
+        testing_env!(context(accounts(3), ONE_YOCTO).build());
+        contract.nft_transfer_expecting_anchor(
+            accounts(4),
+            "aloof".to_string(),
+            None,
+            None,
+            None,
+            INITIAL_MEMORY_DEPTH,
+        );
+        assert_eq!(
+            contract.nft_token("aloof".to_string()).unwrap().owner_id,
+            accounts(4)
+        );
     }
 
     #[test]

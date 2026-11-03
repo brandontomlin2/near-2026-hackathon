@@ -93,8 +93,8 @@
     "owner": "claude",
     "kind": "task",
     "lane": "any",
-    "notes": "contracts/personality-nft: NEP-171/177/178/181 + NEP-297 on near-sdk 5.30; nft_mint (owner only, storage refund), anchor_sheet (token owner, sha256 hash, memory_depth+1, sheet_anchored event), sheet_anchor view; 13 unit tests pass; wasm builds (248 KB) via npm run build:contract\nsession_id=d6be7df6-9832-48d8-9ba9-b9c8c2dc0ad6\ntotal_cost_usd=3.338508\nsubtype=success\nverify=PASS\nOn main: contracts/personality-nft NEP-171/177/178/181 with anchor_sheet; audit fixes merged (#12, #22, #32, #56). Unit-tested locally, not deployed.",
-    "updated_at": "2026-11-03T12:37:22.630Z",
+    "notes": "contracts/personality-nft: NEP-171/177/178/181 + NEP-297 on near-sdk 5.30; nft_mint (owner only, storage refund), anchor_sheet (token owner, sha256 hash, memory_depth+1, sheet_anchored event), sheet_anchor view; 13 unit tests pass; wasm builds (248 KB) via npm run build:contract\nsession_id=d6be7df6-9832-48d8-9ba9-b9c8c2dc0ad6\ntotal_cost_usd=3.338508\nsubtype=success\nverify=PASS\nOn main: contracts/personality-nft NEP-171/177/178/181 with anchor_sheet; audit fixes merged (#12, #22, #32, #56). Unit-tested locally, not deployed.\naudit 3 M-1: removed the in-flight lock expiry (lock cleared only by release_lock); inverted the attack test; L-4 nft_in_flight view + guard in nft_transfer_expecting_anchor; L-1/L-2/L-3 documented",
+    "updated_at": "2026-11-03T14:09:09.041Z",
     "updated_by": "claude"
   },
   {
