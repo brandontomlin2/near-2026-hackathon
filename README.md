@@ -203,6 +203,10 @@ Every pull request must paste the real `bash scripts/verify.sh` output in a `## 
 - Track walkthrough video: https://www.youtube.com/watch?v=bND1ioWBf3g
 - Submissions close 2026-11-14 23:59 UTC. One submission per repository, not editable after sending.
 
+## Disclosure
+
+Libraries used, AI-generated code, and pre-hackathon code (none exists): see [`docs/DISCLOSURE.md`](docs/DISCLOSURE.md).
+
 ## License
 
 MIT. See `LICENSE`.
