@@ -9,6 +9,13 @@ const request = (name, previous, events) => ({ messages: buildSummaryMessages({ 
 const respond = (name, previous, events) => sheetResponder(request(name, previous, events), "ignored");
 
 describe("sheetResponder", () => {
+  it("a name that is also an Object.prototype key gets the default vibe instead of throwing", () => {
+    for (const name of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+      const sheet = respond(name, null, [ev("post", name, "Hi.")]);
+      assert.match(sheet, new RegExp(`^Who I am: ${name}, (${VIBES.default.quiet.join("|")})\\. `), name);
+    }
+  });
+
   it("counts posts, replies and mentions in a first sheet", () => {
     const sheet = respond("Aloof", null, [
       ev("post", "Aloof", "Quietly fine."),

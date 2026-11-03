@@ -133,6 +133,61 @@ test("verify.sh rejects an unknown argument with one line and runs nothing", () 
   }
 });
 
+// --live queries the contract account, which deploy calls NEAR_CONTRACT_ACCOUNT_ID
+// (NEAR_ACCOUNT_ID is the signer there and only a fallback here). The gate runs before
+// anything is cloned, so these runs take no time and touch no network.
+test("verify.sh --live needs NEAR_NETWORK=testnet and a contract account: NEAR_CONTRACT_ACCOUNT_ID or NEAR_ACCOUNT_ID", () => {
+  const base = { ...process.env };
+  for (const name of ["NEAR_NETWORK", "NEAR_ACCOUNT_ID", "NEAR_CONTRACT_ACCOUNT_ID", "EVIDENCE_TX_FILE"]) delete base[name];
+  const live = (env) => spawnSync("/bin/bash", [VERIFY, "--live"], { encoding: "utf8", env: { ...base, ...env } });
+  const refused = [
+    ["no network", { NEAR_CONTRACT_ACCOUNT_ID: "nft.alice.testnet" }],
+    ["no account", { NEAR_NETWORK: "testnet" }],
+    ["empty accounts", { NEAR_NETWORK: "testnet", NEAR_CONTRACT_ACCOUNT_ID: "", NEAR_ACCOUNT_ID: "" }],
+  ];
+  for (const [label, env] of refused) {
+    const r = live(env);
+    assert.equal(r.status, 1, label);
+    assert.match(r.stderr, /^error: --live requires NEAR_NETWORK=testnet and NEAR_CONTRACT_ACCOUNT_ID \(or NEAR_ACCOUNT_ID\)\.$/m, label);
+    assert.doesNotMatch(r.stdout, /fresh clone/, `${label}: refused before the clone`);
+    assert.doesNotMatch(r.stdout, /nft\.alice/, `${label}: the account value is never printed`);
+  }
+});
+
+test("verify.sh --live passes the env gate with NEAR_CONTRACT_ACCOUNT_ID alone, and with NEAR_ACCOUNT_ID as the fallback", (t) => {
+  // A throwaway repository holding only the script: every npm stage SKIPs, so the run is
+  // quick and offline. The live evidence stage cannot pass there (no evidence file), so the
+  // assertions are about the gate and the mode line, not the final result.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "verify-live-env-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const repo = path.join(root, "repo");
+  fs.mkdirSync(path.join(repo, "scripts"), { recursive: true });
+  fs.copyFileSync(VERIFY, path.join(repo, "scripts", "verify.sh"));
+  const git = (...a) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...a], { cwd: repo, encoding: "utf8" });
+  assert.equal(git("init", "-q").status, 0);
+  assert.equal(git("add", "-A").status, 0);
+  assert.equal(git("commit", "-q", "-m", "fixture").status, 0);
+  const base = { ...process.env, TMPDIR: root };
+  for (const name of ["NEAR_ACCOUNT_ID", "NEAR_CONTRACT_ACCOUNT_ID", "EVIDENCE_TX_FILE"]) delete base[name];
+  const live = (env) => spawnSync("/bin/bash", ["scripts/verify.sh", "--live"], { cwd: repo, encoding: "utf8", env: { ...base, NEAR_NETWORK: "testnet", ...env } });
+
+  const contractOnly = live({ NEAR_CONTRACT_ACCOUNT_ID: "nft.alice.testnet" });
+  assert.doesNotMatch(contractOnly.stderr, /--live requires/, contractOnly.stderr);
+  assert.match(contractOnly.stdout, /^mode: live \(testnet, contract account NEAR_CONTRACT_ACCOUNT_ID set, keys not printed\)$/m);
+  assert.match(contractOnly.stdout, /fresh clone/, "the gate passed and the run went on");
+  assert.doesNotMatch(contractOnly.stdout + contractOnly.stderr, /nft\.alice/, "the account value is never printed");
+
+  const fallback = live({ NEAR_ACCOUNT_ID: "alice.testnet" });
+  assert.doesNotMatch(fallback.stderr, /--live requires/, fallback.stderr);
+  assert.match(fallback.stdout, /^mode: live \(testnet, contract account from NEAR_ACCOUNT_ID, keys not printed\)$/m);
+  assert.match(fallback.stdout, /fresh clone/);
+});
+
+test("the mock runner drops both account variables and key-like names from the child env", () => {
+  const text = fs.readFileSync(VERIFY, "utf8");
+  assert.match(text, /mode === "mock" && \(isSecretName\(name\) \|\| name === "NEAR_ACCOUNT_ID" \|\| name === "NEAR_CONTRACT_ACCOUNT_ID"\)/);
+});
+
 test("verify.sh --help prints usage and exits 0", () => {
   const r = spawnSync("/bin/bash", [VERIFY, "--help"], { encoding: "utf8" });
   assert.equal(r.status, 0);

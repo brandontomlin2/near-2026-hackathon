@@ -52,6 +52,67 @@ test("README quotes Chaotic's real ride-or-die sheet text", async () => {
   });
 });
 
+test("README Try-it steps are numbered 1 to 10 and the npm run ask step is last, after verify.sh", async () => {
+  const section = readme.split("## Try it (judge path)\n")[1].split(/\n## /)[0];
+  const numbers = [...section.matchAll(/^(\d+)\. /gm)].map((m) => Number(m[1]));
+  assert.deepEqual(numbers, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.match(section, /^4\. Open `out\/memory\/chaotic\/sheet\.json`\./m, "step 4 is the sheet.json step");
+  assert.match(section, /^5\. Open `out\/anchors\.json`\./m, "step 5 is the anchors step, untouched");
+  assert.match(section, /^9\. Run `bash scripts\/verify\.sh`/m, "step 9 is verify.sh, untouched");
+  const step10 = /^10\. Last, after the steps above, because it changes `out\/memory`: run `npm run ask -- chaotic "what do you think of Skeptic\?"`\./m;
+  assert.match(section, step10, "step 10 is the ask step and says to run it last");
+  const tail = section.split(/^9\. .*$/m)[1];
+  assert.ok(/^\n\n10\. [^\n]*\n\nEverything below this section is reference for the pieces the demo ran\.\n/.test(tail), "step 10 sits after the blank line that follows step 9, one blank line before the closing sentence");
+  const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+  assert.equal(pkg.scripts.ask, "node scripts/ask.mjs");
+  const checklist = await readFile(join(root, "docs/submission-checklist.md"), "utf8");
+  assert.ok(checklist.includes('README "Try it (judge path)" steps 1-10.'), "the submission checklist counts the Try-it steps");
+  const script = await readFile(join(root, "docs/demo-script.md"), "utf8");
+  assert.ok(script.includes("`npm run ask -- <agentId> \"<question>\"` also exists (README step 10)"), "demo-script.md Command status names npm run ask");
+});
+
+test("README step 10 quotes what npm run ask really prints, and npm run demo resets the memory", async () => {
+  await withTmp(async (dir) => {
+    const out = await runDemoCli(dir);
+    const step10 = readme.match(/^10\. Last, after the steps above, because it changes `out\/memory`: run `npm run ask -- chaotic "what do you think of Skeptic\?"`\..*$/m)[0];
+    const ask = (question) => run(process.execPath, [join(root, "scripts/ask.mjs"), "--out", out, "chaotic", question], { env });
+
+    const first = await ask("what do you think of Skeptic?");
+    const lines = first.stdout.trimEnd().split("\n");
+    assert.ok(step10.includes(`\`${lines[0]}\``), `step 10 must quote the first line verbatim: ${lines[0]}`);
+    assert.ok(step10.includes("`Owner: 0 fights, 0 hugs, 1 shrug`"));
+    assert.ok(lines.some((l) => l.startsWith("  + Scorecard:") && l.endsWith("Owner: 0 fights, 0 hugs, 1 shrug.")), "the Owner joins the scorecard");
+    assert.ok(lines.some((l) => /^ {2}\+ Signature quote: "Skeptic\?\? 5 fights and counting/.test(l)), "the answer becomes the signature quote");
+    const anchor = /^sheet chaotic round 7 ([0-9a-f]{64}) \(\+3 -3\) -> anchor_sheet dry-run \(not sent\)$/.exec(lines.at(-2));
+    assert.ok(anchor, lines.at(-2));
+    assert.ok(step10.includes("`sheet chaotic round 7 <hash> (+3 -3) -> anchor_sheet dry-run (not sent)`"));
+    const sheet = JSON.parse(await readFile(join(out, "memory/chaotic/sheet.json"), "utf8"));
+    assert.equal(sheet.sheetHash, anchor[1]);
+    assert.ok(step10.includes("where `<hash>` is the new `sheetHash` in `out/memory/chaotic/sheet.json`"));
+
+    // Six hostile asks: the Owner displaces Skeptic as public enemy #1 on the sixth.
+    let sixth;
+    for (let i = 0; i < 6; i++) sixth = await ask("nope, show me the receipts");
+    assert.ok(sixth.stdout.includes("\n  + Public enemy #1: Owner (6 fights).\n"), sixth.stdout);
+    assert.ok(step10.includes("six times: the sixth diff adds `Public enemy #1: Owner (6 fights).`"));
+    const enemy = await ask("who is your enemy?");
+    const answer = enemy.stdout.split("\n")[0];
+    assert.ok(step10.includes(`\`${answer}\``), `step 10 must quote the enemy answer verbatim: ${answer}`);
+
+    // Only out/memory changed, and npm run demo starts the memory over.
+    assert.ok(step10.includes("Only `out/memory` changes") && step10.includes("`npm run demo` resets the memory"));
+    const demoBefore = await readFile(join(out, "demo.json"), "utf8");
+    const logAfterAsks = (await readFile(join(out, "memory/chaotic/log.jsonl"), "utf8")).split("\n").filter(Boolean).length;
+    await run(process.execPath, [join(root, "scripts/demo.mjs"), "--out", out], { env });
+    assert.equal(await readFile(join(out, "demo.json"), "utf8"), demoBefore, "the asks never touched demo.json");
+    const reset = JSON.parse(await readFile(join(out, "memory/chaotic/sheet.json"), "utf8"));
+    assert.equal(reset.round, 6);
+    assert.ok(!reset.sheet.includes("Owner"), "the Owner is gone from the sheet after npm run demo");
+    const logAfterDemo = (await readFile(join(out, "memory/chaotic/log.jsonl"), "utf8")).split("\n").filter(Boolean).length;
+    assert.equal(logAfterDemo, logAfterAsks - 16, "eight asks added 16 lines; the demo removed them");
+  });
+});
+
 test("README swarm step counts match the real 5-round output", async () => {
   await withTmp(async (dir) => {
     const { stdout } = await run(process.execPath, [join(root, "scripts/swarm.mjs"), "--rounds", "5", "--out", dir], { env });
@@ -80,6 +141,13 @@ test("README timing claim is cold-run safe and deploy step orders build before d
   assert.doesNotMatch(readmeText, /under a second|sub-second/i);
   assert.match(readmeText, /It exits 0 in a few seconds/);
   assert.match(readmeText, /deploy:nft`\. Step 1 must have run first/);
+});
+
+test("README quotes the deploy command without --quiet: quiet near-cli-rs prints no Transaction ID for live-proof to record", () => {
+  const deployStep = readme.match(/^2\. Run `npm run deploy:nft`\..*$/m);
+  assert.ok(deployStep, "README must have a 'Run npm run deploy:nft' step");
+  assert.ok(deployStep[0].includes("`near contract deploy ... sign-with-keychain send`"), deployStep[0]);
+  assert.ok(!readme.includes("near --quiet"), "no README command may be quiet");
 });
 
 test("README does not pin a contract unit-test count; it claims only 'ok' and '0 failed'", () => {
@@ -231,7 +299,7 @@ test("README 'Live on testnet' is one short paragraph after the working sections
 
 test("README meme paragraph: templates not jokes, caption bottom line is a scripted reply, fold rule is fights then replies then roster", async () => {
   assert.doesNotMatch(readmeText, /no hand-written jokes/);
-  assert.ok(readmeText.includes("The 5 meme cards are fixed templates filled from the run's data"));
+  assert.ok(readmeText.includes("The 3 meme cards are fixed templates filled from the run's data"));
   assert.ok(readmeText.includes("one card per rivalry goes to the side whose sheet counts more fights, then, on a tie, the side with more replies to its enemy, then the earlier agent in the roster"));
   const memes = await readFile(join(root, "src/demo/memes.mjs"), "utf8");
   const wins = memes.slice(memes.indexOf("const wins = (a, b) =>"));
@@ -262,7 +330,7 @@ test("README hash normalisation summary matches normalizeSheet, and the TEE badg
   assert.doesNotMatch(readmeText, /\(NFC, LF, one final newline\)/);
   const { normalizeSheet } = await import("../src/anchor/hash.mjs");
   assert.equal(normalizeSheet("\n\n  é one  \r\n\r\ntwo \t\n\n"), "é one\n\ntwo\n");
-  assert.ok(readmeText.includes('the "NEAR AI Cloud (TEE) in live mode" badge says `mocked`. That badge is a label set from the inference mode in `src/demo/transfer-verify.mjs`, not an attestation check: nothing in the demo or in `verify.sh` verifies a TEE.'));
+  assert.ok(readmeText.includes('the "NEAR AI Cloud (TEE) in live mode" badge says `mocked` in grey (not the green used for a passing hash check). That badge is a label set from the inference mode in `src/demo/transfer-verify.mjs`, not an attestation check: nothing in the demo or in `verify.sh` verifies a TEE.'));
   assert.ok(readmeText.includes("The offline attestation checker, `node scripts/attest-check.mjs`, runs only on a hand-built fixture"));
   const { buildTransfer } = await import("../src/demo/transfer-verify.mjs");
   const mock = buildTransfer([], { calls: [] }, { contractId: "x.testnet", mode: "mock" });
@@ -276,17 +344,30 @@ test("README hash normalisation summary matches normalizeSheet, and the TEE badg
 });
 
 test("README and verify.sh give the same --live command, with the contract account and an absolute EVIDENCE_TX_FILE", async () => {
-  const command = 'NEAR_NETWORK=testnet NEAR_ACCOUNT_ID=<contract-account> EVIDENCE_TX_FILE="$PWD/out/live-proof/txs.json" bash scripts/verify.sh --live';
+  // The contract account goes in NEAR_CONTRACT_ACCOUNT_ID, the variable deploy uses for it
+  // (NEAR_ACCOUNT_ID is the signer there and only a fallback here).
+  const command = 'NEAR_NETWORK=testnet NEAR_CONTRACT_ACCOUNT_ID=<contract-account> EVIDENCE_TX_FILE="$PWD/out/live-proof/txs.json" bash scripts/verify.sh --live';
   assert.ok(readme.includes(`\n${command}\n`), "README 'Validate locally' must show the full --live command");
-  assert.doesNotMatch(readme, /NEAR_ACCOUNT_ID=<testnet-account> bash scripts\/verify\.sh --live/);
+  assert.doesNotMatch(readme, /NEAR_ACCOUNT_ID=<(testnet|contract)-account> [^\n]*bash scripts\/verify\.sh --live/);
   const verify = await readFile(join(root, "scripts/verify.sh"), "utf8");
   assert.ok(verify.includes(`  ${command}\n`), "verify.sh usage must show the same command");
-  assert.ok(readmeText.includes("which reads `NEAR_ACCOUNT_ID` as the contract account to query"));
+  const skill = await readFile(join(root, ".agents/skills/verify-near-2026/SKILL.md"), "utf8");
+  assert.ok(skill.includes(`\n${command}\n`), "the verify skill must show the same command");
+  // Review L-d: the evidence stage reads NEAR_CONTRACT_ACCOUNT_ID (NEAR_ACCOUNT_ID is its fallback);
+  // the docs must name that variable, not the fallback, everywhere they describe the stage.
+  assert.ok(readmeText.includes("which reads `NEAR_CONTRACT_ACCOUNT_ID` as the contract account to query"));
+  assert.ok(readmeText.includes("a live run without `NEAR_NETWORK=testnet` and `NEAR_CONTRACT_ACCOUNT_ID` is a failure"));
+  const checklistText = await readFile(join(root, "docs/submission-checklist.md"), "utf8");
+  for (const [name, text] of [["README", readmeText], ["docs/submission-checklist.md", checklistText]]) {
+    assert.doesNotMatch(text, /reads `NEAR_ACCOUNT_ID` as the contract account/, `${name} must not say the evidence stage reads NEAR_ACCOUNT_ID`);
+    assert.doesNotMatch(text, /NEAR_ACCOUNT_ID=<NEAR_CONTRACT_ACCOUNT_ID>/, `${name} must not put the contract id in NEAR_ACCOUNT_ID`);
+  }
   assert.ok(readmeText.includes("Give that path as an absolute path, because the script runs inside a fresh clone in a temp directory."));
   assert.ok(readmeText.includes("Without it the stage records `FAIL` with `out/evidence.json missing tx hashes or RPC views`."));
   assert.ok(verify.includes('record FAIL "evidence" "out/evidence.json missing tx hashes or RPC views"'));
   const evidence = await readFile(join(root, "scripts/evidence.mjs"), "utf8");
-  assert.match(evidence, /NEAR_ACCOUNT_ID\s+contract account to query/);
+  assert.match(evidence, /NEAR_CONTRACT_ACCOUNT_ID\n\s+contract account to query/);
+  assert.match(evidence, /Falls back to NEAR_ACCOUNT_ID when unset/);
   assert.match(evidence, /fs\.readFileSync\(file, "utf8"\)/, "the tx file is read relative to the clone's cwd, hence the absolute path");
   assert.match(verify, /git clone --local[\s\S]*cd "\$work\/repo"/, "verify.sh cd's into the fresh clone");
 });
@@ -295,7 +376,9 @@ test("the submission checklist and live:check name the complete owner command, w
   const { SEND_COMMAND } = await import("./live-proof.mjs");
   const checklist = await readFile(join(root, "docs/submission-checklist.md"), "utf8");
   assert.ok(checklist.includes(`\`${SEND_COMMAND}\``), `docs/submission-checklist.md must quote ${SEND_COMMAND}`);
-  assert.doesNotMatch(checklist, /--i-approve`/);
+  // A quoted command that stops at --i-approve is incomplete (mint --send needs --media-base).
+  // Naming the flag on its own (`--i-approve`) is fine: it is what the low-level tools require.
+  assert.doesNotMatch(checklist, /--send --i-approve`/, "an owner command that stops at --i-approve is incomplete: mint --send needs --media-base");
   const { check } = await import("./live-check.mjs");
   const r = await check({ NEAR_ACCOUNT_ID: "alice.testnet", NEAR_CONTRACT_ACCOUNT_ID: "nft.alice.testnet" }, {
     statWasm: () => 1, fetch: async () => ({ json: async () => ({ result: { amount: "1" } }) }), wasm: "/w.wasm",

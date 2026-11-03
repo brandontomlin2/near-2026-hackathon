@@ -2,7 +2,9 @@
 //
 // The sheets are free text written by a model (or the offline stand-in), so the
 // labels are matched loosely and anything missing prints as "none". Output goes
-// to a terminal: control characters are dropped and values are clipped.
+// to a terminal: control and bidi characters become U+FFFD and values are clipped.
+
+import { replaceUnsafeChars } from "../util/text.mjs";
 
 const MAX_VALUE_CHARS = 80;
 // A placeholder must end the value or be followed by a non-word character: "none yet"
@@ -22,8 +24,7 @@ const LABELS = Object.freeze({
 });
 
 function clean(text) {
-  // eslint-disable-next-line no-control-regex
-  const flat = String(text).replace(/[\u0000-\u001f\u007f-\u009f]|\s+/g, " ").trim();
+  const flat = replaceUnsafeChars(text).replace(/\s+/g, " ").trim();
   return flat.length > MAX_VALUE_CHARS ? `${flat.slice(0, MAX_VALUE_CHARS - 3).trimEnd()}...` : flat;
 }
 
