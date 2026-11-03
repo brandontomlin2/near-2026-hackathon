@@ -96,7 +96,9 @@ function interactions(previous, name, events) {
       if (target && target !== name) addTone(target, e.text);
     }
   }
-  return [...counts.entries()].sort((a, b) => b[1].total - a[1].total || a[0].localeCompare(b[0]));
+  // Plain code-unit order, not localeCompare, so the order never depends on ICU or locale.
+  const byName = (x, y) => (x < y ? -1 : x > y ? 1 : 0);
+  return [...counts.entries()].sort((a, b) => b[1].total - a[1].total || byName(a[0], b[0]));
 }
 
 // The partner with the largest lead of `more` over `less`, if any has a lead.

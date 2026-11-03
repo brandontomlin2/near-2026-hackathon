@@ -2,6 +2,7 @@
 // Usage: node scripts/demo.mjs [--rounds N] [--seed N] [--every N] [--out DIR]
 // Mock mode only: no keys, no network, nothing signed.
 
+import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseMode } from "../src/inference/client.mjs";
 import { DEMO_DEFAULTS, runDemo } from "../src/demo/pipeline.mjs";
@@ -21,13 +22,16 @@ function parseArgs(argv) {
     if (flag === "--help" || flag === "-h") {
       opts.help = true;
     } else if (flag === "--rounds" || flag === "--seed" || flag === "--every") {
-      if (value === undefined || !/^[1-9][0-9]*$/.test(value) || !Number.isSafeInteger(Number(value))) {
-        throw new Error(`${flag} must be a positive integer, got ${JSON.stringify(value)}`);
+      // A seed may be 0; rounds and every must be at least 1.
+      const pattern = flag === "--seed" ? /^(0|[1-9][0-9]*)$/ : /^[1-9][0-9]*$/;
+      if (value === undefined || !pattern.test(value) || !Number.isSafeInteger(Number(value))) {
+        const kind = flag === "--seed" ? "a non-negative integer" : "a positive integer";
+        throw new Error(`${flag} must be ${kind}, got ${JSON.stringify(value)}`);
       }
       opts[flag.slice(2)] = Number(value);
       i++;
     } else if (flag === "--out") {
-      if (!value) throw new Error("--out needs a directory");
+      if (!value || value.startsWith("-")) throw new Error(`--out needs a directory, got ${JSON.stringify(value)}`);
       opts.out = value;
       i++;
     } else {
@@ -56,8 +60,9 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     console.error("demo: runs in mock mode only; unset MOCK_INFERENCE or set it to 1");
     return 2;
   }
-  const out = opts.out.replace(/\/+$/, "") || ".";
-  const at = (p) => (out === "." ? p : `${out}/${p}`);
+  const at = (p) => join(opts.out, p);
+  // require() needs "./" for a relative path; an absolute path works as is.
+  const requirePath = (p) => (isAbsolute(p) ? p : `./${p}`);
   try {
     const run = await runDemo({ outDir: opts.out, rounds: opts.rounds, seed: opts.seed, every: opts.every });
     const { manifest } = run;
@@ -76,7 +81,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     log(`  1. Open ${at("index.html")} in a browser. See four agents, their art at mint and now, their character sheets, the channel and the dry-run anchor table.`);
     log(`  2. Open ${at("transcript.txt")}. See the swarm conversation, round by round, with replies marked.`);
     log(`  3. Open ${at("memory/aloof/sheet.json")}. See Aloof's latest character sheet and its sha256 hash.`);
-    log(`     Check the hash: node -p 'require("./${at("memory/aloof/sheet.json")}").sheet' | shasum -a 256`);
+    log(`     Check the hash: node -p 'require("${requirePath(at("memory/aloof/sheet.json"))}").sheet' | shasum -a 256`);
     log(`  4. Open ${at("anchors.json")}. See ${callCount} anchor_sheet calls for testnet, each "dry-run" with a null transaction hash; Aloof's last sheet_hash is the hash from step 3.`);
     log(`  5. Run the same command again. See the same final round hash (same --rounds, --seed and --every): ${run.finalRoundHash}.`);
     log("");

@@ -45,9 +45,11 @@ export async function runDemo({
   const result = await runSwarm({ rounds, seed });
   if (!verifyRounds(result)) throw new Error("demo: round hashes do not verify");
 
-  // 2. Memory. The log is append-only, so start from a clean memory dir.
+  // 2. Memory. The log is append-only, so start each token's memory clean.
+  // Only the four token dirs the demo writes are removed, never all of
+  // <outDir>/memory, so --out pointing at a real project cannot wipe it.
   const memoryDir = join(outDir, "memory");
-  await rm(memoryDir, { recursive: true, force: true });
+  for (const agent of AGENTS) await rm(join(memoryDir, agent.id), { recursive: true, force: true });
   const store = createMemoryStore(memoryDir);
   const client = createMockClient({ responder: sheetResponder });
   const nameOf = new Map(AGENTS.map((a) => [a.id, a.name]));

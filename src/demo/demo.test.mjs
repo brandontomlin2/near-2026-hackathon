@@ -15,6 +15,9 @@ import { renderSvg } from "../art/render.mjs";
 
 const PINNED_FINAL_ROUND_HASH = "5431286c1f732a32bd736e24344895cb0b2ea43a551e459f3b3ed80dd48e4afe";
 const IDS = ["aloof", "chaotic", "social", "skeptic"];
+// Pins the sheet writer, summarizer prompt, hashing, art paths and anchors, not just the swarm.
+const PINNED_ALOOF_SHEET_HASH = "2bbab27f19540464b89997fcf0c420e150045f992cfe3749b56eb3cb463a8908";
+const PINNED_DEMO_JSON_SHA256 = "0e239baf9159abba20f663117789b00788d06080469b2992742ac91bcfc8d0d1";
 
 const tmp = [];
 function mkTmp() {
@@ -76,6 +79,13 @@ describe("demo: determinism", () => {
       );
     }
     assert.equal(resultA.finalRoundHash, resultB.finalRoundHash);
+  });
+
+  it("pins Aloof's final sheet hash and the whole demo.json", async () => {
+    const { createHash } = await import("node:crypto");
+    assert.equal(readJson(dirA, "memory/aloof/sheet.json").sheetHash, PINNED_ALOOF_SHEET_HASH);
+    const digest = createHash("sha256").update(fs.readFileSync(path.join(dirA, "demo.json"))).digest("hex");
+    assert.equal(digest, PINNED_DEMO_JSON_SHA256);
   });
 
   it("pins the default final round hash", () => {
@@ -284,6 +294,22 @@ describe("demo: CLI main", () => {
     assert.match(r.errors.join("\n"), /--every \(3\) must not exceed --rounds \(2\)/);
   });
 
+  it("rejects an --out value that is another flag", async () => {
+    const r = await run(["--out", "--rounds"]);
+    assert.equal(r.code, 2);
+    assert.equal(fs.existsSync("--rounds"), false);
+  });
+
+  it("accepts --seed 0", async () => {
+    assert.equal((await run(["--seed", "0", "--out", mkTmp()], {})).code, 0);
+  });
+
+  it("prints a hash check command that works for an absolute --out", async () => {
+    const dir = mkTmp();
+    const r = await run(["--out", dir], {});
+    assert.ok(r.lines.join("\n").includes(`require("${dir}/memory/aloof/sheet.json")`));
+  });
+
   it("rejects an unknown flag", async () => {
     assert.equal((await run(["--bogus"])).code, 2);
   });
@@ -333,5 +359,16 @@ describe("demo: guards and formatting", () => {
     assert.ok(html.includes("shasum -a 256"));
     assert.ok(html.includes("memory_depth: 1 at mint, 3 now"));
     assert.ok(!html.includes('href="index.html"'));
+  });
+});
+
+describe("demo: output dir safety", () => {
+  it("removes only the four token memory dirs, never other content under memory/", async () => {
+    const dir = mkTmp();
+    fs.mkdirSync(path.join(dir, "memory", "mine"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "memory", "mine", "keep.txt"), "user data");
+    await runDemo({ outDir: dir });
+    await runDemo({ outDir: dir });
+    assert.equal(fs.readFileSync(path.join(dir, "memory", "mine", "keep.txt"), "utf8"), "user data");
   });
 });

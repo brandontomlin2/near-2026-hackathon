@@ -127,9 +127,9 @@ ${calls}</table>
 <p class="mut">Each <code>sheet_hash</code> is the sha256 of the normalized sheet, the same value recorded in <code>memory/&lt;token&gt;/sheet.json</code>. A new owner recomputes it from the sheet they receive and compares it with the token's <code>sheet_anchor</code>.</p>
 <p>A live run would call <code>anchor_sheet</code> on testnet with these arguments. <code>${esc(anchors.contractId)}</code> is a placeholder contract id; nothing is deployed or signed by this demo. The first anchor per token carries a storage deposit (the contract refunds the unused part); later ones carry 1 yoctoNEAR.</p>
 <h3>Check a hash yourself</h3>
-<p>The sheet is normalized before hashing (Unicode NFC, LF line endings, no trailing spaces, exactly one final newline). A one-line sheet is the text plus a newline, so from the repository root:</p>
-<pre>node -p 'require("./out/memory/aloof/sheet.json").sheet' | shasum -a 256
-node -p 'require("./out/memory/aloof/sheet.json").sheetHash'</pre>
+<p>The sheet is normalized before hashing (Unicode NFC, LF line endings, no trailing spaces, exactly one final newline). A one-line sheet is the text plus a newline, so from the folder that holds this page:</p>
+<pre>node -p 'require("./memory/aloof/sheet.json").sheet' | shasum -a 256
+node -p 'require("./memory/aloof/sheet.json").sheetHash'</pre>
 <p>Both lines print the same hash, and it is Aloof's last <code>sheet_hash</code> in the table above.</p>
 
 <h2>Files</h2>
