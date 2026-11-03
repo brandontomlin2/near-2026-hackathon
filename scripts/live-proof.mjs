@@ -262,14 +262,16 @@ function labelHashes(stage, hashes) {
   return hashes.map((hash, i) => ({ label: expected[i] ?? stage, hash }));
 }
 
-function writeTxFile({ contract, owner, transactions }) {
-  mkdirSync(path.dirname(TX_FILE), { recursive: true });
-  writeFileSync(TX_FILE, `${JSON.stringify({ network: NETWORK, contract, owner, transactions }, null, 2)}\n`);
+function writeTxFile(file, { contract, owner, transactions }) {
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, `${JSON.stringify({ network: NETWORK, contract, owner, transactions }, null, 2)}\n`);
 }
 
 /**
  * deps.exec(bin, argv, { env }) -> { code, output } (or a promise of it). Injected in tests so
  * nothing is spawned; `output` is what the step printed, scanned for transaction hashes.
+ * `deps.txFile` replaces the file the --send record is written to (tests that run in
+ * parallel use it so they never share out/live-proof/txs.json).
  */
 export async function run(argv, env = process.env, deps = {}) {
   const out = deps.out ?? ((l) => process.stdout.write(`${l}\n`));
@@ -308,7 +310,7 @@ export async function run(argv, env = process.env, deps = {}) {
       const completed = []; // stages that exited 0, in order
       const finish = (code, failed = null) => {
         // Written even after a failed step: the earlier transactions are real and stay on chain.
-        writeTxFile({ contract, owner, transactions });
+        writeTxFile(deps.txFile ?? TX_FILE, { contract, owner, transactions });
         out(`wrote ${transactions.length} of ${TX_LABELS.length} transaction hashes to ${TX_FILE_LABEL}`);
         // A step that exited 0 but whose output held no id block: the transaction exists and
         // its hash has to be looked up by hand.
