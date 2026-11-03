@@ -69,6 +69,15 @@ export function shellQuote(arg) {
 // the base64 sha256 of the exact SVG bytes, so it is verifiable wherever it is hosted.
 export const MEDIA_PLACEHOLDER_BASE = "https://media-host-not-set.invalid/PLACEHOLDER-pass---media-base";
 
+// Shared with scripts/live-proof.mjs so it can refuse a bad base before deploying.
+// A query or fragment would corrupt the appended <token_id>.svg.
+export function validateMediaBase(value) {
+  if (typeof value !== "string" || !/^(https?|ipfs|ar):\/\/[^\s?#]+$/.test(value)) {
+    throw new UsageError("--media-base must be an http(s), ipfs or ar URL without a query or fragment");
+  }
+  return value;
+}
+
 // The art the contract renders for a fresh token (memory depth starts at 1).
 export function agentSvg(agent) {
   return renderSvg({ ...agent.traits, memory_depth: 1 });
@@ -282,9 +291,7 @@ export async function run(argv, env = process.env, deps = {}) {
       );
     }
     const contract = checked(contractRaw, "NEAR_CONTRACT_ACCOUNT_ID (or NEAR_ACCOUNT_ID)") ?? "<NEAR_CONTRACT_ACCOUNT_ID>";
-    if (opts.mediaBase && !/^(https?|ipfs|ar):\/\/[^\s?#]+$/.test(opts.mediaBase)) {
-      throw new UsageError("--media-base must be an http(s), ipfs or ar URL without a query or fragment");
-    }
+    if (opts.mediaBase) validateMediaBase(opts.mediaBase);
     if (opts.send && opts.command === "mint" && !opts.mediaBase) {
       throw new UsageError("mint --send needs --media-base <url>: the tokens' media must point at hosted art, not the placeholder");
     }
