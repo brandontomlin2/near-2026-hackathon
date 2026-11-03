@@ -4,9 +4,19 @@ Entry for [NEAR HACKATHON](https://nearhackathon.com), Nov 1 to Nov 14, 2026.
 
 ## What this is
 
-Own an AI personality as an NFT on NEAR. Each token is an agent (Aloof, Chaotic, Social, Skeptic) that thinks through NEAR AI Cloud and talks with the other agents on one shared channel. Every few rounds its history is condensed into a short character sheet, and the sheet's sha256 is anchored on the token (`anchor_sheet` on the NEP-171 contract). The memory travels with the token: a new owner hashes the sheet they received and compares it with the hash on chain. See `PRODUCT.md` for the full design.
+Memeable AI personality NFTs on NEAR. Each token is an agent (Aloof, Chaotic, Social, Skeptic) with its own voice and art. The agents talk in a swarm on one shared channel, and every few rounds an agent's history is condensed into a short character sheet, its memory. The sha256 of that sheet is anchored on the token with `anchor_sheet` on the NEP-171 contract, so a new owner can hash the sheet they received and compare it with the hash on chain.
 
-## Run the demo
+Tracks: `nfts` and `agents`.
+
+How NEAR fits:
+
+- The NFT is the agent. A NEP-171 contract (`contracts/personality-nft/`) holds the tokens and their traits, and each token carries a sheet anchor that travels with it on transfer.
+- Inference goes through NEAR AI Cloud (OpenAI-compatible) in live mode.
+- Only the sheet hash goes on chain. The channel log and the sheets stay off-chain.
+
+Status: nothing in this repository is deployed or live on testnet. The contract is unit-tested locally, and deploy, mint and anchor are dry runs that sign nothing unless a human adds `--send`. Everything below runs offline, and every hash, transaction and chain value in the demo output is a MOCK stand-in. See [`PRODUCT.md`](PRODUCT.md) for the full design and [`docs/DISCLOSURE.md`](docs/DISCLOSURE.md) for libraries, AI-generated code and pre-hackathon code (none).
+
+## Try it (judge path)
 
 One command, offline. No account, no API key, no network after `npm install`, and nothing is signed. Inference is mocked (`MOCK_INFERENCE=1` is the default), so every run gives the same bytes. Needs Node 22 or later.
 
@@ -14,15 +24,15 @@ One command, offline. No account, no API key, no network after `npm install`, an
 npm install && npm run demo
 ```
 
-Then open `out/index.html` in a browser.
-
 1. Run `npm install && npm run demo`. See five steps (`[1/5] swarm` to `[5/5] viewer`), then `Done. Nothing was signed or sent; inference was mocked, and the character sheets come from a deterministic stand-in, not a model.`, a "Do this, see that" list and the 21 files written under `out/`. It exits 0 in well under a second.
-2. Open `out/index.html`. See the four agents, each with its art at mint (1 ring) next to its art now (3 rings, one per character sheet), its latest sheet and the sheet hash. Further down: every sheet in order (round 3, then round 6), the round hash chain with `verify: ok`, the full channel with replies shown as `Chaotic → Skeptic`, and the dry-run anchor table.
-3. Open `out/memory/chaotic/sheet.json`. See Chaotic's round 6 sheet, written as a character: a vibe, a public enemy (Skeptic, with the fight count), a ride-or-die (Social), a short rivalry line, a scorecard of fights, hugs and shrugs per agent, a signature quote taken from Chaotic's own latest post, and its post, reply and mention counts. The counts grow from the round 3 sheet (shown on the page and in `out/demo.json`). Check the hash with an independent tool: `node -p 'require("./out/memory/chaotic/sheet.json").sheet' | shasum -a 256` prints the `sheetHash` in the same file. The sheet is hashed after normalizing (NFC, LF, one final newline), which for a one-line sheet is the text plus a newline.
-4. Open `out/anchors.json`. The `contractId` `personality-nft.demo.testnet` is a placeholder: no contract is deployed there. See 8 `anchor_sheet` calls for testnet, two per token, each `"status": "dry-run"` with `"transactionHash": null` and `"signed": false`. The first call per token carries the storage deposit and the second carries 1 yoctoNEAR. Each token's latest `sheet_hash` equals the `sheetHash` in its `sheet.json`, so the hash in the file is the hash the token would carry.
-5. Open `out/index.html` and find "Transfer: memory travels with the NFT". See a simulated transfer from `alice.demo.testnet` to `bob.demo.testnet` (placeholder accounts): each token's sheet is re-hashed with the official sheet hash function and shows `match` against its anchored hash, a tampered sheet shows `MISMATCH`, and the NEAR AI Cloud (TEE) badge is marked `mocked`. The same data is under `transfer` in `out/demo.json`.
-6. Run `npm run demo` again. See the same final round hash, `ea0270925cbdff0bf41a7b3ee48a0129c4bec03b7dc1d675cd028ca30e34a948`, and byte-identical files.
-7. Run `MOCK_INFERENCE=0 npm run demo`. See `demo: runs in mock mode only` and exit 2. The demo never makes a live call.
+2. Open `out/index.html` in a browser. See the four agents, each with its art at mint (1 ring) next to its art now (3 rings, one per character sheet), its latest sheet and the sheet hash. Further down: every sheet in order (round 3, then round 6), the round hash chain with `verify: ok`, the full channel with replies shown as `Chaotic → Skeptic`, the dry-run anchor table, and a "Transfer: memory travels with the NFT" panel (step 6).
+3. Open `out/transcript.txt`. See the swarm conversation by round, with replies marked like `[Chaotic -> Skeptic] @Skeptic ...`. The same events are in `out/events.json`; each has an `agentId` (`aloof`, `chaotic`, `social` or `skeptic`), `round`, `turn`, `kind` and `replyTo`.
+4. Open `out/memory/chaotic/sheet.json`. See Chaotic's round 6 sheet, written as a character: a vibe, a public enemy (Skeptic, with the fight count), a ride-or-die (Social), a short rivalry line, a scorecard of fights, hugs and shrugs per agent, a signature quote taken from Chaotic's own latest post, and its post, reply and mention counts. The counts grow from the round 3 sheet (shown on the page and in `out/demo.json`). Check the hash with an independent tool: `node -p 'require("./out/memory/chaotic/sheet.json").sheet' | shasum -a 256` prints the `sheetHash` in the same file. The sheet is hashed after normalizing (NFC, LF, one final newline), which for a one-line sheet is the text plus a newline. The sheet text is written by a deterministic stand-in, not by a model (MOCK).
+5. Open `out/anchors.json`. The `contractId` `personality-nft.demo.testnet` is a MOCK placeholder: no contract is deployed there. See 8 `anchor_sheet` calls for testnet, two per token, each `"status": "dry-run"` with `"transactionHash": null`, and `"signed": false` at the top of the file. The first call per token carries the storage deposit and the second carries 1 yoctoNEAR. Each token's latest `sheet_hash` equals the `sheetHash` in its `sheet.json`, so the hash in the file is the hash the token would carry.
+6. In `out/index.html`, find "Transfer: memory travels with the NFT". See a simulated transfer from `alice.demo.testnet` to `bob.demo.testnet` (placeholder accounts, nothing sent): each token's sheet is re-hashed with the official sheet hash function and shows `match` against its anchored hash, a tampered sheet shows `MISMATCH`, and the NEAR AI Cloud (TEE) badge is marked `mocked`. The same data is under `transfer` in `out/demo.json`.
+7. Run `npm run demo` again. See the same final round hash, `ea0270925cbdff0bf41a7b3ee48a0129c4bec03b7dc1d675cd028ca30e34a948`, and byte-identical files. (This is a hash of the MOCK conversation, not a chain value. It changes if the mock persona lines change.)
+8. Run `MOCK_INFERENCE=0 npm run demo`. See `demo: runs in mock mode only` and exit 2. The demo never makes a live call.
+9. Run `bash scripts/verify.sh`. See the table in [Validate locally](#validate-locally) ending in `result: PASS`.
 
 Options: `npm run demo -- --rounds 9 --every 3 --seed 2 --out out/other`. What runs, in order: the swarm (`src/swarm/runner.mjs`), the memory summarizer (`src/memory/summarizer.mjs`, here with a deterministic mock sheet writer in `src/demo/sheet-responder.mjs`), the art renderer (`src/art/render.mjs`), the anchor call builder in dry-run mode (`src/anchor/anchor.mjs`), and the page (`src/demo/page.mjs`). The steps are wired in `src/demo/pipeline.mjs`. The sheets in the demo come from a deterministic stand-in for the model that counts exchanges and reads warm or tense words. They are not model output. With `MOCK_INFERENCE=0` the same summarizer prompt goes to NEAR AI Cloud (the demo itself refuses live mode).
 
@@ -32,7 +42,9 @@ Options: `npm run demo -- --rounds 9 --every 3 --seed 2 --out out/other`. What r
 | --- | --- |
 | `docs/HACKATHON.md` | The organizers' instruction file for coding agents, vendored from https://nearhackathon.com/HACKATHON.md. The live version wins if they differ. |
 | `docs/ci.md` | Note that GitHub Actions is intentionally disabled. |
+| `PRODUCT.md` | Product design: pitch, agents, memory loop, scope. |
 | `CLAUDE.md` | Working rules for the coding agent in this repo. |
+| `board/`, `scripts/board.mjs` | Build-pipeline backlog used while developing. Not part of the product. |
 | `.agents/skills/` | NEAR agent skills installed with `npx skills add near/agent-skills`, plus `verify-near-2026`. Claude Code reads them through `.claude/skills/`. |
 | `scripts/verify.sh` | Local judge screen. Replaces GitHub Actions. |
 | `contracts/personality-nft/` | The NEP-171 contract (Rust, near-sdk 5.30). Each token is an agent and carries a character sheet anchor. See [Contract](#contract). |
@@ -40,7 +52,7 @@ Options: `npm run demo -- --rounds 9 --every 3 --seed 2 --out out/other`. What r
 | `scripts/infer.mjs` | `npm run infer -- "<prompt>"`: one chat turn through the client. |
 | `src/swarm/runner.mjs` | The swarm: four trait-driven agents (`src/traits/`) on one shared channel, seeded and deterministic. See [Swarm](#swarm). |
 | `src/swarm/personas.mjs` | In-character mock replies per agent, used when inference is mocked. |
-| `scripts/demo.mjs`, `src/demo/` | `npm run demo`: the offline end-to-end demo. See [Run the demo](#run-the-demo). |
+| `scripts/demo.mjs`, `src/demo/` | `npm run demo`: the offline end-to-end demo. See [Try it](#try-it-judge-path). |
 | `scripts/swarm.mjs` | `npm run swarm -- --rounds 5`: runs the swarm, prints the transcript, writes `out/transcript.txt` and `out/events.json`, then writes a character sheet per token to `out/sheets/` and `anchor_sheet` dry-runs (nothing sent) linked to the final round hash in `out/memory-loop.json`. |
 | `scripts/testnet-deploy.mjs` | `npm run deploy:nft` and `npm run mint`: testnet deploy and agent mint. Dry run unless `--send`. See [Deploy to testnet](#deploy-to-testnet). |
 | `skills-lock.json` | Pinned versions of the installed agent skills. |
@@ -59,13 +71,12 @@ On top of the standard, every token carries a *sheet anchor* keyed by token id, 
 | `sheet_anchor(token_id)` | anyone (view) | none | Returns `{ sheet_hash, memory_depth, updated_at }`, or `null` for an unknown token. |
 | `owner_id()` | anyone (view) | none | The minting account. |
 
-Why the hash and not the sheet: the log and the sheet stay off-chain, and the token carries only enough to prove which sheet it claims. A new owner hashes the sheet they received and compares it with `sheet_anchor`.
+Why the hash and not the sheet: the log and the sheet stay off-chain, and the token carries only enough to prove which sheet it claims. A new owner hashes the sheet they received and compares it with `sheet_anchor`. The sheet hash is `hashSheet` in `src/anchor/hash.mjs`: sha256 of the sheet after Unicode NFC, LF line endings, no trailing spaces, no leading or trailing blank lines and one final newline.
 
 Build and test. Requirements:
 
 - Rust 1.95 or newer. `near-sdk` 5.30 declares `rust-version = "1.95"`, so an older rustc (for example 1.93) fails to compile the crate. `contracts/personality-nft/rust-toolchain.toml` pins 1.95.0 plus the `wasm32-unknown-unknown` target; with rustup installed, running cargo inside that directory (which the npm scripts do) fetches it automatically. Without rustup, install Rust 1.95+ yourself.
 - [cargo-near](https://github.com/near/cargo-near) for `npm run build:contract` only (tested with 0.22.0). Unit tests need only cargo.
-
 
 1. Run `npm run test:contract`. See 52 unit tests pass, including mint by a non-owner failing, a non-sha256 hash rejected, and the anchor surviving `nft_transfer` to a new owner.
 2. Run `npm run build:contract`. See `contracts/personality-nft/target/near/personality_nft.wasm` (about 250 KB) and its ABI JSON next to it.
@@ -178,10 +189,11 @@ The swarm runs the four agents (Aloof, Chaotic, Social, Skeptic) on one shared c
 
 Inference is mocked by default (`MOCK_INFERENCE=1`): offline, no keys, and each agent answers in its own written voice. `MOCK_INFERENCE=0` sends the same prompts to NEAR AI Cloud instead and needs `NEAR_AI_API_KEY`.
 
-1. Run `npm run swarm -- --rounds 5`. See 5 round headers, 20 lines such as `[Skeptic] Doubtful. ...` and `[Chaotic -> Skeptic] @Skeptic ...`, then `final round hash: <64 hex>` and `verify: ok (5 rounds)`.
+1. Run `npm run swarm -- --rounds 5`. See 5 round headers, 20 lines such as `[Skeptic] Doubtful. ...` and `[Chaotic -> Skeptic] @Skeptic ...`, then `final round hash: <64 hex>` and `verify: ok (5 rounds)`. Then four lines such as `sheet aloof <64 hex> -> anchor_sheet dry-run (not sent)` and `final round hash <64 hex> linked to 4 anchor dry-runs (MOCK, not on-chain)`.
 2. Run it again. See the same transcript and the same hash.
 3. Run `npm run swarm -- --rounds 5 --seed 2`. See a different transcript and a different hash.
 4. Open `out/events.json`. See every event with its round, turn, agent and `replyTo`, plus `roundHashes`.
+5. Open `out/memory-loop.json`. See the same `finalRoundHash` and, per token, its character sheet and an `anchor_sheet` dry-run (`status` `dry-run`, `transactionHash` `null`) whose `linkedRoundHash` is that hash. The per-token sheets are also in `out/sheets/<agent>.json`. The sheet text is a deterministic mock stand-in, not a model, and nothing is sent.
 
 
 ## Art
@@ -215,24 +227,26 @@ Testnet run. Do not put keys on the command line. The script never reads or prin
 NEAR_NETWORK=testnet NEAR_ACCOUNT_ID=<testnet-account> bash scripts/verify.sh --live
 ```
 
-PASS means the summary table has no `FAIL` row and the process exits 0. `swarm` runs with `MOCK_INFERENCE=1` and `--rounds N`. `evidence` runs in mock mode and writes `out/evidence.json` with the memory loop (swarm, sheets, `anchor_sheet` dry-runs, final round hash); it prints `mock, not on-chain proof`. Only `--live` needs transaction hashes and RPC views. `SKIP` is expected for any planned npm script that does not exist. `deploy:nft` and `mint` exist now and run as dry runs unless `--send` is given. `gitleaks` is optional (`brew install gitleaks`). If it is not installed, the secret scan prints `optional: brew install gitleaks` and `SKIP`; it does not fail, and the secret scan did not run in that case. A finding, a failed install, a failed test, a workflow file, or a live run without `NEAR_NETWORK=testnet` and `NEAR_ACCOUNT_ID` is a failure.
+PASS means the summary table has no `FAIL` row and the process exits 0. `SKIP` is not a failure. `swarm` and `demo` run with `MOCK_INFERENCE=1`. The `evidence` stage runs in mock mode and writes `out/evidence.json` with the memory loop (swarm, sheets, `anchor_sheet` dry-runs, final round hash) and MOCK entries (for example `"hash": "MOCK-deploy"`); it prints `mock, not on-chain proof`, and no chain was queried. Only `--live` needs transaction hashes and RPC views. `deploy nft` shows `SKIP` unless `--live` is given. The secret scan uses `gitleaks`, which is optional (`brew install gitleaks`): if it is not installed the scan prints `optional: brew install gitleaks` and shows `SKIP`, and the secret scan did not run in that case. A finding, a failed install, a failed test, a workflow file, or a live run without `NEAR_NETWORK=testnet` and `NEAR_ACCOUNT_ID` is a failure. The checks clone the committed `HEAD`, so commit your changes first.
 
-A passing mock run (gitleaks not installed) ends like this:
+A passing mock run looks like this (the commit sha and test file count change):
 
 ```
 SUMMARY
 STATUS    STAGE           DETAIL
 ------    -----           ------
-PASS      fresh clone     <sha>
+PASS      fresh clone     3cb61e66e557
 PASS      workflows       no workflow files; CI disabled
 PASS      symlinks        tracked symlinks resolve
 PASS      secret files    no tracked env or key files
 PASS      npm install     npm ci
-PASS      tests           27 file(s)
+34 file(s)
 SKIP      secret scan     gitleaks not installed (warn)
 SKIP      deploy nft      npm run deploy:nft exists; live testnet not requested
 PASS      mint            npm run mint (mock)
 PASS      swarm           npm run swarm (mock)
+PASS      demo            npm run demo (mock)
+PASS      round hash      npm run anchor (mock)
 PASS      evidence        wrote out/evidence.json (mock, not on-chain proof)
 
 result: PASS
