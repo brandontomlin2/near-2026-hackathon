@@ -2,27 +2,23 @@
 
 Goal: one complete moment, from a real action to a visible result. No slides, no architecture tour. The human records and narrates; this file is the shot list.
 
-**Command status.** Commands marked **(exists)** run in this repo today. Commands marked **(PLANNED)** are described in `PRODUCT.md` and are not built yet. Before recording, re-check each one against `package.json` and update this file. If a planned command ships with different output, change the shot, not the product.
+**Command status.** Every shot uses `npm run demo`, which exists. It runs the whole product offline in one go: swarm, memory sheets, art, dry-run anchors, and the page at `out/index.html`. Before recording, run it once and check that the output still matches this file.
 
 Run everything in mock mode (`MOCK_INFERENCE=1`, the default). No keys on screen. Do not show `.env`.
 
 ## Shot list
 
-| # | Time | On screen | Command | Status |
-| --- | --- | --- | --- | --- |
-| 1 | 0:00 to 0:12 | Title card: name, one line. Then terminal. | none | n/a |
-| 2 | 0:12 to 0:30 | Fresh clone, install. | `git clone <REPO_URL> && cd <repo> && npm install` | exists |
-| 3 | 0:30 to 0:50 | Mint four agents. Open two SVGs from `out/`. | `npm run mint` | PLANNED |
-| 4 | 0:50 to 1:15 | Swarm runs 5 rounds. Transcript scrolls. | `npm run swarm -- --rounds 5` | PLANNED |
-| 5 | 1:15 to 1:35 | Character sheets update. Show the before/after diff. | `npm run summarize` | PLANNED |
-| 6 | 1:35 to 1:50 | Checks pass: round hashes, SVG determinism, memory files. | `npm run verify` | PLANNED |
-| 7 | 1:50 to 2:00 | Close: repo URL, one question. | none | n/a |
+| # | Time | On screen | Command or file |
+| --- | --- | --- | --- |
+| 1 | 0:00 to 0:12 | Title card: name, one line. Then terminal. | none |
+| 2 | 0:12 to 0:30 | Fresh clone, install, one command. The five `[n/5]` lines and "Nothing was signed or sent". | `git clone <REPO_URL> && cd <repo> && npm install && npm run demo` |
+| 3 | 0:30 to 0:50 | Browser on `out/index.html`, Agents section. Art at mint next to art now; point at the extra rings. | `open out/index.html` |
+| 4 | 0:50 to 1:15 | Scroll to Channel. Rounds scroll by; find a `Chaotic → Skeptic` exchange. | page, Channel section |
+| 5 | 1:15 to 1:35 | Scroll to Memory. Chaotic's round 3 sheet, then round 6: counts and allies grew. | page, Memory section |
+| 6 | 1:35 to 1:50 | Anchor (dry run) table, then the round hash chain with `verify: ok`. Back in the terminal, run `npm run demo` again: same final hash. | page, then `npm run demo` |
+| 7 | 1:50 to 2:00 | Close: repo URL, one question. | none |
 
-Fallback while planned commands are missing, to show something real:
-
-- `npm run infer -- "What do you make of the treasury proposal?"` (exists): one agent turn, mock mode, identical reply on a second run.
-- `npm run test:contract` (exists, needs Rust): 13 contract tests, including the anchor surviving `nft_transfer`.
-- `bash scripts/verify.sh` (exists): the judge screen, ends with `result: PASS`.
+Fallbacks if the browser is awkward on camera: `cat out/transcript.txt` for shot 4, `cat out/memory/chaotic/sheet.json` for shot 5, `cat out/anchors.json` for shot 6. `bash scripts/verify.sh` ends with `result: PASS` and runs the demo in a fresh clone.
 
 ## Narration
 
@@ -32,19 +28,19 @@ Plain words. Read at a normal pace; about 230 words in total.
 "When you move an AI character to a new app, it forgets who it was. We built an NFT that carries its character with it."
 
 **Scene 2 (0:12 to 0:30)**
-"This is a fresh clone. I run npm install. No account, no API key. Inference is in mock mode, so you get the same output I do."
+"This is a fresh clone. I run npm install, then one command: npm run demo. No account, no API key. Inference is in mock mode, so you get the same output I do."
 
 **Scene 3 (0:30 to 0:50)**
-"One command mints four agents: Aloof, Chaotic, Social and Skeptic. Each is an NFT on NEAR testnet. Each gets its own picture, drawn from its traits. The same traits always give the same image."
+"Four agents: Aloof, Chaotic, Social and Skeptic. Each is an NFT on NEAR. Each gets its own picture, drawn from its traits. The same traits always give the same image. On the left is the picture at mint; on the right, now, with a ring for every memory it has written."
 
 **Scene 4 (0:50 to 1:15)**
-"Now the swarm. For five rounds the agents post and reply on one shared channel. Each turn is a call to NEAR AI Cloud. Here it is mocked, so it is repeatable. Watch Skeptic push back on Chaotic."
+"Now the swarm. For six rounds the agents post and reply on one shared channel. Each turn is a call to NEAR AI Cloud. Here it is mocked, so it is repeatable. Watch Skeptic push back on Chaotic."
 
 **Scene 5 (1:15 to 1:35)**
-"After the rounds, each agent's log is summarized into a short character sheet. Here is the sheet before, and after. Allies and grudges have changed. The picture gains a ring for the extra memory."
+"Every three rounds, each agent's log is summarized into a short character sheet. Here is Chaotic's sheet at round three, and at round six. Its counts and its allies have changed. The picture gains a ring for each sheet."
 
 **Scene 6 (1:35 to 1:50)**
-"The hash of each sheet is stored on the token. So if the token is transferred, the new owner hashes the sheet they received and compares it with the chain. The verify command checks the round hashes, the pictures and the memory files."
+"The hash of each sheet goes on the token. So if the token is transferred, the new owner hashes the sheet they received and compares it with the chain. Here the anchor call is prepared and shown, and never signed. Run it again: the same hash, byte for byte."
 
 **Scene 7 (1:50 to 2:00)**
 "Code is public, link below. Built at NEAR HACKATHON. What would you want an agent like this to remember?"
@@ -53,7 +49,7 @@ Plain words. Read at a normal pace; about 230 words in total.
 
 - Terminal font large enough to read at 720p. Light background or high contrast.
 - Trim waiting time. Do not speed up output so much that it can't be read.
-- If the video shows a live testnet run (planned), show transaction hashes only. Never show a key, a seed phrase or `.env`.
+- The demo never signs. If the video also shows a live testnet run, show transaction hashes only. Never show a key, a seed phrase or `.env`.
 - Say "mock mode" out loud once. Do not imply a live NEAR AI call or on-chain write unless that run was really live.
 - Do not claim the `privacy` track or any TEE attestation. `PRODUCT.md` says to leave it off until a check ships.
 - Export a 60 to 90 second cut (scenes 3 to 6) for the X post.
