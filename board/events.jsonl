@@ -21,3 +21,8 @@
 {"ts":"2026-11-03T02:33:52.932Z","actor":"claude","item_id":"sim-mode","action":"claim","from":"todo","to":"doing","note":""}
 {"ts":"2026-11-03T02:43:31.346Z","actor":"claude","item_id":"sim-mode","action":"changed","from":"doing","to":"doing","note":"src/sim/swarm.mjs: four personas on a shared channel, offline, mock inference only; per-agent last-6 event windows; hash-chained rounds. scripts/swarm.mjs: npm run swarm -- --rounds N. README section. 16 tests; verify.sh PASS (tests 5 files, swarm PASS) on isolated clone with isolated HOME"}
 {"ts":"2026-11-03T02:43:31.390Z","actor":"claude","item_id":"sim-mode","action":"set","from":"doing","to":"review","note":"verify=PASS"}
+{"ts":"2026-11-03T02:42:07.493Z","actor":"claude","item_id":"shared-channel-on-chain-anchor","action":"claim","from":"todo","to":"doing","note":""}
+{"ts":"2026-11-03T02:42:29.039Z","actor":"claude","item_id":"testnet-deploy-mint-3-agents","action":"claim","from":"todo","to":"doing","note":""}
+{"ts":"2026-11-03T02:45:09.896Z","actor":"claude","item_id":"shared-channel-on-chain-anchor","action":"changed","from":"doing","to":"doing","note":"src/channel (shared channel, round digests, JSONL log) + src/anchor (sheet hash, anchor_sheet prep, dry-run default, live gated by ANCHOR_LIVE and injected sender); 69 node tests pass"}
+{"ts":"2026-11-03T02:45:09.923Z","actor":"claude","item_id":"shared-channel-on-chain-anchor","action":"set","from":"doing","to":"review","note":"ready for review"}
+{"ts":"2026-11-03T02:45:36.144Z","actor":"claude","item_id":"testnet-deploy-mint-3-agents","action":"set","from":"doing","to":"review","note":"scripts/testnet-deploy.mjs: dry-run default, --send gated; npm run deploy:nft and mint; 20 tests; README Deploy to testnet. Not sent to testnet."}
