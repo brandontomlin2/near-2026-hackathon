@@ -31,6 +31,7 @@ Options: `npm run demo -- --rounds 9 --every 3 --seed 2 --out out/other`. What r
 | Path | What it is |
 | --- | --- |
 | `docs/HACKATHON.md` | The organizers' instruction file for coding agents, vendored from https://nearhackathon.com/HACKATHON.md. The live version wins if they differ. |
+| `docs/demo-video.md` | 60 to 90 second demo video shot list with exact mock-mode commands, captions and a screenshot checklist. |
 | `docs/ci.md` | Note that GitHub Actions is intentionally disabled. |
 | `CLAUDE.md` | Working rules for the coding agent in this repo. |
 | `.agents/skills/` | NEAR agent skills installed with `npx skills add near/agent-skills`, plus `verify-near-2026`. Claude Code reads them through `.claude/skills/`. |
