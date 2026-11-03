@@ -30,6 +30,10 @@ This repository is an entry for NEAR HACKATHON (Nov 1 to Nov 14, 2026, UTC).
 - The NEAR agent skills live under `.agents/skills/` and are symlinked into `.claude/skills/`. Use them for NEAR API, smart contract, dapp, Intents, NEAR Kit and NEAR AI Cloud work.
 - The README is written for an AI judge as well as a human: what the product is, the problem it solves, how NEAR fits in, and numbered "do X, see Y" steps a judge can follow to try it. No marketing copy. It also lists libraries, templates and AI-generated code used (Q-005) and discloses any pre-hackathon code (Q-002, Q-003).
 
+## Build board
+
+The build pipeline backlog lives in `board/board.json` (see `board/README.md`). It is not the product. At the start of a session, read the board. Claim an item before working on it (`node scripts/board.mjs claim <id> --owner <you>`). When something changes, report it with `node scripts/board.mjs changed <id> --note "..."`. Set `BOARD_ACTOR` or pass `--actor`.
+
 ## Git workflow
 
 Never commit directly to `main`. Work on `feat/`, `fix/`, `chore/` or `docs/` branches, open a pull request, have it reviewed, and squash-merge after review passes. Rebase on `main` before merging.
