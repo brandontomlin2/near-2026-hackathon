@@ -50,13 +50,28 @@ function baseEnv(home, extra = {}) {
   return env;
 }
 
-function runLoop(cwd, home, extra = {}, timeout = 20000) {
-  return spawnSync("/bin/bash", [LOOP], {
+// One loop invocation runs about 25 node and 15 git subprocesses: 1.5 s on an
+// idle machine, over 20 s with two full suites running alongside. The guard
+// only has to catch a loop that hangs, so it is sized for a loaded machine.
+// spawnSync kills the loop with SIGTERM when it fires, which the loop's TERM
+// trap turns into exit 143, so a tripped guard is reported as such instead.
+const LOOP_RUN_TIMEOUT_MS = 120_000;
+
+function loopTimeout(runs) {
+  return runs * LOOP_RUN_TIMEOUT_MS + 10_000;
+}
+
+function runLoop(cwd, home, extra = {}, timeout = LOOP_RUN_TIMEOUT_MS) {
+  const result = spawnSync("/bin/bash", [LOOP], {
     cwd,
     env: baseEnv(home, extra),
     encoding: "utf8",
     timeout,
   });
+  if (result.error) {
+    throw new Error(`claude-loop.sh did not finish within ${timeout} ms (${result.error.code})\n${result.stdout}\n${result.stderr}`);
+  }
+  return result;
 }
 
 function git(cwd, args, env) {
@@ -308,7 +323,7 @@ function loopEnv(fixture, overrides = {}) {
   return { ...fixture.env, ...overrides };
 }
 
-test("STOP file exits quietly without calling claude", { timeout: 20000 }, (t) => {
+test("STOP file exits quietly without calling claude", { timeout: loopTimeout(1) }, (t) => {
   const { root, home } = tempHome(t);
   const stubLog = path.join(root, "claude.log");
   fs.mkdirSync(path.join(home, ".claude-loop"), { recursive: true });
@@ -326,7 +341,7 @@ test("STOP file exits quietly without calling claude", { timeout: 20000 }, (t) =
   assert.equal(fs.existsSync(stubLog), false);
 });
 
-test("missing timeout tells the operator to install coreutils", { timeout: 20000 }, (t) => {
+test("missing timeout tells the operator to install coreutils", { timeout: loopTimeout(1) }, (t) => {
   const { root, home } = tempHome(t);
   const bin = path.join(root, "bin");
   fs.mkdirSync(bin);
@@ -336,7 +351,7 @@ test("missing timeout tells the operator to install coreutils", { timeout: 20000
   assert.match(result.stderr, /brew install coreutils/);
 });
 
-test("refuses when both Claude credentials are set", { timeout: 20000 }, (t) => {
+test("refuses when both Claude credentials are set", { timeout: loopTimeout(1) }, (t) => {
   const { root, home } = tempHome(t);
   const stubLog = path.join(root, "claude.log");
   writeClaudeStub(path.join(root, "claude"));
@@ -354,7 +369,7 @@ test("refuses when both Claude credentials are set", { timeout: 20000 }, (t) => 
   assert.equal(readStatus(home).last_result, "auth_conflict");
 });
 
-test("logged-out auth status refuses to run", { timeout: 20000 }, (t) => {
+test("logged-out auth status refuses to run", { timeout: loopTimeout(1) }, (t) => {
   const { root, home } = tempHome(t);
   const stubLog = path.join(root, "claude.log");
   writeClaudeStub(path.join(root, "claude"));
@@ -369,7 +384,7 @@ test("logged-out auth status refuses to run", { timeout: 20000 }, (t) => {
   assert.equal(readStatus(home).last_result, "logged_out");
 });
 
-test("daily spend cap refuses at the default of 25", { timeout: 20000 }, (t) => {
+test("daily spend cap refuses at the default of 25", { timeout: loopTimeout(1) }, (t) => {
   const { root, home } = tempHome(t);
   const stubLog = path.join(root, "claude.log");
   const day = new Date().toISOString().slice(0, 10);
@@ -394,7 +409,7 @@ test("daily spend cap refuses at the default of 25", { timeout: 20000 }, (t) => 
   assert.match(fs.readFileSync(stubLog, "utf8"), /auth status/);
 });
 
-test("at the parallel cap the loop exits 0 quietly without calling claude", { timeout: 20000 }, (t) => {
+test("at the parallel cap the loop exits 0 quietly without calling claude", { timeout: loopTimeout(1) }, (t) => {
   const { root, home } = tempHome(t);
   const stubLog = path.join(root, "claude.log");
   liveLock(home, "busy-item");
@@ -412,7 +427,7 @@ test("at the parallel cap the loop exits 0 quietly without calling claude", { ti
   assert.equal(fs.readFileSync(path.join(lockDir(home, "busy-item"), "pid"), "utf8").trim(), String(process.pid));
 });
 
-test("a held item lock makes the loop take the next item; a stale lock is replaced", { timeout: 30000 }, (t) => {
+test("a held item lock makes the loop take the next item; a stale lock is replaced", { timeout: loopTimeout(2) }, (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "success",
@@ -432,7 +447,7 @@ test("a held item lock makes the loop take the next item; a stale lock is replac
   assert.equal(claudeRuns(fixture.stubLog), 2);
 });
 
-test("the cap scan never deletes a lock; reclaiming stale locks happens only under locks.lock", { timeout: 20000 }, (t) => {
+test("the cap scan never deletes a lock; reclaiming stale locks happens only under locks.lock", { timeout: loopTimeout(1) }, (t) => {
   const { root, home } = tempHome(t);
   liveLock(home, "dead-item", 999999);
   // Exits 1 right after the quick cap scan, before acquire_item runs.
@@ -446,7 +461,7 @@ test("the cap scan never deletes a lock; reclaiming stale locks happens only und
   assert.deepEqual(lockNames(home), ["dead-item"]);
 });
 
-test("a pid-less item lock past the grace period is reclaimed; a fresh one still counts", { timeout: 40000 }, (t) => {
+test("a pid-less item lock past the grace period is reclaimed; a fresh one still counts", { timeout: loopTimeout(2) }, (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "success",
@@ -471,7 +486,7 @@ test("a pid-less item lock past the grace period is reclaimed; a fresh one still
   assert.deepEqual(lockNames(fixture.home), []);
 });
 
-test("two concurrent runs take different items and the summary lists both", { timeout: 40000 }, async (t) => {
+test("two concurrent runs take different items and the summary lists both", { timeout: loopTimeout(3) }, async (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "hold",
@@ -526,7 +541,7 @@ test("two concurrent runs take different items and the summary lists both", { ti
   assert.equal(readItemStatus(fixture.home, "par-b").last_result, "review");
 });
 
-test("an item whose dependency is not done on main is skipped", { timeout: 30000 }, (t) => {
+test("an item whose dependency is not done on main is skipped", { timeout: loopTimeout(4) }, (t) => {
   const child = task("aaa-child", "Needs the parent", "any");
   child.depends_on = ["zzz-parent"];
   const fixture = initRepo(t, {
@@ -555,7 +570,7 @@ test("an item whose dependency is not done on main is skipped", { timeout: 30000
   assert.equal(claudeRuns(fixture.stubLog), 2);
 });
 
-test("claude-swarm launches one run per id and logs to logs/<id>.log", { timeout: 40000 }, (t) => {
+test("claude-swarm launches one run per id and logs to logs/<id>.log", { timeout: loopTimeout(1) }, (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "success",
@@ -565,7 +580,7 @@ test("claude-swarm launches one run per id and logs to logs/<id>.log", { timeout
     cwd: fixture.repo,
     env: loopEnv(fixture, { CLAUDE_LOOP_MAX_PARALLEL: "2", CLAUDE_SWARM_STAGGER_SEC: "0" }),
     encoding: "utf8",
-    timeout: 35000,
+    timeout: LOOP_RUN_TIMEOUT_MS,
   });
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stderr, /skipping: sw-a/);
@@ -579,7 +594,7 @@ test("claude-swarm launches one run per id and logs to logs/<id>.log", { timeout
   assert.equal(claudeRuns(fixture.stubLog), 2);
 });
 
-test("verify failure increments attempts and the second failure is blocked", { timeout: 20000 }, (t) => {
+test("verify failure increments attempts and the second failure is blocked", { timeout: loopTimeout(3) }, (t) => {
   const fixture = initRepo(t, {
     verify: FAIL_VERIFY,
     stubMode: "verify-fail",
@@ -619,7 +634,7 @@ test("verify failure increments attempts and the second failure is blocked", { t
   assert.equal(git(fixture.repo, ["branch", "--show-current"], fixture.env), "main");
 });
 
-test("success moves the item to review and does not push main", { timeout: 20000 }, (t) => {
+test("success moves the item to review and does not push main", { timeout: loopTimeout(2) }, (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "success",
@@ -696,7 +711,7 @@ test("success moves the item to review and does not push main", { timeout: 20000
   );
 });
 
-test("CLAUDE_LOOP_ONLY takes the named item instead of the first eligible one", { timeout: 20000 }, (t) => {
+test("CLAUDE_LOOP_ONLY takes the named item instead of the first eligible one", { timeout: loopTimeout(1) }, (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "success",
@@ -720,7 +735,7 @@ test("CLAUDE_LOOP_ONLY takes the named item instead of the first eligible one", 
   assert.equal(git(fixture.origin, ["rev-parse", "main"], fixture.env), mainBefore);
 });
 
-test("CLAUDE_LOOP_ONLY on an ineligible item exits 0 without claiming", { timeout: 20000 }, (t) => {
+test("CLAUDE_LOOP_ONLY on an ineligible item exits 0 without claiming", { timeout: loopTimeout(1) }, (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "success",
@@ -743,7 +758,7 @@ test("CLAUDE_LOOP_ONLY on an ineligible item exits 0 without claiming", { timeou
   assert.deepEqual(lockNames(fixture.home), []);
 });
 
-test("verify pass with no product diff increments attempts", { timeout: 20000 }, (t) => {
+test("verify pass with no product diff increments attempts", { timeout: loopTimeout(1) }, (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "no-diff",
@@ -760,7 +775,7 @@ test("verify pass with no product diff increments attempts", { timeout: 20000 },
   assert.equal(files.includes("claude-loop-work.txt"), false);
 });
 
-test("rate-limit output backs off without counting an attempt", { timeout: 20000 }, (t) => {
+test("rate-limit output backs off without counting an attempt", { timeout: loopTimeout(2) }, (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "rate-limit",
@@ -801,7 +816,7 @@ test("rate-limit output backs off without counting an attempt", { timeout: 20000
   assert.equal(readStatus(fixture.home).last_result, "backoff");
 });
 
-test("auth error in Claude output backs off without counting an attempt", { timeout: 20000 }, (t) => {
+test("auth error in Claude output backs off without counting an attempt", { timeout: loopTimeout(1) }, (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "auth-error",
@@ -819,18 +834,13 @@ test("auth error in Claude output backs off without counting an attempt", { time
   assert.equal(status.last_result, "auth");
 });
 
-test("heartbeat refreshes status while claude is running", { timeout: 30000 }, (t) => {
+test("heartbeat refreshes status while claude is running", { timeout: loopTimeout(1) }, (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "heartbeat",
     items: [task("beat-task", "Watch the heartbeat", "claude")],
   });
-  const result = runLoop(
-    fixture.repo,
-    fixture.home,
-    loopEnv(fixture, { CLAUDE_LOOP_HEARTBEAT_SEC: "1" }),
-    25000,
-  );
+  const result = runLoop(fixture.repo, fixture.home, loopEnv(fixture, { CLAUDE_LOOP_HEARTBEAT_SEC: "1" }));
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   const item = itemById(showBoard(fixture.origin, "claude/beat-task", fixture.env), "beat-task");
   assert.equal(item.status, "review");
