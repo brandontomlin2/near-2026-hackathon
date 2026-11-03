@@ -5,11 +5,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { sheetResponder } from "./sheet-responder.mjs";
+import { sheetResponder, STORIES } from "./sheet-responder.mjs";
 import { buildSummaryMessages } from "./summarizer.mjs";
 
 const ev = (kind, from, text, round = 1) => ({ round, kind, from, text });
 const respond = (name, previous, events) => sheetResponder({ messages: buildSummaryMessages({ name, previous, events }) }, "ignored");
+// Every phrasing the sheet may use for one kind of record (the line varies by seed and memory).
+const arcs = (kind, args) => STORIES[kind].map((f) => `Rivalry arc: ${f(args)}`);
 const line = (sheet, label) => sheet.split("\n").find((l) => l.startsWith(`${label}:`));
 
 describe("sheetResponder: what the sheet says (gaps 17)", () => {
@@ -18,22 +20,28 @@ describe("sheetResponder: what the sheet says (gaps 17)", () => {
       ev("mention", "Skeptic", "@Aloof Doubtful. Show me the log."),
       ev("mention", "Social", "@Aloof Friends. Happy to help, together."),
     ]);
-    assert.equal(line(both, "Rivalry arc"), "Rivalry arc: Skeptic and I keep clashing. Social keeps the peace. I am just trying to post.");
+    const arc = line(both, "Rivalry arc");
+    assert.ok(arcs("both", { rival: "Skeptic", ally: "Social", fights: 1 }).includes(arc), arc);
+    assert.ok(arc.includes("Skeptic") && arc.includes("Social"), arc);
   });
 
-  it("Rivalry arc with only a rival says the fight is not done; with only an ally it says the drama is on hold", () => {
+  it("Rivalry arc with only a rival names only the rival; with only an ally it names only the ally", () => {
     const rivalOnly = respond("Aloof", null, [ev("mention", "Skeptic", "@Aloof Doubtful. Show me the log.")]);
-    assert.equal(line(rivalOnly, "Rivalry arc"), "Rivalry arc: Skeptic and I are not done yet.");
+    const rivalArc = line(rivalOnly, "Rivalry arc");
+    assert.ok(arcs("rival", { rival: "Skeptic", fights: 1 }).includes(rivalArc), rivalArc);
+    assert.ok(rivalArc.includes("Skeptic") && !rivalArc.includes("Social"), rivalArc);
     assert.doesNotMatch(rivalOnly, /undefined/);
 
     const allyOnly = respond("Aloof", null, [ev("mention", "Social", "@Aloof Friends. Happy to help, together.")]);
-    assert.equal(line(allyOnly, "Rivalry arc"), "Rivalry arc: Social gets me. No fights so far, so the drama is on hold.");
+    const allyArc = line(allyOnly, "Rivalry arc");
+    assert.ok(arcs("ally", { ally: "Social", fights: 0 }).includes(allyArc), allyArc);
+    assert.ok(allyArc.includes("Social") && !allyArc.includes("Skeptic"), allyArc);
     assert.doesNotMatch(allyOnly, /undefined/);
   });
 
-  it("Rivalry arc with nobody says nobody has picked a side", () => {
+  it("Rivalry arc with nobody names no one", () => {
     const quiet = respond("Aloof", null, [ev("post", "Aloof", "Hi.")]);
-    assert.equal(line(quiet, "Rivalry arc"), "Rivalry arc: Nobody has picked a side yet, so the drama is on hold.");
+    assert.ok(arcs("none", {}).includes(line(quiet, "Rivalry arc")), line(quiet, "Rivalry arc"));
   });
 
   it("the signature quote keeps a 12-word post whole and cuts a 13-word post with an ellipsis", () => {

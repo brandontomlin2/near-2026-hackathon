@@ -16,7 +16,7 @@ import {
   parseMode,
 } from "./client.mjs";
 
-const KEY = "sk-gaps14-secret-key";
+const KEY = "test-fake-key-gaps14-secret-key";
 const REQ = { messages: [{ role: "user", content: "hello" }] };
 const noSleep = async () => {};
 
