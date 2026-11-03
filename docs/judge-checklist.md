@@ -13,7 +13,7 @@ account.
 | 3 | Those steps actually work from a fresh clone | `bash scripts/fresh-clone-test.sh` (see below). |
 | 4 | `LICENSE` exists | The same script checks it. MIT. |
 | 5 | Tests run | `npm ci` then `npm test` (also part of `bash scripts/verify.sh`). |
-| 6 | The code matches the README's claims | For each claim (4 tokens, round hashes anchored, determinism, memory files), find the code and the output that shows it. A claim with no code or output is a mismatch. |
+| 6 | The code matches the README's claims | For each claim (4 agents, round hash chain, character sheets and their hashes, dry-run anchor calls, determinism), find the code and the output that shows it. A claim with no code or output is a mismatch. |
 | 7 | Disclosures | The README lists libraries, templates and AI-generated code, and any pre-hackathon code. |
 | 8 | No secrets, no CI workflows | `bash scripts/verify.sh` (secret files, gitleaks when installed, no `.github/workflows`). |
 

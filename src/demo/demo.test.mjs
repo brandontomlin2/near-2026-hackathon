@@ -9,7 +9,7 @@ import { formatDeposit, renderDemoPage } from "./page.mjs";
 import { main } from "../../scripts/demo.mjs";
 import { AGENTS } from "../traits/agents.mjs";
 import { verifyRounds } from "../swarm/runner.mjs";
-import { sheetHash, MAX_SHEET_WORDS } from "../memory/summarizer.mjs";
+import { MAX_SHEET_WORDS } from "../memory/summarizer.mjs";
 import { hashSheet } from "../anchor/hash.mjs";
 import { renderSvg } from "../art/render.mjs";
 
@@ -164,7 +164,6 @@ describe("demo: memory", () => {
       const lastCall = anchors.calls.filter((c) => c.tokenId === id).at(-1);
       assert.equal(lastCall.round, 6);
       assert.equal(record.sheetHash, hashSheet(record.sheet));
-      assert.equal(record.sheetHash, sheetHash(record.sheet));
       assert.equal(record.sheetHash, lastCall.args.sheet_hash);
       const agent = resultA.manifest.agents.find((a) => a.id === id);
       assert.equal(agent.sheets.at(-1).sheet, record.sheet);
