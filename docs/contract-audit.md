@@ -1,6 +1,6 @@
 # Contract audit: personality-nft (audit 16)
 
-Scope: `contracts/personality-nft/src/lib.rs` as on `main` at `dc4792a` (near-sdk 5.30, near-contract-standards 5.30). Earlier audits and their 20 findings are in [`docs/audit/personality-nft.md`](audit/personality-nft.md); this pass did not re-report them.
+Scope: `contracts/personality-nft/src/lib.rs` as on this branch after merging `main` at `edfd9f4` (the merge left `lib.rs` unchanged; every line reference below was re-checked against it; near-sdk 5.30, near-contract-standards 5.30). Earlier audits and their 20 findings are in [`docs/audit/personality-nft.md`](audit/personality-nft.md); this pass did not re-report them.
 
 Method: an adversarial security review (access control, storage staking and refunds, panics, gas, NEP-171/177/178/181/297 compliance, the anchor pin in `nft_transfer_expecting_anchor` against plain `nft_transfer` and `nft_transfer_call`, overflow, upgrade and owner keys) and a separate review of the unit tests for gaps. Every security finding below was reproduced with a scratch unit test that fails on the audited code. No transactions were sent, nothing was deployed and no keys were used.
 
@@ -33,7 +33,7 @@ Line numbers are for `contracts/personality-nft/src/lib.rs` unless a path says o
 
 ## Test gaps closed
 
-A test review found behaviour that no test pinned, or tests that passed for a weaker reason than their name says. No gap hid a production bug. Each new or tightened test was checked against a deliberate mutation of the production code, made temporarily and reverted.
+A test review found behaviour that no test pinned, or tests that passed for a weaker reason than their name says. No gap hid a production bug. Seven of the new or tightened tests were checked against a deliberate mutation of the production code, made temporarily and reverted: three by the author of the tests and four reproduced independently by the reviewer. No record of which tests or which mutations was kept, so this is not claimed for the rest. To re-check any one, break the production line named in the table (for example flip the hash comparison at `lib.rs:337`), run `cargo test` in `contracts/personality-nft` and expect the named test to fail, then revert.
 
 | ID | Production code | Test |
 | --- | --- | --- |
@@ -44,8 +44,8 @@ A test review found behaviour that no test pinned, or tests that passed for a we
 | A16-T5 | `lib.rs:491-505` malformed resolve results | `release_lock_never_panics_on_malformed_results_and_clears_matching_lock` |
 | A16-T6 | `lib.rs:223-228`, `298-306` event JSON | `mint_emits_exactly_one_nep171_mint_event`, `anchor_event_is_exact_json_and_names_the_caller_as_owner` |
 | A16-T7 | `lib.rs:626-630` URI-like length limits | `mint_overlong_uri_like_fields_panic` |
-| A16-T9 | lazy `store::LookupMap` writes | `lock_and_anchor_survive_state_roundtrip` |
-| A16-T10 | `lib.rs:280-285` seen-hash message | alternating-hash tests now match the message |
-| A16-T11 | `lib.rs:271-275` missing anchor record | `anchor_sheet_on_token_without_anchor_record_panics` |
-| A16-T12 | `lib.rs:423-424` nonce wrap | `lock_nonce_wraps_without_panicking` |
-| A16-T14 | deposit and stranger panics | message-matched; `mint_with_no_extra_and_no_copies_is_accepted` |
+| A16-T8 | lazy `store::LookupMap` writes | `lock_and_anchor_survive_state_roundtrip` |
+| A16-T9 | `lib.rs:280-285` seen-hash message | alternating-hash tests now match the message |
+| A16-T10 | `lib.rs:271-275` missing anchor record | `anchor_sheet_on_token_without_anchor_record_panics` |
+| A16-T11 | `lib.rs:423-424` nonce wrap | `lock_nonce_wraps_without_panicking` |
+| A16-T12 | deposit and stranger panics | message-matched; `mint_with_no_extra_and_no_copies_is_accepted` |
