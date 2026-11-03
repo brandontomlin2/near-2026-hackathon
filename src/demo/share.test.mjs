@@ -256,9 +256,10 @@ describe("share: bounded output for huge input", () => {
 
   for (const [label, text] of Object.entries(huge)) {
     it(`${label}: bytes and height stay bounded, the card stays valid and renders fast`, () => {
-      const started = Date.now();
+      const started = process.cpuUsage(); // CPU time, so machine load cannot fail the bound
       const svg = card(text, { agentName: "Ann" });
-      const ms = Date.now() - started;
+      const cpu = process.cpuUsage(started);
+      const ms = (cpu.user + cpu.system) / 1000;
       const { height, lines } = assertValidCard(svg, label);
       assert.ok(Buffer.byteLength(svg) < BYTE_BOUND, `${label}: ${Buffer.byteLength(svg)} bytes`);
       assert.ok(height < HEIGHT_BOUND, `${label}: ${height}px tall`);
