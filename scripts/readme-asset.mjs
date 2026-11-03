@@ -1,7 +1,9 @@
-// Refreshes the README's committed demo assets from a real offline demo run:
-//   npm run readme-asset
-// Writes docs/img/chaotic-share.svg (round 6 share card) and
-// docs/img/chaotic-sheet.txt (Chaotic's round 6 sheet text). Never hand-edit them;
+// Regenerates the README's demo assets from a real offline demo run:
+//   npm run readme-asset                  -> out/readme-asset/ (gitignored; a judge's tree stays clean)
+//   npm run readme-asset -- --update-docs -> docs/img/ (refresh the committed assets)
+//   npm run readme-asset -- --out DIR     -> DIR
+// The assets are chaotic-share.svg (round 6 share card) and chaotic-sheet.txt
+// (Chaotic's round 6 sheet text). Never hand-edit the committed copies;
 // scripts/readme-asset.test.mjs fails if they drift from what the demo generates.
 import fs from "node:fs";
 import os from "node:os";
@@ -12,8 +14,12 @@ import { runDemo } from "../src/demo/pipeline.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const ASSET_DIR = path.join(ROOT, "docs", "img");
+export const DEFAULT_OUT_DIR = path.join(ROOT, "out", "readme-asset");
 export const SHARE_NAME = "chaotic-share.svg";
 export const SHEET_NAME = "chaotic-sheet.txt";
+const USAGE = `Usage: node scripts/readme-asset.mjs [--out DIR | --update-docs]
+  --out DIR       where to write the assets (default out/readme-asset, gitignored)
+  --update-docs   refresh the tracked docs/img assets the README embeds`;
 
 /** Run the demo in a temp dir and return the asset bytes the README embeds. */
 export async function generateAssets() {
@@ -28,11 +34,41 @@ export async function generateAssets() {
   }
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const assets = await generateAssets();
-  fs.mkdirSync(ASSET_DIR, { recursive: true });
-  for (const [name, text] of Object.entries(assets)) {
-    fs.writeFileSync(path.join(ASSET_DIR, name), text);
-    console.log(`wrote docs/img/${name}`);
+/** CLI flags -> { dir }. Throws an Error with a one-line message on bad input. */
+export function parseArgs(argv) {
+  let dir = null;
+  let docs = false;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--update-docs") docs = true;
+    else if (a === "--out") {
+      const v = argv[i + 1];
+      if (v === undefined || v.startsWith("-")) throw new Error("--out needs a directory");
+      dir = path.resolve(v);
+      i++;
+    } else throw new Error(`unknown argument ${a}`);
   }
+  if (dir && docs) throw new Error("use --out or --update-docs, not both");
+  return { dir: docs ? ASSET_DIR : dir ?? DEFAULT_OUT_DIR };
+}
+
+/** Write the generated assets into dir, logging the full path of each file. */
+export function writeAssets(assets, dir, log = console.log) {
+  fs.mkdirSync(dir, { recursive: true });
+  for (const [name, text] of Object.entries(assets)) {
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, text);
+    log(`wrote ${file}`);
+  }
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  let opts;
+  try {
+    opts = parseArgs(process.argv.slice(2));
+  } catch (e) {
+    console.error(`readme-asset: ${e.message}\n${USAGE}`);
+    process.exitCode = 1;
+  }
+  if (opts) writeAssets(await generateAssets(), opts.dir);
 }

@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { runDemo, DEMO_DEFAULTS } from "./pipeline.mjs";
-import { formatDeposit, renderDemoPage } from "./page.mjs";
+import { enemyInSheet, formatDeposit, renderDemoPage, thenNowCaption } from "./page.mjs";
 import { main } from "../../scripts/demo.mjs";
 import { AGENTS } from "../traits/agents.mjs";
 import { verifyRounds } from "../swarm/runner.mjs";
@@ -286,6 +286,54 @@ describe("demo: page content", () => {
     for (const x of resultA.manifest.shares) assert.ok(html().includes(`<img src="${x.file}"`));
     assert.ok(Buffer.byteLength(html()) < 100_000);
   });
+
+  it("puts the proof above the fold: sections in order, share cards folded behind a summary with the real count", () => {
+    const n = resultA.manifest.shares.length;
+    const markers = [
+      "<h2>Agents</h2>",
+      "<h2>Memory</h2>",
+      "<h2>Meme pack</h2>",
+      "<h2>Transfer: memory travels with the NFT</h2>",
+      "<h2>Channel</h2>",
+      "<h2>Anchor (dry run)</h2>",
+      "<h2>Round hash chain</h2>",
+      `<details class="fold">\n<summary>${n} share cards</summary>`,
+      "<h2>Files</h2>",
+    ];
+    const positions = markers.map((m) => html().indexOf(m));
+    markers.forEach((m, i) => assert.ok(positions[i] > 0, `missing ${m}`));
+    assert.deepEqual([...positions].sort((a, b) => a - b), positions, "section order");
+    assert.ok(!html().includes("<h2>Share cards</h2>"));
+    const fold = html().slice(positions[7], positions[8]);
+    assert.equal((fold.match(/<img /g) ?? []).length, n, "every share card is inside the fold");
+    assert.ok(fold.trimEnd().endsWith("</details>"));
+  });
+
+  it("each hero face carries a then -> now caption built from that agent's first and latest sheet", () => {
+    const names = resultA.manifest.agents.map((a) => a.name);
+    // The enemy an agent's sheet names, read from the sheet itself (null when it names none).
+    const enemyOf = (agent, sheet) => {
+      const field = /Public enemy #1:\s*(.*?)(?:\.(?:\s|$)|\n|$)/i.exec(sheet)[1];
+      return names.find((o) => o !== agent.name && new RegExp(`\\b${o}\\b`).test(field)) ?? null;
+    };
+    const header = html().split("</header>")[0];
+    const captions = [...header.matchAll(/<figcaption>([^<]+)<span class="arc">([^<]+)<\/span><\/figcaption>/g)];
+    assert.equal(captions.length, resultA.manifest.agents.length);
+    let sawEnemy = 0;
+    let sawNone = 0;
+    for (const a of resultA.manifest.agents) {
+      const hit = captions.find((c) => c[1] === a.name);
+      assert.ok(hit, `no hero caption for ${a.name}`);
+      const [first, latest] = [a.sheets[0], a.sheets.at(-1)];
+      const expect = (s) => {
+        const e = enemyOf(a, s.sheet);
+        if (e) sawEnemy++; else sawNone++;
+        return `Round ${s.round}: ${e ? `Public enemy #1 ${e}` : "no enemies"}`;
+      };
+      assert.equal(hit[2], `${expect(first)} → ${expect(latest)}`);
+    }
+    assert.ok(sawEnemy > 0 && sawNone > 0, "the default run shows both an enemy and no enemies");
+  });
 });
 
 describe("demo: share cards", () => {
@@ -422,6 +470,23 @@ describe("demo: page", () => {
     assert.ok(!html.includes("<img src=x"));
     assert.ok(html.includes("&lt;img src=x onerror=alert(1)&gt;"));
   });
+
+  it("hero captions: a hostile enemy field never reaches the page unescaped, and a single sheet gives one label", () => {
+    const names = ["Aloof", "<b>Evil</b>"];
+    assert.equal(enemyInSheet("Public enemy #1: <b>Evil</b> (1 fight). Ride-or-die: Aloof.", names), "<b>Evil</b>");
+    assert.equal(enemyInSheet("Public enemy #1: nobody yet. Scorecard: Aloof: 0 fights.", names), null);
+    assert.equal(enemyInSheet("no such field at all", names), null);
+    assert.equal(thenNowCaption({ name: "X", sheets: [{ round: 2, sheet: "Public enemy #1: Aloof." }] }, names), "Round 2: Public enemy #1 Aloof");
+    assert.equal(thenNowCaption({ name: "X", sheets: [] }, names), "");
+    const manifest = structuredClone(resultA.manifest);
+    manifest.agents[0].name = "<b>Evil</b>";
+    manifest.agents[1].sheets[1].sheet = "Public enemy #1: <b>Evil</b> (9 fights).";
+    const events = readJson(dirA, "events.json").events;
+    const anchors = readJson(dirA, "anchors.json");
+    const html = renderDemoPage(manifest, { events, anchors });
+    assert.ok(!html.includes("<b>Evil</b>"));
+    assert.ok(html.includes("Public enemy #1 &lt;b&gt;Evil&lt;/b&gt;</span>"));
+  });
 });
 
 describe("demo: options", () => {
@@ -496,6 +561,24 @@ describe("demo: CLI main", () => {
     assert.ok(out.includes("Do this, see that:"));
     for (const f of walk(dir)) assert.ok(out.includes(`${dir}/${f}`), `output lacks ${f}`);
     assert.ok(out.includes(PINNED_FINAL_ROUND_HASH));
+  });
+
+  it("prints one memory-diff line per agent between the memory step and the art step", async () => {
+    const r = await run(["--out", mkTmp()], {});
+    assert.equal(r.code, 0, r.errors.join("\n"));
+    const memory = r.lines.findIndex((l) => l.startsWith("[2/5] memory:"));
+    const art = r.lines.findIndex((l) => l.startsWith("[3/5] art:"));
+    assert.ok(memory >= 0 && art > memory, "memory and art step lines missing or out of order");
+    const between = r.lines.slice(memory + 1, art);
+    assert.equal(between.length, AGENTS.length, between.join("\n"));
+    for (const [i, agent] of AGENTS.entries()) {
+      const line = between[i];
+      assert.ok(line.startsWith(`     ${agent.id}: enemy `), line);
+      assert.match(line, /, ride-or-die .+, quote (?:"[^"]+"|none)$/, line);
+    }
+    // A field that stayed put prints once; one that moved prints "first -> latest". At least one agent moves.
+    assert.ok(between.some((line) => line.includes(" -> ")), between.join("\n"));
+    assert.equal(r.lines.at(-1).startsWith("Open the page: open "), true);
   });
 });
 

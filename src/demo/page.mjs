@@ -21,7 +21,8 @@ code,.hash{font:12px/1.4 ui-monospace,Menlo,monospace;word-break:break-all}
 .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px}
 .hero{text-align:center;padding:12px 0 4px}.pitch{margin:0;color:var(--mut);font-size:.95rem}
 .hero h1{font-size:clamp(2rem,6vw,3.4rem);line-height:1.1;margin:.15em 0}.sub{max-width:36em;margin:.4em auto 1em;font-size:1.1rem}
-.faces{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}.faces figure{margin:0;text-align:center}.faces img{width:150px;height:150px;border-radius:12px}
+.faces{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}.faces figure{margin:0;text-align:center;max-width:190px}.faces img{width:150px;height:150px;border-radius:12px}.faces .arc{display:block;margin-top:2px}
+.fold>summary{cursor:pointer;font-size:1.2rem;font-weight:600;margin:2.2em 0 .6em;border-bottom:1px solid var(--line);padding-bottom:.2em}
 .arts{display:flex;gap:12px;align-items:flex-end}.arts figure{margin:0;text-align:center}.arts .big{flex:1}.arts .big img{width:100%;max-width:240px;height:auto}.arts .small img{width:90px;height:auto}
 .moods{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0}.moods figure{margin:0;text-align:center}.moods img{width:100%;height:auto}
 .shares{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}.shares img{width:100%;height:auto;border:1px solid var(--line);border-radius:8px}
@@ -67,6 +68,39 @@ ${strip}
 <p>${latest ? esc(latest.sheet) : "No sheet yet."}</p>
 <div class="mut">sheet hash</div><div class="hash">${latest ? esc(latest.sheetHash) : "none"}</div>
 </div>`;
+}
+
+/**
+ * The agent another agent's sheet names as its public enemy, or null when the
+ * sheet names none. Read from the sheet text, so it follows whatever the sheet
+ * writer (mock or model) actually wrote; only names in the run count.
+ */
+export function enemyInSheet(sheet, names) {
+  // The field ends at the sentence end (". " or a newline), so a one-line sheet
+  // does not leak the scorecard's names into it.
+  const field = /Public enemy #1:\s*([^\n]*?)(?:\.(?:\s|$)|\n|$)/i.exec(String(sheet ?? ""))?.[1];
+  if (!field) return null;
+  const word = (n) => new RegExp(`(^|[^\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}])`, "u");
+  return names.find((n) => word(n).test(field)) ?? null;
+}
+
+/** "Round 3: no enemies → Round 6: Public enemy #1 Skeptic", from the first and latest sheet. */
+export function thenNowCaption(agent, names) {
+  const others = names.filter((n) => n !== agent.name);
+  const label = (s) => {
+    const enemy = enemyInSheet(s.sheet, others);
+    return `Round ${s.round}: ${enemy ? `Public enemy #1 ${enemy}` : "no enemies"}`;
+  };
+  const first = agent.sheets[0];
+  const latest = agent.sheets.at(-1);
+  if (!first) return "";
+  return first === latest ? label(first) : `${label(first)} → ${label(latest)}`;
+}
+
+function heroFigure(a, names) {
+  const caption = thenNowCaption(a, names);
+  const arc = caption ? `<span class="arc">${esc(caption)}</span>` : "";
+  return `<figure><img src="${esc(a.art)}" alt="${esc(a.name)}"><figcaption>${esc(a.name)}${arc}</figcaption></figure>`;
 }
 
 function memorySection(a) {
@@ -119,7 +153,9 @@ export function renderDemoPage(manifest, { events, anchors })
 ${memes}
 </div>
 ` : "";
-  const hero = manifest.agents.map((a) => `<figure><img src="${esc(a.art)}" alt="${esc(a.name)}"><figcaption>${esc(a.name)}</figcaption></figure>`).join("");
+  const names = manifest.agents.map((a) => a.name);
+  const hero = manifest.agents.map((a) => heroFigure(a, names)).join("");
+  const shareCount = (manifest.shares ?? []).length;
   const chain = manifest.roundHashes.map((h, i) => `<tr><td>${i + 1}</td><td class="hash">${esc(h)}</td></tr>`).join("\n");
   const calls = anchors.calls.map((c) => `<tr><td>${esc(c.tokenId)}</td><td>${esc(c.round)}</td><td>${esc(c.method)}</td><td class="hash">${esc(c.args.sheet_hash)}</td><td>${esc(formatDeposit(c.depositYocto))}</td><td>${esc(c.status)}</td></tr>`).join("\n");
   // href is a URL context, where HTML escaping is not enough ("javascript:" survives it).
@@ -155,20 +191,9 @@ ${manifest.agents.map((a) => agentCard(a, moods)).join("\n")}
 <p class="mut">Each agent's sheets in order, oldest first. In this demo the sheet writer is a deterministic stand-in for the model (<code>src/demo/sheet-responder.mjs</code>): it counts exchanges, reads warm or tense words for allies and grudges, and quotes the agent's latest line. With <code>MOCK_INFERENCE=0</code> the summarizer sends the same prompt to NEAR AI Cloud instead.</p>
 ${manifest.agents.map(memorySection).join("\n")}
 
-<h2>Round hash chain</h2>
-<p>Genesis: <span class="hash">${GENESIS}</span></p>
-<table><tr><th>Round</th><th>Hash</th></tr>
-${chain}</table>
-<p>verify: <span class="ok">ok</span> · final round hash <span class="hash">${esc(manifest.finalRoundHash)}</span></p>
-
+${memeSection}${transferSection(manifest)}
 <h2>Channel</h2>
 ${channel(manifest, events, moods)}
-
-${memeSection}<h2>Share cards</h2>
-<p class="mut">One card per channel message: the reaction face, the quote, the agent and a footer. Each is a standalone SVG in <code>share/</code>.</p>
-<div class="shares">
-${shares}
-</div>
 
 <h2>Anchor (dry run)</h2>
 <table><tr><th>Token</th><th>Round</th><th>Method</th><th>sheet_hash</th><th>Deposit</th><th>Status</th></tr>
@@ -181,7 +206,20 @@ ${calls}</table>
 node -p 'require("./memory/aloof/sheet.json").sheetHash'</pre>
 <p>Both lines print the same hash, and it is Aloof's last <code>sheet_hash</code> in the table above.</p>
 
-${transferSection(manifest)}
+<h2>Round hash chain</h2>
+<p>Genesis: <span class="hash">${GENESIS}</span></p>
+<table><tr><th>Round</th><th>Hash</th></tr>
+${chain}</table>
+<p>verify: <span class="ok">ok</span> · final round hash <span class="hash">${esc(manifest.finalRoundHash)}</span></p>
+
+<details class="fold">
+<summary>${esc(shareCount)} share card${shareCount === 1 ? "" : "s"}</summary>
+<p class="mut">One card per channel message: the reaction face, the quote, the agent and a footer. Each is a standalone SVG in <code>share/</code>.</p>
+<div class="shares">
+${shares}
+</div>
+</details>
+
 <h2>Files</h2>
 <ul>
 ${files}

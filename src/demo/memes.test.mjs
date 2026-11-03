@@ -286,7 +286,9 @@ describe("memes: default demo run", () => {
   it("the page shows the Meme pack above the share cards and stays small", () => {
     const html = fs.readFileSync(path.join(dir, "index.html"), "utf8");
     assert.ok(html.indexOf("<h2>Meme pack</h2>") > 0);
-    assert.ok(html.indexOf("<h2>Meme pack</h2>") < html.indexOf("<h2>Share cards</h2>"));
+    const fold = `<summary>${result.manifest.shares.length} share cards</summary>`;
+    assert.ok(html.includes(fold), "share cards sit behind a summary with the real count");
+    assert.ok(html.indexOf("<h2>Meme pack</h2>") < html.indexOf(fold));
     for (const m of result.manifest.memes) assert.ok(html.includes(`<img src="${m.file}"`));
     assert.ok(Buffer.byteLength(html) < 100_000);
   });

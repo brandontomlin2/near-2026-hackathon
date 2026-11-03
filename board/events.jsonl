@@ -41,3 +41,4 @@
 {"ts":"2026-11-03T12:37:23.811Z","actor":"claude","item_id":"fill-readme-live-on-testnet-section-and-out-evidence-from-the-live-run","action":"add","from":null,"to":"todo","note":""}
 {"ts":"2026-11-03T12:37:23.887Z","actor":"claude","item_id":"smoke-test-live-near-ai-cloud-inference-with-a-real-key-currently-stub-tested-only","action":"add","from":null,"to":"todo","note":""}
 {"ts":"2026-11-03T12:37:23.987Z","actor":"claude","item_id":"re-read-live-hackathon-md-and-walk-docs-submission-checklist-md-before-nov-14","action":"add","from":null,"to":"todo","note":""}
+{"ts":"2026-11-03T14:09:09.041Z","actor":"claude","item_id":"nep-171-contract","action":"changed","from":"done","to":"done","note":"audit 3 M-1: removed the in-flight lock expiry (lock cleared only by release_lock); inverted the attack test; L-4 nft_in_flight view + guard in nft_transfer_expecting_anchor; L-1/L-2/L-3 documented"}

@@ -48,7 +48,7 @@ npm install && npm run demo
 
 Everything below this section is reference for the pieces the demo ran.
 
-No browser handy? [docs/img/page.png](docs/img/page.png) is the generated page. For a hostable copy, run `npm run site` and see `out/site/index.html` ([hosting steps](docs/hosting.md)).
+No browser handy? [docs/img/page.png](docs/img/page.png) is the generated page. `npm run screenshot` renders your own copy to `out/page.png` (needs a local Chrome/Chromium, exits 2 without one) and leaves tracked files untouched. For a hostable copy, run `npm run site` and see `out/site/index.html` ([hosting steps](docs/hosting.md)).
 
 [![The generated page](docs/img/page.png)](docs/img/page.png)
 
@@ -80,15 +80,18 @@ Nothing in this repository is deployed or live on testnet. The contract is unit-
 
 | Method | Who | Deposit | What it does |
 | --- | --- | --- | --- |
-| `anchor_sheet(token_id, sheet_hash)` | current token owner | storage (0.01 NEAR is plenty), excess refunded | Records the lowercase hex sha256 of the latest sheet and adds one to `memory_depth`. Rejects a hash already anchored on that token. Frozen while an `nft_transfer_call` is in flight. Emits `sheet_anchored`. |
-| `nft_transfer_expecting_anchor(receiver_id, token_id, approval_id, memo, expected_hash, expected_depth)` | owner or approved | 1 yoctoNEAR | `nft_transfer` that panics unless the anchor is exactly `(expected_hash, expected_depth)`. |
+| `anchor_sheet(token_id, sheet_hash)` | current token owner | storage (0.01 NEAR is plenty), excess refunded | Records the lowercase hex sha256 of the latest sheet and adds one to `memory_depth`. Rejects a hash already anchored on that token. Frozen while an `nft_transfer_call` is in flight, so a receiver cannot tamper with it and then revert the transfer. Emits `sheet_anchored`. |
+| `nft_transfer_expecting_anchor(receiver_id, token_id, approval_id, memo, expected_hash, expected_depth)` | owner or approved | 1 yoctoNEAR | `nft_transfer` that panics unless the anchor is exactly `(expected_hash, expected_depth)`. Also panics while the token is in an unresolved `nft_transfer_call`. |
 | `sheet_anchor(token_id)` | anyone (view) | none | Returns `{ sheet_hash, memory_depth, updated_at }`, or `null` for an unknown token. |
+| `nft_in_flight(token_id)` | anyone (view) | none | `true` while an `nft_transfer_call` on the token has not resolved. The pending callback may still return the token to its previous owner, so treat such a token as not for sale. |
 
-**Buyers: check the anchor.** The owner can call `anchor_sheet` right before a sale, so read `sheet_anchor` just before you buy, or transfer with `nft_transfer_expecting_anchor`. The hash function is `hashSheet` in `src/anchor/hash.mjs`: sha256 of the sheet after Unicode NFC, LF line endings, no trailing spaces, no leading or trailing blank lines and one final newline.
+**Buyers: check the anchor.** The owner can call `anchor_sheet` right before a sale, so read `sheet_anchor` just before you buy, or transfer with `nft_transfer_expecting_anchor`. Check `nft_in_flight` too, or let `nft_transfer_expecting_anchor` refuse the token for you. The hash function is `hashSheet` in `src/anchor/hash.mjs`: sha256 of the sheet after Unicode NFC, LF line endings, no trailing spaces, no leading or trailing blank lines and one final newline.
+
+**`nft_transfer_call` caveats.** The in-flight lock never expires; only the `release_lock` callback chained after the standard `nft_resolve_transfer` clears it, once the receiver's promise settles. A receiver can delay that only as long as the gas the sender attached lets it keep chaining calls, so the stall is finite but not block-bounded. A second `nft_transfer_call` on a token whose first one has not resolved panics instead of settling as a no-op. The lock's storage (about 80 bytes per token in flight) is paid from the contract account's balance until it is released, because `nft_transfer_call` takes exactly 1 yoctoNEAR. `true` from `nft_transfer_call` also covers the rare case where `nft_resolve_transfer` itself ran out of its 5 Tgas: the token stays with the receiver, but the previous owner's approvals are not restored. Details in [`docs/audit/personality-nft.md`](docs/audit/personality-nft.md) (items 15 to 18).
 
 Build and test. Needs Rust 1.95 or newer (the crate's `rust-toolchain.toml` pins it, so rustup fetches it) and [cargo-near](https://github.com/near/cargo-near) for the build only (tested with 0.22.0).
 
-1. Run `npm run test:contract`. See 62 unit tests pass, including mint by a non-owner failing, a non-sha256 hash rejected, and the anchor surviving `nft_transfer` to a new owner.
+1. Run `npm run test:contract`. See every unit test pass, `test result: ok.` with `0 failed`, including mint by a non-owner failing, a non-sha256 hash rejected, and the anchor surviving `nft_transfer` to a new owner.
 2. Run `npm run build:contract`. See `contracts/personality-nft/target/near/personality_nft.wasm` and its ABI JSON next to it.
 
 ## Deploy to testnet
@@ -177,7 +180,7 @@ Every pull request must paste the real `bash scripts/verify.sh` output in a `## 
 
 ## Live on testnet
 
-Not run yet: no contract has been deployed to testnet from this repository, and there are no transaction hashes to show. `npm run live-proof` prints the deploy, four mint and `anchor_sheet` steps and writes `out/live-proof/evidence.example.json` (gitignored, marked `"example": true`); nothing is signed. Only the owner can run it live (`npm run live-proof -- --send --i-approve` with the account variables set). When that has happened, this section will list the contract id and transaction hashes for a judge to check with read-only `near contract call-function as-read-only` calls.
+Not run yet. Nothing from this repository is deployed to testnet, so there is no contract id and no transaction hash to check, and every hash above is a mock or a dry run. Only the owner can change that, with `npm run live-proof -- --send --i-approve` (refused unless `NEAR_ACCOUNT_ID` and `NEAR_CONTRACT_ACCOUNT_ID` are set); it deploys, mints the four tokens and anchors one sheet, then `npm run evidence` writes the real transaction hashes and RPC views to `out/evidence.json`. When that has happened, this section will quote that file.
 
 ## Disclosure
 

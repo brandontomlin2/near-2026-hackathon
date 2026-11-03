@@ -156,7 +156,7 @@ test("demo-script.md: page facts (verify: ok, Chaotic's rivalry grows, who is ca
   }
   assert.deepEqual(shook, { aloof: 1, skeptic: 1 }, "Aloof and Skeptic are each caught off guard once; Chaotic and Social never are");
   assert.match(script, /Aloof and Skeptic each get caught off guard once/);
-  const order = ["Agents", "Memory", "Round hash chain", "Channel", "Share cards", "Anchor (dry run)", "Transfer: memory travels with the NFT"];
+  const order = ["Agents", "Memory", "Meme pack", "Transfer: memory travels with the NFT", "Channel", "Anchor (dry run)", "Round hash chain", `${demo.shares.length} share cards`, "Files"];
   const positions = order.map((h) => page.indexOf(` ${h} `));
   assert.deepEqual([...positions].sort((a, b) => a - b), positions, "section order on the page");
   assert.ok(positions.every((p) => p > 0));

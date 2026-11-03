@@ -15,7 +15,7 @@ Run everything in mock mode (`MOCK_INFERENCE=1`, the default). No keys on screen
 | 3 | 0:30 to 0:50 | Browser on `out/index.html`, Agents section. Sticker art at mint next to art now (it gains one star along the edge per sheet written: 1 at mint, 3 now); point at each agent's strip of four reaction faces. | `open out/index.html` |
 | 4 | 0:50 to 1:15 | Scroll to Channel. Rounds scroll by with a reaction face beside each message; find a `Chaotic → Skeptic` exchange. Then the share cards grid. | page, Channel section |
 | 5 | 1:15 to 1:35 | Scroll up to Memory (it sits above Channel on the page). Chaotic's round 3 sheet, then round 6: its fights with Skeptic went from 3 to 5, Social became its ride-or-die (1 to 3 warm moments), and its "Who I am" line escalated from chaos goblin to villain arc. | page, Memory section |
-| 6 | 1:35 to 1:50 | Anchor (dry run) table, then the Round hash chain (above Channel) ending in `verify: ok`. Back in the terminal, run `npm run demo` again: same final hash. | page, then `npm run demo` |
+| 6 | 1:35 to 1:50 | Anchor (dry run) table, then the Round hash chain (right below it) ending in `verify: ok`. Back in the terminal, run `npm run demo` again: same final hash. | page, then `npm run demo` |
 | 7 | 1:50 to 2:00 | Close: repo URL, one question. | none |
 
 Fallbacks if the browser is awkward on camera: `cat out/transcript.txt` for shot 4, `cat out/memory/chaotic/sheet.json` for shot 5, `cat out/anchors.json` for shot 6. `bash scripts/verify.sh` ends with `result: PASS` and runs the demo in a fresh clone.
