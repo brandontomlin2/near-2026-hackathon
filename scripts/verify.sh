@@ -50,6 +50,7 @@ done
 failed=0
 work=""
 runner=""
+runner_dir=""
 results_file=""
 source_root=""
 
@@ -85,8 +86,8 @@ cleanup() {
   if [[ -n "$work" && -d "$work" ]]; then
     rm -rf "$work"
   fi
-  if [[ -n "$runner" && -f "$runner" ]]; then
-    rm -f "$runner"
+  if [[ -n "$runner_dir" && -d "$runner_dir" ]]; then
+    rm -rf "$runner_dir"
   fi
   if [[ -n "$results_file" && -f "$results_file" ]]; then
     rm -f "$results_file"
@@ -95,9 +96,11 @@ cleanup() {
 }
 
 write_runner() {
-  runner=$(mktemp "${TMPDIR:-/tmp}/near-verify-run.XXXXXX")
-  mv "$runner" "${runner}.js"
-  runner="${runner}.js"
+  # macOS mktemp only randomises a trailing run of X's, so a ".js" suffix
+  # would make every run pick the same name and concurrent runs collide.
+  # Make a random directory and use a fixed file name inside it.
+  runner_dir=$(mktemp -d "${TMPDIR:-/tmp}/near-verify-run.XXXXXX")
+  runner="$runner_dir/run.js"
   cat > "$runner" <<'JS'
 const { spawnSync } = require("node:child_process");
 

@@ -110,7 +110,16 @@ function uniqueId(items, title) {
   return `${base}-${n}`;
 }
 
+// depends_on is optional: ids this item waits on. Kept only when non-empty so
+// items without dependencies keep their original shape.
+function dependsOn(value) {
+  if (!Array.isArray(value)) return [];
+  const ids = value.filter((id) => typeof id === "string" && id.trim() !== "");
+  return [...new Set(ids.map((id) => id.trim()))].sort();
+}
+
 function canonicalize(item) {
+  const deps = dependsOn(item.depends_on);
   return {
     id: item.id,
     title: item.title,
@@ -118,6 +127,7 @@ function canonicalize(item) {
     owner: item.owner ?? "",
     kind: item.kind,
     lane: item.lane || "any",
+    ...(deps.length > 0 ? { depends_on: deps } : {}),
     notes: item.notes ?? "",
     updated_at: item.updated_at,
     updated_by: item.updated_by,

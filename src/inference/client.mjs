@@ -17,6 +17,7 @@ export const DEFAULT_BASE_URL = "https://cloud-api.near.ai/v1";
 export const DEFAULT_TIMEOUT_MS = 60_000;
 export const DEFAULT_MAX_RETRIES = 2;
 const RETRY_BASE_DELAY_MS = 250;
+const RETRY_MAX_DELAY_MS = 8_000;
 const MOCK_MODEL = "mock";
 
 export class InferenceError extends Error {
@@ -238,6 +239,10 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function count(value) {
+  return Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
 function isRetryableStatus(status) {
   return status === 408 || status === 409 || status === 429 || status >= 500;
 }
@@ -246,10 +251,11 @@ function isRetryableStatus(status) {
  * Read a response body for an error message without ever echoing more than a
  * short prefix. Provider bodies can be large or contain the request.
  */
-async function errorSnippet(response) {
+async function errorSnippet(response, secret) {
   try {
     const text = await response.text();
-    return text.slice(0, 200).replace(/\s+/g, " ").trim();
+    const redacted = secret ? text.split(secret).join("[redacted]") : text;
+    return redacted.slice(0, 200).replace(/\s+/g, " ").trim();
   } catch {
     return "";
   }
@@ -267,17 +273,23 @@ async function errorSnippet(response) {
  * }} options
  */
 export function createLiveClient(options) {
-  if (!options || typeof options.apiKey !== "string" || options.apiKey.length === 0) {
+  if (!options || typeof options.apiKey !== "string" || options.apiKey.trim().length === 0) {
     throw new InferenceError("live mode needs NEAR_AI_API_KEY", { code: "missing_api_key" });
   }
   if (typeof options.model !== "string" || options.model.length === 0) {
     throw new InferenceError("live mode needs NEAR_AI_MODEL", { code: "missing_model" });
   }
-  const apiKey = options.apiKey;
+  const apiKey = options.apiKey.trim();
   const model = options.model;
   const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
+  if (!Number.isInteger(maxRetries) || maxRetries < 0) {
+    throw new InferenceError("maxRetries must be a non-negative integer", { code: "bad_config" });
+  }
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new InferenceError("timeoutMs must be a positive number", { code: "bad_config" });
+  }
   const doFetch = options.fetch ?? globalThis.fetch;
   const wait = options.sleep ?? sleep;
   const url = `${baseUrl}/chat/completions`;
@@ -302,7 +314,7 @@ export function createLiveClient(options) {
       );
     }
     if (!response.ok) {
-      const snippet = await errorSnippet(response);
+      const snippet = await errorSnippet(response, apiKey);
       throw new InferenceError(
         `NEAR AI Cloud returned HTTP ${response.status}${snippet ? `: ${snippet}` : ""}`,
         { status: response.status, code: "http_error", retryable: isRetryableStatus(response.status) },
@@ -312,11 +324,16 @@ export function createLiveClient(options) {
     try {
       data = await response.json();
     } catch (cause) {
+      if (cause && cause.name === "TimeoutError") {
+        throw new InferenceError(`reading response from ${url} timed out after ${timeoutMs}ms`, {
+          code: "timeout", retryable: true, cause,
+        });
+      }
       throw new InferenceError("NEAR AI Cloud returned a non-JSON body", { code: "bad_response", cause });
     }
     const content = data?.choices?.[0]?.message?.content;
-    if (typeof content !== "string") {
-      throw new InferenceError("NEAR AI Cloud response has no choices[0].message.content", {
+    if (typeof content !== "string" || content.trim() === "") {
+      throw new InferenceError("NEAR AI Cloud response has no non-empty choices[0].message.content", {
         code: "bad_response",
       });
     }
@@ -326,8 +343,8 @@ export function createLiveClient(options) {
       model: typeof data.model === "string" ? data.model : model,
       id: typeof data.id === "string" ? data.id : "",
       usage: {
-        promptTokens: Number(data?.usage?.prompt_tokens ?? 0),
-        completionTokens: Number(data?.usage?.completion_tokens ?? 0),
+        promptTokens: count(data?.usage?.prompt_tokens),
+        completionTokens: count(data?.usage?.completion_tokens),
       },
     };
   }
@@ -351,7 +368,7 @@ export function createLiveClient(options) {
         } catch (error) {
           const retryable = error instanceof InferenceError && error.retryable;
           if (!retryable || attempt >= maxRetries) throw error;
-          await wait(RETRY_BASE_DELAY_MS * 2 ** attempt);
+          await wait(Math.min(RETRY_BASE_DELAY_MS * 2 ** attempt, RETRY_MAX_DELAY_MS));
           attempt += 1;
         }
       }

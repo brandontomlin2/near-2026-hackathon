@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -10,6 +10,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "..");
 const LOOP = path.join(HERE, "claude-loop.sh");
 const BOARD = path.join(HERE, "board.mjs");
+const SWARM = path.join(HERE, "claude-swarm.sh");
 const SENTINEL = "SENTINELSECRETVALUE99";
 
 const STRIP = [
@@ -23,6 +24,9 @@ const STRIP = [
   "CLAUDE_LOOP_REPO",
   "CLAUDE_LOOP_HEARTBEAT_SEC",
   "CLAUDE_LOOP_ONLY",
+  "CLAUDE_LOOP_MAX_PARALLEL",
+  "CLAUDE_LOOP_LOG_DIR",
+  "CLAUDE_SWARM_STAGGER_SEC",
   "CLAUDE_STUB_MODE",
   "CLAUDE_STUB_LOG",
   "CLAUDE_BIN",
@@ -106,7 +110,7 @@ case "\$mode" in
     node <<'JS'
 const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
-const file = process.env.HOME + "/.claude-loop/status.json";
+const file = process.env.HOME + "/.claude-loop/status/beat-task.json";
 const first = JSON.parse(fs.readFileSync(file, "utf8"));
 if (first.state !== "running") {
   console.error("expected running status before heartbeat");
@@ -127,6 +131,13 @@ JS
     git add claude-loop-work.txt
     git commit -m "stub work" >/dev/null
     printf '%s\\n' '{"type":"result","subtype":"success","is_error":false,"session_id":"sess-hb","total_cost_usd":0.2,"result":"done"}'
+    ;;
+  hold)
+    while [[ ! -f "\${HOME}/.claude-loop/release" ]]; do sleep 0.1; done
+    printf 'work\\n' >> claude-loop-work.txt
+    git add claude-loop-work.txt
+    git commit -m "stub work" >/dev/null
+    printf '%s\\n' '{"type":"result","subtype":"success","is_error":false,"session_id":"sess-hold","total_cost_usd":0.3,"result":"done"}'
     ;;
   no-diff)
     printf '%s\\n' '{"type":"result","subtype":"success","is_error":false,"session_id":"sess-empty","total_cost_usd":0.1,"result":"nothing"}'
@@ -193,6 +204,44 @@ function claudeRuns(logFile) {
 
 function readStatus(home) {
   return JSON.parse(fs.readFileSync(path.join(home, ".claude-loop", "status.json"), "utf8"));
+}
+
+function readItemStatus(home, id) {
+  return JSON.parse(fs.readFileSync(path.join(home, ".claude-loop", "status", `${id}.json`), "utf8"));
+}
+
+function lockDir(home, id) {
+  return path.join(home, ".claude-loop", "locks", id);
+}
+
+function liveLock(home, id, pid = process.pid) {
+  fs.mkdirSync(lockDir(home, id), { recursive: true });
+  fs.writeFileSync(path.join(lockDir(home, id), "pid"), String(pid));
+}
+
+function startLoop(cwd, env) {
+  return new Promise((resolve) => {
+    const child = spawn("/bin/bash", [LOOP], { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => (stdout += chunk));
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+    child.on("close", (status) => resolve({ status, stdout, stderr }));
+  });
+}
+
+async function waitFor(check, ms = 15000) {
+  const start = Date.now();
+  while (Date.now() - start < ms) {
+    if (check()) return true;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return false;
+}
+
+function lockNames(home) {
+  const dir = path.join(home, ".claude-loop", "locks");
+  return fs.existsSync(dir) ? fs.readdirSync(dir).filter((n) => !n.includes(".stale.")).sort() : [];
 }
 
 function showBoard(origin, ref, env) {
@@ -273,7 +322,7 @@ test("STOP file exits quietly without calling claude", { timeout: 20000 }, (t) =
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, "");
   assert.equal(result.stderr, "");
-  assert.equal(readStatus(home).state, "stopped");
+  assert.equal(readStatus(home).last_result, "stopped");
   assert.equal(fs.existsSync(stubLog), false);
 });
 
@@ -339,28 +388,156 @@ test("daily spend cap refuses at the default of 25", { timeout: 20000 }, (t) => 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /CLAUDE_LOOP_DAILY_USD/);
   const status = readStatus(home);
-  assert.equal(status.state, "capped");
+  assert.equal(status.last_result, "capped");
   assert.ok(status.spend_today >= 25);
   assert.equal(claudeRuns(stubLog), 0);
   assert.match(fs.readFileSync(stubLog, "utf8"), /auth status/);
 });
 
-test("a live lock holder blocks a second instance", { timeout: 20000 }, (t) => {
+test("at the parallel cap the loop exits 0 quietly without calling claude", { timeout: 20000 }, (t) => {
   const { root, home } = tempHome(t);
   const stubLog = path.join(root, "claude.log");
-  const lock = path.join(home, ".claude-loop", "lock");
-  fs.mkdirSync(lock, { recursive: true });
-  fs.writeFileSync(path.join(lock, "pid"), String(process.pid));
+  liveLock(home, "busy-item");
   writeClaudeStub(path.join(root, "claude"));
   const result = runLoop(root, home, {
     CLAUDE_BIN: path.join(root, "claude"),
     CLAUDE_STUB_LOG: stubLog,
     CLAUDE_STUB_MODE: "success",
+    CLAUDE_LOOP_MAX_PARALLEL: "1",
   });
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /lock/);
-  assert.equal(claudeRuns(stubLog), 0);
-  assert.equal(fs.readFileSync(path.join(lock, "pid"), "utf8").trim(), String(process.pid));
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "");
+  assert.equal(result.stderr, "");
+  assert.equal(fs.existsSync(stubLog), false);
+  assert.equal(fs.readFileSync(path.join(lockDir(home, "busy-item"), "pid"), "utf8").trim(), String(process.pid));
+});
+
+test("a held item lock makes the loop take the next item; a stale lock is replaced", { timeout: 30000 }, (t) => {
+  const fixture = initRepo(t, {
+    verify: PASS_VERIFY,
+    stubMode: "success",
+    items: [task("aaa-held", "Held elsewhere", "any"), task("bbb-free", "Free", "any")],
+  });
+  liveLock(fixture.home, "aaa-held");
+  const result = runLoop(fixture.repo, fixture.home, loopEnv(fixture));
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /bbb-free review/);
+  assert.deepEqual(lockNames(fixture.home), ["aaa-held"]);
+
+  fs.writeFileSync(path.join(lockDir(fixture.home, "aaa-held"), "pid"), "999999");
+  const second = runLoop(fixture.repo, fixture.home, loopEnv(fixture));
+  assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
+  assert.match(second.stdout, /aaa-held review/);
+  assert.deepEqual(lockNames(fixture.home), []);
+  assert.equal(claudeRuns(fixture.stubLog), 2);
+});
+
+test("two concurrent runs take different items and the summary lists both", { timeout: 40000 }, async (t) => {
+  const fixture = initRepo(t, {
+    verify: PASS_VERIFY,
+    stubMode: "hold",
+    items: [task("par-a", "First", "any"), task("par-b", "Second", "any"), task("par-c", "Third", "any")],
+  });
+  const env = loopEnv(fixture);
+  const first = startLoop(fixture.repo, env);
+  assert.ok(await waitFor(() => lockNames(fixture.home).length === 1), "first lock");
+  const second = startLoop(fixture.repo, env);
+  assert.ok(await waitFor(() => lockNames(fixture.home).length === 2), "second lock");
+  assert.deepEqual(lockNames(fixture.home), ["par-a", "par-b"]);
+  assert.ok(
+    await waitFor(() => {
+      try {
+        return readStatus(fixture.home).running.length === 2;
+      } catch {
+        return false;
+      }
+    }),
+    "summary shows two running items",
+  );
+  const summary = readStatus(fixture.home);
+  assert.deepEqual(summary.running.map((entry) => entry.item), ["par-a", "par-b"]);
+  assert.equal(readItemStatus(fixture.home, "par-a").state, "running");
+  assert.equal(readItemStatus(fixture.home, "par-b").state, "running");
+
+  const third = runLoop(fixture.repo, fixture.home, loopEnv(fixture, { CLAUDE_LOOP_MAX_PARALLEL: "2" }));
+  assert.equal(third.status, 0, third.stderr);
+  assert.equal(third.stdout + third.stderr, "");
+
+  fs.writeFileSync(path.join(fixture.home, ".claude-loop", "release"), "");
+  const [a, b] = await Promise.all([first, second]);
+  assert.equal(a.status, 0, `${a.stdout}\n${a.stderr}`);
+  assert.equal(b.status, 0, `${b.stdout}\n${b.stderr}`);
+  assert.match(a.stdout, /par-a review/);
+  assert.match(b.stdout, /par-b review/);
+  assert.deepEqual(lockNames(fixture.home), []);
+  assert.equal(itemById(showBoard(fixture.origin, "claude/par-a", fixture.env), "par-a").status, "review");
+  assert.equal(itemById(showBoard(fixture.origin, "claude/par-b", fixture.env), "par-b").status, "review");
+  assert.equal(itemById(showBoard(fixture.origin, "main", fixture.env), "par-c").status, "todo");
+  const day = new Date().toISOString().slice(0, 10);
+  const spend = fs
+    .readFileSync(path.join(fixture.home, ".claude-loop", `spend-${day}.jsonl`), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.deepEqual(spend.map((line) => line.item_id).sort(), ["par-a", "par-b"]);
+  const after = readStatus(fixture.home);
+  assert.deepEqual(after.running, []);
+  assert.equal(after.spend_today, 0.6);
+  assert.equal(readItemStatus(fixture.home, "par-a").state, "idle");
+  assert.equal(readItemStatus(fixture.home, "par-b").last_result, "review");
+});
+
+test("an item whose dependency is not done on main is skipped", { timeout: 30000 }, (t) => {
+  const child = task("aaa-child", "Needs the parent", "any");
+  child.depends_on = ["zzz-parent"];
+  const fixture = initRepo(t, {
+    verify: PASS_VERIFY,
+    stubMode: "success",
+    items: [child, task("zzz-parent", "Parent", "any")],
+  });
+  const result = runLoop(fixture.repo, fixture.home, loopEnv(fixture));
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /zzz-parent review/);
+  const only = runLoop(fixture.repo, fixture.home, loopEnv(fixture, { CLAUDE_LOOP_ONLY: "aaa-child" }));
+  assert.equal(only.status, 0, `${only.stdout}\n${only.stderr}`);
+  assert.match(only.stderr, /CLAUDE_LOOP_ONLY=aaa-child skipped: waiting on zzz-parent/);
+  const none = runLoop(fixture.repo, fixture.home, loopEnv(fixture));
+  assert.match(none.stdout, /no eligible todo item/);
+  assert.equal(claudeRuns(fixture.stubLog), 1);
+
+  const board = showBoard(fixture.origin, "main", fixture.env);
+  itemById(board, "zzz-parent").status = "done";
+  fs.writeFileSync(path.join(fixture.repo, "board", "board.json"), `${JSON.stringify(board, null, 2)}\n`);
+  git(fixture.repo, ["commit", "-am", "parent done"], fixture.env);
+  git(fixture.repo, ["push", "origin", "main"], fixture.env);
+  const unblocked = runLoop(fixture.repo, fixture.home, loopEnv(fixture));
+  assert.equal(unblocked.status, 0, `${unblocked.stdout}\n${unblocked.stderr}`);
+  assert.match(unblocked.stdout, /aaa-child review/);
+  assert.equal(claudeRuns(fixture.stubLog), 2);
+});
+
+test("claude-swarm launches one run per id and logs to logs/<id>.log", { timeout: 40000 }, (t) => {
+  const fixture = initRepo(t, {
+    verify: PASS_VERIFY,
+    stubMode: "success",
+    items: [task("sw-a", "A", "any"), task("sw-b", "B", "any"), task("sw-c", "C", "any")],
+  });
+  const result = spawnSync("/bin/bash", [SWARM, "--wait", "sw-b", "sw-c", "sw-a"], {
+    cwd: fixture.repo,
+    env: loopEnv(fixture, { CLAUDE_LOOP_MAX_PARALLEL: "2", CLAUDE_SWARM_STAGGER_SEC: "0" }),
+    encoding: "utf8",
+    timeout: 35000,
+  });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stderr, /skipping: sw-a/);
+  assert.equal(result.stdout.match(/claude-swarm: started/g).length, 2);
+  for (const id of ["sw-b", "sw-c"]) {
+    const log = fs.readFileSync(path.join(fixture.home, ".claude-loop", "logs", `${id}.log`), "utf8");
+    assert.match(log, new RegExp(`${id} review`));
+    assert.equal(itemById(showBoard(fixture.origin, `claude/${id}`, fixture.env), id).status, "review");
+  }
+  assert.equal(itemById(showBoard(fixture.origin, "main", fixture.env), "sw-a").status, "todo");
+  assert.equal(claudeRuns(fixture.stubLog), 2);
 });
 
 test("verify failure increments attempts and the second failure is blocked", { timeout: 20000 }, (t) => {
@@ -381,6 +558,7 @@ test("verify failure increments attempts and the second failure is blocked", { t
   assert.match(item.notes, /verify=FAIL/);
   assert.doesNotMatch(item.notes, /(^|\n)blocked(\n|$)/);
   assert.equal(readStatus(fixture.home).last_result, "attempt");
+  assert.equal(readItemStatus(fixture.home, "retry-task").last_result, "attempt");
   assert.equal(claudeRuns(fixture.stubLog), 1);
 
   const second = runLoop(fixture.repo, fixture.home, loopEnv(fixture));
@@ -438,7 +616,7 @@ test("success moves the item to review and does not push main", { timeout: 20000
   assert.equal(git(fixture.repo, ["status", "--porcelain"], fixture.env), "");
   assert.equal(git(fixture.repo, ["branch", "--show-current"], fixture.env), "main");
 
-  const prompt = fs.readFileSync(path.join(fixture.home, ".claude-loop", "last-prompt.txt"), "utf8");
+  const prompt = fs.readFileSync(path.join(fixture.home, ".claude-loop", "runs", "demo-task", "prompt.txt"), "utf8");
   assert.match(prompt, /CLAUDE\.md/);
   assert.match(prompt, /PRODUCT\.md/);
   assert.match(prompt, /\[redacted\]/);
@@ -457,13 +635,17 @@ test("success moves the item to review and does not push main", { timeout: 20000
   const timeoutLog = fs.readFileSync(fixture.timeoutLog, "utf8");
   assert.match(timeoutLog, /^-s INT 45m /m);
 
-  const status = readStatus(fixture.home);
+  const status = readItemStatus(fixture.home, "demo-task");
   assert.equal(status.state, "idle");
   assert.equal(status.last_result, "review");
   assert.equal(status.item, "demo-task");
   assert.equal(status.session_id, "sess-ok");
-  assert.equal(status.spend_today, 1.25);
-  assert.equal(fs.existsSync(path.join(fixture.home, ".claude-loop", "lock")), false);
+  const summary = readStatus(fixture.home);
+  assert.deepEqual(summary.running, []);
+  assert.equal(summary.last_item, "demo-task");
+  assert.equal(summary.last_result, "review");
+  assert.equal(summary.spend_today, 1.25);
+  assert.equal(fs.existsSync(lockDir(fixture.home, "demo-task")), false);
 
   const again = runLoop(fixture.repo, fixture.home, loopEnv(fixture, { ANTHROPIC_API_KEY: SENTINEL }));
   assert.equal(again.status, 0, `${again.stdout}\n${again.stderr}`);
@@ -495,7 +677,7 @@ test("CLAUDE_LOOP_ONLY takes the named item instead of the first eligible one", 
   assert.equal(itemById(board, "zzz-target").status, "review");
   assert.equal(itemById(board, "aaa-first").status, "todo");
   assert.equal(itemById(board, "aaa-first").owner, "");
-  assert.equal(readStatus(fixture.home).item, "zzz-target");
+  assert.equal(readStatus(fixture.home).last_item, "zzz-target");
   assert.equal(git(fixture.origin, ["rev-parse", "main"], fixture.env), mainBefore);
 });
 
@@ -517,10 +699,9 @@ test("CLAUDE_LOOP_ONLY on an ineligible item exits 0 without claiming", { timeou
   assert.equal(git(fixture.origin, ["rev-parse", "main"], fixture.env), mainBefore);
   assert.equal(git(fixture.repo, ["status", "--porcelain"], fixture.env), "");
   const status = readStatus(fixture.home);
-  assert.equal(status.state, "idle");
   assert.equal(status.last_result, "only_skipped");
-  assert.equal(status.item, null);
-  assert.equal(fs.existsSync(path.join(fixture.home, ".claude-loop", "lock")), false);
+  assert.equal(status.last_item, null);
+  assert.deepEqual(lockNames(fixture.home), []);
 });
 
 test("verify pass with no product diff increments attempts", { timeout: 20000 }, (t) => {
@@ -554,7 +735,7 @@ test("rate-limit output backs off without counting an attempt", { timeout: 20000
   assert.match(item.notes, /backoff/);
   assert.match(item.notes, /session_id=sess-rl/);
   assert.match(item.notes, /subtype=error_rate_limit/);
-  const status = readStatus(fixture.home);
+  const status = readItemStatus(fixture.home, "limited-task");
   assert.equal(status.state, "backoff");
   assert.equal(status.last_result, "rate_limit");
   assert.equal(status.session_id, "sess-rl");
@@ -578,7 +759,7 @@ test("rate-limit output backs off without counting an attempt", { timeout: 20000
   assert.equal(paused.status, 0, `${paused.stdout}\n${paused.stderr}`);
   assert.match(paused.stdout, /backoff/);
   assert.equal(claudeRuns(fixture.stubLog), 1);
-  assert.equal(readStatus(fixture.home).state, "backoff");
+  assert.equal(readStatus(fixture.home).last_result, "backoff");
 });
 
 test("auth error in Claude output backs off without counting an attempt", { timeout: 20000 }, (t) => {
@@ -594,7 +775,7 @@ test("auth error in Claude output backs off without counting an attempt", { time
   assert.equal(lastAttempts(item.notes), 1);
   assert.match(item.notes, /backoff/);
   assert.match(item.notes, /session_id=sess-auth/);
-  const status = readStatus(fixture.home);
+  const status = readItemStatus(fixture.home, "auth-task");
   assert.equal(status.state, "backoff");
   assert.equal(status.last_result, "auth");
 });
@@ -614,6 +795,6 @@ test("heartbeat refreshes status while claude is running", { timeout: 30000 }, (
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   const item = itemById(showBoard(fixture.origin, "claude/beat-task", fixture.env), "beat-task");
   assert.equal(item.status, "review");
-  assert.equal(readStatus(fixture.home).session_id, "sess-hb");
-  assert.equal(fs.existsSync(path.join(fixture.home, ".claude-loop", "lock")), false);
+  assert.equal(readItemStatus(fixture.home, "beat-task").session_id, "sess-hb");
+  assert.deepEqual(lockNames(fixture.home), []);
 });
