@@ -113,6 +113,6 @@ test("ready case prints exactly 7 lines in stable order", async () => {
     "[ok]   NEAR_NETWORK is unset or testnet",
     "[ok]   NEAR_ACCOUNT_ID exists on testnet",
     "[ok]   NEAR_CONTRACT_ACCOUNT_ID exists on testnet",
-    "ready: yes. Next: npm run live-proof (dry run), then the owner adds --send --i-approve.",
+    "ready: yes. Next: npm run live-proof (dry run), then the owner hosts the four SVGs and adds --send --i-approve --media-base <url>.",
   ]);
 });
