@@ -14,16 +14,30 @@ const LINE_H = 40;
 /** Escape for XML text and attribute values (same five characters as HTML). */
 export const escapeXml = escapeHtml;
 
+const INVALID_XML = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+/** Strip characters that are invalid in XML 1.0 (and lone surrogates) and collapse whitespace. */
+export function cleanText(value) {
+  return String(value ?? "").replace(INVALID_XML, "").replace(/\s+/g, " ").trim();
+}
+
 /** Greedy word wrap; a word longer than `width` is split. */
 export function wrapText(text, width = WRAP) {
   const lines = [];
   let line = "";
   for (const word of String(text).split(/\s+/).filter(Boolean)) {
+    // Lengths are UTF-16 units (as before), but a word is only ever cut
+    // between code points so a surrogate pair is never split.
     let w = word;
     while (w.length > width) {
       if (line) { lines.push(line); line = ""; }
-      lines.push(w.slice(0, width));
-      w = w.slice(width);
+      let piece = "";
+      for (const ch of w) {
+        if (piece && piece.length + ch.length > width) break;
+        piece += ch;
+      }
+      lines.push(piece);
+      w = w.slice(piece.length);
     }
     if (line && line.length + 1 + w.length > width) { lines.push(line); line = w; }
     else line = line ? `${line} ${w}` : w;
@@ -33,9 +47,9 @@ export function wrapText(text, width = WRAP) {
 }
 
 /** Turn a style SVG into a nested <svg> placed at x,y with the given size. */
-function nest(faceSvg, x, y, size) {
-  return faceSvg.trim().replace(/^<\?xml[^>]*\?>\s*/, "").replace(/^<svg\b([^>]*)>/, (_, attrs) => {
-    const rest = attrs.replace(/\s(?:x|y|width|height)="[^"]*"/g, "");
+export function nest(faceSvg, x, y, size) {
+  return faceSvg.trim().replace(/^<\?xml[^>]*\?>\s*/, "").replace(/^<svg\b((?:[^>"']|"[^"]*"|'[^']*')*)>/, (_, attrs) => {
+    const rest = attrs.replace(/\s(?:x|y|width|height)=(?:"[^"]*"|'[^']*')/g, "");
     return `<svg${rest} x="${x}" y="${y}" width="${size}" height="${size}">`;
   });
 }
@@ -44,7 +58,12 @@ function nest(faceSvg, x, y, size) {
  * @param {{ agentName: string, text: string, mood: string, round: number, faceSvg: string }} card
  * @returns {string} one standalone SVG document
  */
-export function renderShareCard({ agentName, text, mood, round, faceSvg }) {
+export function renderShareCard(card) {
+  const agentName = cleanText(card.agentName);
+  const text = cleanText(card.text);
+  const mood = cleanText(card.mood);
+  const round = cleanText(String(card.round));
+  const { faceSvg } = card;
   const lines = wrapText(text);
   const textBlock = lines.length * LINE_H;
   const height = Math.max(FACE + 2 * PAD + 40, textBlock + 2 * PAD + 150);
