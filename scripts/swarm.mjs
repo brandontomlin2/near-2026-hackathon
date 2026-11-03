@@ -113,7 +113,10 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     }
   }
   const label = parseMode(env.MOCK_INFERENCE) === "live" ? "live inference, dry-run anchors" : "MOCK";
-  log(`final round hash ${finalHash} linked to ${memory.tokens.reduce((n, t) => n + t.sheets.length, 0)} anchor dry-runs (${label}, not on-chain)`);
+  // Only each token's last sheet is written at the final round; earlier sheets link to earlier round hashes.
+  const anchors = memory.tokens.flatMap((t) => t.sheets.map((s) => s.anchor));
+  const linkedToFinal = anchors.filter((a) => a.linkedRoundHash === finalHash).length;
+  log(`final round hash ${finalHash} linked to ${linkedToFinal} of ${anchors.length} anchor dry-runs (${label}, not on-chain)`);
   return 0;
 }
 

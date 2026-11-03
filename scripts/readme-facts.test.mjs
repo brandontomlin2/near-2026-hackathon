@@ -56,11 +56,21 @@ test("README swarm step counts match the real 5-round output", async () => {
   await withTmp(async (dir) => {
     const { stdout } = await run(process.execPath, [join(root, "scripts/swarm.mjs"), "--rounds", "5", "--out", dir], { env });
     const sheetLines = stdout.split("\n").filter((l) => /^sheet \w+ round \d+ /.test(l));
-    const linked = stdout.match(/linked to (\d+) anchor dry-runs/);
-    assert.ok(linked);
-    assert.equal(Number(linked[1]), sheetLines.length);
+    // Only each agent's last sheet is written at the final round, so only those link to the final hash.
+    const summary = stdout.match(/linked to (\d+) of (\d+) anchor dry-runs/);
+    assert.ok(summary, "summary line must say 'N of M'");
+    assert.equal(Number(summary[2]), sheetLines.length);
+    assert.equal(Number(summary[1]), 4);
     assert.ok(readmeText.includes(`Then ${sheetLines.length} sheet lines`));
-    assert.ok(readmeText.includes(`linked to ${sheetLines.length} anchor dry-runs (MOCK, not on-chain)`));
+    assert.ok(readmeText.includes(`linked to ${summary[1]} of ${summary[2]} anchor dry-runs (MOCK, not on-chain)`));
+    const memory = JSON.parse(await readFile(join(dir, "memory-loop.json"), "utf8"));
+    const finalLinked = memory.tokens.flatMap((t) => t.sheets).filter((s) => s.anchor.linkedRoundHash === memory.finalRoundHash).length;
+    assert.equal(finalLinked, Number(summary[1]));
+    // The README's example transcript line is one the demo really prints.
+    const example = readmeText.match(/\[Skeptic\] (gas is "basically free"\? receipts or it did not happen\.)/);
+    assert.ok(example, "README must quote a Skeptic line");
+    assert.ok(stdout.includes(`[Skeptic] ${example[1]}`), "quoted Skeptic line must appear in the real transcript");
+    assert.doesNotMatch(readmeText, /Doubtful/);
     const events = stdout.split("\n").filter((l) => /^\[/.test(l)).length;
     assert.ok(readmeText.includes(`See 5 round headers, ${events} lines`));
   });
@@ -127,7 +137,7 @@ test("README persona line counts match src/swarm/personas.mjs, and the mock read
   assert.ok(readmeText.includes(`(${perAgent})`), `README must list "(${perAgent})"`);
   for (const replies of Object.values(REPLY_LINES)) for (const list of Object.values(replies)) assert.equal(list.length, 3);
   assert.ok(readmeText.includes("3 reply lines per agent it answers"));
-  assert.ok(readmeText.includes("The mock ignores the prompt's content"));
+  assert.ok(readmeText.includes("The mock does not read the prompt as text: it reads only which agent is being answered"));
   // Same hash, different prompt text: same line. Only the "Reply to event #N from X." marker changes the list.
   const a = personaResponder({ id: "aloof" })({ messages: [{ role: "user", content: "about gas" }] }, "ab".repeat(32));
   const b = personaResponder({ id: "aloof" })({ messages: [{ role: "user", content: "about validators" }] }, "ab".repeat(32));
@@ -303,4 +313,44 @@ test("README and the submission checklist quote the evidence command live-proof 
   assert.ok(body.includes(command), `README 'Live on testnet' must quote ${command}`);
   const checklist = await readFile(join(root, "docs/submission-checklist.md"), "utf8");
   assert.ok(checklist.includes(command), `docs/submission-checklist.md must quote ${command}`);
+});
+
+test("README says the mock's start line comes from a hash of the whole first request, not the seed alone", async () => {
+  const { hashRequest } = await import("../src/inference/client.mjs");
+  const { personaResponder, PERSONA_LINES } = await import("../src/swarm/personas.mjs");
+  const req = (content, seed) => ({ model: "m", messages: [{ role: "user", content }], seed });
+  // Same seed, different prompt text: different hash, so (for this list) a different start line.
+  const a = hashRequest(req("Recent channel events:\nA", 5));
+  const b = hashRequest(req("Recent channel events:\nB", 5));
+  assert.notEqual(a, b);
+  const agent = { id: "skeptic" };
+  const lines = PERSONA_LINES.skeptic;
+  const firstA = personaResponder(agent)(req("x", 5), a);
+  assert.equal(firstA, lines[Number.parseInt(a.slice(0, 8), 16) % lines.length]);
+  const firstB = personaResponder(agent)(req("x", 5), b);
+  assert.equal(firstB, lines[Number.parseInt(b.slice(0, 8), 16) % lines.length]);
+  // Later calls keep the first request's start and only advance the walk.
+  const responder = personaResponder(agent);
+  responder(req("x", 5), a);
+  assert.notEqual(responder(req("x", 5), b), firstA);
+  assert.ok(readmeText.includes("from a hash of the agent's first request (the whole request: prompt text, seed and settings)"));
+  assert.ok(readmeText.includes("its start line comes from a hash of the agent's first request, so it depends on that prompt as well as the seed"));
+  assert.doesNotMatch(readmeText, /the seed, to pick where in the list to start/);
+});
+
+test("README states exactly what the contract enforces on transfer", async () => {
+  const lib = await readFile(join(root, "contracts/personality-nft/src/lib.rs"), "utf8");
+  assert.match(lib, /pub fn nft_transfer_expecting_anchor/);
+  assert.match(lib, /sheet anchor does not match the expected anchor/);
+  assert.ok(readmeText.includes("`nft_transfer_expecting_anchor` refuses a transfer unless the token's anchor (hash and memory depth) is exactly the one the caller expected. A plain `nft_transfer` does not check the anchor."));
+  assert.doesNotMatch(readmeText, /the contract enforces it on transfer/);
+});
+
+test("README swarm step 6 says how many anchors link to the final hash", async () => {
+  await withTmp(async (dir) => {
+    const { stdout } = await run(process.execPath, [join(root, "scripts/swarm.mjs"), "--rounds", "7", "--every", "3", "--out", dir], { env });
+    const m = stdout.match(/linked to (\d+) of (\d+) anchor dry-runs/);
+    assert.ok(m);
+    assert.ok(readmeText.includes(`\`linked to ${m[1]} of ${m[2]} anchor dry-runs\``));
+  });
 });

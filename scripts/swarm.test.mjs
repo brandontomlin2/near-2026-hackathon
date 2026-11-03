@@ -43,7 +43,7 @@ test("CLI writes a sheet per agent and a memory loop linked to the final hash", 
       assert.equal(token.anchor.status, "dry-run");
     }
     assert.match(stdout, new RegExp(`final round hash: ${loop.finalRoundHash}`));
-    assert.match(stdout, /linked to 4 anchor dry-runs \(MOCK, not on-chain\)/);
+    assert.match(stdout, /linked to 4 of 4 anchor dry-runs \(MOCK, not on-chain\)/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
