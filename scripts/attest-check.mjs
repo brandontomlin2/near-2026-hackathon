@@ -7,8 +7,9 @@
 import { checkAttestation } from "../src/privacy/attestation.mjs";
 import { mockAttestation, MOCK_MODEL, TAMPERED_ADDRESS } from "../src/privacy/fixture.mjs";
 
-const USAGE = "usage: node scripts/attest-check.mjs [--tamper]";
-const unknown = process.argv.slice(2).find((arg) => arg !== "--tamper");
+const USAGE = "usage: node scripts/attest-check.mjs [--tamper | --unreadable-quote]";
+const FLAGS = new Set(["--tamper", "--unreadable-quote"]);
+const unknown = process.argv.slice(2).find((arg) => !FLAGS.has(arg));
 if (unknown !== undefined) {
   // A typo such as --tampr must not quietly run the clean check and exit 0.
   console.error(`attest-check: unknown argument ${JSON.stringify(unknown)} (${USAGE})`);
