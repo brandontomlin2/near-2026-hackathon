@@ -14,6 +14,7 @@ import { renderSvg } from "../art/render.mjs";
 import { prepareAnchor, submitAnchor } from "../anchor/anchor.mjs";
 import { sheetResponder } from "./sheet-responder.mjs";
 import { renderDemoPage } from "./page.mjs";
+import { buildTransfer } from "./transfer-verify.mjs";
 
 export const DEMO_DEFAULTS = Object.freeze({
   rounds: 6,
@@ -154,6 +155,7 @@ export async function runDemo({
     roundHashes: result.roundHashes,
     agents,
     anchors: "anchors.json",
+    transfer: buildTransfer(agents, anchors, { contractId, mode: "mock" }),
     files: [],
   };
   // The manifest lists every file the demo wrote, including itself and the page.
