@@ -17,7 +17,11 @@ docs.near.ai/cloud. No network was used to write this.
 
 ## What `src/privacy/attestation.mjs` checks offline
 
-Run `node scripts/attest-check.mjs` (add `--tamper` to see a reject).
+Run `npm run attest:check` (add `-- --tamper` to see a reject). It checks the
+hand-made fixture report from `src/privacy/fixture.mjs`, not a live TEE: no
+report is fetched, no network call is made, and the first line of output says
+so. The same code path would run on a real report, but nothing in this
+repository has been run against one.
 
 - Report structure: `model_attestations` present, each node has a
   well-formed signing address, a parseable `nvidia_payload`, an `intel_quote`.
@@ -72,10 +76,6 @@ recovery, run once against a live report and shown in the demo.
 
 Open question for the human: is a live API key available, and is the extra
 day worth a fourth track.
-
-## Needs wiring by the integrator
-
-Suggested `package.json` line: `"attest:check": "node scripts/attest-check.mjs"`.
 
 ## Hostile model text on the hosted page
 
