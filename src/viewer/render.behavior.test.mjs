@@ -109,9 +109,8 @@ test("event text: unicode survives, unsafe code points are replaced, whitespace 
   assert.ok(!/[‮⁦‎\u0000]/.test(html));
 });
 
-test("an empty-string name renders an empty author span", () => {
-  const html = renderViewer(one([{ text: "x" }]), agentsNamed(""));
-  assert.ok(html.includes(`<span class="author"></span> x`));
+test("an empty-string name is rejected before rendering (nameless agents refused since #96)", () => {
+  assert.throws(() => renderViewer(one([{ text: "x" }]), agentsNamed("")), /agent 0 needs a non-empty string name/);
 });
 
 test("escapeHtml stringifies non-strings and double-escapes ampersands", () => {
