@@ -96,16 +96,19 @@ struct EventLog<T> {
 const GAS_FOR_RESOLVE_TRANSFER: Gas = Gas::from_tgas(5);
 
 /// Gas reserved for the `release_lock` callback chained after the resolve. It
-/// reads one promise result and removes one map entry; 5 Tgas matches the
-/// resolve budget and leaves ample headroom.
-const GAS_FOR_RELEASE_LOCK: Gas = Gas::from_tgas(5);
+/// reads one promise result and removes one map entry, less work than the
+/// standard `nft_resolve_transfer`, which the SDK fits in 5 Tgas. Twice that
+/// is reserved so the only callback that can ever clear a lock has a margin
+/// against fee changes; unused static gas is refunded, so the margin is free.
+const GAS_FOR_RELEASE_LOCK: Gas = Gas::from_tgas(10);
 
 /// An in-flight lock: which `nft_transfer_call` set it.
 ///
 /// The lock has no expiry. It is cleared only by the `release_lock` callback
 /// chained after the standard `nft_resolve_transfer`, which the runtime always
-/// executes once the receiver's promise settles, however long that takes and
-/// however it ends. A time-based unlock would let a receiver that stalls its
+/// executes once the receiver's promise settles, however long that takes
+/// (bounded only by the gas the sender attached) and however it ends. A
+/// time-based unlock would let a receiver that stalls its
 /// `nft_on_transfer` (chained yields or congested hops) outlive the window,
 /// anchor as the recorded owner, and then return the token with a foreign
 /// anchor, which is exactly what the lock exists to prevent.
@@ -1398,7 +1401,11 @@ mod tests {
             near_sdk::serde_json::from_slice(&calls[2].1).unwrap();
         assert_eq!(release_args["token_id"], "aloof");
         assert_eq!(release_args["nonce"], stored_nonce.to_string());
+        // Pinned to the literal, not the constant: `release_lock` is the only
+        // thing that clears a lock, so its budget must keep a margin over the
+        // 5 Tgas the SDK gives the comparable resolve callback.
         assert_eq!(calls[2].2, GAS_FOR_RELEASE_LOCK);
+        assert_eq!(calls[2].2, Gas::from_tgas(10));
     }
 
     #[test]
@@ -1485,10 +1492,16 @@ mod tests {
 
     /// Audit 3, M-1, inverted. A receiver that stalls its `nft_on_transfer`
     /// (chained yields, congested hops) is the recorded owner for as long as
-    /// it likes, but the lock never expires: at every height it can neither
-    /// anchor, nest a transfer call, nor sell with a pinned anchor. When it
-    /// finally returns the token, the previous owner gets it back with the
-    /// anchor untouched and no hash burned in `seen_hashes`.
+    /// the gas the sender attached lets it stall, but the lock never expires:
+    /// at every height it can neither anchor, nest a transfer call, nor sell
+    /// with a pinned anchor. When it finally returns the token, the previous
+    /// owner gets it back with the anchor untouched and no hash burned in
+    /// `seen_hashes`.
+    ///
+    /// The loop over block heights is a regression guard against reintroducing
+    /// a height-based expiry: the heights straddle the old 1000-block window
+    /// (inside, at, and far past it) and end at `u64::MAX`, so any unlock that
+    /// keys off `block_height` fails at least one iteration.
     #[test]
     fn receiver_cannot_anchor_at_any_height_while_locked() {
         let mut contract = minted_contract();
