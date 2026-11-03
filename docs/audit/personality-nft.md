@@ -2,7 +2,7 @@
 
 Scope: `contracts/personality-nft/src/lib.rs` (near-sdk 5.30, near-contract-standards 5.30).
 Method: manual review against the NEAR audit checklist, plus unit tests for every
-finding below (`cargo test` in the contract dir, 66 tests). No transactions were
+finding below (`cargo test` in the contract dir). No transactions were
 sent and no keys were used.
 
 **State layout:** the contract state layout changed in audit 2 and its follow-ups (`seen_hashes`, `in_flight` holding a per-transfer nonce, `next_lock_nonce`; the lock's block height was dropped again in audit 3). Nothing is deployed yet, so no migration is needed.
@@ -61,6 +61,9 @@ panic conditions (listed below); their signatures are the same.
 
 ## Tests added
 
-`cargo test` in `contracts/personality-nft`: 66 pass (11 existing before audit 1,
-55 added across audits 1 to 3 and their follow-ups), 0 failed, clippy clean
+`cargo test` in `contracts/personality-nft`: 11 tests existed before audit 1,
+audits 1 to 3 and their follow-ups added 55, and later test-gap passes added
+more. This file does not pin the total: it changes with every contract pull
+request and went stale once already (row 20), so run `cargo test` for the
+current number and expect `test result: ok.` with 0 failed, clippy clean
 (`cargo clippy --all-targets`), release wasm builds.
