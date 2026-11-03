@@ -12,7 +12,7 @@ import { memoryDiffLine } from "../src/demo/memory-diff.mjs";
 
 const USAGE = `Usage: node scripts/demo.mjs [--rounds N] [--seed N] [--every N] [--style NAME] [--out DIR]
   --rounds N  swarm rounds (default ${DEMO_DEFAULTS.rounds})
-  --seed N    swarm seed (default ${DEMO_DEFAULTS.seed})
+  --seed N    swarm seed, a non-negative integer (default ${DEMO_DEFAULTS.seed})
   --every N   summarize every N rounds (default ${DEMO_DEFAULTS.every})
   --style NAME art style: ${STYLE_NAMES.join(", ")} (default ${DEMO_DEFAULTS.style})
   --out DIR   output directory (default out)
@@ -20,12 +20,11 @@ Runs offline in mock mode. Nothing is signed or sent.`;
 
 function parseArgs(argv) {
   const opts = { rounds: DEMO_DEFAULTS.rounds, seed: DEMO_DEFAULTS.seed, every: DEMO_DEFAULTS.every, style: DEMO_DEFAULTS.style, out: "out", help: false };
+  if (argv.some((a) => a === "--help" || a === "-h")) return { ...opts, help: true }; // help wins over any other argument
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     const value = argv[i + 1];
-    if (flag === "--help" || flag === "-h") {
-      opts.help = true;
-    } else if (flag === "--rounds" || flag === "--seed" || flag === "--every") {
+    if (flag === "--rounds" || flag === "--seed" || flag === "--every") {
       // A seed may be 0; rounds and every must be at least 1.
       const pattern = flag === "--seed" ? /^(0|[1-9][0-9]*)$/ : /^[1-9][0-9]*$/;
       if (value === undefined || !pattern.test(value) || !Number.isSafeInteger(Number(value))) {
@@ -87,14 +86,13 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     const { manifest } = run;
     const sheetCount = manifest.agents.reduce((n, a) => n + a.sheets.length, 0);
     const eventCount = manifest.roundHashes.length * manifest.agents.length;
-    const callCount = sheetCount;
     log(`[1/5] swarm: ${manifest.rounds} rounds, ${eventCount} events, verify: ok`);
     log(`[2/5] memory: ${sheetCount} sheets (a summary every ${manifest.every} rounds, ${manifest.agents.length} agents)`);
     // One line per agent: first sheet -> latest sheet. This is what the camera sees.
     for (const agent of manifest.agents) log(`     ${memoryDiffLine(agent)}`);
     const artCount = manifest.agents.length * (2 + manifest.moods.length);
     log(`[3/5] art: ${artCount} svgs in style ${manifest.style} (now, at mint, ${manifest.moods.length} mood${manifest.moods.length === 1 ? "" : "s"} per agent), ${manifest.shares.length} share cards, ${manifest.memes.length} meme cards`);
-    log(`[4/5] anchor (dry run): ${callCount} calls prepared, 0 signed`);
+    log(`[4/5] anchor (dry run): ${sheetCount} calls prepared, 0 signed`);
     log(`[5/5] viewer: ${at("index.html")}`);
     log("");
     log("Done. Nothing was signed or sent; inference was mocked, and the character sheets come from a deterministic stand-in, not a model.");
@@ -108,7 +106,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     log(`  3. Open ${at("transcript.txt")}. See the swarm conversation, round by round, with replies marked.`);
     log(`  4. Open ${at("memory/aloof/sheet.json")}. See Aloof's latest character sheet and its sha256 hash.`);
     log(`     Check the hash: node -p 'require("${requirePath(at("memory/aloof/sheet.json"))}").sheet' | shasum -a 256`);
-    log(`  5. Open ${at("anchors.json")}. See ${callCount} anchor_sheet calls for testnet, each "dry-run" with a null transaction hash; Aloof's last sheet_hash is the hash from step 4.`);
+    log(`  5. Open ${at("anchors.json")}. See ${sheetCount} anchor_sheet calls for testnet, each "dry-run" with a null transaction hash; Aloof's last sheet_hash is the hash from step 4.`);
     log(`  6. Run the same command again. See the same final round hash (same --rounds, --seed, --every and --style): ${run.finalRoundHash}.`);
     log("");
     log(`Files written (${run.files.length}):`);

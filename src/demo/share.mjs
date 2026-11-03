@@ -38,8 +38,8 @@ export function wrapText(text, width = WRAP) {
   const lines = [];
   let line = "";
   for (const word of String(text).split(/\s+/).filter(Boolean)) {
-    // Lengths are UTF-16 units (as before), but a word is only ever cut
-    // between code points so a surrogate pair is never split.
+    // Lengths are UTF-16 units, but a word is only ever cut between code
+    // points so a surrogate pair is never split.
     let w = word;
     while (w.length > width) {
       if (line) { lines.push(line); line = ""; }

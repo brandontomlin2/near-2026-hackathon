@@ -20,8 +20,10 @@ That is the mock screen. It uses no keys and does not write to a chain. `MOCK_IN
 Testnet, only when the human wants a live run. Never mainnet. Never put a key on the command line. The script does not read key files and does not print keys. The account id is not a key; the signer must already be in the environment if a live script needs it.
 
 ```sh
-NEAR_NETWORK=testnet NEAR_ACCOUNT_ID=<testnet-account> bash scripts/verify.sh --live
+NEAR_NETWORK=testnet NEAR_ACCOUNT_ID=<contract-account> EVIDENCE_TX_FILE="$PWD/out/live-proof/txs.json" bash scripts/verify.sh --live
 ```
+
+The `evidence` stage reads `NEAR_ACCOUNT_ID` as the contract account to query and the transaction hashes from `EVIDENCE_TX_FILE`, the file `npm run live-proof -- --send --i-approve` writes. Give an absolute path: the script runs inside a fresh clone in a temp directory.
 
 `NEAR_NETWORK=mainnet` exits nonzero immediately. `--live` without `NEAR_NETWORK=testnet` and `NEAR_ACCOUNT_ID` exits nonzero.
 

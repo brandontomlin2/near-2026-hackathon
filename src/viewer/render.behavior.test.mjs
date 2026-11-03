@@ -46,8 +46,13 @@ test("one round hash over zero events renders one empty round with chain ok", ()
   const html = renderViewer(run, AG);
   assert.equal(count(html, /class="round"/g), 1);
   assert.equal(count(html, /class="post"/g), 0);
-  assert.match(html, /1 rounds · 0 posts/);
+  assert.match(html, /1 round · 0 posts/);
   assert.match(html, /chain: ok/);
+});
+
+test("the meta line singularises: one round with one post reads '1 round · 1 post'", () => {
+  const html = renderViewer(one([{ text: "x" }]), AG);
+  assert.match(html, /seed: 1 · 1 round · 1 post · /);
 });
 
 test("40 rounds render in ascending order and the posts count equals events.length", () => {

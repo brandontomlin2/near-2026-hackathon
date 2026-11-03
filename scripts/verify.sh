@@ -11,8 +11,10 @@ Usage: bash scripts/verify.sh [--live]
 Mock run (no keys, no chain writes):
   bash scripts/verify.sh
 
-Testnet run (never mainnet; do not put keys on the command line):
-  NEAR_NETWORK=testnet NEAR_ACCOUNT_ID=<testnet-account> bash scripts/verify.sh --live
+Testnet run (never mainnet; do not put keys on the command line). The evidence
+stage reads NEAR_ACCOUNT_ID as the contract account to query and the transaction
+hashes from EVIDENCE_TX_FILE (an absolute path; the script cd's into a fresh clone):
+  NEAR_NETWORK=testnet NEAR_ACCOUNT_ID=<contract-account> EVIDENCE_TX_FILE="$PWD/out/live-proof/txs.json" bash scripts/verify.sh --live
 
   The live evidence stage includes the transaction hashes in EVIDENCE_TX_FILE
   (the file npm run live-proof writes). A relative path is resolved against the
