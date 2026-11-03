@@ -74,14 +74,25 @@ export function agentSvg(agent) {
   return renderSvg({ ...agent.traits, memory_depth: 1 });
 }
 
+// Byte caps enforced by the contract (validate_token_metadata). Checked here so a
+// bad value fails the dry run instead of reverting partway through a mint batch.
+const MAX_BYTES = { title: 128, description: 1024, media: 512, extra: 2048 };
+
 export function tokenMetadata(agent, { mediaBase = MEDIA_PLACEHOLDER_BASE } = {}) {
-  return {
+  const metadata = {
     title: agent.title,
     description: agent.description,
     media: `${mediaBase.replace(/\/+$/, "")}/${agent.token_id}.svg`,
     media_hash: createHash("sha256").update(agentSvg(agent)).digest("base64"),
     extra: JSON.stringify(agent.traits),
   };
+  for (const [field, max] of Object.entries(MAX_BYTES)) {
+    const bytes = Buffer.byteLength(metadata[field], "utf8");
+    if (bytes === 0 || bytes > max) {
+      throw new UsageError(`${agent.token_id} ${field} must be 1-${max} bytes (is ${bytes})`);
+    }
+  }
+  return metadata;
 }
 
 export function buildDeployStep({ contract, owner, wasm }) {
@@ -269,8 +280,8 @@ export async function run(argv, env = process.env, deps = {}) {
       );
     }
     const contract = checked(contractRaw, "NEAR_CONTRACT_ACCOUNT_ID (or NEAR_ACCOUNT_ID)") ?? "<NEAR_CONTRACT_ACCOUNT_ID>";
-    if (opts.mediaBase && !/^(https?|ipfs|ar):\/\/\S+$/.test(opts.mediaBase)) {
-      throw new UsageError("--media-base must be an http(s), ipfs or ar URL");
+    if (opts.mediaBase && !/^(https?|ipfs|ar):\/\/[^\s?#]+$/.test(opts.mediaBase)) {
+      throw new UsageError("--media-base must be an http(s), ipfs or ar URL without a query or fragment");
     }
     if (opts.send && opts.command === "mint" && !opts.mediaBase) {
       throw new UsageError("mint --send needs --media-base <url>: the tokens' media must point at hosted art, not the placeholder");
