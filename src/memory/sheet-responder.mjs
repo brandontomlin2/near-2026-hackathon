@@ -262,7 +262,8 @@ export function sheetResponder(request, _hash) {
   const pick = (options) => options[fnv(`${name}:${posts}:${replies}:${mentioned}`) % options.length];
 
   const state = fights === 0 && hugs === 0 ? "quiet" : fights > hugs ? "fighting" : hugs > fights ? "hugging" : "balanced";
-  const vibe = pick((VIBES[name] ?? VIBES.default)[state]);
+  // Own keys only: a name like "constructor" must not pick up an inherited member.
+  const vibe = pick((Object.hasOwn(VIBES, name) ? VIBES[name] : VIBES.default)[state]);
 
   const enemy = rival
     ? `${rival} (${plural(stats[rival].tense, "fight", "fights")})`
