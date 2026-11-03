@@ -143,8 +143,21 @@ test("verify.sh builds every temp path from the resolved absolute tmp_root, neve
   assert.match(text, /^export TMPDIR="\$tmp_root"$/m);
 });
 
+// Every stage a complete mock run records, in order. The summary only prints
+// result: PASS when each of these has a row, so a run that lost its results file
+// (or skipped a stage by accident) can never look like a clean pass.
+const STAGES = [
+  "fresh clone", "workflows", "symlinks", "secret files", "npm install", "tests",
+  "secret scan", "deploy nft", "mint", "swarm", "demo", "round hash", "evidence",
+];
+
+// Bash lines that record one row per stage, so a summary test starts from a complete table.
+function recordAllStages() {
+  return STAGES.map((stage) => `record PASS "${stage}" "ok"`);
+}
+
 // Loads record, print_summary and cleanup from verify.sh, installs cleanup as the EXIT
-// trap exactly as the script does, then exits with the given status with no stage failed.
+// trap exactly as the script does, records every stage, then exits with the given status.
 function runCleanupOnExit(exitCode) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "verify-cleanup-"));
   try {
@@ -159,7 +172,7 @@ function runCleanupOnExit(exitCode) {
       'runner_dir=""',
       'results_file=$(mktemp "$2/results.XXXXXX")',
       "trap 'cleanup' EXIT",
-      'record PASS "fresh clone" "abc123"',
+      ...recordAllStages(),
       `exit ${exitCode}`,
     ].join("\n");
     return spawnSync("/bin/bash", ["-c", script, "bash", VERIFY, dir], { encoding: "utf8" });
@@ -174,12 +187,106 @@ test("an abnormal exit through the EXIT trap ends in result: FAIL with an aborte
   const lines = aborted.stdout.trimEnd().split("\n");
   assert.equal(lines.at(-1), "result: FAIL");
   assert.match(aborted.stdout, /^FAIL\s+aborted\s+exited with status 3 before the last stage$/m);
-  assert.match(aborted.stdout, /^PASS\s+fresh clone\s+abc123$/m, "earlier rows are kept");
+  assert.match(aborted.stdout, /^PASS\s+fresh clone\s+ok$/m, "earlier rows are kept");
 
   const clean = runCleanupOnExit(0);
   assert.equal(clean.status, 0, clean.stderr);
   assert.equal(clean.stdout.trimEnd().split("\n").at(-1), "result: PASS");
   assert.doesNotMatch(clean.stdout, /aborted/);
+});
+
+// The original bug: the results file was created under a relative TMPDIR (a directory
+// next to the repo), the script then cd'd into the fresh clone where that relative
+// directory does not exist, and every record() failed, leaving an empty table under
+// "result: PASS". Reproduce that with a results file in a relative directory plus a cd,
+// with the EXIT trap installed exactly as the script does.
+test("a record that cannot write is a hard FAIL: nonzero exit, loud stderr, result: FAIL", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "verify-record-"));
+  fs.mkdirSync(path.join(dir, "reltmp"));
+  try {
+    const script = [
+      "set -euo pipefail",
+      'eval "$(sed -n "/^record()/,/^}$/p" "$1")"',
+      'eval "$(sed -n "/^print_summary()/,/^}$/p" "$1")"',
+      'eval "$(sed -n "/^cleanup()/,/^}$/p" "$1")"',
+      "failed=0",
+      "secret_scan_skipped=0",
+      'work=""',
+      'runner_dir=""',
+      'results_file=$(mktemp "reltmp/results.XXXXXX")',
+      "trap 'cleanup' EXIT",
+      'record PASS "fresh clone" "abc123"',
+      'cd "$2"',
+      'record PASS "workflows" "no workflow files; CI disabled"',
+      'echo "unreachable: record must abort the run"',
+    ].join("\n");
+    const r = spawnSync("/bin/bash", ["-c", script, "bash", VERIFY, os.tmpdir()], { cwd: dir, encoding: "utf8" });
+    assert.notEqual(r.status, 0, "exit status must be nonzero");
+    assert.doesNotMatch(r.stdout, /unreachable/);
+    assert.match(r.stderr, /could not record stage "workflows"/);
+    const lines = r.stdout.trimEnd().split("\n");
+    assert.equal(lines.at(-1), "result: FAIL");
+    assert.doesNotMatch(r.stdout, /result: PASS/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Even if record() somehow kept going, a summary with missing rows must not exit 0.
+test("cleanup exits nonzero when the summary finds a stage with no row, even on a clean exit", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "verify-gap-"));
+  try {
+    const script = [
+      "set -euo pipefail",
+      'eval "$(sed -n "/^record()/,/^}$/p" "$1")"',
+      'eval "$(sed -n "/^print_summary()/,/^}$/p" "$1")"',
+      'eval "$(sed -n "/^cleanup()/,/^}$/p" "$1")"',
+      "failed=0",
+      "secret_scan_skipped=0",
+      'work=""',
+      'runner_dir=""',
+      'results_file=$(mktemp "$2/results.XXXXXX")',
+      "trap 'cleanup' EXIT",
+      'record PASS "fresh clone" "abc123"',
+      "exit 0",
+    ].join("\n");
+    const r = spawnSync("/bin/bash", ["-c", script, "bash", VERIFY, dir], { encoding: "utf8" });
+    assert.equal(r.status, 1, r.stdout);
+    assert.equal(r.stdout.trimEnd().split("\n").at(-1), "result: FAIL");
+    assert.match(r.stdout, /^FAIL: no row was recorded for: workflows, symlinks, .*evidence$/m);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Runs the real verify.sh end to end from a tiny throwaway repository that holds only the
+// script, with TMPDIR given as a relative path (the judge's TMPDIR=$(mktemp -d ../x.XXXX)
+// case). No package.json, so the npm stages SKIP and the run takes about a second.
+test("verify.sh with a relative TMPDIR records every stage and passes; the table is never empty", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "verify-reltmp-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const repo = path.join(root, "repo");
+  fs.mkdirSync(path.join(repo, "scripts"), { recursive: true });
+  fs.copyFileSync(VERIFY, path.join(repo, "scripts", "verify.sh"));
+  const git = (...a) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...a], { cwd: repo, encoding: "utf8" });
+  assert.equal(git("init", "-q").status, 0);
+  assert.equal(git("add", "-A").status, 0);
+  assert.equal(git("commit", "-q", "-m", "fixture").status, 0, git("commit", "-q", "-m", "fixture").stderr);
+  fs.mkdirSync(path.join(root, "reltmp"));
+
+  const r = spawnSync("/bin/bash", ["scripts/verify.sh"], {
+    cwd: repo,
+    encoding: "utf8",
+    env: { ...process.env, TMPDIR: "../reltmp" },
+  });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  const lines = r.stdout.trimEnd().split("\n");
+  assert.equal(lines.at(-1), "result: PASS");
+  assert.doesNotMatch(r.stderr, /No such file or directory/);
+  const rows = lines.filter((line) => /^(PASS|SKIP|FAIL)\s{2,}/.test(line));
+  assert.deepEqual(rows.map((line) => line.split(/\s{2,}/)[1]), STAGES, "one row per stage, in order");
+  assert.ok(rows.every((line) => !line.startsWith("FAIL")), r.stdout);
+  assert.equal(fs.readdirSync(path.join(root, "reltmp")).length, 0, "temp files under TMPDIR are cleaned up");
 });
 
 // Loads only secret_scan from verify.sh and runs it with PATH limited to binDir, which
@@ -243,30 +350,64 @@ test("secret scan with gitleaks findings records FAIL and sets the failed flag",
   assert.match(result.stdout, /^failed=1 skipped=0$/m);
 });
 
-// Loads only print_summary and runs it with the given flags and no results file.
-function runPrintSummary({ failed, skipped }) {
-  const script = [
-    "set -euo pipefail",
-    'eval "$(sed -n "/^print_summary()/,/^}$/p" "$1")"',
-    `failed=${failed}`,
-    `secret_scan_skipped=${skipped}`,
-    'results_file=""',
-    "print_summary",
-  ].join("\n");
-  return spawnSync("/bin/bash", ["-c", script, "bash", VERIFY], { encoding: "utf8" });
+// Loads record and print_summary, records the given stages (default: all of them), then
+// prints the summary with the given flags. Pass stages: null for no results file at all.
+function runPrintSummary({ failed, skipped, stages = STAGES }) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "verify-summary-"));
+  try {
+    const script = [
+      "set -euo pipefail",
+      'eval "$(sed -n "/^record()/,/^}$/p" "$1")"',
+      'eval "$(sed -n "/^print_summary()/,/^}$/p" "$1")"',
+      `failed=${failed}`,
+      `secret_scan_skipped=${skipped}`,
+      stages === null ? 'results_file=""' : 'results_file=$(mktemp "$2/results.XXXXXX")',
+      ...(stages ?? []).map((stage) => `record PASS "${stage}" "ok"`),
+      "print_summary",
+      'printf "failed=%s\\n" "$failed"',
+    ].join("\n");
+    return spawnSync("/bin/bash", ["-c", script, "bash", VERIFY, dir], { encoding: "utf8" });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function resultLine(r) {
+  return r.stdout.trimEnd().split("\n").at(-2);
 }
 
 test("summary repeats the gitleaks WARN right before the result line when the scan was skipped", () => {
   const skipped = runPrintSummary({ failed: 0, skipped: 1 });
   assert.equal(skipped.status, 0, skipped.stderr);
   const lines = skipped.stdout.trimEnd().split("\n");
-  assert.equal(lines.at(-1), "result: PASS", "result stays the last line");
-  assert.match(lines.at(-2), /^WARN: the secret scan did NOT run because gitleaks is not installed; install it \(brew install gitleaks\)/);
+  assert.equal(lines.at(-2), "result: PASS", "result stays the last line of the summary");
+  assert.match(lines.at(-3), /^WARN: the secret scan did NOT run because gitleaks is not installed; install it \(brew install gitleaks\)/);
 
   const scanned = runPrintSummary({ failed: 0, skipped: 0 });
   assert.equal(scanned.status, 0, scanned.stderr);
   assert.doesNotMatch(scanned.stdout, /WARN:/);
-  assert.equal(scanned.stdout.trimEnd().split("\n").at(-1), "result: PASS");
+  assert.equal(resultLine(scanned), "result: PASS");
+});
+
+test("summary refuses result: PASS when any stage has no row, naming the missing stages", () => {
+  const empty = runPrintSummary({ failed: 0, skipped: 0, stages: [] });
+  assert.equal(empty.status, 0, empty.stderr);
+  assert.equal(resultLine(empty), "result: FAIL");
+  assert.match(empty.stdout, /^FAIL: no row was recorded for: fresh clone, workflows, .*evidence/m);
+  assert.match(empty.stdout, /^failed=1$/m, "the failed flag is set so the exit status is nonzero");
+
+  const missingFile = runPrintSummary({ failed: 0, skipped: 0, stages: null });
+  assert.equal(missingFile.status, 0, missingFile.stderr);
+  assert.equal(resultLine(missingFile), "result: FAIL");
+
+  const partial = runPrintSummary({ failed: 0, skipped: 0, stages: STAGES.filter((s) => s !== "tests" && s !== "demo") });
+  assert.equal(partial.status, 0, partial.stderr);
+  assert.equal(resultLine(partial), "result: FAIL");
+  assert.match(partial.stdout, /^FAIL: no row was recorded for: tests, demo$/m);
+
+  const complete = runPrintSummary({ failed: 0, skipped: 0 });
+  assert.equal(resultLine(complete), "result: PASS");
+  assert.doesNotMatch(complete.stdout, /no row was recorded/);
 });
 
 test("package.json exposes evidence, viewer and verify scripts", () => {
