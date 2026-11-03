@@ -35,10 +35,10 @@ repository has been run against one.
 
 Each check is `pass`, `fail`, `skip` or `unverifiable`. Only `fail` rejects.
 Result is `consistent` or `reject`, never `verified`. The CLI prints
-`CONSISTENT, NOT VERIFIED` and exits 0, or `REJECT` and exits 1, and in both
-cases lists what was not verified. When a check is `unverifiable` the
-consistent summary names it, so "offline fields agree" never hides a field
-that could not be read.
+`CONSISTENT, NOT VERIFIED` and exits 0, `REJECT` and exits 1, or
+`CONSISTENT, NOT VERIFIED, BINDING UNREAD` and exits 2 (a check was
+`unverifiable`; `-- --unreadable-quote` shows it). It always lists what was not
+verified, so "offline fields agree" never hides a field that could not be read.
 
 ### The quote layout assumption behind `quote-binding`
 
@@ -60,16 +60,24 @@ How `quote-binding` reports, given that:
 - `pass` only when every part of the assumption is confirmed byte for byte:
   hex, at least 632 bytes, a v4/TDX header, and both raw values found in
   `report_data`. The detail still says the quote itself is unauthenticated.
-- `unverifiable`, with the reason, in every other case: not hex, too short, a
-  header that is not version 4 / TDX (a v5 quote, say), or a v4 quote whose
-  `report_data` does not hold the raw bytes (a hashed binding would look like
-  this). A genuine report with a different binding would land here, and the
-  check must not call it forged on an assumption we have not confirmed.
-- never `fail`. The binding check cannot prove an inconsistency, so it does
-  not claim one. A report is still rejected by what the code can prove: a
-  malformed signing address (`npm run attest:check -- --tamper`), a report
-  that echoes a different nonce, a wrong model, or a chat signature signed by
-  an address the report does not attest.
+- `unverifiable`, with the reason, when the quote cannot be read under that
+  layout: not hex, too short, or a header that is not version 4 / TDX (a v5
+  quote, say). A genuine report with a different layout lands here, so the
+  check does not call it forged. The result stays `consistent`, but the
+  summary says `BINDING UNREAD`, the result lists the ids in `unverifiable`,
+  and `npm run attest:check` exits 2 instead of 0.
+- `fail` for a quote that IS readable as v4/TDX but whose `report_data` lacks
+  our nonce or the signing address (stale, replayed or another node's quote).
+  A genuine report that hashes the binding would also fail here; we accept
+  that rather than let a replayed quote through.
+- Request binding needs one of two things: the report echoes our nonce
+  (`nonce-echo`), or `quote-binding` passes. A report with a top-level nonce
+  absent and no passing quote binding fails `request-binding`. Nothing else in
+  the offline checker ties a report to our request.
+- Other rejects: a malformed signing address, a report that echoes a different
+  nonce, a wrong model, or a chat signature signed by an address the report
+  does not attest. `npm run attest:check -- --tamper` swaps in a well-formed
+  but wrong address, which the quote binding catches.
 
 The bundled fixture carries a v4/TDX header and the raw bytes, so it takes the
 `pass` path. That is the code path a real v4 report with a raw-byte binding

@@ -104,7 +104,7 @@ test("every node is checked under its own index and one bad node rejects the who
   assert.match(r.summary, /^REJECT: node\[1\]\.signing-key, node\[1\]\.intel-quote\.$/);
 });
 
-test("quote binding reads only REPORTDATA at bytes 568..632 of a v4 quote; anything it cannot confirm is unverifiable, never fail", () => {
+test("quote binding reads only REPORTDATA at bytes 568..632 of a v4 quote; a readable quote without them fails, an unreadable one is unverifiable", () => {
   const nonce = requestHash(requestBody);
   const withQuote = (quote) => {
     const { report } = good();
@@ -123,16 +123,16 @@ test("quote binding reads only REPORTDATA at bytes 568..632 of a v4 quote; anyth
   assert.equal(withQuote(place(REPORT_DATA_OFFSET + 32, REPORT_DATA_OFFSET, 2000).toString("hex")).status, "pass", "longer quotes are fine");
   assert.equal(withQuote("0x" + place(REPORT_DATA_OFFSET, REPORT_DATA_OFFSET + 32).toString("hex").toUpperCase()).status, "pass", "0x and upper case hex");
   const outside = withQuote(place(100, 200).toString("hex"));
-  assert.equal(outside.status, "unverifiable", "nonce and address outside REPORTDATA do not count, but prove nothing either");
-  assert.equal(outside.detail, "TDX v4 report data does not hold the raw nonce and signing address; the docs say both are bound but not how (a hash would also be valid), so this is not evidence of forgery");
+  assert.equal(outside.status, "fail", "nonce and address outside REPORTDATA do not count");
+  assert.equal(outside.detail, "TDX v4 report data does not hold the raw nonce and signing address (stale, replayed or another node's quote)");
   const nonceOnly = withQuote(place(REPORT_DATA_OFFSET, 100).toString("hex"));
-  assert.equal(nonceOnly.status, "unverifiable");
-  assert.match(nonceOnly.detail, /^TDX v4 report data does not hold the raw signing address; /);
+  assert.equal(nonceOnly.status, "fail");
+  assert.match(nonceOnly.detail, /^TDX v4 report data does not hold the raw signing address \(/);
   const addrOnly = withQuote(place(100, REPORT_DATA_OFFSET).toString("hex"));
-  assert.equal(addrOnly.status, "unverifiable");
-  assert.match(addrOnly.detail, /^TDX v4 report data does not hold the raw nonce; /);
+  assert.equal(addrOnly.status, "fail");
+  assert.match(addrOnly.detail, /^TDX v4 report data does not hold the raw nonce \(/);
   const straddle = withQuote(place(REPORT_DATA_OFFSET + 40, REPORT_DATA_OFFSET).toString("hex"));
-  assert.equal(straddle.status, "unverifiable", "a nonce that runs past byte 632 is not inside REPORTDATA");
+  assert.equal(straddle.status, "fail", "a nonce that runs past byte 632 is not inside REPORTDATA");
   const noHeader = place(REPORT_DATA_OFFSET, REPORT_DATA_OFFSET + 32); noHeader.fill(0, 0, 48);
   assert.equal(withQuote(noHeader.toString("hex")).status, "unverifiable", "raw bytes in place but no v4 header: offsets unknown");
   assert.match(withQuote(noHeader.toString("hex")).detail, /not the assumed TDX v4/);
@@ -153,7 +153,7 @@ test("an explicit nonce replaces the request-hash nonce for echo and binding, no
   assert.equal(status(r, "signature-text"), "pass", "signature text is bound to the request hash, whatever the nonce");
   const without = run(report, { chatSignature });
   assert.equal(status(without, "nonce-echo"), "fail", "the default nonce is sha256(requestBody)");
-  assert.equal(status(without, "node[0].quote-binding"), "unverifiable", "the quote holds another nonce, which proves nothing about the layout");
+  assert.equal(status(without, "node[0].quote-binding"), "fail", "the quote holds another nonce");
   assert.equal(without.verdict, VERDICT.REJECT, "the echo check alone rejects it");
   const nonceOnly = run(report, { nonce });
   assert.equal(nonceOnly.checks.filter((c) => c.id.startsWith("signature-")).length, 0, "no signature checks without a signature");

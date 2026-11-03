@@ -34,10 +34,12 @@ export const NOT_VERIFIED = Object.freeze([
 // What NEAR AI puts in those 64 bytes is NOT documented. The vendored docs
 // (.agents/skills/near-ai-cloud) only say the signing address and the nonce
 // are "bound" in the report data, not how. We look for the raw nonce and the
-// raw 20-byte address. If the header is not v4/TDX, the quote is too short,
-// or the raw bytes are absent, the binding is "unverifiable": a hashed
-// binding or a v5 quote would look exactly like that, so it is not evidence
-// of forgery. The binding check never returns "fail".
+// raw 20-byte address. If the quote cannot be read under that layout (not hex,
+// too short, header not v4/TDX), the binding is "unverifiable": a v5 quote
+// would look exactly like that. If the quote IS readable as v4/TDX but its
+// REPORTDATA lacks our nonce or the address, that is a mismatch and fails.
+// (A genuine report that hashes the binding would fail too; we accept that
+// rather than let a replayed quote through.)
 const TDX_QUOTE_VERSION = 4;
 const TDX_TEE_TYPE = 0x81;
 const TDX_REPORT_DATA_OFFSET = 568;
@@ -68,7 +70,7 @@ function toBytes(hex) {
   return Buffer.from(clean, "hex");
 }
 
-// Returns ["pass" | "unverifiable", detail]. Never "fail": see the layout note.
+// Returns ["pass" | "fail" | "unverifiable", detail]: see the layout note.
 function checkQuoteReportData(quote, nonce, signingAddress) {
   const bytes = toBytes(quote);
   if (!bytes) {
@@ -96,10 +98,7 @@ function checkQuoteReportData(quote, nonce, signingAddress) {
     return ["pass", "TDX v4 quote; report data holds our nonce and the signing address as raw bytes (quote itself unauthenticated)"];
   }
   const missing = [!hasNonce && "nonce", !hasAddress && "signing address"].filter(Boolean).join(" and ");
-  return [
-    "unverifiable",
-    `TDX v4 report data does not hold the raw ${missing}; the docs say both are bound but not how (a hash would also be valid), so this is not evidence of forgery`,
-  ];
+  return ["fail", `TDX v4 report data does not hold the raw ${missing} (stale, replayed or another node's quote)`];
 }
 
 /**
@@ -110,10 +109,11 @@ function checkQuoteReportData(quote, nonce, signingAddress) {
  *   chatSignature?: { text: string, signature: string, signing_address: string } }} expected
  *   requestBody is the exact request string we send. nonce defaults to
  *   requestHash(requestBody). model is the model id we asked for.
- * @returns {{ verdict: string, verified: false, checks: object[], notVerified: string[], summary: string }}
+ * @returns {{ verdict: string, verified: false, checks: object[], unverifiable: string[], notVerified: string[], summary: string }}
  *   Each check has status "pass", "fail", "skip" or "unverifiable". Only
  *   "fail" rejects; "unverifiable" means the input could not be read under
- *   our assumptions and is listed in the summary instead.
+ *   our assumptions. Its ids are in `unverifiable` so callers can tell
+ *   "binding confirmed" from "binding unread".
  */
 export function checkAttestation(report, expected) {
   const checks = [];
@@ -178,6 +178,12 @@ export function checkAttestation(report, expected) {
     }
   });
 
+  // With no echoed nonce, only a confirmed quote binding ties the report to
+  // this request. Without either, nothing does, so it cannot be consistent.
+  if (typeof report.nonce !== "string" && !checks.some((c) => c.id.endsWith(".quote-binding") && c.status === "pass")) {
+    add(checks, "request-binding", "fail", "no nonce echo and no confirmed quote binding: nothing ties this report to our request");
+  }
+
   const sig = expected.chatSignature;
   if (sig) {
     const parts = String(sig.text ?? "").split(":");
@@ -204,8 +210,8 @@ function finish(checks) {
   if (failed.length > 0) {
     summary = `REJECT: ${ids(failed)}.`;
   } else {
-    summary = "CONSISTENT, NOT VERIFIED: offline fields agree, but no TEE signature or certificate was checked.";
+    summary = `CONSISTENT, NOT VERIFIED${unverifiable.length > 0 ? ", BINDING UNREAD" : ""}: offline fields agree, but no TEE signature or certificate was checked.`;
     if (unverifiable.length > 0) summary += ` Unverifiable, not counted either way: ${ids(unverifiable)}.`;
   }
-  return { verdict, verified: false, checks, notVerified: [...NOT_VERIFIED], summary };
+  return { verdict, verified: false, checks, unverifiable: unverifiable.map((c) => c.id), notVerified: [...NOT_VERIFIED], summary };
 }

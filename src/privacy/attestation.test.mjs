@@ -26,12 +26,12 @@ test("rejects empty or malformed reports", () => {
   assert.equal(run({ model_attestations: [] }).verdict, VERDICT.REJECT);
 });
 
-test("rejects a report bound to a different request, on the nonce echo; the binding is unverifiable, not failed", () => {
+test("rejects a report bound to a different request, on the nonce echo and the quote binding", () => {
   const { report } = mockAttestation({ requestBody: requestBody + " " });
   const r = run(report);
   assert.equal(r.verdict, VERDICT.REJECT);
   assert.equal(status(r, "nonce-echo"), "fail");
-  assert.equal(status(r, "node[0].quote-binding"), "unverifiable");
+  assert.equal(status(r, "node[0].quote-binding"), "fail");
 });
 
 test("rejects wrong model, missing key, bad address", () => {
@@ -113,14 +113,14 @@ test("non-hex intel_quote is unverifiable with 'not hex' (the docs do not state 
   assert.match(r.summary, /Unverifiable, not counted either way: node\[0\]\.quote-binding\.$/);
 });
 
-test("quote with the nonce but not the signing address names only the address, as unverifiable", () => {
+test("quote with the nonce but not the signing address names only the address, as a fail", () => {
   const { report } = good();
   const quote = Buffer.from(report.model_attestations[0].intel_quote, "hex");
   quote.fill(0, 568, 588);
   report.model_attestations[0].intel_quote = quote.toString("hex");
   const c = run(report).checks.find((x) => x.id === "node[0].quote-binding");
-  assert.equal(c.status, "unverifiable");
-  assert.match(c.detail, /does not hold the raw signing address;/);
+  assert.equal(c.status, "fail");
+  assert.match(c.detail, /does not hold the raw signing address \(/);
   assert.doesNotMatch(c.detail, /raw nonce/);
 });
 

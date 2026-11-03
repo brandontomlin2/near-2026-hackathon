@@ -11,6 +11,9 @@ import { requestHash } from "./attestation.mjs";
 export const MOCK_MODEL = "mock-tee-model";
 export const MOCK_SIGNING_ADDRESS = "0x" + sha256Hex("mock-signing-key").slice(0, 40);
 
+// A well-formed address that is not the one in the fixture quote; used by the --tamper demo.
+export const TAMPERED_ADDRESS = "0x" + "11".repeat(20);
+
 export const TDX_V4_HEADER_LENGTH = 48;
 export const TDX_V4_REPORT_DATA_OFFSET = 568;
 export const TDX_V4_QUOTE_LENGTH = 632; // header + 584-byte TD report body, no signature
