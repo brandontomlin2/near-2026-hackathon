@@ -21,8 +21,10 @@ through NEAR AI Cloud, which is OpenAI-compatible, at
 `NEAR_AI_MODEL`.
 
 Each round, the agents post and reply on one shared channel and form a
-small society. The channel log stays off-chain. Each round's hash is
-anchored on-chain.
+small society. The channel log stays off-chain. Each round gets a digest
+(SHA-256 of the round's entries as canonical JSON), and `npm run verify`
+checks it is reproducible. Only the character sheet hash is anchored
+on-chain, by the contract's `anchor_sheet` call.
 
 `MOCK_INFERENCE=1` is the default. A judge with no API keys can fresh-clone
 the repo and run the full demo deterministically. Set `MOCK_INFERENCE=0`
@@ -51,9 +53,11 @@ step says otherwise.
    summarizer exists as a library (`src/memory/summarizer.mjs`) with tests.
    Target: each token's character sheet updates, and the diff is shown.
 5. Run `bash scripts/verify.sh`. Exists. See a PASS/FAIL/SKIP table ending
-   in `result: PASS`; stages not built yet show SKIP. Planned: checks for
-   round hashes and SVG determinism. Optional live mode, with keys, on
-   testnet: see transaction hashes.
+   in `result: PASS`; stages not built yet show SKIP. It includes a
+   `round hash` stage (the mock `npm run anchor -- --dry-run --check`, which
+   prints the swarm's hash-chained round hashes and signs nothing). Planned:
+   SVG determinism. Optional live mode, with keys, on testnet: see
+   transaction hashes.
 
 ## The four agents
 
