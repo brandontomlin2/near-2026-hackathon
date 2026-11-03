@@ -26,16 +26,65 @@ repository has been run against one.
 - Report structure: `model_attestations` present, each node has a
   well-formed signing address, a parseable `nvidia_payload`, an `intel_quote`.
 - Nonce binding: we use `nonce = sha256(request body)`, so the report is tied
-  to one request. We check the report echoes it and that the quote's
-  REPORTDATA bytes (offset 568, per the TDX v4 layout as we understand it)
-  contain the nonce and the signing address (an assumed layout, not yet confirmed against a real report).
+  to one request. We check the report echoes it (`nonce-echo`), and we look
+  for the nonce and the signing address in the quote's report data
+  (`quote-binding`) under the layout assumption described next.
 - Model id: matches what we asked for, when the report names one.
 - If a chat signature is supplied: its signed text names our model and
   request hash, and its signer is one of the attested nodes.
 
+Each check is `pass`, `fail`, `skip` or `unverifiable`. Only `fail` rejects.
 Result is `consistent` or `reject`, never `verified`. The CLI prints
-`CONSISTENT, NOT VERIFIED` and exits 0, or `REJECT` and exits 1, and in both
-cases lists what was not verified.
+`CONSISTENT, NOT VERIFIED` and exits 0, `REJECT` and exits 1, or
+`CONSISTENT, NOT VERIFIED, BINDING UNREAD` and exits 2 (a quote was
+truncated hex; `-- --unreadable-quote` shows it with a 2-byte quote). It always lists what was not
+verified, so "offline fields agree" never hides a field that could not be read.
+
+### The quote layout assumption behind `quote-binding`
+
+The NEAR AI docs vendored under `.agents/skills/near-ai-cloud` say only that
+the signing address and the nonce are "bound in the TDX report data". They do
+not say how (raw bytes, a hash of the two, some other encoding), nor which
+quote format version is returned, nor how `intel_quote` is encoded. Nothing in
+this repository has been run against a real report, so the code works from an
+assumption, and it says so in its output.
+
+The assumption: `intel_quote` is hex; it is an Intel DCAP quote format v4 with
+a TDX TD report 1.0 body, so the header's first `u16` little-endian is `4`, the
+`u32` at byte 4 is `0x81` (TDX), and the 64-byte `report_data` field sits at
+bytes 568..632; and the raw 32-byte nonce and the raw 20-byte address both
+appear somewhere inside those 64 bytes.
+
+How `quote-binding` reports, given that:
+
+- `pass` when `intel_quote` is hex, at least 632 bytes, and both raw values
+  are found in bytes 568..632. The header is not required to be v4: a quote
+  with another header that holds both values passes, as it did before, and the
+  detail names the header it saw. The detail always says the quote is
+  unauthenticated.
+- `fail` when `intel_quote` is not hex (the report claims a quote we cannot even
+  read as bytes), or when it is 632+ bytes and bytes 568..632 lack our nonce or
+  the signing address, whatever the header says (stale, replayed, another
+  node's quote, or a v5 quote we have no layout for). A genuine report that
+  hashes the binding, or a genuine v5 quote, would also fail here; we accept
+  that rather than let a replayed quote through.
+- `unverifiable`, with the reason, only when `intel_quote` is valid hex but
+  shorter than 632 bytes (a truncated quote). That is the one input that
+  reaches `BINDING UNREAD` / exit 2. The result is still `consistent` only if
+  the report echoes our nonce; the summary says `BINDING UNREAD` and the result
+  lists the ids in `unverifiable`.
+- Request binding needs one of two things: the report echoes our nonce
+  (`nonce-echo`), or `quote-binding` passes. A report with a top-level nonce
+  absent and no passing quote binding fails `request-binding`. Nothing else in
+  the offline checker ties a report to our request.
+- Other rejects: a malformed signing address, a report that echoes a different
+  nonce, a wrong model, or a chat signature signed by an address the report
+  does not attest. `npm run attest:check -- --tamper` swaps in a well-formed
+  but wrong address, which the quote binding catches.
+
+The bundled fixture carries a v4/TDX header and the raw bytes, so it takes the
+`pass` path. That is the code path a real v4 report with a raw-byte binding
+would take; it is not evidence that NEAR AI binds the values that way.
 
 ## What is NOT verified (and we do not pretend to)
 
@@ -49,8 +98,9 @@ cases lists what was not verified.
   built-in crypto has neither (SHA3-256 is not keccak). Adding `ethers` or
   `@noble/curves` + `@noble/hashes` would close this; it is a small dependency.
 - The synthetic fixture (`src/privacy/fixture.mjs`) is hand made. Passing it
-  proves our code path only. The REPORTDATA layout and the position of the
-  nonce within it are assumptions to confirm against a real report.
+  proves our code path only. The quote layout and the raw-byte binding it
+  encodes are our assumptions (see above), to confirm against a real report;
+  until then a real report may well come back `quote-binding: fail` and `REJECT`.
 
 ## Does it qualify for the privacy track?
 

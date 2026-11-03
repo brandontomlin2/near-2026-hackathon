@@ -24,8 +24,8 @@ import { createHash } from "node:crypto";
 import { capUtf8Bytes, replaceUnsafeChars } from "../util/text.mjs";
 
 export const DEFAULT_BASE_URL = "https://cloud-api.near.ai/v1";
-export const DEFAULT_TIMEOUT_MS = 60_000;
-export const DEFAULT_MAX_RETRIES = 2;
+const DEFAULT_TIMEOUT_MS = 60_000;
+const DEFAULT_MAX_RETRIES = 2;
 // Largest response body the client will buffer. A chat completion is a few KiB;
 // 4 MiB leaves room for very long replies while bounding memory per request.
 export const DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
