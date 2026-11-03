@@ -2,7 +2,7 @@
 // Read-only preflight for a live testnet run. Prints a checklist of what is missing.
 //
 // Checks: the contract wasm is built (path + size), NEAR_ACCOUNT_ID and
-// NEAR_CONTRACT_ACCOUNT_ID are set and valid (names only, values never printed),
+// NEAR_CONTRACT_ACCOUNT_ID are set and valid (names only; account ids are never printed, the wasm path is),
 // NEAR_NETWORK is unset or testnet, and, when online, that the accounts exist via a
 // read-only RPC `view_account` call. Never reads .env or key files, never signs.
 //
@@ -100,7 +100,7 @@ export async function check(env = process.env, deps = {}) {
 const USAGE = `Usage: node scripts/live-check.mjs
 Read-only preflight for a live testnet run. Takes no options; reads
 NEAR_ACCOUNT_ID, NEAR_CONTRACT_ACCOUNT_ID and NEAR_NETWORK from the environment
-(values are never printed). Exits 0 when ready, 1 when something is missing.`;
+(account ids are never printed; the wasm path is). Exits 0 when ready, 1 when something is missing.`;
 
 const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedDirectly) {

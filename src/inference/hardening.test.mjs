@@ -225,6 +225,25 @@ test("a base URL that is not an absolute http(s) URL is refused without being ec
   assert.equal(live(async () => ok(), { baseUrl: "http://127.0.0.1:1/v1/" }).baseUrl, "http://127.0.0.1:1/v1");
 });
 
+// Audit L-1: plain http would send the bearer key and the prompt in cleartext. Only loopback hosts may use it.
+test("plain http is refused unless the host is loopback, and the URL is never echoed", () => {
+  for (const baseUrl of ["http://example.com/v1", "http://cloud-api.near.ai/v1", "http://10.0.0.5:8080/v1", "http://localhost.evil.example/v1", "http://127.0.0.1.evil.example/v1"]) {
+    const err = (() => { try { live(async () => ok(), { baseUrl }); } catch (e) { return e; } })();
+    assert.ok(err instanceof InferenceError, baseUrl);
+    assert.equal(err.code, "bad_config", baseUrl);
+    assert.match(err.message, /https/);
+    assert.ok(!err.message.includes(baseUrl) && !err.message.includes("example.com"), err.message);
+  }
+  for (const baseUrl of ["http://localhost:1/v1", "http://127.0.0.1:1/v1", "http://[::1]:1/v1", "https://cloud-api.near.ai/v1"]) {
+    assert.equal(live(async () => ok(), { baseUrl }).baseUrl, baseUrl);
+  }
+  // Through the env, exactly as the CLI builds it.
+  const env = { MOCK_INFERENCE: "0", NEAR_AI_API_KEY: KEY, NEAR_AI_MODEL: "m", NEAR_AI_BASE_URL: "http://cloud-api.near.ai/v1" };
+  const err = (() => { try { createInferenceClient({ env }); } catch (e) { return e; } })();
+  assert.equal(err.code, "bad_config");
+  assert.ok(!err.message.includes(KEY));
+});
+
 // Audit L-2: model text reaches the terminal unfiltered. The client is the chokepoint:
 // no reply content carries ANSI, OSC or bidi control characters, in either mode.
 const HOSTILE = "\u001b[2J\u001b[H\u001b]0;pwned\u0007\u001b]8;;http://evil.example\u0007click\u001b]8;;\u0007 \u202ereversed\u202c \u0000\u009c end";

@@ -43,6 +43,6 @@ ${x ? `<h3>Tampered sheet</h3>
 ${meta}
 <h3>On testnet</h3>
 ${explorerLine(t)}
-<p><strong>${esc(t.teeInference.label)}</strong>: <span class="ok">${esc(t.teeInference.status)}</span>${t.teeInference.status === "mocked" ? " (this demo makes no inference call)" : ""}</p>
+<p><strong>${esc(t.teeInference.label)}</strong>: <span class="mut">${esc(t.teeInference.status)}</span>${t.teeInference.status === "mocked" ? " (this demo makes no inference call)" : ""}</p>
 `;
 }

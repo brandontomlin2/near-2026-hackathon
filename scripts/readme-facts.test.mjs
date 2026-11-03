@@ -252,12 +252,12 @@ test("README hash normalisation summary matches normalizeSheet, and the TEE badg
   assert.doesNotMatch(readmeText, /\(NFC, LF, one final newline\)/);
   const { normalizeSheet } = await import("../src/anchor/hash.mjs");
   assert.equal(normalizeSheet("\n\n  é one  \r\n\r\ntwo \t\n\n"), "é one\n\ntwo\n");
-  assert.ok(readmeText.includes('the "NEAR AI Cloud (TEE) in live mode" badge says `mocked`. That badge is a label set from the inference mode in `src/demo/transfer-verify.mjs`, not an attestation check: nothing in the demo or in `verify.sh` verifies a TEE.'));
+  assert.ok(readmeText.includes('the "Inference (NEAR AI Cloud)" badge says `mocked`. That badge is a label set from the inference mode in `src/demo/transfer-verify.mjs`, not an attestation check: nothing in the demo or in `verify.sh` verifies a TEE.'));
   assert.ok(readmeText.includes("The offline attestation checker, `node scripts/attest-check.mjs`, runs only on a hand-built fixture"));
   const { buildTransfer } = await import("../src/demo/transfer-verify.mjs");
   const mock = buildTransfer([], { calls: [] }, { contractId: "x.testnet", mode: "mock" });
   const live = buildTransfer([], { calls: [] }, { contractId: "x.testnet", mode: "live" });
-  assert.deepEqual([mock.teeInference.label, mock.teeInference.status, live.teeInference.status], ["NEAR AI Cloud (TEE) in live mode", "mocked", "live"]);
+  assert.deepEqual([mock.teeInference.label, mock.teeInference.status, live.teeInference.status], ["Inference (NEAR AI Cloud)", "mocked", "live (unattested)"]);
   for (const file of ["scripts/verify.sh", "scripts/demo.mjs", "src/demo/pipeline.mjs", "src/demo/transfer-verify.mjs"]) {
     assert.doesNotMatch(await readFile(join(root, file), "utf8"), /attest-check|attestation\.mjs/, `${file} must not wire in the attestation checker`);
   }

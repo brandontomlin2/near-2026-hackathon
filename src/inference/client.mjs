@@ -232,6 +232,8 @@ function boundLabel(value, fallback) {
   return typeof value === "string" ? capUtf8Bytes(replaceUnsafeChars(value), MAX_LABEL_BYTES) : fallback;
 }
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
 /**
  * Validate the endpoint. A URL carrying userinfo (http://user:secret@host) is refused
  * outright, and the message never echoes the value, so credentials cannot leak into
@@ -248,6 +250,11 @@ function checkBaseUrl(raw) {
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new InferenceError("NEAR_AI_BASE_URL must be an absolute http(s) URL", { code: "bad_config" });
+  }
+  // Plain http would send the bearer key and the prompt in cleartext. It is only allowed to a
+  // loopback host (the local test stub). The message never echoes the URL.
+  if (parsed.protocol === "http:" && !LOOPBACK_HOSTS.has(parsed.hostname)) {
+    throw new InferenceError("NEAR_AI_BASE_URL must use https:// unless the host is loopback (localhost, 127.0.0.1, ::1)", { code: "bad_config" });
   }
   if (parsed.username !== "" || parsed.password !== "") {
     throw new InferenceError("NEAR_AI_BASE_URL must not contain credentials (user:password@host); the key goes in NEAR_AI_API_KEY", {

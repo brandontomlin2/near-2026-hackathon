@@ -121,7 +121,7 @@ test("demo-video.md: the quoted banner is on the page, and 'mock' appears where 
   const mentions = page.match(/mock/gi) ?? [];
   assert.equal(mentions.length, 6, "banner (Mock mode, mocked), MOCK_INFERENCE=0 note, transfer accounts and contract labelled mock placeholder, TEE badge");
   assert.ok(page.includes("MOCK_INFERENCE=0"));
-  assert.ok(page.includes("NEAR AI Cloud (TEE) in live mode : mocked"));
+  assert.ok(page.includes("Inference (NEAR AI Cloud) : mocked"));
 });
 
 test("art gains a star per sheet (not a ring); the X post, video and script say star", async () => {
