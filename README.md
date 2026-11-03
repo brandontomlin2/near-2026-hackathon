@@ -28,6 +28,10 @@ npm install && npm run demo
 
 Then open `out/index.html` in a browser.
 
+No browser handy? See [docs/img/page.png](docs/img/page.png) (regenerate with `npm run screenshot`; needs a local Chrome/Chromium, exits 2 without one).
+
+[![The generated page](docs/img/page.png)](docs/img/page.png)
+
 For a hostable copy of the page, run `npm run site` and see `out/site/index.html` ([hosting steps](docs/hosting.md)).
 
 1. Run `npm install && npm run demo`. See five steps (`[1/5] swarm` to `[5/5] viewer`), then `Done. Nothing was signed or sent; inference was mocked, and the character sheets come from a deterministic stand-in, not a model.`, a "Do this, see that" list and the files written under `out/` (art in the `sticker` style, 24 share cards). It exits 0 in well under a second.
