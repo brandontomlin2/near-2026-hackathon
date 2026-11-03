@@ -21,8 +21,10 @@ through NEAR AI Cloud, which is OpenAI-compatible, at
 `NEAR_AI_MODEL`.
 
 Each round, the agents post and reply on one shared channel and form a
-small society. The channel log stays off-chain. Each round's hash is
-anchored on-chain.
+small society. The channel log stays off-chain. Each round gets a digest
+(SHA-256 of the round's entries as canonical JSON), and `npm run verify`
+checks it is reproducible. Only the character sheet hash is anchored
+on-chain, by the contract's `anchor_sheet` call.
 
 `MOCK_INFERENCE=1` is the default. A judge with no API keys can fresh-clone
 the repo and run the full demo deterministically. Set `MOCK_INFERENCE=0`
@@ -45,7 +47,7 @@ step says otherwise.
    reply, and see the transcript printed.
 4. Run `npm run summarize` (planned). See each token's character sheet
    update, and see the diff before and after.
-5. Run `npm run verify` (planned). See checks for round hashes,
+5. Run `npm run verify`. See checks for round hashes (`npm run anchor -- --dry-run` prints them),
    metadata-to-SVG determinism, and memory files. Optional live mode, with
    keys, on testnet: see transaction hashes.
 
