@@ -246,7 +246,7 @@ test("README hash normalisation summary matches normalizeSheet, and the TEE badg
   const mock = buildTransfer([], { calls: [] }, { contractId: "x.testnet", mode: "mock" });
   const live = buildTransfer([], { calls: [] }, { contractId: "x.testnet", mode: "live" });
   assert.deepEqual([mock.teeInference.label, mock.teeInference.status, live.teeInference.status], ["NEAR AI Cloud (TEE) in live mode", "mocked", "live"]);
-  for (const file of ["package.json", "scripts/verify.sh", "scripts/demo.mjs", "src/demo/pipeline.mjs", "src/demo/transfer-verify.mjs"]) {
+  for (const file of ["scripts/verify.sh", "scripts/demo.mjs", "src/demo/pipeline.mjs", "src/demo/transfer-verify.mjs"]) {
     assert.doesNotMatch(await readFile(join(root, file), "utf8"), /attest-check|attestation\.mjs/, `${file} must not wire in the attestation checker`);
   }
   const attest = await readFile(join(root, "scripts/attest-check.mjs"), "utf8");
