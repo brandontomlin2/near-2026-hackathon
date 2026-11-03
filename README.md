@@ -268,7 +268,7 @@ PASS      workflows       no workflow files; CI disabled
 PASS      symlinks        tracked symlinks resolve
 PASS      secret files    no tracked env or key files
 PASS      npm install     npm ci
-PASS      tests           39 file(s)
+PASS      tests           47 file(s)
 SKIP      secret scan     gitleaks not installed (warn)
 SKIP      deploy nft      npm run deploy:nft exists; live testnet not requested
 PASS      mint            npm run mint (mock)
