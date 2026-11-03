@@ -355,6 +355,14 @@ describe("memes: default demo run", () => {
       const y = +svg.match(/<text x="450" y="(\d+)"[^>]*>github\.com/)[1];
       assert.ok(y <= SIZE - 6 && y >= SIZE - 20, `${m.file}: footer y ${y} inside the card`);
       assert.ok(estimateWidth(PROJECT_FOOTER, 16, 0.62) < SIZE - 60, "footer fits the width");
+      // Every Impact caption line, descenders and outline included, ends clear of the
+      // footer's cap height (16px text: about 12px above its baseline).
+      for (const t of svg.matchAll(/<text font-family="[^"]*Impact[^"]*" font-size="(\d+)"[^>]*>(.*?)<\/text>/g)) {
+        const size = +t[1];
+        for (const [, ty] of t[2].matchAll(/<tspan x="\d+" y="(-?\d+)">/g)) {
+          assert.ok(+ty + size * 0.25 < y - 12, `${m.file}: caption line at y ${ty} (size ${size}) crowds the footer at ${y}`);
+        }
+      }
     }
   });
 

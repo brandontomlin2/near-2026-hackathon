@@ -14,6 +14,8 @@ import { moodForText } from "../art/moods.mjs";
 import { PROJECT_FOOTER, cleanText, escapeXml, nest } from "./share.mjs";
 
 export const SIZE = 900;
+// Room kept clear above the bottom edge for the project footer line (frame()).
+const FOOTER_SPACE = 24;
 const MARGIN = 30;
 const IMPACT = "Impact,'Anton','Arial Black',sans-serif";
 const SANS = "system-ui,Arial,sans-serif";
@@ -203,7 +205,7 @@ function buildCaptions(ctx) {
     const label = `${cleanText(names[target])} meme: ${top.lines.join(" ")} / ${bottom.lines.join(" ")}`;
     const body = `${nest(ctx.faces[target][mood], 0, 0, SIZE)}
 ${impactBlock(top, { y: MARGIN + top.size })}
-${impactBlock(bottom, { y: SIZE - MARGIN - 6, grow: "up" })}`;
+${impactBlock(bottom, { y: SIZE - MARGIN - 6 - FOOTER_SPACE, grow: "up" })}`;
     out.push({
       format: "caption", agentId: target, file: `share/meme-caption-${safeId(target)}.svg`,
       svg: frame(body, { label, mood, format: "caption" }), alt: capLabel(label), mood,
