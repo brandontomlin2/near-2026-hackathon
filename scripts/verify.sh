@@ -58,6 +58,15 @@ runner_dir=""
 results_file=""
 source_root=""
 
+# TMPDIR may be relative (TMPDIR=../tmp). Every temp path is used again after the
+# script has cd'd into the fresh clone, so resolve it once to an absolute directory
+# and export that, so node's os.tmpdir() inside the clone agrees.
+tmp_root=$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P) || {
+  echo "verify: TMPDIR is not a directory: \"${TMPDIR:-/tmp}\"" >&2
+  exit 2
+}
+export TMPDIR="$tmp_root"
+
 record() {
   local status="$1"
   local stage="$2"
@@ -120,6 +129,13 @@ secret_scan() {
 
 cleanup() {
   local code=$?
+  if [[ "$code" -ne 0 && "$failed" -eq 0 ]]; then
+    # An unexpected abort (set -e, a missing file) must never end in "result: PASS".
+    failed=1
+    if [[ -n "$results_file" && -f "$results_file" ]]; then
+      record FAIL "aborted" "exited with status $code before the last stage"
+    fi
+  fi
   print_summary || true
   if [[ -n "$work" && -d "$work" ]]; then
     rm -rf "$work"
@@ -137,7 +153,7 @@ write_runner() {
   # macOS mktemp only randomises a trailing run of X's, so a ".js" suffix
   # would make every run pick the same name and concurrent runs collide.
   # Make a random directory and use a fixed file name inside it.
-  runner_dir=$(mktemp -d "${TMPDIR:-/tmp}/near-verify-run.XXXXXX")
+  runner_dir=$(mktemp -d "$tmp_root/near-verify-run.XXXXXX")
   runner="$runner_dir/run.js"
   cat > "$runner" <<'JS'
 const { spawnSync } = require("node:child_process");
@@ -375,7 +391,7 @@ if (!hashOk || !viewOk) {
 ' "$1"
 }
 
-results_file=$(mktemp "${TMPDIR:-/tmp}/near-verify-results.XXXXXX")
+results_file=$(mktemp "$tmp_root/near-verify-results.XXXXXX")
 trap 'cleanup' EXIT
 export GIT_TERMINAL_PROMPT=0
 set +x
@@ -438,7 +454,7 @@ if [[ -n "$(git -C "$source_root" status --porcelain)" ]]; then
   echo "WARN: working tree is dirty; verifying committed HEAD ${short_head} only." >&2
 fi
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/near-verify.XXXXXX")
+work=$(mktemp -d "$tmp_root/near-verify.XXXXXX")
 if git clone --local --no-hardlinks --quiet "$source_root" "$work/repo" \
   && git -C "$work/repo" checkout --detach --quiet "$source_head"; then
   record PASS "fresh clone" "$short_head"

@@ -17,6 +17,7 @@ function runWriteRunner(tmpdir) {
     'eval "$(sed -n "/^write_runner()/,/^JS$/p" "$1")"$\'\\n}\'',
     'runner=""',
     'runner_dir=""',
+    'tmp_root="$TMPDIR"',
     "write_runner",
     'printf "%s\\n" "$runner"',
   ].join("\n");
@@ -122,6 +123,63 @@ test("verify.sh --help prints usage and exits 0", () => {
   assert.equal(r.status, 0);
   assert.match(r.stdout, /^Usage: bash scripts\/verify\.sh/);
   assert.equal(r.stderr, "");
+});
+
+test("verify.sh refuses a TMPDIR that is not a directory with one line and runs nothing", () => {
+  const r = spawnSync("/bin/bash", [VERIFY], { encoding: "utf8", env: { ...process.env, TMPDIR: "../does-not-exist-tmp" } });
+  assert.equal(r.status, 2);
+  assert.equal(r.stdout, "", "nothing on stdout");
+  assert.equal(r.stderr.trim(), 'verify: TMPDIR is not a directory: "../does-not-exist-tmp"');
+});
+
+// Every temp path is created after the TMPDIR resolution and used again after the script
+// has cd'd into the fresh clone, so the templates must hang off the resolved absolute root.
+test("verify.sh builds every temp path from the resolved absolute tmp_root, never raw TMPDIR", () => {
+  const text = fs.readFileSync(VERIFY, "utf8");
+  const templates = [...text.matchAll(/mktemp(?:\s+-d)?\s+"([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(templates.length >= 3, "expected mktemp calls");
+  for (const template of templates) assert.match(template, /^\$tmp_root\//, template);
+  assert.match(text, /^tmp_root=\$\(cd "\$\{TMPDIR:-\/tmp\}" .*&& pwd -P\)/m);
+  assert.match(text, /^export TMPDIR="\$tmp_root"$/m);
+});
+
+// Loads record, print_summary and cleanup from verify.sh, installs cleanup as the EXIT
+// trap exactly as the script does, then exits with the given status with no stage failed.
+function runCleanupOnExit(exitCode) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "verify-cleanup-"));
+  try {
+    const script = [
+      "set -euo pipefail",
+      'eval "$(sed -n "/^record()/,/^}$/p" "$1")"',
+      'eval "$(sed -n "/^print_summary()/,/^}$/p" "$1")"',
+      'eval "$(sed -n "/^cleanup()/,/^}$/p" "$1")"',
+      "failed=0",
+      "secret_scan_skipped=0",
+      'work=""',
+      'runner_dir=""',
+      'results_file=$(mktemp "$2/results.XXXXXX")',
+      "trap 'cleanup' EXIT",
+      'record PASS "fresh clone" "abc123"',
+      `exit ${exitCode}`,
+    ].join("\n");
+    return spawnSync("/bin/bash", ["-c", script, "bash", VERIFY, dir], { encoding: "utf8" });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("an abnormal exit through the EXIT trap ends in result: FAIL with an aborted row, never PASS", () => {
+  const aborted = runCleanupOnExit(3);
+  assert.equal(aborted.status, 3, "the original exit status is kept");
+  const lines = aborted.stdout.trimEnd().split("\n");
+  assert.equal(lines.at(-1), "result: FAIL");
+  assert.match(aborted.stdout, /^FAIL\s+aborted\s+exited with status 3 before the last stage$/m);
+  assert.match(aborted.stdout, /^PASS\s+fresh clone\s+abc123$/m, "earlier rows are kept");
+
+  const clean = runCleanupOnExit(0);
+  assert.equal(clean.status, 0, clean.stderr);
+  assert.equal(clean.stdout.trimEnd().split("\n").at(-1), "result: PASS");
+  assert.doesNotMatch(clean.stdout, /aborted/);
 });
 
 // Loads only secret_scan from verify.sh and runs it with PATH limited to binDir, which
