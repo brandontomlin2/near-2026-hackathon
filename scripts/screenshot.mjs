@@ -58,7 +58,13 @@ export function run({ candidates = BROWSER_CANDIDATES, exists = existsSync, out 
   try {
     const demo = spawnSync(process.execPath, [join(ROOT, "scripts/demo.mjs"), "--out", tmp], { cwd: ROOT, encoding: "utf8" });
     if (demo.status !== 0) { err(`screenshot: demo failed\n${demo.stderr}`); return 1; }
-    mkdirSync(dirname(out), { recursive: true });
+    try {
+      mkdirSync(dirname(out), { recursive: true });
+    } catch (e) {
+      // An unwritable --out is a runtime failure: one line, no stack trace, exit 1.
+      err(`screenshot: cannot write ${out}: ${e.message}`);
+      return 1;
+    }
     const shot = spawnSync(browser, [
       "--headless", "--disable-gpu", "--hide-scrollbars", "--no-sandbox",
       `--user-data-dir=${join(tmp, "profile")}`,
