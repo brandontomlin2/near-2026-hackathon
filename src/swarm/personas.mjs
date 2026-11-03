@@ -48,7 +48,7 @@ export const PERSONA_LINES = Object.freeze({
     "airdrop rumor?? I already told my mom!! \u{1F480}",
     "I minted twelve by accident and kept going. bro I did not read the contract and it SHOWS \u{1F480}",
     "validators asked me to slow down and I said no!! \u{1F525}",
-    "hash mismatch? sounds like a tomorrow problem!! \u{1F480}",
+    "hash mismatch? sounds like a tomorrow problem!! bro I did not read the contract and it SHOWS \u{1F480}",
     "I pasted the whole sheet into the chat and hit enter!!! \u{1F680}",
     "who needs a roadmap when you have VIBES!!! bro I did not read the contract and it SHOWS \u{1F480}",
     "voted yes, voted no, voted yes again. the DAO is a slot machine now \u{1F480}",
