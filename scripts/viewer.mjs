@@ -11,30 +11,32 @@
 // self-contained HTML with no scripts or network calls.
 //
 // Exit codes: 0 wrote the page; 2 a user mistake (unknown argument, bad value,
-// unreadable or invalid --input), reported as one line ending "(see --help)";
-// 1 a runtime failure such as an unwritable --out.
+// unreadable or invalid --input, an --out that holds something other than an
+// earlier viewer page), reported as one line ending "(see --help)"; 1 a runtime
+// failure such as an unwritable --out.
 
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 import { MAX_ROUNDS, runSwarm } from "../src/swarm/runner.mjs";
-import { renderViewer } from "../src/viewer/render.mjs";
+import { PAGE_TITLE, renderViewer } from "../src/viewer/render.mjs";
 
 const DEFAULT_OUT = "out/viewer/index.html";
 const DEFAULT_ROUNDS = 5;
 
-const USAGE = `usage: node scripts/viewer.mjs [--input RUN.json] [--rounds N] [--out FILE]
+const USAGE = `usage: node scripts/viewer.mjs [--input RUN.json] [--rounds N] [--out FILE] [--force]
 
   --input FILE   render an existing events.json instead of running the swarm
   --rounds N     swarm rounds, 1 to ${MAX_ROUNDS} (default ${DEFAULT_ROUNDS}, or SWARM_ROUNDS)
   --out FILE     output HTML (default ${DEFAULT_OUT})
+  --force        replace an existing --out that is not a page this tool wrote
 `;
 
 /** A user mistake: reported as one line with "(see --help)" and exit 2. */
 class UsageError extends Error {}
 
 function parseArgs(argv) {
-  const options = { input: undefined, rounds: undefined, out: DEFAULT_OUT, help: false };
+  const options = { input: undefined, rounds: undefined, out: DEFAULT_OUT, force: false, help: false };
   if (argv.some((a) => a === "--help" || a === "-h")) return { ...options, help: true }; // help wins over any other argument
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -47,6 +49,7 @@ function parseArgs(argv) {
     if (arg === "--input") options.input = value();
     else if (arg === "--rounds") options.rounds = value();
     else if (arg === "--out") options.out = value();
+    else if (arg === "--force") options.force = true;
     else throw new UsageError(`unknown argument ${JSON.stringify(arg)}`);
   }
   if (options.input !== undefined && options.rounds !== undefined) {
@@ -63,8 +66,16 @@ function roundsFrom(options) {
   return Number(raw);
 }
 
-/** Refuse an --out that is an existing directory before any work is done. A missing path is fine. */
-async function assertOutIsNotDir(out) {
+/** An earlier page from this tool: our doctype first and our title. Anything else is someone's file. */
+function isViewerPage(text) {
+  return text.startsWith("<!doctype html>") && text.includes(`<title>${PAGE_TITLE}</title>`);
+}
+
+/**
+ * Refuse an --out that is an existing directory, or an existing file that is not an
+ * earlier page from this tool (unless --force), before any work is done. A missing path is fine.
+ */
+async function assertOutIsWritable(out, force) {
   let info;
   try {
     info = await stat(out);
@@ -72,6 +83,16 @@ async function assertOutIsNotDir(out) {
     return;
   }
   if (info.isDirectory()) throw new UsageError(`--out ${out} is a directory; give a file path`);
+  if (force) return;
+  let text;
+  try {
+    text = await readFile(out, "utf8");
+  } catch (err) {
+    throw new UsageError(`cannot read existing --out ${out}: ${err.message}`);
+  }
+  if (!isViewerPage(text)) {
+    throw new UsageError(`--out ${out} exists and is not a page this tool wrote; pass --force to replace it`);
+  }
 }
 
 /** Read and parse --input. Every failure names the flag and the file. */
@@ -124,7 +145,7 @@ async function main() {
     }
     // Validate --rounds / SWARM_ROUNDS and --out before running anything.
     const rounds = options.input === undefined ? roundsFrom(options) : undefined;
-    await assertOutIsNotDir(options.out);
+    await assertOutIsWritable(options.out, options.force);
     html = await renderPage({ input: options.input, rounds });
   } catch (err) {
     return report(err);

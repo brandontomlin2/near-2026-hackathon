@@ -9,13 +9,25 @@
 //     Reads NEAR_AI_API_KEY and NEAR_AI_MODEL. NEAR_AI_BASE_URL overrides the
 //     endpoint, which the tests use to point at a local server.
 //
-// The key never appears in errors, logs or returned objects.
+// The key never appears in errors, logs or returned objects. Neither does the
+// base URL's userinfo: a URL with credentials is refused when the client is made.
+//
+// Reply text is bounded: control and bidi characters become U+FFFD and the text
+// is cut at MAX_CONTENT_BYTES (src/util/text.mjs), so a reply can neither drive
+// the terminal nor grow a sheet or share card without limit. Live requests
+// always carry max_tokens (DEFAULT_MAX_TOKENS unless the caller sets one).
 
 import { createHash } from "node:crypto";
+import { capUtf8Bytes, replaceUnsafeChars } from "../util/text.mjs";
 
 export const DEFAULT_BASE_URL = "https://cloud-api.near.ai/v1";
 export const DEFAULT_TIMEOUT_MS = 60_000;
 export const DEFAULT_MAX_RETRIES = 2;
+// Sent as max_tokens on every live request that does not set maxTokens. Sheets are
+// under 200 words and swarm replies one or two sentences, so this is generous.
+export const DEFAULT_MAX_TOKENS = 1024;
+// Upper bound on reply text, in UTF-8 bytes, whatever the provider or responder returns.
+export const MAX_CONTENT_BYTES = 32 * 1024;
 const RETRY_BASE_DELAY_MS = 250;
 const RETRY_MAX_DELAY_MS = 8_000;
 const MOCK_MODEL = "mock";
@@ -204,6 +216,42 @@ function estimateTokens(messages) {
   return messages.reduce((n, m) => n + Math.ceil(m.content.length / 4), 0);
 }
 
+/** The one place reply text is made safe to store and print: no control or bidi characters, bounded size. */
+function boundContent(content) {
+  return capUtf8Bytes(replaceUnsafeChars(content), MAX_CONTENT_BYTES);
+}
+
+// Provider-supplied labels (model, id) are printed too (infer --json); same treatment, short cap.
+const MAX_LABEL_BYTES = 200;
+function boundLabel(value, fallback) {
+  return typeof value === "string" ? capUtf8Bytes(replaceUnsafeChars(value), MAX_LABEL_BYTES) : fallback;
+}
+
+/**
+ * Validate the endpoint. A URL carrying userinfo (http://user:secret@host) is refused
+ * outright, and the message never echoes the value, so credentials cannot leak into
+ * the "request to <url> failed" errors or logs.
+ * @param {string} raw
+ * @returns {string} the base URL without a trailing slash
+ */
+function checkBaseUrl(raw) {
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new InferenceError("NEAR_AI_BASE_URL must be an absolute http(s) URL", { code: "bad_config" });
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new InferenceError("NEAR_AI_BASE_URL must be an absolute http(s) URL", { code: "bad_config" });
+  }
+  if (parsed.username !== "" || parsed.password !== "") {
+    throw new InferenceError("NEAR_AI_BASE_URL must not contain credentials (user:password@host); the key goes in NEAR_AI_API_KEY", {
+      code: "bad_config",
+    });
+  }
+  return raw.replace(/\/+$/, "");
+}
+
 /**
  * @param {{ model?: string, responder?: MockResponder }} [options]
  */
@@ -217,10 +265,11 @@ export function createMockClient(options = {}) {
     async chat(request) {
       const normalized = normalizeRequest(request, model);
       const hash = hashRequest(normalized);
-      const content = responder(normalized, hash);
-      if (typeof content !== "string") {
+      const raw = responder(normalized, hash);
+      if (typeof raw !== "string") {
         throw new InferenceError("mock responder must return a string", { code: "bad_responder" });
       }
+      const content = boundContent(raw);
       return {
         content,
         mode: "mock",
@@ -255,7 +304,8 @@ async function errorSnippet(response, secret) {
   try {
     const text = await response.text();
     const redacted = secret ? text.split(secret).join("[redacted]") : text;
-    return redacted.slice(0, 200).replace(/\s+/g, " ").trim();
+    // Error text reaches stderr: no terminal control characters from the provider either.
+    return replaceUnsafeChars(redacted).slice(0, 200).replace(/\s+/g, " ").trim();
   } catch {
     return "";
   }
@@ -281,7 +331,7 @@ export function createLiveClient(options) {
   }
   const apiKey = options.apiKey.trim();
   const model = options.model;
-  const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
+  const baseUrl = checkBaseUrl(options.baseUrl ?? DEFAULT_BASE_URL);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
   if (!Number.isInteger(maxRetries) || maxRetries < 0) {
@@ -338,10 +388,10 @@ export function createLiveClient(options) {
       });
     }
     return {
-      content,
+      content: boundContent(content),
       mode: /** @type {const} */ ("live"),
-      model: typeof data.model === "string" ? data.model : model,
-      id: typeof data.id === "string" ? data.id : "",
+      model: boundLabel(data.model, model),
+      id: boundLabel(data.id, ""),
       usage: {
         promptTokens: count(data?.usage?.prompt_tokens),
         completionTokens: count(data?.usage?.completion_tokens),
@@ -356,9 +406,10 @@ export function createLiveClient(options) {
     /** @param {ChatRequest} request @returns {Promise<ChatResponse>} */
     async chat(request) {
       const normalized = normalizeRequest(request, model);
-      const body = { model, messages: normalized.messages };
+      // max_tokens is always sent. The default lives here and not in the callers because the
+      // mock hash covers maxTokens: a caller adding it would move every mock transcript.
+      const body = { model, messages: normalized.messages, max_tokens: normalized.maxTokens ?? DEFAULT_MAX_TOKENS };
       if (normalized.temperature !== undefined) body.temperature = normalized.temperature;
-      if (normalized.maxTokens !== undefined) body.max_tokens = normalized.maxTokens;
       if (typeof normalized.seed === "number") body.seed = normalized.seed;
 
       let attempt = 0;
