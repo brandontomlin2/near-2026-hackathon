@@ -93,7 +93,7 @@ export async function check(env = process.env, deps = {}) {
       }
     }
   }
-  lines.push(ready ? "ready: yes. Next: npm run live-proof (dry run), then the owner adds --send --i-approve." : "ready: no. Fix the [todo] items above.");
+  lines.push(ready ? "ready: yes. Next: npm run live-proof (dry run), then the owner hosts the four SVGs and adds --send --i-approve --media-base <url>." : "ready: no. Fix the [todo] items above.");
   return { ready, lines };
 }
 
