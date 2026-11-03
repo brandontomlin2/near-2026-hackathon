@@ -14,13 +14,14 @@ import {
   itemById,
   lockNames,
   loopEnv,
+  loopTimeout,
   readStatus,
   runLoop,
   showBoard,
   task,
 } from "./test-helpers/claude-loop.mjs";
 
-test("an item whose dependency is not done on main is skipped", { timeout: 30000 }, (t) => {
+test("an item whose dependency is not done on main is skipped", { timeout: loopTimeout(4) }, (t) => {
   const child = task("aaa-child", "Needs the parent", "any");
   child.depends_on = ["zzz-parent"];
   const fixture = initRepo(t, {
@@ -49,7 +50,7 @@ test("an item whose dependency is not done on main is skipped", { timeout: 30000
   assert.equal(claudeRuns(fixture.stubLog), 2);
 });
 
-test("CLAUDE_LOOP_ONLY takes the named item instead of the first eligible one", { timeout: 20000 }, (t) => {
+test("CLAUDE_LOOP_ONLY takes the named item instead of the first eligible one", { timeout: loopTimeout(1) }, (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "success",
@@ -73,7 +74,7 @@ test("CLAUDE_LOOP_ONLY takes the named item instead of the first eligible one", 
   assert.equal(git(fixture.origin, ["rev-parse", "main"], fixture.env), mainBefore);
 });
 
-test("CLAUDE_LOOP_ONLY on an ineligible item exits 0 without claiming", { timeout: 20000 }, (t) => {
+test("CLAUDE_LOOP_ONLY on an ineligible item exits 0 without claiming", { timeout: loopTimeout(1) }, (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
     stubMode: "success",
