@@ -91,6 +91,14 @@ struct EventLog<T> {
     data: Vec<T>,
 }
 
+/// An in-flight lock older than this many blocks counts as expired. The
+/// `nft_resolve_transfer` callback normally runs within a handful of blocks
+/// (the receiver call is gas-bounded), so if it ever fails and never clears the
+/// lock, the anchor would stay frozen forever. ~1000 blocks (about 17 minutes
+/// at ~1 s/block) is far beyond any legitimate resolution time and keeps the
+/// freeze short without an admin backdoor.
+pub const IN_FLIGHT_EXPIRY_BLOCKS: u64 = 1000;
+
 #[near(contract_state)]
 #[derive(PanicOnDefault)]
 pub struct Contract {
@@ -102,7 +110,9 @@ pub struct Contract {
     seen_hashes: LookupMap<String, ()>,
     /// Tokens inside an `nft_transfer_call`: ownership has moved to the
     /// receiver but the transfer may still revert. Their anchor is frozen.
-    in_flight: LookupMap<TokenId, ()>,
+    /// The value is the block height at which the lock was set; see
+    /// `IN_FLIGHT_EXPIRY_BLOCKS`.
+    in_flight: LookupMap<TokenId, u64>,
 }
 
 #[near]
@@ -230,7 +240,7 @@ impl Contract {
         );
 
         require!(
-            !self.in_flight.contains_key(&token_id),
+            !self.is_in_flight(&token_id),
             "token is in an nft_transfer_call; anchor after it resolves"
         );
 
@@ -304,6 +314,13 @@ impl Contract {
             .nft_transfer(receiver_id, token_id, approval_id, memo);
     }
 
+    /// True while a non-expired `nft_transfer_call` lock is set on the token.
+    fn is_in_flight(&self, token_id: &TokenId) -> bool {
+        self.in_flight.get(token_id).is_some_and(|set_at| {
+            env::block_height().saturating_sub(*set_at) < IN_FLIGHT_EXPIRY_BLOCKS
+        })
+    }
+
     /// The account allowed to mint.
     pub fn owner_id(&self) -> AccountId {
         self.tokens.owner_id.clone()
@@ -337,9 +354,11 @@ impl NonFungibleTokenCore for Contract {
         msg: String,
     ) -> PromiseOrValue<bool> {
         require!(
-            self.in_flight.insert(token_id.clone(), ()).is_none(),
+            !self.is_in_flight(&token_id),
             "token is already in an nft_transfer_call"
         );
+        self.in_flight
+            .insert(token_id.clone(), env::block_height());
         self.tokens
             .nft_transfer_call(receiver_id, token_id, approval_id, memo, msg)
     }
@@ -1185,6 +1204,55 @@ mod tests {
         assert_eq!(anchor.memory_depth, INITIAL_MEMORY_DEPTH);
         // The owner can anchor again once the transfer resolved.
         testing_env!(context(accounts(2), MINT_DEPOSIT).build());
+        let anchor = contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+        assert_eq!(anchor.memory_depth, 2);
+    }
+
+    #[test]
+    fn resolve_success_keeps_token_with_receiver_and_clears_lock() {
+        let mut contract = minted_contract();
+        testing_env!(context(accounts(2), ONE_YOCTO)
+            .prepaid_gas(near_sdk::Gas::from_tgas(100))
+            .build());
+        let _ = contract.nft_transfer_call(accounts(3), "aloof".to_string(), None, None, "".into());
+        // Receiver accepted the token (did not ask for a return).
+        assert!(resolve(&mut contract, false));
+        let token = contract.nft_token("aloof".to_string()).unwrap();
+        assert_eq!(token.owner_id, accounts(3));
+        // Lock cleared: the new owner can anchor right away.
+        testing_env!(context(accounts(3), MINT_DEPOSIT).build());
+        let anchor = contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+        assert_eq!(anchor.memory_depth, 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "Must attach")]
+    fn anchor_sheet_with_underfunded_deposit_panics() {
+        let mut contract = minted_contract();
+        // 1 yocto passes the >= 1 check but cannot cover the anchor storage.
+        testing_env!(context(accounts(2), ONE_YOCTO).build());
+        contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+    }
+
+    #[test]
+    fn stale_in_flight_lock_expires_after_the_window() {
+        let mut contract = minted_contract();
+        testing_env!(context(accounts(2), ONE_YOCTO)
+            .block_height(1_000)
+            .prepaid_gas(near_sdk::Gas::from_tgas(100))
+            .build());
+        let _ = contract.nft_transfer_call(accounts(3), "aloof".to_string(), None, None, "".into());
+        // Resolve never ran. Just inside the window the anchor is still frozen.
+        testing_env!(context(accounts(3), MINT_DEPOSIT)
+            .block_height(1_000 + IN_FLIGHT_EXPIRY_BLOCKS - 1)
+            .build());
+        assert!(panics(|| {
+            contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
+        }));
+        // At the window the lock counts as expired and the owner can anchor.
+        testing_env!(context(accounts(3), MINT_DEPOSIT)
+            .block_height(1_000 + IN_FLIGHT_EXPIRY_BLOCKS)
+            .build());
         let anchor = contract.anchor_sheet("aloof".to_string(), HASH_A.to_string());
         assert_eq!(anchor.memory_depth, 2);
     }
