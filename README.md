@@ -173,7 +173,7 @@ NEAR_NETWORK=testnet NEAR_ACCOUNT_ID=<testnet-account> bash scripts/verify.sh --
 
 PASS means the summary table has no `FAIL` row and the process exits 0. `swarm` runs with `MOCK_INFERENCE=1` and `--rounds N`. `evidence` runs in mock mode and writes `out/evidence.json` with the memory loop (swarm, sheets, `anchor_sheet` dry-runs, final round hash); it prints `mock, not on-chain proof`. Only `--live` needs transaction hashes and RPC views. `SKIP` is expected for any planned npm script that does not exist. `deploy:nft` and `mint` exist now and run as dry runs unless `--send` is given. If `gitleaks` is not installed, the secret scan prints a warning and `SKIP`; it does not fail. A finding, a failed install, a failed test, a workflow file, or a live run without `NEAR_NETWORK=testnet` and `NEAR_ACCOUNT_ID` is a failure.
 
-A passing mock run before those scripts exist looks like this:
+A passing mock run (gitleaks not installed) ends like this:
 
 ```
 SUMMARY
@@ -183,11 +183,11 @@ PASS      fresh clone     <sha>
 PASS      workflows       no workflow files; CI disabled
 PASS      symlinks        tracked symlinks resolve
 PASS      secret files    no tracked env or key files
-SKIP      npm install     SKIP (not built yet)
-SKIP      tests           no test files
+PASS      npm install     npm ci
+PASS      tests           27 file(s)
 SKIP      secret scan     gitleaks not installed (warn)
-SKIP      deploy nft      SKIP (not built yet)
-SKIP      mint            SKIP (not built yet)
+SKIP      deploy nft      npm run deploy:nft exists; live testnet not requested
+PASS      mint            npm run mint (mock)
 PASS      swarm           npm run swarm (mock)
 PASS      evidence        wrote out/evidence.json (mock, not on-chain proof)
 
