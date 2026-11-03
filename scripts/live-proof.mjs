@@ -2,7 +2,7 @@
 // One command for the eventual live testnet proof: deploy, mint 4, anchor_sheet.
 //
 //   npm run live-proof                 dry run (default): prints the three steps and
-//                                      writes docs/evidence.example.json ("example": true)
+//                                      writes out/live-proof/evidence.example.json ("example": true)
 //   npm run live-proof -- --send --i-approve
 //                                      really sends. Refused unless NEAR_ACCOUNT_ID and
 //                                      NEAR_CONTRACT_ACCOUNT_ID are set AND --i-approve is given.
@@ -19,7 +19,10 @@ import { prepareAnchor } from "../src/anchor/anchor.mjs";
 import { run as deployRun, shellQuote, validateAccountId, UsageError, NETWORK } from "./testnet-deploy.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-export const DEFAULT_OUT = path.join(HERE, "..", "docs", "evidence.example.json");
+// Dry runs write under out/ (gitignored) so a judge's tree stays clean. The tracked
+// example is rewritten only with --update-example.
+export const DEFAULT_OUT = path.join(HERE, "..", "out", "live-proof", "evidence.example.json");
+export const TRACKED_EXAMPLE = path.join(HERE, "..", "docs", "evidence.example.json");
 export const TESTNET_DEPLOY = path.join(HERE, "testnet-deploy.mjs");
 const RELATIVE_WASM = "contracts/personality-nft/target/near/personality_nft.wasm";
 const SHEET = "Aloof. Observer. Watches the channel, speaks rarely.\nAllies: none yet.\n";
@@ -27,7 +30,7 @@ const ANCHOR_TOKEN = "aloof";
 const PLACEHOLDER_CONTRACT = "<NEAR_CONTRACT_ACCOUNT_ID>";
 const PLACEHOLDER_OWNER = "<NEAR_ACCOUNT_ID>";
 
-const USAGE = `Usage: node scripts/live-proof.mjs [--send --i-approve] [--out <file>]
+const USAGE = `Usage: node scripts/live-proof.mjs [--send --i-approve] [--out <file>] [--update-example]
 
 Default is a dry run: prints the deploy, mint (4 tokens) and anchor_sheet steps and writes
 an example evidence file. Nothing is signed or sent.
@@ -35,7 +38,8 @@ an example evidence file. Nothing is signed or sent.
   --send         really send all steps on testnet (needs NEAR_ACCOUNT_ID,
                  NEAR_CONTRACT_ACCOUNT_ID and --i-approve)
   --i-approve    explicit human approval for --send
-  --out <file>   where the dry run writes the example (default docs/evidence.example.json)
+  --out <file>   where the dry run writes the example (default out/live-proof/evidence.example.json)
+  --update-example  write the tracked docs/evidence.example.json instead (maintainers only)
 `;
 
 /** Near CLI argv for the anchor_sheet call, built from the existing anchor payload. */
@@ -117,6 +121,7 @@ function parseArgs(argv) {
     const a = argv[i];
     if (a === "--send") opts.send = true;
     else if (a === "--i-approve") opts.approve = true;
+    else if (a === "--update-example") opts.out = TRACKED_EXAMPLE;
     else if (a === "--out") {
       if (argv[i + 1] === undefined || argv[i + 1].startsWith("-")) throw new UsageError("--out needs a file path");
       opts.out = argv[(i += 1)];

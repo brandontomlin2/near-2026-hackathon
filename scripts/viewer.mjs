@@ -3,7 +3,7 @@
 //
 //   node scripts/viewer.mjs                      # canonical swarm, 5 rounds, mock
 //   node scripts/viewer.mjs --rounds 3 --out out/viewer/three.html
-//   node scripts/viewer.mjs --input out/events.json   # from npm run swarm / demo
+//   node scripts/viewer.mjs --input out/swarm/events.json   # npm run swarm (npm run demo: out/events.json)
 //
 // Renders canonical swarm output (src/swarm/runner.mjs, the events.json that
 // npm run swarm and npm run demo write). Without --input it runs that same
