@@ -1,12 +1,13 @@
 // Run the swarm and write out/transcript.txt and out/events.json.
 // Usage: node scripts/swarm.mjs [--rounds N] [--seed N] [--out DIR]
-// Mock inference by default; live only with MOCK_INFERENCE=0.
+// Mock inference by default: offline, deterministic, in-character lines, no
+// keys. Live NEAR AI Cloud only with MOCK_INFERENCE=0 (reads NEAR_AI_API_KEY).
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runSwarm } from "../src/swarm/runner.mjs";
-import { createInferenceClient } from "../src/inference/client.mjs";
+import { runSwarm, verifyRounds } from "../src/swarm/runner.mjs";
+import { createInferenceClient, parseMode } from "../src/inference/client.mjs";
 
 function parseArgs(argv) {
   const opts = { rounds: 5, seed: 1, out: "out" };
@@ -40,8 +41,10 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
   }
   let result;
   try {
-    const client = createInferenceClient({ env });
+    // Mock (the default): each agent speaks its own persona lines. Live: one shared client.
+    const client = parseMode(env.MOCK_INFERENCE) === "live" ? createInferenceClient({ env }) : undefined;
     result = await runSwarm({ rounds: opts.rounds, seed: opts.seed, client });
+    if (!verifyRounds(result)) throw new Error("round hashes do not verify");
   } catch (error) {
     console.error(`swarm: ${error.message}`);
     return 1;
@@ -52,6 +55,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
   await writeFile(join(opts.out, "events.json"), `${JSON.stringify(result, null, 2)}\n`);
   log(result.transcript.trimEnd());
   log(`\nfinal round hash: ${finalHash}`);
+  log(`verify: ok (${opts.rounds} rounds)`);
   return 0;
 }
 

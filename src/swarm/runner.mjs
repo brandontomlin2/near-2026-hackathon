@@ -4,7 +4,7 @@
 
 import { createHash } from "node:crypto";
 import { AGENTS } from "../traits/agents.mjs";
-import { createInferenceClient } from "../inference/client.mjs";
+import { createPersonaMockClient } from "./personas.mjs";
 
 /** @typedef {{ id: number, round: number, turn: number, agentId: string, kind: "post" | "reply", replyTo: number | null, text: string }} SwarmEvent */
 
@@ -103,13 +103,16 @@ export function hashRound(prevHash, roundEvents) {
 }
 
 /**
- * @param {{ agents?: readonly import("../traits/agents.mjs").Agent[], rounds?: number, seed?: number, client?: { chat: Function }, lastK?: number }} [options]
+ * `client` serves every agent. Without it each agent gets its own offline
+ * persona mock, or `clientFor(agent)` if given.
+ * @param {{ agents?: readonly import("../traits/agents.mjs").Agent[], rounds?: number, seed?: number, client?: { chat: Function }, clientFor?: (agent: import("../traits/agents.mjs").Agent) => { chat: Function }, lastK?: number }} [options]
  */
 export async function runSwarm({
   agents = AGENTS,
   rounds = 5,
   seed = 1,
-  client = createInferenceClient({ env: { MOCK_INFERENCE: "1" } }),
+  client,
+  clientFor = client ? () => client : createPersonaMockClient,
   lastK = 6,
 } = {}) {
   if (!Array.isArray(agents) || agents.length === 0) throw new RangeError("agents must be a non-empty array");
@@ -140,7 +143,7 @@ export async function runSwarm({
       const instruction = target
         ? `Reply to event #${target.id} from ${targetName}. Address ${targetName} by name.`
         : "Post a new message to the channel on a topic of your choosing.";
-      const response = await client.chat({
+      const response = await clientFor(agent).chat({
         system: personaPrompt(agent),
         messages: [{
           role: "user",
@@ -149,7 +152,7 @@ export async function runSwarm({
         seed: seed * 1000003 + events.length,
       });
       let text = String(response.content).trim();
-      if (target && !text.includes(targetName)) text = `${targetName}, ${text}`;
+      if (target && !text.includes(targetName)) text = `@${targetName} ${text}`;
 
       events.push({
         id: events.length + 1,
@@ -166,6 +169,18 @@ export async function runSwarm({
   }
 
   return { seed, rounds, events, transcript: formatTranscript(events, agents), roundHashes };
+}
+
+/**
+ * Recompute the hash chain from the events. True only if every round hash matches.
+ * @param {{ events: SwarmEvent[], roundHashes: string[] }} result
+ */
+export function verifyRounds({ events, roundHashes }) {
+  let prev = GENESIS_HASH;
+  return roundHashes.every((hash, i) => {
+    prev = hashRound(prev, events.filter((e) => e.round === i + 1));
+    return prev === hash;
+  }) && events.every((e) => e.round >= 1 && e.round <= roundHashes.length);
 }
 
 /** Human-readable transcript with round headers. */

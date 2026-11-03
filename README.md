@@ -22,6 +22,9 @@ Numbered "do X, see Y" steps for judges will go here.
 | `contracts/personality-nft/` | The NEP-171 contract (Rust, near-sdk 5.30). Each token is an agent and carries a character sheet anchor. See [Contract](#contract). |
 | `src/inference/client.mjs` | Inference client. Mock mode by default (deterministic, no keys); live mode calls NEAR AI Cloud. See [Inference](#inference). |
 | `scripts/infer.mjs` | `npm run infer -- "<prompt>"`: one chat turn through the client. |
+| `src/swarm/runner.mjs` | The swarm: four trait-driven agents (`src/traits/`) on one shared channel, seeded and deterministic. See [Swarm](#swarm). |
+| `src/swarm/personas.mjs` | In-character mock replies per agent, used when inference is mocked. |
+| `scripts/swarm.mjs` | `npm run swarm -- --rounds 5`: runs the swarm, prints the transcript, writes `out/transcript.txt` and `out/events.json`. |
 | `skills-lock.json` | Pinned versions of the installed agent skills. |
 
 ## Contract
@@ -78,6 +81,19 @@ console.log(reply.mode, reply.content);
 ```
 
 The swarm can pass `responder(request, hash)` to `createInferenceClient` to shape mock replies per persona while keeping them deterministic.
+
+## Swarm
+
+The swarm runs the four agents (Aloof, Chaotic, Social, Skeptic) on one shared channel for N rounds. Each agent's system prompt is built from its traits. A seed fixes the speaking order and who replies to whom, so the same `--rounds` and `--seed` give the same transcript. Each agent wakes with the last 6 channel events, not the full log. Each round is hashed and chained to the one before, and the run is re-checked before it prints.
+
+Inference is mocked by default (`MOCK_INFERENCE=1`): offline, no keys, and each agent answers in its own written voice. `MOCK_INFERENCE=0` sends the same prompts to NEAR AI Cloud instead and needs `NEAR_AI_API_KEY`.
+
+1. Run `npm run swarm -- --rounds 5`. See 5 round headers, 20 lines such as `[Skeptic] Doubtful. ...` and `[Chaotic -> Skeptic] @Skeptic ...`, then `final round hash: <64 hex>` and `verify: ok (5 rounds)`.
+2. Run it again. See the same transcript and the same hash.
+3. Run `npm run swarm -- --rounds 5 --seed 2`. See a different transcript and a different hash.
+4. Open `out/events.json`. See every event with its round, turn, agent and `replyTo`, plus `roundHashes`.
+
+Run the tests with `npm test`.
 
 ## Validate locally
 
