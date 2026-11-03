@@ -35,6 +35,7 @@ STATUS_DIR="$LOOP_DIR/status"
 STATUS_LOCK="$LOOP_DIR/status.lock"
 LOCKS_DIR="$LOOP_DIR/locks"
 LOCKS_META="$LOOP_DIR/locks.lock"
+LOCK_GRACE_SEC=60
 REPO_LOCK="$LOOP_DIR/repo.lock"
 BACKOFF_FILE="$LOOP_DIR/backoff.json"
 STOP_FILE="$LOOP_DIR/STOP"
@@ -488,13 +489,16 @@ fs.renameSync(tmp, file);
 JS
 }
 
-# Prints the number of item locks whose pid is still running. Stale locks are
-# renamed away and removed.
+# Prints the number of item locks that look live. Read-only: reclaiming stale
+# locks happens only in acquire_item, under locks.lock, so a scan can never
+# delete a lock another run just took. A lock with no pid counts as live only
+# until LOCK_GRACE_SEC has passed since it was created.
 live_lock_count() {
-  CLAUDE_LOOP_LOCKS_DIR="$LOCKS_DIR" node <<'JS'
+  CLAUDE_LOOP_LOCKS_DIR="$LOCKS_DIR" CLAUDE_LOOP_LOCK_GRACE_SEC="$LOCK_GRACE_SEC" node <<'JS'
 const fs = require("node:fs");
 const path = require("node:path");
 const dir = process.env.CLAUDE_LOOP_LOCKS_DIR;
+const graceMs = Number(process.env.CLAUDE_LOOP_LOCK_GRACE_SEC) * 1000;
 function alive(pid) {
   const number = Number(pid);
   if (!Number.isInteger(number) || number <= 0) return false;
@@ -508,26 +512,20 @@ function alive(pid) {
 let live = 0;
 if (fs.existsSync(dir)) {
   for (const name of fs.readdirSync(dir)) {
+    if (name.includes(".stale.")) continue;
     const lock = path.join(dir, name);
     let pid = "";
     try {
       pid = fs.readFileSync(path.join(lock, "pid"), "utf8").trim();
     } catch {
-      // A lock without a pid yet belongs to a process between mkdir and write.
-      live += 1;
+      try {
+        if (Date.now() - fs.statSync(lock).mtimeMs < graceMs) live += 1;
+      } catch {
+        // Removed while scanning.
+      }
       continue;
     }
-    if (alive(pid)) {
-      live += 1;
-      continue;
-    }
-    const stale = `${lock}.stale.${process.pid}`;
-    try {
-      fs.renameSync(lock, stale);
-      fs.rmSync(stale, { recursive: true, force: true });
-    } catch {
-      // Another run removed it first.
-    }
+    if (alive(pid)) live += 1;
   }
 }
 process.stdout.write(String(live));
@@ -958,6 +956,7 @@ acquire_item() {
     CLAUDE_LOOP_CANDIDATES="$cand_file" \
     CLAUDE_LOOP_ONLY="$ONLY_ID" \
     CLAUDE_LOOP_PID="$$" \
+    CLAUDE_LOOP_LOCK_GRACE_SEC="$LOCK_GRACE_SEC" \
     node <<'JS'
 const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
@@ -968,6 +967,7 @@ const meta = process.env.CLAUDE_LOOP_LOCKS_META;
 const max = Number(process.env.CLAUDE_LOOP_MAX_PARALLEL);
 const only = process.env.CLAUDE_LOOP_ONLY || "";
 const pid = process.env.CLAUDE_LOOP_PID;
+const graceMs = Number(process.env.CLAUDE_LOOP_LOCK_GRACE_SEC) * 1000;
 const raw = fs.readFileSync(process.env.CLAUDE_LOOP_CANDIDATES, "utf8").trim();
 const candidates = raw ? JSON.parse(raw) : [];
 
@@ -1035,8 +1035,20 @@ try {
   const held = new Set();
   for (const name of fs.readdirSync(dir)) {
     const lock = path.join(dir, name);
+    if (name.includes(".stale.")) continue;
     const holder = readPid(lock);
-    if (holder && !alive(holder)) {
+    // Dead pid, or no pid for longer than the grace period (crash between
+    // mkdir and the pid write): reclaim. We hold locks.lock, so no other run
+    // can be mid-acquire.
+    let orphan = false;
+    if (!holder) {
+      try {
+        orphan = Date.now() - fs.statSync(lock).mtimeMs >= graceMs;
+      } catch {
+        continue;
+      }
+    }
+    if (orphan || (holder && !alive(holder))) {
       discard(lock);
       continue;
     }

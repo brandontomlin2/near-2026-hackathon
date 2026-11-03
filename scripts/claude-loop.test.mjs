@@ -432,6 +432,45 @@ test("a held item lock makes the loop take the next item; a stale lock is replac
   assert.equal(claudeRuns(fixture.stubLog), 2);
 });
 
+test("the cap scan never deletes a lock; reclaiming stale locks happens only under locks.lock", { timeout: 20000 }, (t) => {
+  const { root, home } = tempHome(t);
+  liveLock(home, "dead-item", 999999);
+  // Exits 1 right after the quick cap scan, before acquire_item runs.
+  const result = runLoop(root, home, {
+    ANTHROPIC_API_KEY: "dummy",
+    CLAUDE_CODE_OAUTH_TOKEN: "dummy",
+    CLAUDE_LOOP_MAX_PARALLEL: "2",
+  });
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /both ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN/);
+  assert.deepEqual(lockNames(home), ["dead-item"]);
+});
+
+test("a pid-less item lock past the grace period is reclaimed; a fresh one still counts", { timeout: 40000 }, (t) => {
+  const fixture = initRepo(t, {
+    verify: PASS_VERIFY,
+    stubMode: "success",
+    items: [task("aaa-orphan", "Orphaned lock", "any")],
+  });
+  const orphan = lockDir(fixture.home, "aaa-orphan");
+  fs.mkdirSync(orphan, { recursive: true });
+  const env = loopEnv(fixture, { CLAUDE_LOOP_MAX_PARALLEL: "1" });
+
+  const fresh = runLoop(fixture.repo, fixture.home, env);
+  assert.equal(fresh.status, 0, `${fresh.stdout}\n${fresh.stderr}`);
+  assert.equal(fresh.stdout, "");
+  assert.equal(claudeRuns(fixture.stubLog), 0);
+  assert.deepEqual(lockNames(fixture.home), ["aaa-orphan"]);
+
+  const old = new Date(Date.now() - 120000);
+  fs.utimesSync(orphan, old, old);
+  const reclaimed = runLoop(fixture.repo, fixture.home, env);
+  assert.equal(reclaimed.status, 0, `${reclaimed.stdout}\n${reclaimed.stderr}`);
+  assert.match(reclaimed.stdout, /aaa-orphan review/);
+  assert.equal(claudeRuns(fixture.stubLog), 1);
+  assert.deepEqual(lockNames(fixture.home), []);
+});
+
 test("two concurrent runs take different items and the summary lists both", { timeout: 40000 }, async (t) => {
   const fixture = initRepo(t, {
     verify: PASS_VERIFY,
