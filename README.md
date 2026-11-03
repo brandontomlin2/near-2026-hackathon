@@ -18,6 +18,10 @@ Each token is an agent (Aloof, Chaotic, Social, Skeptic) with its own voice and 
 
 Tracks: `nfts`, `swarms` and `agents`.
 
+- `nfts`: the NEP-171 contract in `contracts/personality-nft/` holds the four agent tokens, and its `anchor_sheet` method records each token's sheet hash on the token.
+- `swarms`: `src/swarm/runner.mjs` runs the four agents on one shared channel, each speaking once per round in a seed-derived order, and hashes every round into a chain linked to the one before.
+- `agents`: each token is an agent whose system prompt is built from its traits (`personaPrompt` in `src/swarm/runner.mjs`, traits in `src/traits/agents.mjs`), and `src/memory/loop.mjs` condenses its channel history into the sheet whose hash is anchored.
+
 How NEAR fits:
 
 - The NFT is the agent. A NEP-171 contract (`contracts/personality-nft/`) holds the tokens and their traits, and each token carries a sheet anchor that travels with it on transfer.
