@@ -57,13 +57,13 @@
   {
     "id": "nep-171-contract",
     "title": "NEP-171 contract",
-    "status": "todo",
-    "owner": "",
+    "status": "review",
+    "owner": "claude",
     "kind": "task",
     "lane": "any",
-    "notes": "",
-    "updated_at": "2026-11-03T00:00:00.000Z",
-    "updated_by": "seed"
+    "notes": "contracts/personality-nft: NEP-171/177/178/181 + NEP-297 on near-sdk 5.30; nft_mint (owner only, storage refund), anchor_sheet (token owner, sha256 hash, memory_depth+1, sheet_anchored event), sheet_anchor view; 13 unit tests pass; wasm builds (248 KB) via npm run build:contract\nsession_id=d6be7df6-9832-48d8-9ba9-b9c8c2dc0ad6\ntotal_cost_usd=3.338508\nsubtype=success\nverify=PASS",
+    "updated_at": "2026-11-03T02:34:43.629Z",
+    "updated_by": "claude"
   },
   {
     "id": "readme-x-post-draft",
