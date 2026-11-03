@@ -52,52 +52,55 @@ test("README quotes Chaotic's real ride-or-die sheet text", async () => {
   });
 });
 
-test("README Try-it steps are numbered 1 to 10 and step 5 is the npm run ask step", async () => {
+test("README Try-it steps are numbered 1 to 10 and the npm run ask step is last, after verify.sh", async () => {
   const section = readme.split("## Try it (judge path)\n")[1].split(/\n## /)[0];
   const numbers = [...section.matchAll(/^(\d+)\. /gm)].map((m) => Number(m[1]));
   assert.deepEqual(numbers, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   assert.match(section, /^4\. Open `out\/memory\/chaotic\/sheet\.json`\./m, "step 4 is the sheet.json step");
-  assert.match(section, /^5\. Run `npm run ask -- chaotic "what do you think of Skeptic\?"`\./m, "step 5 is the ask step, right after sheet.json");
-  assert.match(section, /^6\. Open `out\/anchors\.json`\./m);
-  assert.match(section, /^10\. Run `bash scripts\/verify\.sh`/m);
+  assert.match(section, /^5\. Open `out\/anchors\.json`\./m, "step 5 is the anchors step, untouched");
+  assert.match(section, /^9\. Run `bash scripts\/verify\.sh`/m, "step 9 is verify.sh, untouched");
+  const step10 = /^10\. Last, after the steps above, because it changes `out\/memory`: run `npm run ask -- chaotic "what do you think of Skeptic\?"`\./m;
+  assert.match(section, step10, "step 10 is the ask step and says to run it last");
+  const tail = section.split(/^9\. .*$/m)[1];
+  assert.ok(/^\n\n10\. [^\n]*\n\nEverything below this section is reference for the pieces the demo ran\.\n/.test(tail), "step 10 sits after the blank line that follows step 9, one blank line before the closing sentence");
   const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
   assert.equal(pkg.scripts.ask, "node scripts/ask.mjs");
   const checklist = await readFile(join(root, "docs/submission-checklist.md"), "utf8");
   assert.ok(checklist.includes('README "Try it (judge path)" steps 1-10.'), "the submission checklist counts the Try-it steps");
   const script = await readFile(join(root, "docs/demo-script.md"), "utf8");
-  assert.ok(script.includes("`npm run ask -- <agentId> \"<question>\"` also exists (README step 5)"), "demo-script.md Command status names npm run ask");
+  assert.ok(script.includes("`npm run ask -- <agentId> \"<question>\"` also exists (README step 10)"), "demo-script.md Command status names npm run ask");
 });
 
-test("README step 5 quotes what npm run ask really prints, and npm run demo resets the memory", async () => {
+test("README step 10 quotes what npm run ask really prints, and npm run demo resets the memory", async () => {
   await withTmp(async (dir) => {
     const out = await runDemoCli(dir);
-    const step5 = readme.match(/^5\. Run `npm run ask -- chaotic "what do you think of Skeptic\?"`\..*$/m)[0];
+    const step10 = readme.match(/^10\. Last, after the steps above, because it changes `out\/memory`: run `npm run ask -- chaotic "what do you think of Skeptic\?"`\..*$/m)[0];
     const ask = (question) => run(process.execPath, [join(root, "scripts/ask.mjs"), "--out", out, "chaotic", question], { env });
 
     const first = await ask("what do you think of Skeptic?");
     const lines = first.stdout.trimEnd().split("\n");
-    assert.ok(step5.includes(`\`${lines[0]}\``), `step 5 must quote the first line verbatim: ${lines[0]}`);
-    assert.ok(step5.includes("`Owner: 0 fights, 0 hugs, 1 shrug`"));
+    assert.ok(step10.includes(`\`${lines[0]}\``), `step 10 must quote the first line verbatim: ${lines[0]}`);
+    assert.ok(step10.includes("`Owner: 0 fights, 0 hugs, 1 shrug`"));
     assert.ok(lines.some((l) => l.startsWith("  + Scorecard:") && l.endsWith("Owner: 0 fights, 0 hugs, 1 shrug.")), "the Owner joins the scorecard");
     assert.ok(lines.some((l) => /^ {2}\+ Signature quote: "Skeptic\?\? 5 fights and counting/.test(l)), "the answer becomes the signature quote");
     const anchor = /^sheet chaotic round 7 ([0-9a-f]{64}) \(\+3 -3\) -> anchor_sheet dry-run \(not sent\)$/.exec(lines.at(-2));
     assert.ok(anchor, lines.at(-2));
-    assert.ok(step5.includes("`sheet chaotic round 7 <hash> (+3 -3) -> anchor_sheet dry-run (not sent)`"));
+    assert.ok(step10.includes("`sheet chaotic round 7 <hash> (+3 -3) -> anchor_sheet dry-run (not sent)`"));
     const sheet = JSON.parse(await readFile(join(out, "memory/chaotic/sheet.json"), "utf8"));
     assert.equal(sheet.sheetHash, anchor[1]);
-    assert.ok(step5.includes("where `<hash>` is the new `sheetHash` in `out/memory/chaotic/sheet.json`"));
+    assert.ok(step10.includes("where `<hash>` is the new `sheetHash` in `out/memory/chaotic/sheet.json`"));
 
     // Six hostile asks: the Owner displaces Skeptic as public enemy #1 on the sixth.
     let sixth;
     for (let i = 0; i < 6; i++) sixth = await ask("nope, show me the receipts");
     assert.ok(sixth.stdout.includes("\n  + Public enemy #1: Owner (6 fights).\n"), sixth.stdout);
-    assert.ok(step5.includes("six times: the sixth diff adds `Public enemy #1: Owner (6 fights).`"));
+    assert.ok(step10.includes("six times: the sixth diff adds `Public enemy #1: Owner (6 fights).`"));
     const enemy = await ask("who is your enemy?");
     const answer = enemy.stdout.split("\n")[0];
-    assert.ok(step5.includes(`\`${answer}\``), `step 5 must quote the enemy answer verbatim: ${answer}`);
+    assert.ok(step10.includes(`\`${answer}\``), `step 10 must quote the enemy answer verbatim: ${answer}`);
 
     // Only out/memory changed, and npm run demo starts the memory over.
-    assert.ok(step5.includes("Only `out/memory` changes") && step5.includes("`npm run demo` resets the memory"));
+    assert.ok(step10.includes("Only `out/memory` changes") && step10.includes("`npm run demo` resets the memory"));
     const demoBefore = await readFile(join(out, "demo.json"), "utf8");
     const logAfterAsks = (await readFile(join(out, "memory/chaotic/log.jsonl"), "utf8")).split("\n").filter(Boolean).length;
     await run(process.execPath, [join(root, "scripts/demo.mjs"), "--out", out], { env });

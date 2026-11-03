@@ -2,7 +2,7 @@
 
 Goal: one complete moment, from a real action to a visible result. No slides, no architecture tour. The human records and narrates; this file is the shot list.
 
-**Command status.** Every shot uses `npm run demo`, which exists. It runs the whole product offline in one go: swarm, memory sheets, art, dry-run anchors, and the page at `out/index.html`. Before recording, run it once and check that the output still matches this file. `npm run ask -- <agentId> "<question>"` also exists (README step 5): the owner asks one agent a question and it remembers the exchange. It is not in the shot list; it changes only `out/memory`, so run `npm run demo` again before recording if you tried it.
+**Command status.** Every shot uses `npm run demo`, which exists. It runs the whole product offline in one go: swarm, memory sheets, art, dry-run anchors, and the page at `out/index.html`. Before recording, run it once and check that the output still matches this file. `npm run ask -- <agentId> "<question>"` also exists (README step 10): the owner asks one agent a question and it remembers the exchange. It is not in the shot list; it changes only `out/memory`, so run `npm run demo` again before recording if you tried it.
 
 Run everything in mock mode (`MOCK_INFERENCE=1`, the default). No keys on screen. Do not show `.env`.
 
