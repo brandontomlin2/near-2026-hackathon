@@ -25,6 +25,9 @@ import { capUtf8Bytes, replaceUnsafeChars } from "../util/text.mjs";
 export const DEFAULT_BASE_URL = "https://cloud-api.near.ai/v1";
 export const DEFAULT_TIMEOUT_MS = 60_000;
 export const DEFAULT_MAX_RETRIES = 2;
+// Largest response body the client will buffer. A chat completion is a few KiB;
+// 4 MiB leaves room for very long replies while bounding memory per request.
+export const DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 // Sent as max_tokens on every live request that does not set maxTokens. Sheets are
 // under 200 words and swarm replies one or two sentences, so this is generous.
 export const DEFAULT_MAX_TOKENS = 1024;
@@ -316,12 +319,47 @@ function scrubCause(cause, secret) {
 }
 
 /**
+ * Buffer a response body up to `maxBytes`. Past that, abort the request and
+ * throw response_too_large. The error carries no body, header or key.
+ * @param {Response} response
+ * @param {number} maxBytes
+ * @param {AbortController} controller
+ * @returns {Promise<string>}
+ */
+async function readBodyCapped(response, maxBytes, controller) {
+  const tooLarge = () => {
+    controller.abort();
+    return new InferenceError(`NEAR AI Cloud response body exceeded the ${maxBytes} byte limit`, {
+      code: "response_too_large",
+    });
+  };
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) throw tooLarge();
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      const error = tooLarge();
+      await reader.cancel().catch(() => {});
+      throw error;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+/**
  * Read a response body for an error message without ever echoing more than a
  * short prefix. Provider bodies can be large or contain the request.
  */
-async function errorSnippet(response, secret) {
+async function errorSnippet(response, secret, maxBytes, controller) {
   try {
-    const text = await response.text();
+    const text = await readBodyCapped(response, maxBytes, controller);
     // Error text reaches stderr: no terminal control characters from the provider either.
     return replaceUnsafeChars(redact(text, secret)).slice(0, 200).replace(/\s+/g, " ").trim();
   } catch {
@@ -336,6 +374,7 @@ async function errorSnippet(response, secret) {
  *   baseUrl?: string,
  *   timeoutMs?: number,
  *   maxRetries?: number,
+ *   maxResponseBytes?: number,
  *   fetch?: typeof fetch,
  *   sleep?: (ms: number) => Promise<void>,
  * }} options
@@ -358,11 +397,16 @@ export function createLiveClient(options) {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new InferenceError("timeoutMs must be a positive number", { code: "bad_config" });
   }
+  const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
+  if (!Number.isInteger(maxResponseBytes) || maxResponseBytes <= 0) {
+    throw new InferenceError("maxResponseBytes must be a positive integer", { code: "bad_config" });
+  }
   const doFetch = options.fetch ?? globalThis.fetch;
   const wait = options.sleep ?? sleep;
   const url = `${baseUrl}/chat/completions`;
 
   async function send(body) {
+    const controller = new AbortController();
     let response;
     try {
       response = await doFetch(url, {
@@ -372,7 +416,7 @@ export function createLiveClient(options) {
           authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.any([AbortSignal.timeout(timeoutMs), controller.signal]),
       });
     } catch (cause) {
       const timedOut = cause && cause.name === "TimeoutError";
@@ -382,7 +426,7 @@ export function createLiveClient(options) {
       );
     }
     if (!response.ok) {
-      const snippet = await errorSnippet(response, apiKey);
+      const snippet = await errorSnippet(response, apiKey, maxResponseBytes, controller);
       throw new InferenceError(
         `NEAR AI Cloud returned HTTP ${response.status}${snippet ? `: ${snippet}` : ""}`,
         { status: response.status, code: "http_error", retryable: isRetryableStatus(response.status) },
@@ -390,8 +434,9 @@ export function createLiveClient(options) {
     }
     let data;
     try {
-      data = await response.json();
+      data = JSON.parse(await readBodyCapped(response, maxResponseBytes, controller));
     } catch (cause) {
+      if (cause instanceof InferenceError) throw cause;
       if (cause && cause.name === "TimeoutError") {
         throw new InferenceError(`reading response from ${url} timed out after ${timeoutMs}ms`, {
           code: "timeout", retryable: true, cause: scrubCause(cause, apiKey),
@@ -460,6 +505,7 @@ export function createLiveClient(options) {
  *   fetch?: typeof fetch,
  *   timeoutMs?: number,
  *   maxRetries?: number,
+ *   maxResponseBytes?: number,
  * }} [options]
  */
 export function createInferenceClient(options = {}) {
@@ -475,5 +521,6 @@ export function createInferenceClient(options = {}) {
     fetch: options.fetch,
     timeoutMs: options.timeoutMs,
     maxRetries: options.maxRetries,
+    maxResponseBytes: options.maxResponseBytes,
   });
 }
