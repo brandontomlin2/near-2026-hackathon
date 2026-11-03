@@ -1,0 +1,134 @@
+[
+  {
+    "id": "contract-audit",
+    "title": "contract audit",
+    "status": "todo",
+    "owner": "",
+    "kind": "task",
+    "lane": "any",
+    "notes": "",
+    "updated_at": "2026-11-03T00:00:00.000Z",
+    "updated_by": "seed"
+  },
+  {
+    "id": "feature-freeze-nov-11",
+    "title": "feature freeze Nov 11",
+    "status": "todo",
+    "owner": "",
+    "kind": "task",
+    "lane": "any",
+    "notes": "",
+    "updated_at": "2026-11-03T00:00:00.000Z",
+    "updated_by": "seed"
+  },
+  {
+    "id": "fresh-clone-test-demo-video",
+    "title": "fresh-clone test + demo video",
+    "status": "todo",
+    "owner": "",
+    "kind": "task",
+    "lane": "any",
+    "notes": "",
+    "updated_at": "2026-11-03T00:00:00.000Z",
+    "updated_by": "seed"
+  },
+  {
+    "id": "inference-client-mock-mode",
+    "title": "inference client + mock mode",
+    "status": "todo",
+    "owner": "",
+    "kind": "task",
+    "lane": "any",
+    "notes": "",
+    "updated_at": "2026-11-03T00:00:00.000Z",
+    "updated_by": "seed"
+  },
+  {
+    "id": "memory-summarizer",
+    "title": "memory/summarizer",
+    "status": "todo",
+    "owner": "",
+    "kind": "task",
+    "lane": "any",
+    "notes": "",
+    "updated_at": "2026-11-03T00:00:00.000Z",
+    "updated_by": "seed"
+  },
+  {
+    "id": "nep-171-contract",
+    "title": "NEP-171 contract",
+    "status": "todo",
+    "owner": "",
+    "kind": "task",
+    "lane": "any",
+    "notes": "",
+    "updated_at": "2026-11-03T00:00:00.000Z",
+    "updated_by": "seed"
+  },
+  {
+    "id": "readme-x-post-draft",
+    "title": "README + X post draft",
+    "status": "todo",
+    "owner": "",
+    "kind": "task",
+    "lane": "any",
+    "notes": "",
+    "updated_at": "2026-11-03T00:00:00.000Z",
+    "updated_by": "seed"
+  },
+  {
+    "id": "shared-channel-on-chain-anchor",
+    "title": "shared channel + on-chain anchor",
+    "status": "todo",
+    "owner": "",
+    "kind": "task",
+    "lane": "any",
+    "notes": "",
+    "updated_at": "2026-11-03T00:00:00.000Z",
+    "updated_by": "seed"
+  },
+  {
+    "id": "sim-mode",
+    "title": "sim mode",
+    "status": "todo",
+    "owner": "",
+    "kind": "task",
+    "lane": "any",
+    "notes": "",
+    "updated_at": "2026-11-03T00:00:00.000Z",
+    "updated_by": "seed"
+  },
+  {
+    "id": "submission-buffer-nov-14",
+    "title": "submission buffer Nov 14",
+    "status": "todo",
+    "owner": "",
+    "kind": "task",
+    "lane": "any",
+    "notes": "",
+    "updated_at": "2026-11-03T00:00:00.000Z",
+    "updated_by": "seed"
+  },
+  {
+    "id": "testnet-deploy-mint-3-agents",
+    "title": "testnet deploy + mint 3 agents",
+    "status": "todo",
+    "owner": "",
+    "kind": "task",
+    "lane": "any",
+    "notes": "",
+    "updated_at": "2026-11-03T00:00:00.000Z",
+    "updated_by": "seed"
+  },
+  {
+    "id": "viewer",
+    "title": "viewer",
+    "status": "todo",
+    "owner": "",
+    "kind": "task",
+    "lane": "any",
+    "notes": "",
+    "updated_at": "2026-11-03T00:00:00.000Z",
+    "updated_by": "seed"
+  }
+]
