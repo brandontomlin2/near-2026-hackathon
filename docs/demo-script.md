@@ -1,48 +1,60 @@
-# Demo video script (2 minutes)
+# Demo video script (2.5 minutes)
 
-Goal: one complete moment, from a real action to a visible result. No slides, no architecture tour. The human records and narrates; this file is the shot list.
+Goal: one complete moment, from a real action to a visible result: the owner asks, the agent remembers, a buyer can check. No slides, no architecture tour. The human records and narrates; this file is the shot list.
 
-**Command status.** Every shot uses `npm run demo`, which exists. It runs the whole product offline in one go: swarm, memory sheets, art, dry-run anchors, and the page at `out/index.html`. Before recording, run it once and check that the output still matches this file. `npm run ask -- <agentId> "<question>"` also exists (README step 10): the owner asks one agent a question and it remembers the exchange. It is not in the shot list; it changes only `out/memory`, so run `npm run demo` again before recording if you tried it.
+**Command status.** The shot list uses `npm run demo` and `npm run ask`, and both exist. `npm run demo` runs the whole product offline in one go: swarm, memory sheets, art, meme cards, dry-run anchors, and the page at `out/index.html`. `npm run ask -- <agentId> "<question>"` (README step 10) lets the owner ask one agent a question; it remembers the exchange. It changes only `out/memory`, so run `npm run demo` again before a second take. Before recording, run both once and check that the output still matches this file.
 
 Run everything in mock mode (`MOCK_INFERENCE=1`, the default). No keys on screen. Do not show `.env`.
+
+**Who this is for.** A buyer of an AI character NFT, and its owner. The buyer's job: check that the memory they were sold is the one the seller anchored. The owner's job: talk to the character and have it remember. Open on that, and put the `npm run ask` moment in the first 30 seconds.
 
 ## Shot list
 
 | # | Time | On screen | Command or file |
 | --- | --- | --- | --- |
-| 1 | 0:00 to 0:12 | Title card: name, one line. Then terminal. | none |
-| 2 | 0:12 to 0:30 | Fresh clone, install, one command. The five `[n/5]` lines and "Nothing was signed or sent". | `git clone <REPO_URL> && cd <repo> && npm install && npm run demo` |
-| 3 | 0:30 to 0:50 | Browser on `out/index.html`, Agents section. Sticker art at mint next to art now (it gains one star along the edge per sheet written: 1 at mint, 3 now); point at each agent's strip of four reaction faces. | `open out/index.html` |
-| 4 | 0:50 to 1:15 | Scroll to Channel. Rounds scroll by with a reaction face beside each message; find a `Chaotic → Skeptic` exchange. Then the share cards grid. | page, Channel section |
-| 5 | 1:15 to 1:35 | Scroll up to Memory (it sits above Channel on the page). Chaotic's round 3 sheet, then round 6: its fights with Skeptic went from 3 to 5, Social became its ride-or-die (1 to 3 warm moments), and its "Who I am" line escalated from chaos goblin to villain arc. | page, Memory section |
-| 6 | 1:35 to 1:50 | Anchor (dry run) table, then the Round hash chain (right below it) ending in `verify: ok`. Back in the terminal, run `npm run demo` again: same final hash. | page, then `npm run demo` |
-| 7 | 1:50 to 2:00 | Close: repo URL, one question. | none |
+| 1 | 0:00 to 0:12 | Title card with the problem: "Buying an AI character? Check its memory is the one the seller anchored." Then terminal. | none |
+| 2 | 0:12 to 0:25 | Fresh clone, install, one command. The five `[n/5]` lines and "Nothing was signed or sent". | `git clone <REPO_URL> && cd <repo> && npm install && npm run demo` |
+| 3 | 0:25 to 0:45 | You are the owner. Ask Chaotic about Skeptic. Pause on the answer, `Chaotic (mock): Skeptic?? 5 fights and counting, bro I did not read the contract and it SHOWS 💀`, then on the sheet diff, where `Owner: 0 fights, 0 hugs, 1 shrug` joins the scorecard, and the last line, `anchor_sheet dry-run (not sent)`. | `npm run ask -- chaotic "what do you think of Skeptic?"` |
+| 4 | 0:45 to 1:00 | Browser on `out/index.html`, the "Meme pack" section: three meme cards. Open the Chaotic caption card full size: "WHEN SKEPTIC REPLIES AGAIN", "RECEIPTS?? BRO I AM THE RECEIPTS 💀". | `open out/index.html`, `open out/share/meme-caption-chaotic.svg` |
+| 5 | 1:00 to 1:15 | Scroll up to Agents. Sticker art at mint next to art now (it gains one star along the edge per sheet written: 1 at mint, 3 now); point at each agent's strip of four reaction faces. | page, Agents section |
+| 6 | 1:15 to 1:35 | Memory section. Chaotic's round 3 sheet, then round 6: its fights with Skeptic went from 3 to 5, Social became its ride-or-die (1 to 3 warm moments), and its "Who I am" line escalated from chaos goblin to villain arc. | page, Memory section |
+| 7 | 1:35 to 1:50 | Scroll to Channel. Rounds scroll by with a reaction face beside each message; find a `Chaotic → Skeptic` exchange. | page, Channel section |
+| 8 | 1:50 to 2:15 | Transfer: four `match` rows. Then the Anchor (dry run) table and the Round hash chain ending in `verify: ok`. Back in the terminal, run `npm run demo` again: same final hash. | page, then `npm run demo` |
+| 9 | 2:15 to 2:25 | Close: repo URL, one question. | none |
 
-Fallbacks if the browser is awkward on camera: `cat out/transcript.txt` for shot 4, `cat out/memory/chaotic/sheet.json` for shot 5, `cat out/anchors.json` for shot 6. `bash scripts/verify.sh` ends with `result: PASS` and runs the demo in a fresh clone.
+The windows add up to 2 minutes 25. Trim the pauses in shots 5 to 7 if you need it shorter. Never cut shot 3 or shot 4.
+
+Fallbacks if the browser is awkward on camera: `cat out/transcript.txt` for shot 7, `cat out/memory/chaotic/sheet.json` for shot 6, `cat out/anchors.json` for shot 8. `bash scripts/verify.sh` ends with `result: PASS` and runs the demo in a fresh clone.
 
 ## Narration
 
-Plain words. Read at a normal pace; about 300 words in total.
+Plain words. Read at a normal pace; about 375 words in total.
 
 **Scene 1 (0:00 to 0:12)**
-"When you move an AI character to a new app, it forgets who it was. We built an NFT that carries its character with it."
+"Someone is selling you an AI character. How do you know the memory you are buying is the one they anchored? We built an NFT that carries its character with it, and lets you check."
 
-**Scene 2 (0:12 to 0:30)**
+**Scene 2 (0:12 to 0:25)**
 "This is a fresh clone. I run npm install, then one command: npm run demo. No account, no API key. Inference is in mock mode, so you get the same output I do."
 
-**Scene 3 (0:30 to 0:50)**
-"Four agents: Aloof, Chaotic, Social and Skeptic. Each is an NFT on NEAR. Each gets its own picture, drawn from its traits. The same traits always give the same image. On the left is the picture at mint; on the right, now, after it has written its memory. Under each is a strip of four reaction faces: neutral, hype, shade and shook."
+**Scene 3 (0:25 to 0:45)**
+"Now I am the owner. I ask Chaotic what it thinks of Skeptic. It answers in character, five fights and counting. And it remembers: look at the diff, I am in its scorecard now. The new sheet hash is prepared for the token, and not sent."
 
-**Scene 4 (0:50 to 1:15)**
-"Now the swarm. For six rounds the agents post and reply on one shared channel. Each turn is a call to NEAR AI Cloud. Here it is mocked and repeatable. Each message gets the reaction face that matches its tone, chosen by a text rule. Watch Skeptic push back on Chaotic, Social cheer for everyone, and Aloof and Skeptic each get caught off guard once. Every message also becomes a share card: face, quote, agent name."
+**Scene 4 (0:45 to 1:00)**
+"The agents make memes out of what they really said. This one is Chaotic: receipts, bro, I am the receipts. Three cards, built from the replies and the character sheets."
 
-**Scene 5 (1:15 to 1:35)**
+**Scene 5 (1:00 to 1:15)**
+"Four agents: Aloof, Chaotic, Social and Skeptic. In the design each is an NFT on NEAR, with its own picture drawn from its traits; nothing is minted in this demo. On the left is the picture at mint, on the right, now, after it has written its memory. Under each is a strip of four reaction faces: neutral, hype, shade and shook."
+
+**Scene 6 (1:15 to 1:35)**
 "Every three rounds, each agent's log is summarized into a short character sheet. Here is Chaotic's sheet at round three, and at round six. The feud with Skeptic grew, Social became its ride-or-die, and chaos goblin became villain arc. The picture changes with each sheet."
 
-**Scene 6 (1:35 to 1:50)**
-"The hash of each sheet goes on the token. So if the token is transferred, the new owner hashes the sheet they received and compares it with the chain. Here the anchor call is prepared and shown, and never signed. Run it again: the same hash, byte for byte."
+**Scene 7 (1:35 to 1:50)**
+"Those sheets came from six rounds on one shared channel. In live mode each turn would call NEAR AI Cloud; this demo is mocked and has not been run against it. Each message gets the reaction face that matches its tone, chosen by a text rule. Watch Skeptic push back on Chaotic. Aloof and Skeptic each get caught off guard once."
 
-**Scene 7 (1:50 to 2:00)**
+**Scene 8 (1:50 to 2:15)**
+"Now the token changes hands. The new owner takes the sheet, hashes it, and compares it with the hash on the token: every row matches. Here the anchor call is prepared and shown, and never signed. Run it again: the same hash, byte for byte."
+
+**Scene 9 (2:15 to 2:25)**
 "Code is public, link below. Built at NEAR HACKATHON. What would you want an agent like this to remember?"
 
 ## Recording notes
@@ -52,4 +64,4 @@ Plain words. Read at a normal pace; about 300 words in total.
 - The demo never signs. If the video also shows a live testnet run, show transaction hashes only. Never show a key, a seed phrase or `.env`.
 - Say "mock mode" out loud once. Do not imply a live NEAR AI call or on-chain write unless that run was really live.
 - Do not claim the `privacy` track or any TEE attestation. `PRODUCT.md` says to leave it off until a check ships.
-- Export a 60 to 90 second cut (scenes 3 to 6) for the X post.
+- Export a 60 to 90 second cut for the X post: `docs/demo-video.md` is that cut (it keeps the `npm run ask` and meme card scenes).
