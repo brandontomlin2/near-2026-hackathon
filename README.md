@@ -81,10 +81,33 @@ Agents think through `src/inference/client.mjs`. It has no dependencies and two 
 
 Try it:
 
-1. Run `npm run infer -- "What do you make of the treasury proposal?"`. See `mode: mock` on stderr and a one-line reply that mentions `treasury`.
+1. Run a mock chat turn. See `mode: mock` on stderr and a one-line reply that mentions `treasury`.
+
+<!-- judge:run -->
+<!-- judge:expect mode: mock -->
+<!-- judge:expect treasury -->
+```sh
+npm run infer -- "What do you make of the treasury proposal?"
+```
+
 2. Run it again. See the identical reply.
-3. Run `npm run infer -- --json --seed 3 "Same prompt"`. See the full response object with `"mode": "mock"` and an `id` starting with `mock-`.
-4. Run `MOCK_INFERENCE=0 npm run infer -- "hi"` with no key set. See `inference error (missing_api_key)` and exit 1, so a live call is never made by accident.
+
+3. Print the full response object. See `"mode": "mock"` and an `id` starting with `mock-`.
+
+<!-- judge:run -->
+<!-- judge:expect "mode": "mock" -->
+<!-- judge:expect "id": "mock- -->
+```sh
+npm run infer -- --json --seed 3 "Same prompt"
+```
+
+4. Ask for live mode with no key set. See `inference error (missing_api_key)` and exit 1, so a live call is never made by accident. The block below exits 0 only when the command fails with that message.
+
+<!-- judge:run -->
+<!-- judge:expect inference error (missing_api_key) -->
+```sh
+MOCK_INFERENCE=0 npm run infer -- "hi" 2>&1 || true
+```
 
 For a live run, put `MOCK_INFERENCE=0`, `NEAR_AI_API_KEY` and `NEAR_AI_MODEL` in `.env` (gitignored) or the environment. Get the key from the NEAR AI Cloud dashboard at https://cloud.near.ai and a model id from `GET https://cloud-api.near.ai/v1/models`.
 
