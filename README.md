@@ -73,6 +73,29 @@ Steps:
 
 Tests for argument building and dry-run output: `node --test scripts/testnet-deploy.test.mjs`.
 
+## Live on testnet
+
+**Status: not run yet.** No contract has been deployed to testnet from this repository so far, and there are no transaction hashes to show. This section is a template. It is filled in when the live run happens (it needs the owner's explicit approval and their keychain account). `docs/evidence.example.json` shows the shape of the evidence a live run produces and is marked `"example": true`. Its hashes are placeholders.
+
+Contract id: `TBD` (to be filled in after the live run)
+
+| Step | Transaction | Explorer |
+| --- | --- | --- |
+| deploy | `TBD` | `TBD` |
+| mint (4 tokens) | `TBD` | `TBD` |
+| anchor_sheet | `TBD` | `TBD` |
+
+What the live run will do, as one command:
+
+1. Run `npm run live-proof`. See the deploy, four mint, and `anchor_sheet` steps printed in order, and `docs/evidence.example.json` written. Nothing is signed or sent.
+2. The owner runs `NEAR_ACCOUNT_ID=<account> NEAR_CONTRACT_ACCOUNT_ID=<contract> npm run live-proof -- --send --i-approve`. It refuses without both variables and the flag. Signing is done by the `near` CLI with the system keychain; this repository handles no keys.
+
+Once the live run is done, a judge can check it with read-only view calls. They need no account and no keys. Replace `<contract>` with the contract id above:
+
+1. `near contract call-function as-read-only <contract> nft_total_supply json-args '{}' network-config testnet now`. Expect `"4"`.
+2. `near contract call-function as-read-only <contract> nft_token json-args '{"token_id":"aloof"}' network-config testnet now`. Expect `token_id` `aloof`, `owner_id` set to the owner account, and `metadata.extra` holding `{"temperament":"cool","role":"observer","risk":"low","voice":"dry"}`.
+3. `near contract call-function as-read-only <contract> sheet_anchor json-args '{"token_id":"aloof"}' network-config testnet now`. Expect `sheet_hash` set to a 64-character hex string (the sha256 of the anchored character sheet), `memory_depth` `2`, and an `updated_at` timestamp. Before the anchor step the same call returns `sheet_hash: null` and `memory_depth: 1`.
+
 ## Inference
 
 Agents think through `src/inference/client.mjs`. It has no dependencies and two modes, picked by `MOCK_INFERENCE`:
