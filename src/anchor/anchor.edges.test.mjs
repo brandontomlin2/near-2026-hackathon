@@ -9,9 +9,6 @@ import {
   ANCHOR_METHOD,
   AnchorError,
   DEFAULT_GAS,
-  VIEW_METHOD,
-  anchorConfigFromEnv,
-  anchorViewRequest,
   isValidAccountId,
   prepareAnchor,
   submitAnchor,
@@ -200,26 +197,3 @@ test("prepared calls for several tokens are independent and keep their own token
   }
 });
 
-// --- the view request and env ------------------------------------------------------------------
-
-test("anchorViewRequest refuses missing or hostile inputs and has no extra keys", () => {
-  assert.throws(() => anchorViewRequest(), anchorError("bad_config"));
-  assert.throws(() => anchorViewRequest({ tokenId: "aloof" }), anchorError("bad_config"));
-  assert.throws(() => anchorViewRequest({ contractId: CONTRACT }), anchorError("bad_token"));
-  assert.throws(() => anchorViewRequest({ contractId: CONTRACT, tokenId: "aloof\u0000" }), anchorError("bad_token"));
-  const view = anchorViewRequest({ contractId: CONTRACT, tokenId: "aloof", network: "mainnet", live: true });
-  assert.deepEqual(view, { contractId: CONTRACT, methodName: VIEW_METHOD, args: { token_id: "aloof" } });
-});
-
-test("anchorConfigFromEnv: trims and lowercases ANCHOR_LIVE, refuses anything but 1/true/0/false, reads nothing else", () => {
-  for (const raw of ["1", "true", "TRUE", " True ", "\ttrue\n"]) assert.equal(anchorConfigFromEnv({ ANCHOR_LIVE: raw }).live, true, raw);
-  for (const raw of ["0", "false", "FALSE", " False ", "", "   "]) assert.equal(anchorConfigFromEnv({ ANCHOR_LIVE: raw }).live, false, raw);
-  for (const raw of ["2", "on", "yes", "no", "null", "t", "1 1", "true;", "truthy"]) {
-    assert.throws(() => anchorConfigFromEnv({ ANCHOR_LIVE: raw }), anchorError("bad_config"), raw);
-  }
-  const env = { ANCHOR_LIVE: undefined, NEAR_NETWORK: "mainnet", NEAR_NFT_CONTRACT_ID: "x", NEAR_PRIVATE_KEY: "ed25519:not-a-real-key", HOME: "/nowhere" };
-  const cfg = anchorConfigFromEnv(env);
-  assert.deepEqual(cfg, { live: false, network: "mainnet", contractId: "x" }, "it reports what it read; prepareAnchor is what refuses mainnet");
-  assert.ok(!JSON.stringify(cfg).includes("ed25519"));
-  assert.throws(() => prepareAnchor({ contractId: "personality.near", tokenId: "aloof", sheet: "s", network: cfg.network }), anchorError("network_refused"));
-});

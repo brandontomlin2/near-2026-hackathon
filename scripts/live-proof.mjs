@@ -130,7 +130,7 @@ export async function buildPlan({ contract, owner, env, mediaBase = null }) {
   return [deploy, ...mints, buildAnchorStep({ contract, owner })];
 }
 
-const nearLine = (step) => `near ${(step.argv ?? [...(step.command ?? []).slice(1)]).map(shellQuote).join(" ")}`;
+const nearLine = (step) => `near ${step.argv.map(shellQuote).join(" ")}`;
 
 function formatPlan(steps) {
   const lines = [];
