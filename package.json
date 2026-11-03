@@ -17,6 +17,7 @@
     "verify": "bash scripts/verify.sh",
     "render": "node scripts/render-agents.mjs",
     "swarm": "node scripts/swarm.mjs",
+    "demo": "node scripts/demo.mjs",
     "evidence": "node scripts/evidence.mjs",
     "viewer": "node scripts/viewer.mjs",
     "verify": "bash scripts/verify.sh",
