@@ -13,9 +13,10 @@
 // base URL's userinfo: a URL with credentials is refused when the client is made.
 //
 // Reply text is bounded: control and bidi characters become U+FFFD and the text
-// is cut at MAX_CONTENT_BYTES (src/util/text.mjs), so a reply can neither drive
-// the terminal nor grow a sheet or share card without limit. Live requests
-// always carry max_tokens (DEFAULT_MAX_TOKENS unless the caller sets one).
+// is cut at MAX_CONTENT_BYTES, both with the helpers in src/util/text.mjs, so a
+// reply can neither drive the terminal nor grow a sheet or share card without
+// limit. Live requests always carry max_tokens (DEFAULT_MAX_TOKENS unless the
+// caller sets one).
 
 import { createHash } from "node:crypto";
 import { capUtf8Bytes, replaceUnsafeChars } from "../util/text.mjs";

@@ -7,8 +7,6 @@ import {
   AnchorError,
   DEFAULT_GAS,
   ANCHOR_DEPOSIT_YOCTO,
-  anchorConfigFromEnv,
-  anchorViewRequest,
   isValidAccountId,
   prepareAnchor,
   submitAnchor,
@@ -131,16 +129,6 @@ test("prepared call is JSON-serializable and frozen", () => {
   assert.equal(p.args.token_id, "aloof");
 });
 
-test("anchorViewRequest shape", () => {
-  assert.deepEqual(anchorViewRequest({ contractId: CONTRACT, tokenId: "social" }), {
-    contractId: CONTRACT,
-    methodName: "sheet_anchor",
-    args: { token_id: "social" },
-  });
-  assert.throws(() => anchorViewRequest({ contractId: "X", tokenId: "social" }), codeOf("bad_config"));
-  assert.throws(() => anchorViewRequest({ contractId: CONTRACT, tokenId: "S!" }), codeOf("bad_token"));
-});
-
 test("submitAnchor is a dry run by default and never sends", async () => {
   const prepared = prepareAnchor(base);
   const send = () => {
@@ -178,35 +166,16 @@ test("submitAnchor live refuses a mainnet prepared object", async () => {
   );
 });
 
-test("anchorConfigFromEnv", () => {
-  assert.deepEqual(anchorConfigFromEnv({}), { live: false, network: undefined, contractId: undefined });
-  assert.equal(anchorConfigFromEnv({ ANCHOR_LIVE: "1" }).live, true);
-  assert.equal(anchorConfigFromEnv({ ANCHOR_LIVE: " TRUE " }).live, true);
-  assert.equal(anchorConfigFromEnv({ ANCHOR_LIVE: "0" }).live, false);
-  assert.equal(anchorConfigFromEnv({ ANCHOR_LIVE: "false" }).live, false);
-  assert.equal(anchorConfigFromEnv({ ANCHOR_LIVE: "" }).live, false);
-  assert.throws(() => anchorConfigFromEnv({ ANCHOR_LIVE: "yes" }), (e) => e instanceof AnchorError && e.code === "bad_config");
-  const cfg = anchorConfigFromEnv({
-    NEAR_NETWORK: "testnet",
-    NEAR_NFT_CONTRACT_ID: CONTRACT,
-    NEAR_SECRET_KEY: "fake-not-a-real-credential",
-  });
-  assert.deepEqual(Object.keys(cfg).sort(), ["contractId", "live", "network"]);
-  assert.equal(cfg.network, "testnet");
-  assert.equal(cfg.contractId, CONTRACT);
-  assert.ok(!JSON.stringify(cfg).includes("fake-not-a-real-credential"));
-});
-
 // Token id rules must match the contract's validate_token_id
 // (contracts/personality-nft/src/lib.rs): 1-64 bytes of [a-z0-9_-].
-test("anchorViewRequest token id charset and length match the contract", () => {
+test("prepareAnchor token id charset and length match the contract", () => {
   const ok = ["a", "agent_0-z9", "a".repeat(64)];
   for (const tokenId of ok) {
-    assert.equal(anchorViewRequest({ contractId: CONTRACT, tokenId }).args.token_id, tokenId);
+    assert.equal(prepareAnchor({ ...base, tokenId }).args.token_id, tokenId);
   }
   const bad = ["", "a".repeat(65), "Aloof", "a.b", "a b", "café", "a/b"];
   for (const tokenId of bad) {
-    assert.throws(() => anchorViewRequest({ contractId: CONTRACT, tokenId }), (e) => e.code === "bad_token", JSON.stringify(tokenId));
+    assert.throws(() => prepareAnchor({ ...base, tokenId }), (e) => e.code === "bad_token", JSON.stringify(tokenId));
   }
 });
 

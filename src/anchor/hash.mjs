@@ -84,7 +84,7 @@ export function normalizeSheet(text) {
 
 /**
  * The one official sheet hash: sha256 (lowercase hex) of normalizeSheet(text).
- * The summarizer, the anchor module, the evidence file and verify all use it.
+ * The summarizer, the anchor module, the memory loop and the transfer check all call it.
  * @param {string} text
  * @returns {string}
  */

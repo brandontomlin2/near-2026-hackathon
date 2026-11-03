@@ -8,7 +8,6 @@
 import { SHEET_HASH_RE, hashSheet } from "./hash.mjs";
 
 export const ANCHOR_METHOD = "anchor_sheet";
-export const VIEW_METHOD = "sheet_anchor";
 // 1e22 yocto = 0.01 NEAR. A generous upper bound on the storage an anchor adds
 // (every anchor records its hash in a seen-hash set). The contract refunds the
 // unused part.
@@ -49,16 +48,6 @@ function checkToken(tokenId) {
   if (typeof tokenId !== "string" || tokenId.length === 0 || tokenId.length > 64 || !TOKEN_RE.test(tokenId)) {
     throw new AnchorError("tokenId must be 1-64 chars of [a-z0-9_-]", { code: "bad_token" });
   }
-}
-
-/**
- * Request shape for the sheet_anchor view, so a caller can fetch currentAnchor.
- * @param {{ contractId: string, tokenId: string }} params
- */
-export function anchorViewRequest({ contractId, tokenId } = {}) {
-  checkContract(contractId);
-  checkToken(tokenId);
-  return { contractId, methodName: VIEW_METHOD, args: { token_id: tokenId } };
 }
 
 /**
@@ -127,22 +116,6 @@ export function prepareAnchor({ contractId, tokenId, sheet, sheetHash, currentAn
     firstAnchor,
     signing: "required",
   });
-}
-
-/**
- * Read the anchor settings. Only three variables are read, by name.
- * @param {Record<string, string | undefined>} [env]
- * @returns {{ live: boolean, network: string | undefined, contractId: string | undefined }}
- */
-export function anchorConfigFromEnv(env = process.env) {
-  const raw = (env.ANCHOR_LIVE ?? "").trim().toLowerCase();
-  let live;
-  if (raw === "1" || raw === "true") live = true;
-  else if (raw === "" || raw === "0" || raw === "false") live = false;
-  else {
-    throw new AnchorError("ANCHOR_LIVE must be 1, true, 0 or false", { code: "bad_config" });
-  }
-  return { live, network: env.NEAR_NETWORK, contractId: env.NEAR_NFT_CONTRACT_ID };
 }
 
 /**

@@ -14,6 +14,7 @@
     "build:contract": "cd contracts/personality-nft && cargo near build non-reproducible-wasm",
     "infer": "node scripts/infer.mjs",
     "anchor": "node scripts/anchor.mjs",
+    "attest:check": "node scripts/attest-check.mjs",
     "verify": "bash scripts/verify.sh",
     "render": "node scripts/render-agents.mjs",
     "swarm": "node scripts/swarm.mjs",

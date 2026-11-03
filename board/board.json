@@ -197,5 +197,16 @@
     "notes": "src/viewer (run builder, HTML renderer, hash-chain check) + scripts/viewer.mjs; 15 tests; node --test all green\nViewer now renders canonical swarm output (events.json shape from src/swarm/runner.mjs); src/viewer/run.mjs, the second swarm implementation, is removed.\nOn main: src/viewer renders canonical swarm output (#15, #42); static site via npm run site (#53).",
     "updated_at": "2026-11-03T12:37:23.131Z",
     "updated_by": "claude"
+  },
+  {
+    "id": "wire-attest-check-npm-script-docs-say-fixture-not-live-tee",
+    "title": "wire attest:check npm script; docs say fixture, not live TEE",
+    "status": "done",
+    "owner": "claude",
+    "kind": "task",
+    "lane": "claude",
+    "notes": "attest:check added to package.json; script prints a fixture notice; docs/privacy.md and README say fixture, not live TEE; scripts/attest-check.test.mjs runs it offline",
+    "updated_at": "2026-11-03T16:44:08.652Z",
+    "updated_by": "claude"
   }
 ]
