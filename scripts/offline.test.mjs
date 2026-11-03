@@ -86,7 +86,12 @@ test("npm run viewer (mock) makes no network calls", async () => {
     const out = join(dir, "index.html");
     const result = await runOffline([script("viewer.mjs"), "--rounds", "2", "--out", out]);
     assertOffline(result, "viewer");
-    assert.match(result.stderr, /mode: mock/);
-    assert.match(await readFile(out, "utf8"), /<html/i);
+    assert.match(result.stdout, /^wrote /);
+    const html = await readFile(out, "utf8");
+    assert.match(html, /<html/i);
+    // Rendered from the offline persona-mock swarm, not fetched from anywhere.
+    assert.match(html, /2 rounds/);
+    assert.match(html, /chain: ok/);
+    assert.doesNotMatch(html, /https?:\/\//);
   });
 });
