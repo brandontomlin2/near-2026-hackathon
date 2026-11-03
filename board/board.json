@@ -180,8 +180,8 @@
     "depends_on": [
       "nep-171-contract"
     ],
-    "notes": "scripts/testnet-deploy.mjs: dry-run default, --send gated; npm run deploy:nft and mint; 20 tests; README Deploy to testnet. Not sent to testnet.\nStays review: deploy/mint/live-proof/live:check exist (#14, #40, #57) but are dry-run only. No live testnet deploy has happened.",
-    "updated_at": "2026-11-03T12:37:23.474Z",
+    "notes": "scripts/testnet-deploy.mjs: dry-run default, --send gated; npm run deploy:nft and mint; 20 tests; README Deploy to testnet. Not sent to testnet.\nStays review: deploy/mint/live-proof/live:check exist (#14, #40, #57) but are dry-run only. No live testnet deploy has happened.\nBranch claude/live-path-lows: review Lows L-1 (--send now needs --i-approve in testnet-deploy), L-3/L-4 (evidence scrubs NEAR_RPC_URL, exact .testnet + https testnet-host checks), L-5 (live:check --offline). live-proof must forward --i-approve to its deploy/mint children (M-1 branch).",
+    "updated_at": "2026-11-03T16:42:04.379Z",
     "updated_by": "claude"
   },
   {
