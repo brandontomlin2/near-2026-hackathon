@@ -8,6 +8,9 @@ import { createPersonaMockClient } from "./personas.mjs";
 
 /** @typedef {{ id: number, round: number, turn: number, agentId: string, kind: "post" | "reply", replyTo: number | null, text: string }} SwarmEvent */
 
+// Upper bound on --rounds for the CLIs and runSwarm; stops a typo from running for hours.
+export const MAX_ROUNDS = 1000;
+
 export const GENESIS_HASH = "0".repeat(64);
 
 /** Small seeded PRNG. Returns floats in [0, 1). */
@@ -126,7 +129,7 @@ export async function runSwarm({
       };
   }
   if (!Array.isArray(agents) || agents.length === 0) throw new RangeError("agents must be a non-empty array");
-  if (!Number.isInteger(rounds) || rounds < 1) throw new RangeError("rounds must be a positive integer");
+  if (!Number.isInteger(rounds) || rounds < 1 || rounds > MAX_ROUNDS) throw new RangeError(`rounds must be an integer from 1 to ${MAX_ROUNDS}`);
   if (!Number.isInteger(seed)) throw new RangeError("seed must be an integer");
   if (!Number.isInteger(lastK) || lastK < 1) throw new RangeError("lastK must be a positive integer");
 
