@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
-import { InferenceError, createInferenceClient } from "./client.mjs";
+import { DEFAULT_MAX_RESPONSE_BYTES, InferenceError, createInferenceClient } from "./client.mjs";
 import { runSwarm } from "../swarm/runner.mjs";
 import { AGENTS } from "../traits/agents.mjs";
 import { runMemoryLoop } from "../memory/loop.mjs";
@@ -150,6 +150,111 @@ test("connection cut mid-body is an error, not a hang or a fake reply", () =>
     setTimeout(() => res.destroy(), 10);
   }, async (s) => {
     await assert.rejects(clientFor(s, { maxRetries: 0, timeoutMs: 2000 }).chat(ask), (e) => e instanceof InferenceError);
+  }));
+
+/** A completion whose serialized body is exactly `bytes` long. */
+function completionOfSize(bytes) {
+  const frame = Buffer.byteLength(JSON.stringify(completion("")));
+  assert.ok(bytes > frame, `cannot build a ${bytes} byte completion`);
+  const body = completion("a".repeat(bytes - frame));
+  assert.equal(Buffer.byteLength(JSON.stringify(body)), bytes);
+  return body;
+}
+
+function assertNoKey(e) {
+  assert.ok(!e.message.includes(KEY), e.message);
+  assert.ok(!e.stack.includes(KEY));
+  assert.ok(!String(e.cause ?? "").includes(KEY));
+  assert.ok(!JSON.stringify(e.cause ?? null).includes(KEY));
+}
+
+test("response cap: a 1 MiB reply is well under the default cap and comes back whole", () =>
+  withStub((_r, res) => json(res, 200, completionOfSize(1024 * 1024)), async (s) => {
+    const reply = await clientFor(s, { maxRetries: 0 }).chat(ask);
+    assert.equal(Buffer.byteLength(reply.content), 1024 * 1024 - Buffer.byteLength(JSON.stringify(completion(""))));
+  }));
+
+test("response cap: a body exactly at the default cap passes", () =>
+  withStub((_r, res) => json(res, 200, completionOfSize(DEFAULT_MAX_RESPONSE_BYTES)), async (s) => {
+    assert.ok(DEFAULT_MAX_RESPONSE_BYTES >= 2 * 1024 * 1024, "cap is comfortably above any real chat completion");
+    const reply = await clientFor(s, { maxRetries: 0 }).chat(ask);
+    assert.ok(reply.content.length > 1024 * 1024);
+  }));
+
+test("response cap: one byte over the default cap fails with a clear error, no retry, no key", () =>
+  withStub((_r, res) => json(res, 200, completionOfSize(DEFAULT_MAX_RESPONSE_BYTES + 1)), async (s) => {
+    await assert.rejects(clientFor(s, { maxRetries: 2 }).chat(ask), (e) => {
+      assert.ok(e instanceof InferenceError);
+      assert.equal(e.code, "response_too_large");
+      assert.equal(e.retryable, false);
+      assert.match(e.message, new RegExp(`${DEFAULT_MAX_RESPONSE_BYTES}`));
+      assertNoKey(e);
+      return true;
+    });
+    assert.equal(s.seen.length, 1);
+  }));
+
+test("response cap: maxResponseBytes option is honoured on both sides of the line", async () => {
+  const cap = 4096;
+  await withStub((_r, res) => json(res, 200, completionOfSize(cap)), async (s) => {
+    const reply = await clientFor(s, { maxRetries: 0, maxResponseBytes: cap }).chat(ask);
+    assert.ok(reply.content.length > 3000);
+  });
+  await withStub((_r, res) => json(res, 200, completionOfSize(cap + 1)), async (s) => {
+    await assert.rejects(clientFor(s, { maxRetries: 0, maxResponseBytes: cap }).chat(ask), (e) => {
+      assert.equal(e.code, "response_too_large");
+      assert.match(e.message, /4096/);
+      assertNoKey(e);
+      return true;
+    });
+  });
+});
+
+test("response cap: an endless chunked body without content-length is aborted once past the cap", () =>
+  withStub((_r, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.write('{"choices":[{"message":{"content":"');
+    const chunk = "b".repeat(16 * 1024);
+    let closed = false;
+    res.on("close", () => { closed = true; });
+    const pump = () => {
+      if (closed || res.destroyed) return;
+      if (res.write(chunk)) setImmediate(pump); else res.once("drain", pump);
+    };
+    pump();
+  }, async (s) => {
+    await assert.rejects(clientFor(s, { maxRetries: 0, maxResponseBytes: 256 * 1024, timeoutMs: 5000 }).chat(ask), (e) => {
+      assert.equal(e.code, "response_too_large");
+      assert.equal(e.retryable, false);
+      assertNoKey(e);
+      return true;
+    });
+    assert.equal(s.seen.length, 1);
+  }));
+
+test("response cap: a content-length header over the cap is refused before the body is read", () =>
+  withStub((_r, res) => {
+    res.writeHead(200, { "content-type": "application/json", "content-length": String(DEFAULT_MAX_RESPONSE_BYTES + 1) });
+    res.write("{");
+  }, async (s) => {
+    await assert.rejects(clientFor(s, { maxRetries: 0, timeoutMs: 5000 }).chat(ask), (e) => {
+      assert.equal(e.code, "response_too_large");
+      assertNoKey(e);
+      return true;
+    });
+  }));
+
+test("response cap: an oversized non-2xx body still yields the status error without the key", () =>
+  withStub((_r, res) => {
+    res.writeHead(400, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: `bad request for Bearer ${KEY} ${"x".repeat(8192)}` }));
+  }, async (s) => {
+    await assert.rejects(clientFor(s, { maxRetries: 0, maxResponseBytes: 1024 }).chat(ask), (e) => {
+      assert.equal(e.status, 400);
+      assert.equal(e.code, "http_error");
+      assertNoKey(e);
+      return true;
+    });
   }));
 
 test("missing or empty choices: bad_response", async () => {

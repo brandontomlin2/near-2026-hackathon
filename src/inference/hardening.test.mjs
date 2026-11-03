@@ -58,8 +58,8 @@ test("non-2xx: a provider that echoes the key in its error body is redacted", as
 });
 
 test("non-2xx: error body that cannot be read still yields a status error", async () => {
-  const res = new Response("x", { status: 502 });
-  res.text = async () => { throw new Error("socket reset"); };
+  const broken = new ReadableStream({ pull() { throw new Error("socket reset"); } });
+  const res = new Response(broken, { status: 502 });
   const err = await caught(live(async () => res, { maxRetries: 0 }).chat(REQ));
   assert.equal(err.status, 502);
   assert.equal(err.code, "http_error");
@@ -100,8 +100,8 @@ test("a response missing usage/id/model falls back instead of returning NaN", as
 });
 
 test("timeout while reading the body is reported as a retryable timeout", async () => {
-  const res = new Response("x", { status: 200 });
-  res.json = async () => { throw new DOMException("timed out", "TimeoutError"); };
+  const stalled = new ReadableStream({ pull() { throw new DOMException("timed out", "TimeoutError"); } });
+  const res = new Response(stalled, { status: 200 });
   let calls = 0;
   const client = live(async () => { calls += 1; return calls === 1 ? res : ok("later"); }, { maxRetries: 1 });
   assert.equal((await client.chat(REQ)).content, "later");
@@ -141,8 +141,11 @@ test("maxRetries: 0 means one attempt; 408/429/5xx retry, other 4xx do not", asy
   assert.equal(calls, 1);
 });
 
-test("invalid retry/timeout options are rejected up front", () => {
-  for (const extra of [{ maxRetries: -1 }, { maxRetries: 1.5 }, { maxRetries: NaN }, { timeoutMs: 0 }, { timeoutMs: NaN }, { timeoutMs: -5 }]) {
+test("invalid retry/timeout/size options are rejected up front", () => {
+  for (const extra of [
+    { maxRetries: -1 }, { maxRetries: 1.5 }, { maxRetries: NaN }, { timeoutMs: 0 }, { timeoutMs: NaN }, { timeoutMs: -5 },
+    { maxResponseBytes: 0 }, { maxResponseBytes: -1 }, { maxResponseBytes: 1.5 }, { maxResponseBytes: NaN }, { maxResponseBytes: "4m" },
+  ]) {
     const err = (() => { try { live(async () => ok(), extra); } catch (e) { return e; } })();
     assert.ok(err instanceof InferenceError, JSON.stringify(extra));
     assert.equal(err.code, "bad_config");
