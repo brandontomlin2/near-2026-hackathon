@@ -269,7 +269,17 @@ test("board json stays sorted and list --json is stable", (t) => {
     assert.ok(statuses.includes(item.status), `${item.id} status ${item.status}`);
     assert.equal(item.kind, "task");
     assert.ok(["grok", "claude", "human", "any"].includes(item.lane), `${item.id} lane ${item.lane}`);
-    assert.deepEqual(Object.keys(item), ITEM_KEYS);
+    const keys = Object.keys(item);
+    if (Array.isArray(item.depends_on)) {
+      const withDeps = [...ITEM_KEYS];
+      withDeps.splice(ITEM_KEYS.indexOf("notes"), 0, "depends_on");
+      assert.deepEqual(keys, withDeps, `${item.id} keys`);
+      for (const dep of item.depends_on) {
+        assert.ok(seeded.some((other) => other.id === dep), `${item.id} depends on unknown ${dep}`);
+      }
+    } else {
+      assert.deepEqual(keys, ITEM_KEYS);
+    }
   }
 });
 
