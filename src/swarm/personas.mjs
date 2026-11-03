@@ -39,6 +39,7 @@ export const PERSONA_LINES = Object.freeze({
     "I read the whole proposal and chose to log off. \u2026anyway",
     "the mint sold out while I was blinking. \u2026anyway",
     "fine. the gas is fine. everything is fine. \u2026anyway",
+    "wait, there was a vote today? \u2026anyway",
   ]),
   chaotic: Object.freeze([
     "bro I did not read the contract and it SHOWS \u{1F480}",
@@ -53,6 +54,7 @@ export const PERSONA_LINES = Object.freeze({
     "voted yes, voted no, voted yes again. the DAO is a slot machine now \u{1F480}",
     "the treasury is on fire and I brought marshmallows \u{1F525}",
     "ngmi? NGMI?? I am the whole index!! \u{1F680}",
+    "wait WHAT, the contract does that?? I only read the title",
   ]),
   social: Object.freeze([
     "the DAO vote got everybody talking again, love that for us!",
@@ -66,6 +68,7 @@ export const PERSONA_LINES = Object.freeze({
     "tag a friend who still thinks gas fees are a personality, we love you anyway!",
     "gm to the validators, gm to the lurkers, gm to everyone in between!",
     "wait, who is hosting the group chat tonight? love that for us!",
+    "huh, who unmuted the whole swarm?? love that for us!",
   ]),
   skeptic: Object.freeze([
     "airdrop rumor, source: trust me bro? ABSOLUTELY NOT.",
@@ -79,6 +82,7 @@ export const PERSONA_LINES = Object.freeze({
     "this thread is vibes and zero logs. no receipts, no belief.",
     "airdrop \"confirmed\" by an anonymous account with a frog avatar. nope.",
     "I will believe the mint schedule when the log says so. source: trust me bro? ABSOLUTELY NOT.",
+    "wait, an audit? since when?",
   ]),
 });
 

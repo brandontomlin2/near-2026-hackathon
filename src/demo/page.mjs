@@ -6,6 +6,7 @@
 import { GENESIS_HASH as GENESIS } from "../swarm/runner.mjs";
 import { escapeHtml as esc } from "../viewer/render.mjs";
 import { moodForText } from "../art/moods.mjs";
+import { transferSection } from "./transfer-section.mjs";
 
 const CSS = `
 :root{color-scheme:light dark;--bg:#fafaf7;--fg:#1c1c1a;--mut:#5f5f58;--card:#fff;--line:#d9d9d0;--acc:#0a6b4f}
@@ -165,6 +166,7 @@ ${calls}</table>
 node -p 'require("./memory/aloof/sheet.json").sheetHash'</pre>
 <p>Both lines print the same hash, and it is Aloof's last <code>sheet_hash</code> in the table above.</p>
 
+${transferSection(manifest)}
 <h2>Files</h2>
 <ul>
 ${files}

@@ -22,7 +22,8 @@ with gitleaks when that binary is installed. Planned npm scripts are:
   mint         mint 4 tokens (mock unless --live)
   swarm        N rounds with MOCK_INFERENCE=1 (default N=5, or SWARM_ROUNDS)
   demo         the offline end-to-end demo with MOCK_INFERENCE=1 (out/index.html)
-  evidence     write out/evidence.json (mock placeholders; real hashes and RPC views with --live)
+  evidence     write out/evidence.json (mock memory loop: swarm, sheets, anchor_sheet
+               dry-runs, mock, not on-chain proof; real hashes and RPC views with --live)
   anchor       dry-run round-hash determinism check (always mock, never signs)
 
 The mock evidence stage passes only for placeholder entries marked mock.
@@ -287,6 +288,24 @@ if (!live) {
     console.error("mock evidence must be marked mock with MOCK- placeholder hashes");
     process.exit(1);
   }
+  const hex64 = /^[0-9a-f]{64}$/;
+  const ml = data.memory_loop;
+  const mlTokens = ml && Array.isArray(ml.tokens) ? ml.tokens : [];
+  const finalHash = ml && ml.swarm ? ml.swarm.final_round_hash : undefined;
+  const mlOk = ml && ml.mock === true && hex64.test(String(finalHash))
+    && mlTokens.length > 0
+    && new Set(mlTokens.map((t) => t && t.token_id)).size === mlTokens.length
+    && mlTokens.every((t) => {
+      const a = t && t.anchor;
+      return t && typeof t.token_id === "string" && t.sheet && hex64.test(String(t.sheet.sheet_hash))
+        && a && a.status === "dry-run" && a.mock === true && a.transaction_hash === null
+        && a.method === "anchor_sheet" && a.args && a.args.sheet_hash === t.sheet.sheet_hash
+        && a.args.token_id === t.token_id && a.linked_round_hash === finalHash;
+    });
+  if (!mlOk) {
+    console.error("mock evidence needs a memory_loop of anchor_sheet dry-runs linked to the final round hash");
+    process.exit(1);
+  }
   process.exit(0);
 }
 if (Object.prototype.hasOwnProperty.call(data, "network") && data.network !== "testnet") {
@@ -525,7 +544,12 @@ if [[ "$last_outcome" == "pass" ]]; then
     mkdir -p "${source_root}/out"
     cp "out/evidence.json" "${source_root}/out/evidence.json"
     echo "wrote ${source_root}/out/evidence.json"
-    record PASS "evidence" "wrote out/evidence.json"
+    if [[ "$LIVE" -eq 1 ]]; then
+      record PASS "evidence" "wrote out/evidence.json"
+    else
+      echo "evidence: mock, not on-chain proof"
+      record PASS "evidence" "wrote out/evidence.json (mock, not on-chain proof)"
+    fi
   else
     echo "FAIL: out/evidence.json missing tx hashes or RPC views"
     record FAIL "evidence" "out/evidence.json missing tx hashes or RPC views"

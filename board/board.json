@@ -150,8 +150,8 @@
     "depends_on": [
       "inference-client-mock-mode"
     ],
-    "notes": "src/viewer (run builder, HTML renderer, hash-chain check) + scripts/viewer.mjs; 15 tests; node --test all green",
-    "updated_at": "2026-11-03T02:35:48.917Z",
+    "notes": "src/viewer (run builder, HTML renderer, hash-chain check) + scripts/viewer.mjs; 15 tests; node --test all green\nViewer now renders canonical swarm output (events.json shape from src/swarm/runner.mjs); src/viewer/run.mjs, the second swarm implementation, is removed.",
+    "updated_at": "2026-11-03T05:06:48.741Z",
     "updated_by": "claude"
   }
 ]

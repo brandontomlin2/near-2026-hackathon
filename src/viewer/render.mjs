@@ -1,10 +1,13 @@
-// Render a swarm run to one self-contained HTML page.
+// Render a swarm result to one self-contained HTML page.
 //
-// The page has no scripts, no external assets and no network calls. Every
-// value from the run is escaped. renderViewer validates the run first and
-// throws rather than writing a partial page.
+// Input is the canonical swarm output (runSwarm result, as written to
+// out/events.json): { seed, rounds, events, roundHashes }. The page has no
+// scripts, no external assets and no network calls. Every value is escaped.
+// renderViewer validates the result first and throws rather than writing a
+// partial page.
 
-import { GENESIS_HASH, RUN_SCHEMA, roundHash } from "./run.mjs";
+import { GENESIS_HASH, hashRound, verifyRounds } from "../swarm/runner.mjs";
+import { AGENTS } from "../traits/agents.mjs";
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
@@ -20,57 +23,50 @@ export function escapeHtml(value) {
 }
 
 /**
- * Throws a TypeError naming the first problem. Returns the run when it passes.
- * @param {any} run
+ * Throws a TypeError naming the first problem. Returns the result when it passes.
+ * @param {any} result
+ * @param {readonly { id: string }[]} [agents]
  */
-export function validateRun(run) {
+export function validateResult(result, agents = AGENTS) {
   const fail = (msg) => {
-    throw new TypeError(`invalid run: ${msg}`);
+    throw new TypeError(`invalid swarm result: ${msg}`);
   };
-  if (!run || typeof run !== "object" || Array.isArray(run)) fail("must be an object");
-  if (run.schema !== RUN_SCHEMA) fail(`schema must be ${RUN_SCHEMA}`);
-  if (!Array.isArray(run.agents) || run.agents.length === 0) fail("agents must be a non-empty array");
+  if (!result || typeof result !== "object" || Array.isArray(result)) fail("must be an object");
+  if (!Array.isArray(agents) || agents.length === 0) fail("agents must be a non-empty array");
+  if (!Array.isArray(result.events)) fail("events must be an array");
+  if (!Array.isArray(result.roundHashes)) fail("roundHashes must be an array");
+  result.roundHashes.forEach((hash, i) => {
+    if (typeof hash !== "string" || !HEX64.test(hash)) fail(`round ${i + 1} hash must be 64 lowercase hex characters`);
+  });
 
-  const names = new Set();
-  const ids = new Set();
-  for (const agent of run.agents) {
-    if (!agent || typeof agent.id !== "string" || typeof agent.name !== "string" || typeof agent.role !== "string") {
-      fail("each agent needs string id, name and role");
+  const ids = new Set(agents.map((a) => a.id));
+  let lastRound = 1;
+  for (const e of result.events) {
+    if (!e || typeof e.text !== "string") fail("each event needs string text");
+    if (!Number.isInteger(e.round) || e.round < lastRound || e.round > result.roundHashes.length) {
+      fail(`event ${e.id} has round ${JSON.stringify(e.round)} out of order or without a round hash`);
     }
-    if (ids.has(agent.id) || names.has(agent.name)) fail(`duplicate agent ${agent.name}`);
-    ids.add(agent.id);
-    names.add(agent.name);
+    lastRound = e.round;
+    if (!ids.has(e.agentId)) fail(`event ${e.id} is from unknown agent ${JSON.stringify(e.agentId)}`);
   }
-
-  if (!Array.isArray(run.rounds)) fail("rounds must be an array");
-  for (const [i, round] of run.rounds.entries()) {
-    if (!round || round.round !== i + 1) fail(`round numbers must run 1..n in order (round ${i + 1})`);
-    if (typeof round.hash !== "string" || !HEX64.test(round.hash)) {
-      fail(`round ${round.round} hash must be 64 lowercase hex characters`);
-    }
-    if (!Array.isArray(round.posts)) fail(`round ${round.round} posts must be an array`);
-    for (const post of round.posts) {
-      if (!post || typeof post.text !== "string") fail(`round ${round.round} has a post without text`);
-      if (!names.has(post.author)) fail(`round ${round.round} post from unknown author ${JSON.stringify(post.author)}`);
-    }
-  }
-  return run;
+  return result;
 }
 
 /**
- * Recompute the hash chain. Reports the first round whose stored hash does not
- * match its posts. Assumes the run has passed validateRun.
- * @param {any} run
+ * Report the first round whose stored hash does not match its events.
+ * Assumes the result has passed validateResult.
+ * @param {{ events: any[], roundHashes: string[] }} result
  * @returns {{ ok: boolean, brokenRound: number | null }}
  */
-export function chainStatus(run) {
+export function chainStatus(result) {
+  if (verifyRounds(result)) return { ok: true, brokenRound: null };
   let prev = GENESIS_HASH;
-  for (const round of run.rounds) {
-    const expected = roundHash(prev, round.posts);
-    if (expected !== round.hash) return { ok: false, brokenRound: round.round };
-    prev = round.hash;
+  for (const [i, hash] of result.roundHashes.entries()) {
+    prev = hashRound(prev, result.events.filter((e) => e.round === i + 1));
+    if (prev !== hash) return { ok: false, brokenRound: i + 1 };
+    prev = hash;
   }
-  return { ok: true, brokenRound: null };
+  return { ok: false, brokenRound: null };
 }
 
 const STYLE = `
@@ -91,27 +87,33 @@ const STYLE = `
   .author { font-weight: 600; margin-right: 6px; }
 `;
 
-/** @param {any} run */
-export function renderViewer(run) {
-  validateRun(run);
-  const chain = chainStatus(run);
+/**
+ * @param {any} result canonical swarm output
+ * @param {readonly { id: string, name: string, personality: string, traits: object }[]} [agents]
+ */
+export function renderViewer(result, agents = AGENTS) {
+  validateResult(result, agents);
+  const chain = chainStatus(result);
   const chainLabel = chain.ok
     ? `<span class="chain-ok">chain: ok</span>`
-    : `<span class="chain-bad">chain: broken at round ${chain.brokenRound}</span>`;
-  const postCount = run.rounds.reduce((n, r) => n + r.posts.length, 0);
+    : `<span class="chain-bad">chain: broken${chain.brokenRound ? ` at round ${chain.brokenRound}` : ""}</span>`;
+  const nameOf = new Map(agents.map((a) => [a.id, a.name]));
+  const eventById = new Map(result.events.map((e) => [e.id, e]));
 
-  const agentRows = run.agents.map((agent) => {
+  const agentRows = agents.map((agent) => {
     const traits = agent.traits && typeof agent.traits === "object" ? agent.traits : {};
     const traitText = Object.entries(traits).map(([k, v]) => `${k}: ${v}`).join(", ");
-    return `<tr><td>${escapeHtml(agent.name)}</td><td>${escapeHtml(agent.role)}</td><td>${escapeHtml(traitText)}</td></tr>`;
+    return `<tr><td>${escapeHtml(agent.name)}</td><td>${escapeHtml(agent.personality ?? "")}</td><td>${escapeHtml(traitText)}</td></tr>`;
   }).join("\n      ");
 
-  const roundBlocks = run.rounds.map((round) => {
-    const posts = round.posts.map((post) => (
-      `<p class="post"><span class="author">${escapeHtml(post.author)}</span>${escapeHtml(post.text)}</p>`
-    )).join("\n      ");
+  const roundBlocks = result.roundHashes.map((hash, i) => {
+    const posts = result.events.filter((e) => e.round === i + 1).map((e) => {
+      const target = e.kind === "reply" ? eventById.get(e.replyTo) : undefined;
+      const replyTo = target ? ` <span class="meta">&rarr; ${escapeHtml(nameOf.get(target.agentId) ?? target.agentId)}</span>` : "";
+      return `<p class="post"><span class="author">${escapeHtml(nameOf.get(e.agentId))}</span>${replyTo} ${escapeHtml(e.text)}</p>`;
+    }).join("\n      ");
     return `<section class="round">
-      <div class="round-head"><span>Round ${round.round}</span><span class="hash">${escapeHtml(round.hash)}</span></div>
+      <div class="round-head"><span>Round ${i + 1}</span><span class="hash">${escapeHtml(hash)}</span></div>
       ${posts}
     </section>`;
   }).join("\n    ");
@@ -127,11 +129,11 @@ export function renderViewer(run) {
 <body>
   <main>
     <h1>Swarm run</h1>
-    <p class="meta">mode: ${escapeHtml(run.mode ?? "unknown")} · model: ${escapeHtml(run.model ?? "unknown")} · ${run.rounds.length} rounds · ${postCount} posts · ${chainLabel}</p>
+    <p class="meta">seed: ${escapeHtml(result.seed ?? "unknown")} · ${result.roundHashes.length} rounds · ${result.events.length} posts · ${chainLabel}</p>
 
     <h2>Agents</h2>
     <table>
-      <thead><tr><th>Name</th><th>Role</th><th>Traits</th></tr></thead>
+      <thead><tr><th>Name</th><th>Personality</th><th>Traits</th></tr></thead>
       <tbody>
       ${agentRows}
       </tbody>

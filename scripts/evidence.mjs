@@ -15,6 +15,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createMockClient } from "../src/inference/client.mjs";
+import { runMemoryLoop } from "../src/memory/loop.mjs";
+import { runSwarm } from "../src/swarm/runner.mjs";
 
 export const AGENTS = ["Aloof", "Chaotic", "Social", "Skeptic"];
 export const DEFAULT_RPC_URL = "https://rpc.testnet.near.org";
@@ -22,25 +25,79 @@ const BASE58_HASH = /^[1-9A-HJ-NP-Za-km-z]{32,64}$/;
 
 export class EvidenceError extends Error {}
 
+const MOCK_LABEL = "MOCK: dry-run only. Nothing signed, nothing sent, no chain queried. Not on-chain proof.";
+const MOCK_BANNER = [
+  "#".repeat(64),
+  "# MOCK EVIDENCE - NOT ON-CHAIN PROOF".padEnd(63) + "#",
+  "# dry-run only: nothing signed, nothing sent, no chain queried".padEnd(63) + "#",
+  "#".repeat(64),
+].join("\n");
+
+/** Same code path as `npm run swarm` (5 rounds, seed 1), mock client, dry-run anchors. */
+async function mockMemoryLoop(contract) {
+  const rounds = 5;
+  const seed = 1;
+  const swarm = await runSwarm({ rounds, seed });
+  const loop = await runMemoryLoop({ swarm, client: createMockClient(), contractId: contract });
+  return {
+    mock: true,
+    label: MOCK_LABEL,
+    flow: ["swarm", "summary sheet hash", "anchor_sheet dry-run per token", "final round hash"],
+    note: "The contract has no round-hash method; the final round hash is linked by recording it on each anchor dry-run.",
+    swarm: {
+      rounds,
+      seed,
+      events: swarm.events.length,
+      round_hashes: loop.roundHashes,
+      final_round_hash: loop.finalRoundHash,
+    },
+    tokens: loop.tokens.map((t) => ({
+      token_id: t.tokenId,
+      agent: t.name,
+      mock: true,
+      sheet: {
+        round: t.sheet.round,
+        sheet_hash: t.sheet.sheetHash,
+        words: t.sheet.sheet.split(/\s+/).filter(Boolean).length,
+        through_index: t.sheet.throughIndex,
+        mode: t.sheet.mode,
+      },
+      anchor: {
+        mock: true,
+        status: t.anchor.status,
+        method: t.anchor.methodName,
+        contract: t.anchor.contractId,
+        args: { ...t.anchor.args },
+        gas: t.anchor.gas,
+        deposit_yocto: t.anchor.depositYocto,
+        transaction_hash: t.anchor.transactionHash,
+        linked_round_hash: t.anchor.linkedRoundHash,
+      },
+    })),
+  };
+}
+
 /** Deterministic placeholder evidence. Nothing here came from a chain. */
-export function mockEvidence() {
+export async function mockEvidence() {
+  const contract = "mock-contract.testnet";
   return {
     mock: true,
     network: "mock",
     note: "Placeholder entries. No chain was queried and no transaction was sent.",
-    contract: "mock-contract.testnet",
+    contract,
+    memory_loop: await mockMemoryLoop(contract),
     transactions: ["deploy", "mint", "anchor_sheet"].map((label) => ({
       label,
       hash: `MOCK-${label}`,
       mock: true,
     })),
-    views: AGENTS.flatMap((agent, i) => [
+    views: AGENTS.flatMap((agent) => [
       { method: "nft_tokens", agent, mock: true, args: { from_index: "0", limit: 4 }, result: null },
       {
         method: "sheet_anchor",
         agent,
         mock: true,
-        args: { token_id: String(i + 1) },
+        args: { token_id: agent.toLowerCase() },
         result: null,
       },
     ]),
@@ -154,7 +211,8 @@ export async function main(env = process.env, { fetchImpl = globalThis.fetch, cw
   const network = env.EVIDENCE_NETWORK ?? "mock";
   let evidence;
   if (network === "mock") {
-    evidence = mockEvidence();
+    evidence = await mockEvidence();
+    console.log(MOCK_BANNER);
   } else if (network === "testnet") {
     evidence = await testnetEvidence({
       contract: env.NEAR_ACCOUNT_ID,
