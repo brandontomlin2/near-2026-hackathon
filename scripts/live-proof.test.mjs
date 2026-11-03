@@ -37,8 +37,52 @@ test("dry run lists deploy, 4 mints, anchor_sheet in order and spawns nothing", 
 test("dry run output is stable", async () => {
   const a = await go([]);
   const b = await go([]);
-  assert.equal(a.text.replaceAll(a.file, "F").replaceAll(b.file, "F"), b.text.replaceAll(b.file, "F"));
+  assert.equal(a.text, b.text);
   assert.equal(readFileSync(a.file, "utf8"), readFileSync(b.file, "utf8"));
+});
+
+test("dry run output is identical with TMPDIR inside the repo and TMPDIR next to it", async () => {
+  // Regression: with TMPDIR a sibling of the repo (TMPDIR=~/git/.tmpv.XXXX while the repo is
+  // ~/git/near-2026-hackathon) the "wrote ..." line printed a cwd-relative path such as
+  // ../.tmpv.XXXX/live-proof-XXXX/evidence.example.json, which changed on every run.
+  const { mkdirSync, rmSync } = await import("node:fs");
+  const { TRACKED_EXAMPLE } = await import("./live-proof.mjs");
+  const root = path.resolve(path.dirname(TRACKED_EXAMPLE), "..");
+  mkdirSync(path.join(root, "out"), { recursive: true });
+  const insideRepo = mkdtempSync(path.join(root, "out", "tmpdir-inside-"));
+  const nextToRepo = mkdtempSync(path.join(root, "..", ".tmpdir-next-to-repo-"));
+  const saved = process.env.TMPDIR;
+  const withTmpdir = async (dir) => {
+    process.env.TMPDIR = `${dir}/`; // trailing slash, as the failing environment had it
+    assert.equal(tmpdir(), dir, "os.tmpdir() follows TMPDIR");
+    return go([]);
+  };
+  try {
+    const inside = await withTmpdir(insideRepo);
+    const sibling = await withTmpdir(nextToRepo);
+    assert.equal(inside.code, 0);
+    assert.equal(sibling.code, 0);
+    assert.ok(inside.file.startsWith(insideRepo + path.sep) && sibling.file.startsWith(nextToRepo + path.sep), "each run wrote under its TMPDIR");
+    assert.equal(inside.text, sibling.text);
+    assert.ok(!inside.text.includes(".."), `relative hop leaked: ${inside.text.split("\n").at(-1)}`);
+    assert.ok(!inside.text.includes("tmpdir-"), `temp path leaked: ${inside.text.split("\n").at(-1)}`);
+    assert.match(inside.text, /^wrote example evidence \(example: true\) to the --out file$/m);
+    assert.equal(readFileSync(inside.file, "utf8"), readFileSync(sibling.file, "utf8"));
+  } finally {
+    if (saved === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = saved;
+    rmSync(insideRepo, { recursive: true, force: true });
+    rmSync(nextToRepo, { recursive: true, force: true });
+  }
+});
+
+test("default dry run names its destination relative to the repository root", async () => {
+  const { rmSync } = await import("node:fs");
+  const { DEFAULT_OUT } = await import("./live-proof.mjs");
+  const lines = [];
+  const code = await run([], {}, { out: (l) => lines.push(l), err: () => {}, exec: () => 0 });
+  assert.equal(code, 0);
+  assert.equal(lines.at(-1), "wrote example evidence (example: true) to out/live-proof/evidence.example.json");
+  rmSync(DEFAULT_OUT);
 });
 
 test("dry run writes example evidence marked example", async () => {

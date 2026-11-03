@@ -55,7 +55,11 @@ test("validateAccountId accepts testnet names and rejects malformed ones without
   for (const bad of ["", "A.testnet", "a", "-alice.testnet", "alice-.testnet", "a..b", "a".repeat(65), undefined]) {
     assert.throws(() => validateAccountId(bad, "NEAR_ACCOUNT_ID"), UsageError);
   }
-  const secretLike = "ed25519:5Kd3NBUAdUnhyzenEwVLy9pBKxSwXvE9FMPyR4UKZvpe6E3AgLr";
+  // Key-shaped on purpose (ed25519: prefix plus 44 base58 chars) so the validator's
+  // "value not shown" path is exercised with input that looks like a NEAR key. The
+  // body is "FAKE" repeated, so no secret scanner or reader can mistake it for a real key.
+  const secretLike = `ed25519:${"FAKE".repeat(11)}`;
+  assert.match(secretLike, /^ed25519:[1-9A-HJ-NP-Za-km-z]{44}$/, "fixture must keep the key shape");
   assert.throws(
     () => validateAccountId(secretLike, "NEAR_ACCOUNT_ID"),
     (err) => err instanceof UsageError && !err.message.includes(secretLike),
