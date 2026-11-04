@@ -148,6 +148,30 @@ test("verify.sh fallback works in a clone path with spaces", (t) => {
   assert.doesNotMatch(leaky.stdout, /ed25519:[1-9A-HJ-NP-Za-km-z]{20}/, "the key value must not be echoed");
 });
 
+test("a seed phrase followed by a trailing comment is still flagged", (t) => {
+  const dir = tempRepo(t, { ".env": `SEED_PHRASE="${words(12)}" # my wallet\n`, "b.yaml": `mnemonic: ${words(12)} # note\n` });
+  const r = scan(dir);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stdout, /^\.env:1: seed-phrase/m);
+  assert.match(r.stdout, /^b\.yaml:1: seed-phrase/m);
+});
+
+test("a key glued to an identifier with an underscore (near_ed25519:...) is still flagged", (t) => {
+  const r = scan(tempRepo(t, { "a.txt": `near_${fakeKey()}\n` }));
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+});
+
+test("an unreadable tracked file fails closed with a message that does not blame git ls-files", (t) => {
+  if (process.getuid?.() === 0) return t.skip("root can read everything");
+  const dir = tempRepo(t, { "a.txt": "x\n", "ok.txt": "y\n" });
+  fs.chmodSync(path.join(dir, "a.txt"), 0);
+  const r = scan(dir);
+  fs.chmodSync(path.join(dir, "a.txt"), 0o644); // so the temp dir cleanup can remove it
+  assert.equal(r.status, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /a\.txt/);
+  assert.doesNotMatch(r.stderr, /could not list/);
+});
+
 test("verify.sh with neither gitleaks nor node records a loud SKIP, never a PASS", (t) => {
   const r = runVerifyStage(t, tempRepo(t, { "a.txt": "ok\n" }), [git()]);
   assert.match(r.stdout, /^RECORD\tSKIP\tsecret scan\t/m, r.stdout + r.stderr);

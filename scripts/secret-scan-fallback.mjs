@@ -124,7 +124,7 @@ function main(argv) {
   try {
     result = scanRepo(root);
   } catch (err) {
-    console.error(`secret-scan-fallback: could not list git-tracked files in ${root}: ${err.message}`);
+    console.error(`secret-scan-fallback: could not scan git-tracked files in ${root}: ${err.message}`);
     return 2;
   }
   for (const f of result.findings) console.log(`${f.file}:${f.line}: ${f.rule} (value not shown)`);
