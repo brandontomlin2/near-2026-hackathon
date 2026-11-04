@@ -696,7 +696,7 @@ fn on_owner_withdraw_rejects_non_self() {
 fn on_recover_rejects_non_self() {
     let mut v = funded();
     at("owner.testnet", T0);
-    let _ = v.on_recover(wrap(), U128(1));
+    let _ = v.on_recover(1);
 }
 
 // ------------------------------------------------------- owner withdraw
@@ -971,11 +971,11 @@ fn recover_moves_stranded_then_credits_on_success() {
     let _ = v.recover_from_ref(rft(), U128(300));
     assert_eq!(stranded(&v, &rft()), 200);
     cb_ctx(PromiseResult::Successful(vec![]), T0);
-    let r = v.on_recover(rft(), U128(300));
+    let r = v.on_recover(1);
     assert!(matches!(r, PromiseOrValue::Promise(_)));
     assert_eq!(bal(&v, &rft()), 0, "not credited before reconciliation");
     cb_ctx(PromiseResult::Failed, T0);
-    v.on_recover_reconciled(rft(), U128(300), Ok(U128(0)));
+    v.on_recover_reconciled(1,Ok(U128(0)));
     assert_eq!(bal(&v, &rft()), 300);
 }
 
@@ -987,7 +987,7 @@ fn recover_failure_restores_stranded() {
     let _ = v.recover_from_ref(rft(), U128(500));
     assert_eq!(stranded(&v, &rft()), 0);
     cb_ctx(PromiseResult::Failed, T0);
-    let _ = v.on_recover(rft(), U128(500));
+    let _ = v.on_recover(1);
     assert_eq!(stranded(&v, &rft()), 500);
     assert_eq!(bal(&v, &rft()), 0);
 }
@@ -1549,7 +1549,7 @@ fn deposit_reconcile_rejects_non_self() {
 fn recover_reconcile_rejects_non_self() {
     let mut v = funded();
     at("owner.testnet", T0);
-    v.on_recover_reconciled(rft(), U128(1), Ok(U128(0)));
+    v.on_recover_reconciled(1, Ok(U128(0)));
 }
 
 fn recovering() -> YieldVault {
@@ -1558,7 +1558,7 @@ fn recovering() -> YieldVault {
     testing_env!(ctx1("owner.testnet").build());
     let _ = v.recover_from_ref(rft(), U128(300));
     cb_ctx(PromiseResult::Successful(vec![]), T0);
-    let r = v.on_recover(rft(), U128(300));
+    let r = v.on_recover(1);
     assert!(matches!(r, PromiseOrValue::Promise(_)));
     v
 }
@@ -1568,7 +1568,7 @@ fn recover_ok_but_ref_deposit_unchanged_is_restranded_not_credited() {
     let mut v = recovering();
     // 200 still stranded + 300 in flight = 500 baseline; Ref still shows 500.
     cb_ctx(ok_result(&U128(500)), T0);
-    assert_eq!(v.on_recover_reconciled(rft(), U128(300), Ok(U128(500))).0, 0);
+    assert_eq!(v.on_recover_reconciled(1,Ok(U128(500))).0, 0);
     assert_eq!(bal(&v, &rft()), 0);
     assert_eq!(stranded(&v, &rft()), 500);
 }
@@ -1577,7 +1577,7 @@ fn recover_ok_but_ref_deposit_unchanged_is_restranded_not_credited() {
 fn recover_ok_and_ref_deposit_dropped_is_credited() {
     let mut v = recovering();
     cb_ctx(ok_result(&U128(200)), T0);
-    assert_eq!(v.on_recover_reconciled(rft(), U128(300), Ok(U128(200))).0, 300);
+    assert_eq!(v.on_recover_reconciled(1,Ok(U128(200))).0, 300);
     assert_eq!(bal(&v, &rft()), 300);
     assert_eq!(stranded(&v, &rft()), 200);
     assert!(get_logs().join("\n").contains("\"event\":\"recovered\""));
@@ -1587,7 +1587,7 @@ fn recover_ok_and_ref_deposit_dropped_is_credited() {
 fn recover_ok_and_get_deposit_errors_is_restranded_unverified() {
     let mut v = recovering();
     cb_ctx(PromiseResult::Failed, T0);
-    assert_eq!(v.on_recover_reconciled(rft(), U128(300), Err(PromiseError::Failed)).0, 0);
+    assert_eq!(v.on_recover_reconciled(1,Err(PromiseError::Failed)).0, 0);
     assert_eq!(bal(&v, &rft()), 0);
     assert_eq!(stranded_view(&v, &rft()), 500);
     assert!(get_logs().join("\n").contains("withdraw_unverified"));
@@ -1642,4 +1642,107 @@ fn recover_from_ref_allowed_again_after_lock_released() {
     testing_env!(ctx1("owner.testnet").build());
     let _ = v.recover_from_ref(rft(), U128(10));
     assert_eq!(stranded(&v, &rft()), 490);
+}
+
+// ---- recovery lock: a pending recover_from_ref blocks swaps, config and other recoveries
+
+fn recovery_started() -> YieldVault {
+    let mut v = funded();
+    v.stranded.insert(rft(), 500);
+    testing_env!(ctx1("owner.testnet").build());
+    let _ = v.recover_from_ref(rft(), U128(300));
+    assert!(v.get_state().recovery_in_flight);
+    v
+}
+
+#[test]
+fn swap_refused_while_recovery_in_flight() {
+    let v = recovery_started();
+    let r = v.check_proposal(proposal(100), acct("runner.testnet"));
+    assert!(!r.ok && r.reason.starts_with("ERR_SWAP_IN_FLIGHT"), "{}", r.reason);
+}
+
+#[test]
+#[should_panic(expected = "ERR_SWAP_IN_FLIGHT")]
+fn execute_swap_panics_while_recovery_in_flight() {
+    let mut v = recovery_started();
+    run(&mut v, proposal(100));
+}
+
+#[test]
+fn recovery_lock_held_until_reconcile_reads_ref() {
+    // on_recover succeeded but the get_deposit reconcile has not run yet.
+    let v = recovering();
+    assert!(v.get_state().recovery_in_flight);
+    let r = v.check_proposal(proposal(100), acct("runner.testnet"));
+    assert!(!r.ok && r.reason.starts_with("ERR_SWAP_IN_FLIGHT"));
+}
+
+#[test]
+#[should_panic(expected = "ERR_SWAP_IN_FLIGHT")]
+fn second_recovery_refused_while_one_in_flight() {
+    let mut v = recovery_started();
+    testing_env!(ctx1("owner.testnet").build());
+    let _ = v.recover_from_ref(rft(), U128(100));
+}
+
+#[test]
+#[should_panic(expected = "ERR_SWAP_IN_FLIGHT")]
+fn update_config_refused_while_recovery_in_flight() {
+    let mut v = recovery_started();
+    testing_env!(ctx1("owner.testnet").build());
+    v.update_config(config());
+}
+
+#[test]
+fn recovery_lock_released_after_failed_withdraw() {
+    let mut v = recovery_started();
+    cb_ctx(PromiseResult::Failed, T0);
+    let _ = v.on_recover(1);
+    assert!(!v.get_state().recovery_in_flight);
+    assert_eq!(stranded(&v, &rft()), 500);
+    assert!(v.check_proposal(proposal(100), acct("runner.testnet")).ok);
+}
+
+#[test]
+fn recovery_lock_released_after_reconcile() {
+    let mut v = recovering();
+    cb_ctx(ok_result(&U128(200)), T0);
+    assert_eq!(v.on_recover_reconciled(1, Ok(U128(200))).0, 300);
+    assert!(!v.get_state().recovery_in_flight);
+    assert!(v.check_proposal(proposal(100), acct("runner.testnet")).ok);
+}
+
+#[test]
+#[should_panic(expected = "ERR_LOCK_NOT_STALE")]
+fn force_release_recovery_too_early_rejected() {
+    let mut v = recovery_started();
+    testing_env!(ctx1("owner.testnet").build());
+    v.force_release_lock();
+}
+
+#[test]
+fn force_release_stale_recovery_restores_stranded_and_late_callbacks_are_noops() {
+    let mut v = recovering();
+    let mut c = ctx("owner.testnet", T0 + STALE_LOCK_NS);
+    c.attached_deposit(NearToken::from_yoctonear(1));
+    testing_env!(c.build());
+    v.force_release_lock();
+    assert!(!v.get_state().recovery_in_flight);
+    assert_eq!(stranded(&v, &rft()), 500);
+    // The late reconcile of the released recovery must not credit or re-strand.
+    cb_ctx(ok_result(&U128(200)), T0 + STALE_LOCK_NS);
+    assert_eq!(v.on_recover_reconciled(1, Ok(U128(200))).0, 0);
+    let _ = v.on_recover(1);
+    assert_eq!(bal(&v, &rft()), 0);
+    assert_eq!(stranded(&v, &rft()), 500);
+}
+
+#[test]
+fn recovery_ids_share_the_swap_counter() {
+    let mut v = recovery_started();
+    cb_ctx(PromiseResult::Failed, T0);
+    let _ = v.on_recover(1);
+    run(&mut v, proposal(100));
+    assert_eq!(v.in_flight.as_ref().map(|f| f.id), Some(2));
 }

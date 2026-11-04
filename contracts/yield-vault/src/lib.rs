@@ -139,6 +139,7 @@ pub struct VaultState {
     pub ref_exchange_id: AccountId,
     pub paused: bool,
     pub swap_in_flight: bool,
+    pub recovery_in_flight: bool,
     pub day: u64,
     pub spent_today: Vec<(AccountId, U128)>,
     pub balances: Vec<(AccountId, U128)>,
@@ -165,6 +166,19 @@ pub struct InFlight {
     pub started_at: u64,
 }
 
+/// The single `recover_from_ref` that may be in flight. While it is, swaps,
+/// config updates and other recoveries are refused, so no reconcile reads a
+/// Ref balance another operation is still moving.
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Recovery {
+    /// Shares the swap id counter; callbacks of a force-released recovery are no-ops.
+    pub id: u64,
+    pub token_id: AccountId,
+    pub amount: u128,
+    pub started_at: u64,
+}
+
 /// Ref `swap` action.
 #[near(serializers = [json])]
 struct RefSwapAction {
@@ -185,6 +199,7 @@ pub struct YieldVault {
     config: VaultConfig,
     paused: bool,
     in_flight: Option<InFlight>,
+    recovery: Option<Recovery>,
     day: u64,
     spent_today: BTreeMap<AccountId, u128>,
     balances: BTreeMap<AccountId, u128>,
@@ -287,6 +302,7 @@ impl YieldVault {
             config,
             paused: false,
             in_flight: None,
+            recovery: None,
             day: day_of(env::block_timestamp()),
             spent_today: BTreeMap::new(),
             balances: BTreeMap::new(),
@@ -313,6 +329,7 @@ impl YieldVault {
             ref_exchange_id: self.ref_exchange_id.clone(),
             paused: self.paused,
             swap_in_flight: self.in_flight.is_some(),
+            recovery_in_flight: self.recovery.is_some(),
             day: self.day,
             spent_today: if now_day == self.day {
                 self.spent_today
@@ -728,8 +745,8 @@ impl YieldVault {
     pub fn update_config(&mut self, config: VaultConfig) {
         self.owner_one_yocto();
         require!(
-            self.in_flight.is_none(),
-            "ERR_SWAP_IN_FLIGHT: cannot update config during a swap"
+            self.in_flight.is_none() && self.recovery.is_none(),
+            "ERR_SWAP_IN_FLIGHT: cannot update config during a swap or recovery"
         );
         validate_config(&config);
         self.config = config;
@@ -740,9 +757,19 @@ impl YieldVault {
     /// out of gas). Only after `STALE_LOCK_NS`. The debited amount is recorded
     /// as stranded on Ref (it may be on Ref or still with the vault; the owner
     /// reconciles via `recover_from_ref`, which fails harmlessly if nothing is there).
+    /// A stuck recovery is released the same way: its amount goes back to stranded.
     #[payable]
     pub fn force_release_lock(&mut self) {
         self.owner_one_yocto();
+        if let Some(r) = self.recovery.clone() {
+            require!(
+                env::block_timestamp().saturating_sub(r.started_at) >= STALE_LOCK_NS,
+                "ERR_LOCK_NOT_STALE: wait 10 minutes after the recovery started"
+            );
+            self.recovery = None;
+            self.strand(&r.token_id, r.amount, "recovery_force_released");
+            return;
+        }
         let Some(fl) = self.in_flight.clone() else {
             env::panic_str("ERR_NO_SWAP_IN_FLIGHT: nothing to release");
         };
@@ -787,6 +814,10 @@ impl YieldVault {
             self.in_flight.is_none(),
             "ERR_SWAP_IN_FLIGHT: cannot recover during a swap"
         );
+        require!(
+            self.recovery.is_none(),
+            "ERR_SWAP_IN_FLIGHT: another recovery is in flight"
+        );
         require!(amount.0 > 0, "ERR_ZERO_AMOUNT: amount must be > 0");
         let have = self.stranded.get(&token_id).copied().unwrap_or(0);
         require!(
@@ -794,6 +825,14 @@ impl YieldVault {
             "ERR_INSUFFICIENT_STRANDED: not that much stranded on Ref"
         );
         self.unstrand(&token_id, amount.0);
+        self.next_swap_id += 1;
+        let recovery_id = self.next_swap_id;
+        self.recovery = Some(Recovery {
+            id: recovery_id,
+            token_id: token_id.clone(),
+            amount: amount.0,
+            started_at: env::block_timestamp(),
+        });
         Promise::new(self.ref_exchange_id.clone())
             .function_call(
                 "withdraw".to_string(),
@@ -809,52 +848,62 @@ impl YieldVault {
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(GAS_CB_WITHDRAW_DONE)
-                    .on_recover(token_id, amount),
+                    .on_recover(recovery_id),
             )
     }
 
     /// Hop after Ref `withdraw` in a recovery: restores the stranded record if
-    /// it failed, otherwise verifies against Ref's deposit.
+    /// it failed, otherwise verifies against Ref's deposit. The recovery lock
+    /// stays held until the reconcile has read the balance.
     #[private]
-    pub fn on_recover(&mut self, token_id: AccountId, amount: U128) -> PromiseOrValue<U128> {
+    pub fn on_recover(&mut self, recovery_id: u64) -> PromiseOrValue<U128> {
         Self::assert_self();
-        if env::promise_result_checked(0, 4096).is_err() {
-            *self.stranded.entry(token_id).or_insert(0) += amount.0;
+        let ok = env::promise_result_checked(0, 4096).is_ok();
+        let Some(r) = self.current_recovery(recovery_id) else {
+            return PromiseOrValue::Value(U128(0));
+        };
+        if !ok {
+            self.recovery = None;
+            *self.stranded.entry(r.token_id).or_insert(0) += r.amount;
             return PromiseOrValue::Value(U128(0));
         }
-        PromiseOrValue::Promise(self.ref_deposit_query(&token_id).then(
+        PromiseOrValue::Promise(self.ref_deposit_query(&r.token_id).then(
             Self::ext(env::current_account_id())
                 .with_static_gas(GAS_CB_RECONCILE)
-                .on_recover_reconciled(token_id, amount),
+                .on_recover_reconciled(recovery_id),
         ))
     }
 
-    /// Credits recovered funds only if Ref's deposit shows they left Ref.
-    /// `stranded` already excludes `amount` here.
+    /// Credits recovered funds only if Ref's deposit shows they left Ref, then
+    /// releases the recovery lock. `stranded` already excludes the amount here.
     #[private]
     pub fn on_recover_reconciled(
         &mut self,
-        token_id: AccountId,
-        amount: U128,
+        recovery_id: u64,
         #[callback_result] deposit: Result<U128, PromiseError>,
     ) -> U128 {
         Self::assert_self();
-        let baseline = self.stranded_of(&token_id).saturating_add(amount.0);
+        let Some(r) = self.current_recovery(recovery_id) else {
+            return U128(0);
+        };
+        self.recovery = None;
+        let (token_id, amount) = (r.token_id, r.amount);
+        let baseline = self.stranded_of(&token_id).saturating_add(amount);
         match deposit {
             Ok(d) if d.0 < baseline => {
-                self.credit(&token_id, amount.0);
+                self.credit(&token_id, amount);
                 emit(
                     "recovered",
-                    json!({ "token_id": token_id, "amount": amount.0.to_string() }),
+                    json!({ "token_id": token_id, "amount": amount.to_string() }),
                 );
-                amount
+                U128(amount)
             }
             Ok(_) => {
-                self.strand(&token_id, amount.0, "withdraw_not_reconciled");
+                self.strand(&token_id, amount, "withdraw_not_reconciled");
                 U128(0)
             }
             Err(_) => {
-                self.strand(&token_id, amount.0, "withdraw_unverified");
+                self.strand(&token_id, amount, "withdraw_unverified");
                 U128(0)
             }
         }
@@ -875,6 +924,11 @@ impl YieldVault {
     /// The in-flight swap, only if it is the one `swap_id` belongs to.
     fn current(&self, swap_id: u64) -> Option<InFlight> {
         self.in_flight.clone().filter(|f| f.id == swap_id)
+    }
+
+    /// The recovery in flight, if it is `recovery_id`.
+    fn current_recovery(&self, recovery_id: u64) -> Option<Recovery> {
+        self.recovery.clone().filter(|r| r.id == recovery_id)
     }
 
     fn assert_owner(&self) {
@@ -1001,6 +1055,9 @@ impl YieldVault {
         }
         if self.in_flight.is_some() {
             return Err("ERR_SWAP_IN_FLIGHT: another swap is in flight".to_string());
+        }
+        if self.recovery.is_some() {
+            return Err("ERR_SWAP_IN_FLIGHT: a Ref recovery is in flight".to_string());
         }
         let Some(pool) = self
             .config
