@@ -100,7 +100,7 @@ test("--send with --rounds > 1 is a usage error (2) and nothing is spawned", asy
     assert.equal(r.stdout, "");
   }
   // One round with --send, and many rounds as a dry run, stay allowed.
-  assert.equal((await run(["--send", "--i-approve", "--agent", "skeptic", "--rounds", "1"], TESTNET_ENV, { hasNear: () => true })).code, 0);
+  assert.equal((await run(["--send", "--i-approve", "--agent", "skeptic", "--rounds", "1", ...VS()], TESTNET_ENV, { hasNear: () => true })).code, 0);
   assert.equal((await run(["--rounds", "3"])).code, 0);
 });
 
