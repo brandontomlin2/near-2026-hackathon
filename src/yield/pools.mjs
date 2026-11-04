@@ -49,15 +49,16 @@ export function otherToken(pool, tokenIn) {
 }
 
 /**
- * min_amount_out for a quote with a slippage allowance in bps (rounded down).
+ * min_amount_out for a quote with a slippage allowance in bps. Rounded up, so the
+ * slippage it implies (rounded down, see slippageBps) never exceeds the allowance.
  * @returns {bigint}
  */
-export function minOutFor(pool, tokenIn, amountIn, slippageBps) {
-  return (quoteOut(pool, tokenIn, amountIn) * BigInt(10000 - slippageBps)) / 10000n;
+export function minOutFor(pool, tokenIn, amountIn, allowanceBps) {
+  return (quoteOut(pool, tokenIn, amountIn) * BigInt(10000 - allowanceBps) + 9999n) / 10000n;
 }
 
 /**
- * Slippage a proposal tolerates relative to the current quote, in whole bps (rounded up).
+ * Slippage a proposal tolerates relative to the current quote, in whole bps (rounded down).
  * 0 when min_out is at or above the quote; null when there is no quote.
  * @returns {number | null}
  */
@@ -67,5 +68,5 @@ export function slippageBps(pool, proposal) {
   const minOut = BigInt(proposal.min_amount_out);
   if (minOut >= quote) return 0;
   const diff = (quote - minOut) * 10000n;
-  return Number((diff + quote - 1n) / quote);
+  return Number(diff / quote);
 }

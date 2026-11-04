@@ -2,7 +2,7 @@
 // codes and same order, so a proposal that would revert on chain is never sent.
 // Strategy soft checks (agent policy, not enforced on chain) are reported separately.
 
-import { U128_MAX, minOutFor, otherToken, poolById, quoteOut, slippageBps, isStablePool } from "./pools.mjs";
+import { isStablePool, poolById, quoteOut, slippageBps } from "./pools.mjs";
 import { strategyFor } from "./strategies.mjs";
 
 /** Hard rule error codes in the order the vault checks them. */
@@ -68,7 +68,7 @@ export function checkProposal(proposal, config, state, runnerId, nowMs) {
  * respects the agent's own policy. Every violation is reported, in a fixed order.
  * @returns {{ ok: boolean, violations: { code: string, reason: string }[] }}
  */
-export function checkStrategy(proposal, agentId, config, fixture) {
+export function checkStrategy(proposal, agentId, config, fixture, { consensus = null } = {}) {
   const { params } = strategyFor(agentId);
   const violations = [];
   const add = (code, reason) => violations.push({ code, reason });
@@ -85,6 +85,11 @@ export function checkStrategy(proposal, agentId, config, fixture) {
   if (!params.follows_consensus && BigInt(proposal.amount_in) > cap) {
     add("SOFT_TOO_LARGE", `amount_in ${proposal.amount_in} is above ${agentId}'s size limit ${cap} (${params.size_bps} bps of max_trade)`);
   }
+  if (params.follows_consensus && consensus) {
+    const same = consensus.pool_id === proposal.pool_id && consensus.token_in === proposal.token_in && consensus.token_out === proposal.token_out;
+    if (!same) add("SOFT_OFF_CONSENSUS", `${agentId} follows the swarm; the consensus is pool ${consensus.pool_id} ${consensus.token_in} -> ${consensus.token_out}`);
+    else if (BigInt(proposal.amount_in) > BigInt(consensus.amount_in)) add("SOFT_TOO_LARGE", `amount_in ${proposal.amount_in} is above the consensus size ${consensus.amount_in}`);
+  }
   if (quoteOut(pool, proposal.token_in, proposal.amount_in) === 0n) {
     add("SOFT_NO_LIQUIDITY", "the pool snapshot gives no output for this input");
   } else {
@@ -95,11 +100,8 @@ export function checkStrategy(proposal, agentId, config, fixture) {
 }
 
 /** Both layers for one proposal. `sendable` needs the hard rules only. */
-export function evaluateProposal(proposal, agentId, config, state, runnerId, nowMs, fixture) {
+export function evaluateProposal(proposal, agentId, config, state, runnerId, nowMs, fixture, ctx = {}) {
   const hard = checkProposal(proposal, config, state, runnerId, nowMs);
-  const soft = checkStrategy(proposal, agentId, config, fixture);
+  const soft = checkStrategy(proposal, agentId, config, fixture, ctx);
   return { hard, soft, sendable: hard.ok && soft.ok };
 }
-
-export { minOutFor, otherToken };
-export { U128_MAX };
