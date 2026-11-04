@@ -139,6 +139,7 @@ describe("buildPlan holds", () => {
         onlyPool17(r);
         r.vault.state.spent_today = [[WNEAR, (5n * E26).toString()]]; // == daily_cap
         r.vault.state.balances[0][1] = E26.toString(); // wanted 0.5e26 < max_trade, so the cap is the binding rule
+        r.vault.state.balances = [r.vault.state.balances[0]]; // only wNEAR, so the other direction is empty and refused too
       }),
     );
     const c = plan.json.candidates[0];
@@ -167,6 +168,7 @@ describe("buildPlan holds", () => {
       snap((r) => {
         onlyPool17(r);
         r.vault.state.spent_today = [[WNEAR, (5n * E26).toString()]];
+        r.vault.state.balances = [r.vault.state.balances[0]]; // only wNEAR
       }),
     );
     const c = plan.json.candidates[0];
@@ -175,6 +177,28 @@ describe("buildPlan holds", () => {
     assert.equal(c.blocked_by, "daily_cap");
     assert.equal(c.proposal.amount_in, (2n * E26).toString());
     assert.match(c.check.reason, /^ERR_DAILY_CAP/);
+  });
+
+  it("a direction the vault refuses does not hide the other: better-spot wNEAR -> USDC is refused, USDC -> wNEAR is ok", () => {
+    const s = snap((r) => {
+      onlyPool17(r);
+      r.vault.state.spent_today = [[WNEAR, (5n * E26).toString()]]; // wNEAR daily_cap fully spent
+    });
+    const pool = s.pools[0];
+    const refused = buildPlan(s).json.candidates[0];
+    // Default min edge: the wNEAR side is refused and USDC -> wNEAR is allowed but too thin.
+    assert.equal(refused.status, "below_min_edge");
+    assert.equal(refused.proposal.token_in, USDC);
+    // Looser min edge: the allowed direction wins even though wNEAR -> USDC has the better spot edge.
+    const plan = buildPlan(s, { min_edge_bps: -500 });
+    const c = plan.json.candidates[0];
+    assert.equal(pool.token_account_ids[0], WNEAR);
+    assert.equal(c.status, "ok");
+    assert.equal(c.proposal.token_in, USDC);
+    assert.equal(c.proposal.token_out, WNEAR);
+    assert.equal(plan.json.decision, "swap");
+    assert.deepEqual(plan.json.check, { ok: true, reason: "" });
+    assert.deepEqual(checkRules(s.vault, plan.chosen.proposal, s.runner_id, s.now_ns), { ok: true, reason: "" });
   });
 
   it("an empty-balance vault holds", () => {

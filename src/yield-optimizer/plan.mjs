@@ -113,9 +113,21 @@ function proposalJson(p) {
   };
 }
 
-/** One candidate per market pool: the direction with the better spot edge, sized, clipped and checked. */
+const STATUS_RANK = { ok: 2, below_min_edge: 1, refused: 0 };
+
+/**
+ * One candidate per market pool. Both directions are sized, clipped and checked
+ * against the vault rules; the best one that passes wins (so a direction the
+ * vault refuses never hides the other). Ties on status go to the better spot edge.
+ */
 function evaluatePool(snap, pool, opts) {
-  const i = spotEdgeBps(snap, pool, 0) >= spotEdgeBps(snap, pool, 1) ? 0 : 1;
+  const cands = [0, 1].map((i) => ({ c: evaluateDirection(snap, pool, opts, i), spot: spotEdgeBps(snap, pool, i) }));
+  cands.sort((a, b) => STATUS_RANK[b.c.status] - STATUS_RANK[a.c.status] || b.spot - a.spot);
+  return cands[0].c;
+}
+
+/** One pool sold into in direction `i` (0 = first token in), sized, clipped and checked. */
+function evaluateDirection(snap, pool, opts, i) {
   const token_in = pool.token_account_ids[i];
   const token_out = pool.token_account_ids[1 - i];
   const balance = snap.vault.state.balances.get(token_in) ?? 0n;
