@@ -135,11 +135,16 @@ export async function checkTestnet({ contract, token, sheetHash, rpcUrl = DEFAUL
   let rpc;
   try {
     account = assertTestnetAccountId(contract, "--contract");
-    rpc = assertTestnetRpcUrl(rpcUrl);
   } catch (err) {
     throw new UsageError(err.message);
   }
-  const timedFetch = (url, init) => fetchImpl(url, { ...init, signal: AbortSignal.timeout(RPC_TIMEOUT_MS) });
+  try {
+    rpc = assertTestnetRpcUrl(rpcUrl);
+  } catch {
+    throw new UsageError("--rpc must be an https URL whose host names testnet (value not shown); mainnet or unlabelled endpoints are refused");
+  }
+  // redirect: "error" so a testnet-named host cannot bounce the call to another host.
+  const timedFetch = (url, init) => fetchImpl(url, { ...init, redirect: "error", signal: AbortSignal.timeout(RPC_TIMEOUT_MS) });
   const call = (method) => viewCall({ fetchImpl: timedFetch, rpcUrl, contract: account, method, args: { token_id: token } });
   const anchorView = await call("sheet_anchor");
   const flightView = await call("nft_in_flight");

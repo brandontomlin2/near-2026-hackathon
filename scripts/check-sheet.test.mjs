@@ -175,12 +175,27 @@ test("--rpc: http and mainnet refused, testnet accepted", async () => {
     const s = stub({ anchor: good });
     const r = await cli(args("--rpc", rpc), { fetchImpl: s.fetchImpl });
     assert.equal(r.code, 2, rpc);
+    assert.match(r.err, /--rpc must be an https URL/);
+    assert.ok(!r.err.includes("NEAR_RPC_URL"));
     assert.equal(s.requests.length, 0);
   }
   const s = stub({ anchor: good });
   const r = await cli(args("--rpc", "https://rpc.testnet.near.org"), { fetchImpl: s.fetchImpl });
   assert.equal(r.code, 0);
   assert.equal(s.requests[0].url, "https://rpc.testnet.near.org");
+});
+
+test("requests use redirect: error so a host cannot redirect elsewhere", async () => {
+  const inits = [];
+  const s = stub({ anchor: { sheet_hash: HASH, memory_depth: 1, updated_at: "1" } });
+  const fetchImpl = async (url, init) => {
+    inits.push(init);
+    return s.fetchImpl(url, init);
+  };
+  const r = await cli(args(), { fetchImpl });
+  assert.equal(r.code, 0);
+  assert.equal(inits.length, 2);
+  for (const init of inits) assert.equal(init.redirect, "error");
 });
 
 test("mainnet contract and bad tokens refused before any request", async () => {

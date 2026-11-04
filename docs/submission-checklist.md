@@ -24,7 +24,7 @@ Status key: **done** (evidence given), **missing** (agent-doable work not finish
 | Requirement | Status | Evidence / next step |
 | --- | --- | --- |
 | What the product is, the problem, how NEAR fits; no marketing | done | README "What this is", "How NEAR fits". |
-| Numbered "do X, see Y" steps from a fresh clone | done | README "Try it (judge path)" steps 1-10. Re-check each command exists in `package.json` before submit. |
+| Numbered "do X, see Y" steps from a fresh clone | done | README "Try it (judge path)" steps 1-11. Re-check each command exists in `package.json` before submit. |
 | Works with no keys (`MOCK_INFERENCE=1`); live env vars documented | done | README "Inference" section. |
 | Track ids named in README | done | README top: `nfts`, `swarms`, `agents` (fixed 2026-11-03; it said only `nfts` and `agents`). `docs/HACKATHON.md` lists all 13 valid ids. |
 | Libraries, templates, AI-generated code listed (Q-005) | done | `docs/DISCLOSURE.md`, linked from README "Disclosure". |

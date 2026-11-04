@@ -54,22 +54,22 @@ test("README quotes Chaotic's real ride-or-die sheet text", async () => {
   });
 });
 
-test("README Try-it steps are numbered 1 to 10 and the npm run ask step is step 3, right after the page", async () => {
+test("README Try-it steps are numbered 1 to 11 and the npm run ask step is step 3, right after the page", async () => {
   const section = readme.split("## Try it (judge path)\n")[1].split(/\n## /)[0];
   const numbers = [...section.matchAll(/^(\d+)\. /gm)].map((m) => Number(m[1]));
-  assert.deepEqual(numbers, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.deepEqual(numbers, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
   assert.match(section, /^2\. Open `out\/index\.html`\./m, "step 2 is the page step");
   assert.match(section, /^5\. Open `out\/memory\/chaotic\/sheet\.json`\./m, "step 5 is the sheet.json step");
   assert.match(section, /^6\. Open `out\/anchors\.json`\./m, "step 6 is the anchors step");
-  assert.match(section, /^10\. Run `bash scripts\/verify\.sh`/m, "step 10 is verify.sh");
+  assert.match(section, /^11\. Run `bash scripts\/verify\.sh`/m, "step 11 is verify.sh");
   assert.match(section, ASK_STEP, "step 3 is the ask step and says it changes out/memory");
   const step3 = section.match(ASK_STEP)[0];
   assert.ok(step3.includes("Do that now: run `npm run demo` again"), "the ask step resets the memory before the sheet and anchor steps read it");
-  assert.match(section, /\n10\. [^\n]*\n\nEverything below this section is reference for the pieces the demo ran\.\n/, "verify.sh is the last step, one blank line before the closing sentence, and no blank line inside the list");
+  assert.match(section, /\n11\. [^\n]*\n\nEverything below this section is reference for the pieces the demo ran\.\n/, "verify.sh is the last step, one blank line before the closing sentence, and no blank line inside the list");
   const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
   assert.equal(pkg.scripts.ask, "node scripts/ask.mjs");
   const checklist = await readFile(join(root, "docs/submission-checklist.md"), "utf8");
-  assert.ok(checklist.includes('README "Try it (judge path)" steps 1-10.'), "the submission checklist counts the Try-it steps");
+  assert.ok(checklist.includes('README "Try it (judge path)" steps 1-11.'), "the submission checklist counts the Try-it steps");
   const script = await readFile(join(root, "docs/demo-script.md"), "utf8");
   assert.ok(script.includes("`npm run ask -- <agentId> \"<question>\"` exists (README step 3, the shot 3 command)"), "demo-script.md Command status names npm run ask");
 });

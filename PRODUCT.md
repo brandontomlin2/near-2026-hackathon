@@ -35,6 +35,10 @@ Which demo commands exist today is tracked in `docs/demo-script.md`
 `scripts/board.mjs`. The judge screen is `bash scripts/verify.sh`; it marks
 stages that are not built yet as SKIP.
 
+Before buying a token, `npm run check-sheet` hashes the sheet you were
+handed and compares it with the anchored hash, read-only
+(`docs/check-sheet.md`; costs in `docs/costs.md`).
+
 ## Demo flow
 
 Five steps a judge can follow. Do X, see Y. Mock mode stays on unless a
