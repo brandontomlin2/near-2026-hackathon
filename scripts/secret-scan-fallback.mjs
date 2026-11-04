@@ -27,6 +27,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const B58 = "[1-9A-HJ-NP-Za-km-z]";
 const WORD = "[a-z]{3,8}";
@@ -36,14 +37,15 @@ export const ALLOWLIST = [
 ];
 
 export const RULES = [
-  { name: "near-ed25519-private-key", re: new RegExp(`\\bed25519:${B58}{86,88}(?!${B58})`, "g") },
-  { name: "near-secp256k1-private-key", re: new RegExp(`\\bsecp256k1:${B58}{43,44}(?!${B58})`, "g") },
+  // (?<![A-Za-z0-9]) rather than \b: \b does not fire after "_" (a word character).
+  { name: "near-ed25519-private-key", re: new RegExp(`(?<![A-Za-z0-9])ed25519:${B58}{86,88}(?!${B58})`, "g") },
+  { name: "near-secp256k1-private-key", re: new RegExp(`(?<![A-Za-z0-9])secp256k1:${B58}{43,44}(?!${B58})`, "g") },
   { name: "pem-private-key", re: /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----/g },
   {
     name: "seed-phrase",
     configOnly: true,
     re: new RegExp(
-      `(?:seed|mnemonic|passphrase|recovery|secret)[\\w.-]*["']?\\s*[:=]\\s*["']?(?:${WORD}\\s+){11}${WORD}(?:(?:\\s+${WORD}){12})?(?![\\w ])`,
+      `(?:seed|mnemonic|passphrase|recovery|secret)[\\w.-]*["']?\\s*[:=]\\s*["']?(?:${WORD}\\s+){11}${WORD}(?:(?:\\s+${WORD}){12})?(?!\\s*\\w)`,
       "gi",
     ),
   },
@@ -122,7 +124,7 @@ function main(argv) {
   try {
     result = scanRepo(root);
   } catch (err) {
-    console.error(`secret-scan-fallback: could not list git-tracked files in ${root}: ${err.message}`);
+    console.error(`secret-scan-fallback: could not scan git-tracked files in ${root}: ${err.message}`);
     return 2;
   }
   for (const f of result.findings) console.log(`${f.file}:${f.line}: ${f.rule} (value not shown)`);
@@ -134,6 +136,8 @@ function main(argv) {
   return 0;
 }
 
-if (import.meta.url === `file://${process.argv[1]}` || process.argv[1] === new URL(import.meta.url).pathname) {
+// Compare real file paths, not URL strings: a path with a space or '#' is percent-encoded
+// in import.meta.url, and a mismatch here would make the scan a silent no-op that exits 0.
+if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))) {
   process.exitCode = main(process.argv.slice(2));
 }
