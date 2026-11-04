@@ -1,5 +1,10 @@
 // Off-chain mirror of the yield-vault contract's swap rules.
 //
+// NOTE: this duplicates src/yield/rules.mjs on the vault branch. It mirrors
+// check_rules in contracts/yield-vault (PR #159, unmerged). Parity is checked
+// by hand and by rules.test.mjs, not against Rust test vectors. Once #159
+// merges, unify this with src/yield/rules.mjs.
+//
 // Source of truth: contracts/yield-vault/src/lib.rs on the unmerged branch
 // claude/yield-vault (read with `git show claude/yield-vault:contracts/yield-vault/src/lib.rs`).
 // This file copies no Rust; it re-implements the same checks, in the same
