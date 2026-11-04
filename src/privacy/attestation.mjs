@@ -37,7 +37,7 @@ export const NOT_VERIFIED = Object.freeze([
 // are "bound" in the report data, not how. We look for the raw nonce and the
 // raw 20-byte address.
 //
-// Outcomes, never weaker than origin/main:
+// Outcomes:
 //  - not hex                      -> FAIL (as on main; never "unverifiable")
 //  - hex, >= 632 bytes            -> header must say version 4 and TDX tee_type
 //                                    0x81, else FAIL before report data is read.
