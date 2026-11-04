@@ -117,6 +117,10 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     const shown = /[^\w./@:+-]/.test(page) ? JSON.stringify(page) : page;
     log(`Open the page: open ${shown}  (${pathToFileURL(resolve(page)).href})`);
   } catch (error) {
+    if (error.code === "ENOTDIR" || error.code === "EEXIST") {
+      console.error(`${name}: cannot write to ${JSON.stringify(opts.out)}: it, or a parent, is a file, not a directory. Pass a directory path that is free or does not exist yet (see --help)`);
+      return 1;
+    }
     console.error(`${name}: ${error.message}`);
     return 1;
   }

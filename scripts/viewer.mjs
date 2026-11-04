@@ -20,6 +20,7 @@ import { dirname, resolve } from "node:path";
 
 import { MAX_ROUNDS, runSwarm } from "../src/swarm/runner.mjs";
 import { PAGE_TITLE, renderViewer } from "../src/viewer/render.mjs";
+import { pathProblem } from "../src/util/path-problem.mjs";
 
 const DEFAULT_OUT = "out/viewer/index.html";
 const DEFAULT_ROUNDS = 5;
@@ -156,7 +157,7 @@ async function main() {
     await mkdir(dirname(out), { recursive: true });
     await writeFile(out, html, "utf8");
   } catch (err) {
-    return report(new Error(`cannot write ${options.out}: ${err.message}`));
+    return report(new Error(`cannot write ${options.out}: ${pathProblem(err, "--out") ?? err.message}`));
   }
   process.stdout.write(`wrote ${out}\n`);
   return 0;

@@ -36,7 +36,7 @@ test("npm run swarm with an --out that sits under a regular file exits 1 with on
   const lines = r.stderr.trimEnd().split("\n");
   assert.equal(lines.length, 1, r.stderr);
   assert.ok(lines[0].startsWith(`swarm: cannot write to ${JSON.stringify(out)}: `), lines[0]);
-  assert.match(lines[0], /ENOTDIR|EEXIST/);
+  assert.match(lines[0], /a file is in the way/);
   assert.doesNotMatch(r.stderr, /\n\s+at /);
 });
 

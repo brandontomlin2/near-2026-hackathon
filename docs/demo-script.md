@@ -14,7 +14,7 @@ Run everything in mock mode (`MOCK_INFERENCE=1`, the default). No keys on screen
 | --- | --- | --- | --- |
 | 1 | 0:00 to 0:12 | Title card with the problem: "Buying an AI character? Check its memory is the one the seller anchored." Then terminal. | none |
 | 2 | 0:12 to 0:25 | Fresh clone, install, one command. The five `[n/5]` lines and "Nothing was signed or sent". | `git clone <REPO_URL> && cd <repo> && npm install && npm run demo` |
-| 3 | 0:25 to 0:45 | You are the owner. Ask Chaotic about Skeptic. Pause on the answer, `Chaotic (mock): Skeptic?? 5 fights and counting, bro I did not read the contract and it SHOWS 💀`, then on the sheet diff, where `Owner: 0 fights, 0 hugs, 1 shrug` joins the scorecard, and the last line, `anchor_sheet dry-run (not sent)`. | `npm run ask -- chaotic "what do you think of Skeptic?"` |
+| 3 | 0:25 to 0:45 | You are the owner. Ask Chaotic about Skeptic. Pause on the answer, `Chaotic (mock): Skeptic?? 5 fights and counting, bro I did not read the contract and it SHOWS 💀`, then on the sheet diff, where `Owner: 0 fights, 0 hugs, 1 shrug` joins the scorecard, and the line `sheet chaotic round 7 <64-hex sheet hash> (+4 -4) -> anchor_sheet dry-run (not sent)`. The very last line is `Nothing was signed or sent; inference was mocked: the answer and the sheet come from deterministic stand-ins, not a model.` | `npm run ask -- chaotic "what do you think of Skeptic?"` |
 | 4 | 0:45 to 1:00 | Browser on `out/index.html`, the "Meme pack" section: three meme cards. Open the Chaotic caption card full size: "SKEPTIC SAW MY POST AND CHOSE TO SPEAK", "SHOW THE HASH?? I DO NOT EVEN KNOW WHERE THE HASH LIVES 🚀". | `open out/index.html`, `open out/share/meme-caption-chaotic.svg` |
 | 5 | 1:00 to 1:15 | Scroll up to Agents. Sticker art at mint next to art now (it gains one star along the edge per sheet written: 1 at mint, 3 now); point at each agent's strip of four reaction faces. | page, Agents section |
 | 6 | 1:15 to 1:35 | Memory section. Chaotic's round 3 sheet, then round 6: its fights with Skeptic went from 3 to 5, Social became its ride-or-die (1 to 3 warm moments), and its "Who I am" line escalated from chaos goblin to villain arc. | page, Memory section |
@@ -22,13 +22,15 @@ Run everything in mock mode (`MOCK_INFERENCE=1`, the default). No keys on screen
 | 8 | 1:50 to 2:15 | Transfer: four `match` rows. Then the Anchor (dry run) table and the Round hash chain ending in `verify: ok`. Back in the terminal, run `npm run demo` again: same final hash. | page, then `npm run demo` |
 | 9 | 2:15 to 2:25 | Close: repo URL, one question. | none |
 
+Page order, top to bottom: Agents, Memory, Meme pack, Transfer, Channel, Anchor (dry run), Round hash chain, Files. The shot order above scrolls up twice (shot 5 back to Agents, shot 8 back to Transfer, which sits above Channel); the browser's find box (Cmd-F) gets you there without hunting.
+
 The windows add up to 2 minutes 25. Trim the pauses in shots 5 to 7 if you need it shorter. Never cut shot 3 or shot 4.
 
 Fallbacks if the browser is awkward on camera: `cat out/transcript.txt` for shot 7, `cat out/memory/chaotic/sheet.json` for shot 6, `cat out/anchors.json` for shot 8. `bash scripts/verify.sh` ends with `result: PASS` and runs the demo in a fresh clone.
 
 ## Narration
 
-Plain words. Read at a normal pace; about 375 words in total.
+Plain words. Read at a normal pace; about 380 words in total.
 
 **Scene 1 (0:00 to 0:12)**
 "Someone is selling you an AI character. How do you know the memory you are buying is the one they anchored? We built an NFT that carries its character with it, and lets you check."
@@ -63,5 +65,5 @@ Plain words. Read at a normal pace; about 375 words in total.
 - Trim waiting time. Do not speed up output so much that it can't be read.
 - The demo never signs. If the video also shows a live testnet run, show transaction hashes only. Never show a key, a seed phrase or `.env`.
 - Say "mock mode" out loud once. Do not imply a live NEAR AI call or on-chain write unless that run was really live.
-- Do not claim the `privacy` track or any TEE attestation. `PRODUCT.md` says to leave it off until a check ships.
+- Do not claim the `privacy` track or any TEE attestation. `npm run attest:check` exists, but it only checks a hand-made fixture offline and ends `CONSISTENT, NOT VERIFIED`; `PRODUCT.md` says to leave `privacy` off until a real check ships. Keep it off screen.
 - Export a 60 to 90 second cut for the X post: `docs/demo-video.md` is that cut (it keeps the `npm run ask` and meme card scenes).
