@@ -139,6 +139,9 @@ fn bal(v: &YieldVault, t: &AccountId) -> u128 {
 fn stranded(v: &YieldVault, t: &AccountId) -> u128 {
     v.stranded.get(t).copied().unwrap_or(0)
 }
+fn unverified(v: &YieldVault, t: &AccountId) -> u128 {
+    v.unverified.get(t).copied().unwrap_or(0)
+}
 
 // ---------------------------------------------------------------- init
 
@@ -1148,7 +1151,8 @@ fn recover_refused_when_ref_holds_less_than_amount() {
     let r = v.on_recover_pre(1, Ok(U128(200)));
     assert!(matches!(r, PromiseOrValue::Value(U128(0))), "no withdraw");
     assert!(!v.get_state().recovery_in_flight);
-    assert_eq!(stranded(&v, &rft()), 500);
+    assert_eq!(stranded(&v, &rft()), 200);
+    assert_eq!(unverified(&v, &rft()), 300);
     assert_eq!(bal(&v, &rft()), 0);
     assert!(get_logs().join("\n").contains("recover_refused"));
 }
@@ -1162,7 +1166,8 @@ fn recover_refused_when_pre_read_fails() {
     cb_ctx(PromiseResult::Failed, T0);
     let _ = v.on_recover_pre(1, Err(PromiseError::Failed));
     assert!(!v.get_state().recovery_in_flight);
-    assert_eq!(stranded(&v, &rft()), 500);
+    assert_eq!(stranded(&v, &rft()), 200);
+    assert_eq!(unverified(&v, &rft()), 300);
 }
 
 #[test]
@@ -1347,7 +1352,8 @@ fn force_release_with_failed_reads_strands_unverified() {
     );
     assert!(!v.get_state().swap_in_flight);
     assert_eq!(bal(&v, &wrap()), 9_900);
-    assert_eq!(stranded(&v, &wrap()), 100);
+    assert_eq!(unverified(&v, &wrap()), 100);
+    assert_eq!(stranded(&v, &wrap()), 0);
     assert!(get_logs().join("\n").contains("lock_force_released_unverified"));
 }
 
@@ -1359,7 +1365,8 @@ fn force_release_vault_read_ok_but_ref_read_failed_does_not_roll_back() {
     release_cb();
     v.resolve_release_swap(id, Ok(U128(10_000)), Err(PromiseError::Failed), Ok(U128(0)));
     assert_eq!(bal(&v, &wrap()), 9_900, "no rollback on a partial picture");
-    assert_eq!(stranded(&v, &wrap()), 100);
+    assert_eq!(unverified(&v, &wrap()), 100);
+    assert_eq!(stranded(&v, &wrap()), 0);
     assert!(get_logs().join("\n").contains("lock_force_released_unverified"));
 }
 
@@ -1371,7 +1378,8 @@ fn force_release_token_out_read_failed_does_not_roll_back() {
     release_cb();
     v.resolve_release_swap(id, Ok(U128(10_000)), Ok(U128(0)), Err(PromiseError::Failed));
     assert_eq!(bal(&v, &wrap()), 9_900);
-    assert_eq!(stranded(&v, &wrap()), 100);
+    assert_eq!(unverified(&v, &wrap()), 100);
+    assert_eq!(stranded(&v, &wrap()), 0);
 }
 
 #[test]
@@ -1381,7 +1389,8 @@ fn force_release_recovery_ref_read_failed_does_not_credit() {
     release_cb();
     v.resolve_release_recovery(rid, Ok(U128(300)), Err(PromiseError::Failed));
     assert_eq!(bal(&v, &rft()), 0);
-    assert_eq!(stranded(&v, &rft()), 500);
+    assert_eq!(stranded(&v, &rft()), 200);
+    assert_eq!(unverified(&v, &rft()), 300);
 }
 
 #[test]
@@ -1913,7 +1922,8 @@ fn deposit_failed_and_get_deposit_errors_is_stranded_unverified() {
     cb_ctx(PromiseResult::Failed, T0);
     v.on_deposit_reconciled(1, Err(PromiseError::Failed));
     assert!(!v.get_state().swap_in_flight);
-    assert_eq!(stranded(&v, &wrap()), 400);
+    assert_eq!(unverified(&v, &wrap()), 400);
+    assert_eq!(stranded(&v, &wrap()), 0);
     assert_eq!(bal(&v, &wrap()), 9_600);
     assert!(get_logs().join("\n").contains("deposit_unverified"));
 }
@@ -1958,7 +1968,8 @@ fn withdraw_ok_and_get_deposit_errors_is_stranded_unverified() {
     assert_eq!(v.on_withdraw_reconciled(1, Err(PromiseError::Failed)).0, 0);
     assert!(!v.get_state().swap_in_flight);
     assert_eq!(bal(&v, &rft()), 0);
-    assert_eq!(stranded_view(&v, &rft()), 390);
+    assert_eq!(unverified(&v, &rft()), 390);
+    assert_eq!(stranded_view(&v, &rft()), 0);
     assert!(get_logs().join("\n").contains("withdraw_unverified"));
 }
 
@@ -2037,7 +2048,8 @@ fn recover_ok_and_get_deposit_errors_is_restranded_unverified() {
     cb_ctx(PromiseResult::Failed, T0);
     assert_eq!(v.on_recover_reconciled(1,Err(PromiseError::Failed)).0, 0);
     assert_eq!(bal(&v, &rft()), 0);
-    assert_eq!(stranded_view(&v, &rft()), 500);
+    assert_eq!(stranded_view(&v, &rft()), 200);
+    assert_eq!(unverified(&v, &rft()), 300);
     assert!(get_logs().join("\n").contains("withdraw_unverified"));
 }
 
@@ -2189,7 +2201,8 @@ fn force_release_recovery_with_failed_reads_restores_stranded() {
     release_cb();
     v.resolve_release_recovery(rid, Err(PromiseError::Failed), Err(PromiseError::Failed));
     assert_eq!(bal(&v, &rft()), 0);
-    assert_eq!(stranded(&v, &rft()), 500);
+    assert_eq!(stranded(&v, &rft()), 200);
+    assert_eq!(unverified(&v, &rft()), 300);
     assert!(get_logs().join("\n").contains("recovery_force_released_unverified"));
 }
 
@@ -2247,7 +2260,8 @@ fn malformed_read_payloads_do_not_panic_and_strand_unverified() {
     );
     v.on_force_release_swap(id);
     assert!(!v.get_state().release_in_flight && !v.get_state().swap_in_flight);
-    assert_eq!(stranded(&v, &wrap()), 100);
+    assert_eq!(unverified(&v, &wrap()), 100);
+    assert_eq!(stranded(&v, &wrap()), 0);
     assert!(get_logs().join("\n").contains("lock_force_released_unverified"));
 }
 
@@ -2264,7 +2278,8 @@ fn malformed_read_payloads_do_not_panic_for_recovery() {
     );
     v.on_force_release_recovery(id);
     assert!(!v.get_state().release_in_flight && !v.get_state().recovery_in_flight);
-    assert_eq!(stranded(&v, &rft()), 500);
+    assert_eq!(stranded(&v, &rft()), 200);
+    assert_eq!(unverified(&v, &rft()), 300);
 }
 
 #[test]
@@ -2323,7 +2338,8 @@ fn abort_release_unfreezes_vault_and_owner_can_withdraw() {
     v.abort_release();
     let s = v.get_state();
     assert!(!s.release_in_flight && !s.swap_in_flight);
-    assert_eq!(stranded(&v, &wrap()), 100, "held amount stranded as unverified");
+    assert_eq!(unverified(&v, &wrap()), 100, "held amount recorded as unverified");
+    assert_eq!(stranded(&v, &wrap()), 0);
     assert_eq!(bal(&v, &wrap()), 9_900);
     let logs = get_logs().join("\n");
     assert!(logs.contains("force_release_aborted") && logs.contains("lock_force_released_unverified"));
@@ -2334,7 +2350,7 @@ fn abort_release_unfreezes_vault_and_owner_can_withdraw() {
     );
     v.on_force_release_swap(id);
     assert_eq!(bal(&v, &wrap()), 9_900);
-    assert_eq!(stranded(&v, &wrap()), 100);
+    assert_eq!(unverified(&v, &wrap()), 100);
     // Owner can withdraw again.
     let mut c = ctx1("owner.testnet");
     c.block_timestamp(T0 + STALE_LOCK_NS + RELEASE_ABORT_NS);
@@ -2351,5 +2367,344 @@ fn abort_release_on_recovery_strands_restores_and_unlocks() {
     abort_ctx("owner.testnet", T0 + STALE_LOCK_NS + RELEASE_ABORT_NS);
     v.abort_release();
     assert!(!v.get_state().release_in_flight && !v.get_state().recovery_in_flight);
-    assert_eq!(stranded(&v, &rft()), 500);
+    assert_eq!(stranded(&v, &rft()), 200);
+    assert_eq!(unverified(&v, &rft()), 300);
+}
+
+// ------------------------------------------------- sync_balance (M1)
+
+fn sync_ctx(pred: &str) {
+    let mut c = ctx1(pred);
+    c.prepaid_gas(MIN_SYNC_GAS);
+    testing_env!(c.build());
+}
+/// Owner starts `sync_balance(token)`; returns the sync id.
+fn start_sync(v: &mut YieldVault, token: AccountId) -> u64 {
+    sync_ctx("owner.testnet");
+    let _ = v.sync_balance(token);
+    assert_ne!(v.sync_id, 0);
+    v.sync_id
+}
+fn sync_cb(v: &mut YieldVault, id: u64, token: AccountId, ft: Result<U128, PromiseError>) {
+    match &ft {
+        Ok(b) => cb_ctx(ok_result(b), T0),
+        Err(_) => cb_ctx(PromiseResult::Failed, T0),
+    }
+    v.on_sync_balance(id, token, ft);
+}
+/// `run(proposal(100))`, force release, then abort: 100 wrap is recorded as unverified.
+fn aborted_release() -> YieldVault {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    force_release(&mut v);
+    abort_ctx("owner.testnet", T0 + STALE_LOCK_NS + RELEASE_ABORT_NS);
+    v.abort_release();
+    v
+}
+
+#[test]
+fn sync_balance_recovers_funds_stranded_by_abort_release() {
+    // The vault really holds all 10_000 wrap; abort_release could not tell.
+    let mut v = aborted_release();
+    assert_eq!((bal(&v, &wrap()), unverified(&v, &wrap())), (9_900, 100));
+    let id = start_sync(&mut v, wrap());
+    let calls = created_calls();
+    assert_eq!(calls[0].1, "ft_balance_of");
+    assert_eq!(calls[0].0, "wrap.testnet");
+    assert_eq!(calls[1].1, "on_sync_balance");
+    sync_cb(&mut v, id, wrap(), Ok(U128(10_000)));
+    assert_eq!(bal(&v, &wrap()), 10_000, "vault copy is credited");
+    assert_eq!(v.sync_id, 0);
+    let logs = get_logs().join("\n");
+    assert!(logs.contains("balance_synced") && logs.contains("\"credited\":\"100\""), "{logs}");
+}
+
+#[test]
+fn sync_balance_credits_ft_transfer_donation() {
+    let mut v = funded();
+    let id = start_sync(&mut v, wrap());
+    sync_cb(&mut v, id, wrap(), Ok(U128(10_250)));
+    assert_eq!(bal(&v, &wrap()), 10_250);
+    // Owner can now withdraw the donation.
+    let mut c = ctx1("owner.testnet");
+    c.prepaid_gas(MIN_WITHDRAW_GAS);
+    testing_env!(c.build());
+    let _ = v.withdraw(wrap(), U128(10_250));
+    assert_eq!(bal(&v, &wrap()), 0);
+}
+
+#[test]
+fn sync_balance_never_debits_when_ft_balance_is_lower() {
+    let mut v = funded();
+    let id = start_sync(&mut v, wrap());
+    sync_cb(&mut v, id, wrap(), Ok(U128(3_000)));
+    assert_eq!(bal(&v, &wrap()), 10_000);
+    let id = start_sync(&mut v, wrap());
+    sync_cb(&mut v, id, wrap(), Err(PromiseError::Failed));
+    assert_eq!(bal(&v, &wrap()), 10_000);
+    assert!(get_logs().join("\n").contains("sync_failed"));
+}
+
+#[test]
+fn stale_sync_callback_after_a_swap_started_is_a_noop() {
+    let mut v = funded();
+    let id = start_sync(&mut v, wrap());
+    run(&mut v, proposal(100)); // debits 100 and clears the pending sync
+    sync_cb(&mut v, id, wrap(), Ok(U128(10_000)));
+    assert_eq!(bal(&v, &wrap()), 9_900, "stale read must not re-credit the in-flight 100");
+    assert!(v.get_state().swap_in_flight);
+}
+
+#[test]
+fn stale_sync_callback_after_a_withdraw_started_is_a_noop() {
+    let mut v = funded();
+    let id = start_sync(&mut v, wrap());
+    let mut c = ctx1("owner.testnet");
+    c.prepaid_gas(MIN_WITHDRAW_GAS);
+    testing_env!(c.build());
+    let _ = v.withdraw(wrap(), U128(500));
+    sync_cb(&mut v, id, wrap(), Ok(U128(10_000)));
+    assert_eq!(bal(&v, &wrap()), 9_500, "the 500 leaving must not be credited back");
+}
+
+#[test]
+fn superseded_sync_callback_is_a_noop() {
+    let mut v = funded();
+    let old = start_sync(&mut v, wrap());
+    let new = start_sync(&mut v, wrap());
+    assert_ne!(old, new);
+    sync_cb(&mut v, old, wrap(), Ok(U128(12_000)));
+    assert_eq!(bal(&v, &wrap()), 10_000);
+    sync_cb(&mut v, new, wrap(), Ok(U128(12_000)));
+    assert_eq!(bal(&v, &wrap()), 12_000);
+}
+
+#[test]
+fn sync_callback_is_a_noop_while_a_lock_is_held() {
+    let mut v = funded();
+    let id = start_sync(&mut v, wrap());
+    v.recovery = Some(Recovery { id: 99, token_id: rft(), amount: 1, started_at: T0, pre: 0, unv: 0 });
+    v.sync_id = id; // as if nothing had cleared it
+    sync_cb(&mut v, id, wrap(), Ok(U128(12_000)));
+    assert_eq!(bal(&v, &wrap()), 10_000);
+}
+
+#[test]
+#[should_panic(expected = "ERR_SYNC_BUSY")]
+fn sync_refused_while_swap_in_flight() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    sync_ctx("owner.testnet");
+    let _ = v.sync_balance(wrap());
+}
+
+#[test]
+#[should_panic(expected = "ERR_SYNC_BUSY")]
+fn sync_refused_while_recovery_in_flight() {
+    let mut v = recovery_started();
+    sync_ctx("owner.testnet");
+    let _ = v.sync_balance(wrap());
+}
+
+#[test]
+#[should_panic(expected = "ERR_SYNC_BUSY")]
+fn sync_refused_while_release_pending() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    force_release(&mut v);
+    sync_ctx("owner.testnet");
+    let _ = v.sync_balance(wrap());
+}
+
+#[test]
+#[should_panic(expected = "ERR_SYNC_BUSY")]
+fn sync_refused_while_owner_withdraw_pending() {
+    let mut v = funded();
+    let mut c = ctx1("owner.testnet");
+    c.prepaid_gas(MIN_WITHDRAW_GAS);
+    testing_env!(c.build());
+    let _ = v.withdraw(wrap(), U128(10));
+    sync_ctx("owner.testnet");
+    let _ = v.sync_balance(wrap());
+}
+
+#[test]
+fn sync_allowed_again_after_owner_withdraw_callback() {
+    let mut v = funded();
+    let mut c = ctx1("owner.testnet");
+    c.prepaid_gas(MIN_WITHDRAW_GAS);
+    testing_env!(c.build());
+    let _ = v.withdraw(wrap(), U128(10));
+    cb_ctx(PromiseResult::Successful(vec![]), T0);
+    v.on_owner_withdraw(wrap(), U128(10));
+    start_sync(&mut v, wrap());
+}
+
+#[test]
+#[should_panic(expected = "ERR_NOT_OWNER")]
+fn sync_refused_for_non_owner() {
+    let mut v = funded();
+    sync_ctx("mallory.testnet");
+    let _ = v.sync_balance(wrap());
+}
+
+#[test]
+#[should_panic(expected = "Requires attached deposit of exactly 1 yoctoNEAR")]
+fn sync_requires_one_yocto() {
+    let mut v = funded();
+    let mut c = ctx("owner.testnet", T0);
+    c.prepaid_gas(MIN_SYNC_GAS);
+    testing_env!(c.build());
+    let _ = v.sync_balance(wrap());
+}
+
+#[test]
+#[should_panic(expected = "ERR_INSUFFICIENT_GAS")]
+fn sync_requires_min_gas() {
+    let mut v = funded();
+    let mut c = ctx1("owner.testnet");
+    c.prepaid_gas(Gas::from_tgas(20));
+    testing_env!(c.build());
+    let _ = v.sync_balance(wrap());
+}
+
+#[test]
+#[should_panic(expected = "Method is private")]
+fn sync_callback_rejects_non_self() {
+    let mut v = funded();
+    at("mallory.testnet", T0);
+    v.on_sync_balance(1, wrap(), Ok(U128(5)));
+}
+
+#[test]
+fn sync_balance_fits_in_exactly_min_gas_in_unit_vm() {
+    let mut v = funded();
+    start_sync(&mut v, wrap());
+}
+
+// ------------------------------------- unverified strands (M2)
+
+#[test]
+fn phantom_unverified_record_does_not_cause_a_false_credit() {
+    // 1. A swap's reconcile read fails: 390 rft is recorded as unverified. Say
+    //    it never existed on Ref (phantom).
+    let mut v = swap_at_withdraw_cb();
+    cb_ctx(PromiseResult::Failed, T0);
+    v.on_withdraw_reconciled(1, Err(PromiseError::Failed));
+    assert_eq!((unverified(&v, &rft()), stranded(&v, &rft())), (390, 0));
+    // 2. A second swap yields 390 rft, but Ref's withdraw was silently
+    //    re-credited, so Ref's deposit is still 390 (no phantom on top).
+    run(&mut v, proposal(400));
+    cb_ctx(ok_result(&U128(400)), T0);
+    let _ = v.on_deposit(2, Ok(U128(400)));
+    cb_ctx(ok_result(&U128(390)), T0);
+    let _ = v.on_swap(2, Ok(U128(390)));
+    cb_ctx(PromiseResult::Successful(vec![]), T0);
+    let _ = v.on_withdraw_done(2);
+    // Old baseline (stranded 390 + 390 = 780) made deposit 390 look like a success.
+    assert_eq!(v.on_withdraw_reconciled(2, Ok(U128(390))).0, 0);
+    assert_eq!(bal(&v, &rft()), 0, "no false credit");
+    assert_eq!(stranded(&v, &rft()), 390, "the real 390 is stranded, recoverable");
+    assert_eq!(unverified(&v, &rft()), 390);
+    assert_eq!(v.get_state().swaps_executed, 0);
+}
+
+#[test]
+fn unverified_record_does_not_raise_the_deposit_reconcile_baseline() {
+    // Unverified wrap must not raise the baseline of a later deposit reconcile.
+    let mut v = funded();
+    v.unverified.insert(wrap(), 1_000);
+    run(&mut v, proposal(400));
+    cb_ctx(PromiseResult::Failed, T0);
+    let _ = v.on_deposit(1, Err(PromiseError::Failed));
+    cb_ctx(ok_result(&U128(1_000)), T0);
+    v.on_deposit_reconciled(1, Ok(U128(1_000)));
+    // Ref's 1_000 is the unverified record, not this deposit: baseline is 400,
+    // 1_000 >= 400 reads as landed, so it is stranded (fail-safe), not rolled back.
+    assert_eq!(bal(&v, &wrap()), 9_600);
+    assert_eq!(stranded(&v, &wrap()), 400);
+}
+
+#[test]
+fn recover_from_ref_takes_verified_strand_first_then_unverified() {
+    let mut v = funded();
+    v.stranded.insert(rft(), 100);
+    v.unverified.insert(rft(), 300);
+    testing_env!(ctx1("owner.testnet").build());
+    let _ = v.recover_from_ref(rft(), U128(250));
+    assert_eq!((stranded(&v, &rft()), unverified(&v, &rft())), (0, 150));
+    assert_eq!(v.recovery.as_ref().unwrap().unv, 150);
+    pre_read(&mut v, 250);
+    cb_ctx(PromiseResult::Successful(vec![]), T0);
+    let _ = v.on_recover(1);
+    cb_ctx(ok_result(&U128(0)), T0);
+    assert_eq!(v.on_recover_reconciled(1, Ok(U128(0))).0, 250);
+    assert_eq!(bal(&v, &rft()), 250);
+    assert_eq!((stranded(&v, &rft()), unverified(&v, &rft())), (0, 150));
+}
+
+#[test]
+fn failed_recovery_returns_each_part_to_its_own_map() {
+    let mut v = funded();
+    v.stranded.insert(rft(), 100);
+    v.unverified.insert(rft(), 300);
+    testing_env!(ctx1("owner.testnet").build());
+    let _ = v.recover_from_ref(rft(), U128(250));
+    pre_read(&mut v, 250);
+    cb_ctx(PromiseResult::Failed, T0);
+    let _ = v.on_recover(1);
+    assert_eq!((stranded(&v, &rft()), unverified(&v, &rft())), (100, 300));
+}
+
+#[test]
+#[should_panic(expected = "ERR_INSUFFICIENT_STRANDED")]
+fn recover_from_ref_cannot_exceed_stranded_plus_unverified() {
+    let mut v = funded();
+    v.stranded.insert(rft(), 100);
+    v.unverified.insert(rft(), 300);
+    testing_env!(ctx1("owner.testnet").build());
+    let _ = v.recover_from_ref(rft(), U128(401));
+}
+
+#[test]
+fn state_view_lists_unverified_separately() {
+    let v = aborted_release();
+    let s = v.get_state();
+    assert_eq!(s.unverified_on_ref, vec![(wrap(), U128(100))]);
+    assert!(s.stranded_on_ref.is_empty());
+}
+
+// ------------------------------- abort_release then a new swap (P3)
+
+#[test]
+fn abort_release_then_new_swap_then_late_old_callbacks_are_noops() {
+    let mut v = funded();
+    run(&mut v, proposal(100)); // swap id 1
+    let release_id = force_release(&mut v); // id 2
+    abort_ctx("owner.testnet", T0 + STALE_LOCK_NS + RELEASE_ABORT_NS);
+    v.abort_release();
+    let t = T0 + STALE_LOCK_NS + RELEASE_ABORT_NS;
+    run_at(&mut v, proposal(50), t); // new swap, id 3
+    assert_eq!(v.in_flight.as_ref().unwrap().id, 3);
+    let snapshot = (v.balances.clone(), v.stranded.clone(), v.unverified.clone());
+    // Late callbacks of the old release and the old swap.
+    cb_ctx_many(
+        vec![ok_result(&U128(10_000)), ok_result(&U128(0)), ok_result(&U128(0))],
+        t,
+    );
+    v.on_force_release_swap(release_id);
+    cb_ctx(ok_result(&U128(100)), t);
+    let _ = v.on_deposit(1, Ok(U128(100)));
+    cb_ctx(ok_result(&U128(90)), t);
+    let _ = v.on_swap(1, Ok(U128(90)));
+    cb_ctx(PromiseResult::Successful(vec![]), t);
+    let _ = v.on_withdraw_done(1);
+    cb_ctx(ok_result(&U128(0)), t);
+    assert_eq!(v.on_withdraw_reconciled(1, Ok(U128(0))).0, 0);
+    cb_ctx(PromiseResult::Failed, t);
+    assert_eq!(v.on_deposit_reconciled(1, Err(PromiseError::Failed)).0, 0);
+    assert_eq!(snapshot, (v.balances.clone(), v.stranded.clone(), v.unverified.clone()));
+    let fl = v.in_flight.as_ref().expect("new swap untouched");
+    assert_eq!((fl.id, fl.amount_in, fl.amount_out), (3, 50, 0));
+    assert_eq!(v.get_state().swaps_executed, 0);
 }

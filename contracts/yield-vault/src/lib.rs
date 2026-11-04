@@ -82,6 +82,11 @@ pub const GAS_CB_RELEASE: Gas = Gas::from_tgas(20);
 /// + own body + four receipts' fees + margin (70 is too little even in the unit-test VM).
 pub const MIN_FORCE_RELEASE_GAS: Gas = Gas::from_tgas(100);
 
+/// `on_sync_balance` body.
+pub const GAS_CB_SYNC: Gas = Gas::from_tgas(15);
+/// Minimum prepaid gas for `sync_balance`: view (10) + callback (15) + body + fees + margin.
+pub const MIN_SYNC_GAS: Gas = Gas::from_tgas(50);
+
 const ONE_YOCTO: NearToken = NearToken::from_yoctonear(1);
 
 /// A pool the vault may trade in. `token_a`/`token_b` are the pool's pair.
@@ -166,6 +171,9 @@ pub struct VaultState {
     pub spent_today: Vec<(AccountId, U128)>,
     pub balances: Vec<(AccountId, U128)>,
     pub stranded_on_ref: Vec<(AccountId, U128)>,
+    /// Amounts recorded as maybe-on-Ref after a failed read or an aborted
+    /// release. Never used as a reconcile baseline (they may be phantom).
+    pub unverified_on_ref: Vec<(AccountId, U128)>,
     pub swaps_executed: u64,
 }
 
@@ -213,6 +221,8 @@ pub struct Recovery {
     pub started_at: u64,
     /// Ref's `get_deposit` of `token_id` read before the withdraw (set by `on_recover_pre`).
     pub pre: u128,
+    /// Part of `amount` taken from `unverified` rather than `stranded`.
+    pub unv: u128,
 }
 
 /// Ref `swap` action.
@@ -245,9 +255,18 @@ pub struct YieldVault {
     day: u64,
     spent_today: BTreeMap<AccountId, u128>,
     balances: BTreeMap<AccountId, u128>,
+    /// Known to sit on Ref (a read showed it). The only reconcile baseline.
     stranded: BTreeMap<AccountId, u128>,
+    /// Maybe on Ref: the read failed or the release was aborted. Not a baseline,
+    /// so a phantom record cannot cause a false credit. Recoverable like `stranded`.
+    unverified: BTreeMap<AccountId, u128>,
     swaps_executed: u64,
     next_swap_id: u64,
+    /// Id of the pending `sync_balance` read; 0 when none. Any operation that
+    /// moves tokens clears it, so a stale read cannot credit.
+    sync_id: u64,
+    /// Owner withdrawals whose `on_owner_withdraw` has not run yet.
+    withdrawals_pending: u32,
 }
 
 fn emit(event: &str, data: Value) {
@@ -351,8 +370,11 @@ impl YieldVault {
             spent_today: BTreeMap::new(),
             balances: BTreeMap::new(),
             stranded: BTreeMap::new(),
+            unverified: BTreeMap::new(),
             swaps_executed: 0,
             next_swap_id: 0,
+            sync_id: 0,
+            withdrawals_pending: 0,
         };
         emit("config_updated", json!({ "config": this.config }));
         this
@@ -391,6 +413,11 @@ impl YieldVault {
                 .collect(),
             stranded_on_ref: self
                 .stranded
+                .iter()
+                .map(|(k, v)| (k.clone(), U128(*v)))
+                .collect(),
+            unverified_on_ref: self
+                .unverified
                 .iter()
                 .map(|(k, v)| (k.clone(), U128(*v)))
                 .collect(),
@@ -457,6 +484,8 @@ impl YieldVault {
             "ERR_INSUFFICIENT_GAS: attach at least 80 TGas"
         );
         self.debit(&token_id, amount.0);
+        self.sync_id = 0;
+        self.withdrawals_pending += 1;
         emit(
             "withdraw",
             json!({ "token_id": token_id, "amount": amount.0.to_string(), "owner_id": self.owner_id }),
@@ -493,6 +522,7 @@ impl YieldVault {
         let today = day_of(env::block_timestamp());
         self.roll_day(today);
         self.debit(&proposal.token_in, amount);
+        self.sync_id = 0;
         // Bounded by the daily_cap check.
         *self.spent_today.entry(proposal.token_in.clone()).or_insert(0) += amount;
         self.next_swap_id += 1;
@@ -616,7 +646,7 @@ impl YieldVault {
                 self.fail(&fl, "deposit_landed_on_ref");
             }
             Err(_) => {
-                self.strand(&fl.token_in, fl.amount_in, "deposit_unverified");
+                self.strand_unverified(&fl.token_in, fl.amount_in, "deposit_unverified");
                 self.fail(&fl, "deposit_unverified");
             }
         }
@@ -713,7 +743,7 @@ impl YieldVault {
                 return U128(0);
             }
             Err(_) => {
-                self.strand(&fl.token_out, fl.amount_out, "withdraw_unverified");
+                self.strand_unverified(&fl.token_out, fl.amount_out, "withdraw_unverified");
                 self.fail(&fl, "withdraw_unverified");
                 return U128(0);
             }
@@ -738,6 +768,7 @@ impl YieldVault {
     #[private]
     pub fn on_owner_withdraw(&mut self, token_id: AccountId, amount: U128) {
         Self::assert_self();
+        self.withdrawals_pending = self.withdrawals_pending.saturating_sub(1);
         if env::promise_result_checked(0, 4096).is_err() {
             self.credit(&token_id, amount.0);
             emit(
@@ -836,6 +867,7 @@ impl YieldVault {
         );
         self.next_swap_id += 1;
         let release_id = self.next_swap_id;
+        self.sync_id = 0;
         self.release = Some(release_id);
         self.release_started_at = env::block_timestamp();
         emit(
@@ -914,6 +946,72 @@ impl YieldVault {
             self.resolve_release_swap(id, fail(), fail(), fail());
         }
     }
+
+    /// Credits tokens the vault holds but does not track: an `ft_transfer`
+    /// donation, or funds `abort_release` / an unverified strand wrongly marked
+    /// as on Ref. Owner only, 1 yocto, only while nothing is in flight. Reads
+    /// the vault's own FT balance and `on_sync_balance` credits the excess over
+    /// the tracked balance. A newer call supersedes an older one.
+    #[payable]
+    pub fn sync_balance(&mut self, token_id: AccountId) -> Promise {
+        self.owner_one_yocto();
+        require!(
+            self.sync_idle(),
+            "ERR_SYNC_BUSY: a swap, recovery, release or withdrawal is in flight"
+        );
+        require!(
+            env::prepaid_gas() >= MIN_SYNC_GAS,
+            "ERR_INSUFFICIENT_GAS: attach at least 50 TGas"
+        );
+        self.next_swap_id += 1;
+        let id = self.next_swap_id;
+        self.sync_id = id;
+        Promise::new(token_id.clone())
+            .function_call(
+                "ft_balance_of".to_string(),
+                json_bytes(json!({ "account_id": env::current_account_id() })),
+                NearToken::from_yoctonear(0),
+                GAS_FT_VIEW,
+            )
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(GAS_CB_SYNC)
+                    .on_sync_balance(id, token_id),
+            )
+    }
+
+    /// Credits `max(0, ft_balance - tracked)`. A no-op unless this is still the
+    /// latest `sync_balance` and the vault is still idle.
+    #[private]
+    pub fn on_sync_balance(
+        &mut self,
+        sync_id: u64,
+        token_id: AccountId,
+        #[callback_result] ft: Result<U128, PromiseError>,
+    ) {
+        Self::assert_self();
+        if self.sync_id != sync_id || !self.sync_idle() {
+            return;
+        }
+        self.sync_id = 0;
+        let Ok(ft) = ft else {
+            emit("sync_failed", json!({ "token_id": token_id }));
+            return;
+        };
+        let tracked = self.balances.get(&token_id).copied().unwrap_or(0);
+        let extra = ft.0.saturating_sub(tracked);
+        if extra > 0 {
+            self.credit(&token_id, extra);
+        }
+        emit(
+            "balance_synced",
+            json!({
+                "token_id": token_id,
+                "credited": extra.to_string(),
+                "ft_balance": ft.0.to_string(),
+            }),
+        );
+    }
 }
 
 /// Raw read of promise result `i` as a `U128`. A failed promise and a payload
@@ -985,7 +1083,7 @@ impl YieldVault {
                 return;
             }
         }
-        self.strand(&token, amount, "lock_force_released_unverified");
+        self.strand_unverified(&token, amount, "lock_force_released_unverified");
         self.fail(&fl, "lock_force_released_unverified");
     }
 
@@ -1011,16 +1109,12 @@ impl YieldVault {
                 "recovered",
                 json!({ "token_id": r.token_id, "amount": r.amount.to_string(), "via": "force_release" }),
             );
+        } else if on_ref {
+            self.put_back(&r, true, "recovery_force_released");
         } else {
-            let why = if on_ref {
-                "recovery_force_released"
-            } else {
-                "recovery_force_released_unverified"
-            };
-            self.strand(&r.token_id, r.amount, why);
+            self.put_back(&r, false, "recovery_force_released_unverified");
         }
     }
-
 }
 
 #[near]
@@ -1102,12 +1196,17 @@ impl YieldVault {
             env::prepaid_gas() >= MIN_RECOVER_GAS,
             "ERR_INSUFFICIENT_GAS: attach at least 150 TGas"
         );
-        let have = self.stranded.get(&token_id).copied().unwrap_or(0);
+        let verified = self.stranded_of(&token_id);
+        let unv_have = self.unverified.get(&token_id).copied().unwrap_or(0);
         require!(
-            have >= amount.0,
+            verified.saturating_add(unv_have) >= amount.0,
             "ERR_INSUFFICIENT_STRANDED: not that much stranded on Ref"
         );
-        self.unstrand(&token_id, amount.0);
+        // Verified strands first; the rest comes from the unverified record.
+        let unv = amount.0.saturating_sub(verified);
+        Self::take(&mut self.stranded, &token_id, amount.0 - unv);
+        Self::take(&mut self.unverified, &token_id, unv);
+        self.sync_id = 0;
         self.next_swap_id += 1;
         let recovery_id = self.next_swap_id;
         self.recovery = Some(Recovery {
@@ -1116,6 +1215,7 @@ impl YieldVault {
             amount: amount.0,
             started_at: env::block_timestamp(),
             pre: 0,
+            unv,
         });
         self.ref_deposit_query(&token_id).then(
             Self::ext(env::current_account_id())
@@ -1141,7 +1241,8 @@ impl YieldVault {
             Ok(d) if d.0 >= r.amount => d.0,
             other => {
                 self.recovery = None;
-                *self.stranded.entry(r.token_id.clone()).or_insert(0) += r.amount;
+                // Ref does not show the amount: it is no longer a trusted baseline.
+                self.put_back(&r, false, "");
                 emit(
                     "recover_refused",
                     json!({
@@ -1187,7 +1288,7 @@ impl YieldVault {
         };
         if !ok {
             self.recovery = None;
-            *self.stranded.entry(r.token_id).or_insert(0) += r.amount;
+            self.put_back(&r, true, "");
             return PromiseOrValue::Value(U128(0));
         }
         PromiseOrValue::Promise(self.ref_deposit_query(&r.token_id).then(
@@ -1212,7 +1313,7 @@ impl YieldVault {
             return U128(0);
         };
         self.recovery = None;
-        let (token_id, amount, pre) = (r.token_id, r.amount, r.pre);
+        let (token_id, amount, pre) = (r.token_id.clone(), r.amount, r.pre);
         match deposit {
             Ok(d) if pre.saturating_sub(d.0) >= amount => {
                 self.credit(&token_id, amount);
@@ -1223,11 +1324,11 @@ impl YieldVault {
                 U128(amount)
             }
             Ok(_) => {
-                self.strand(&token_id, amount, "withdraw_not_reconciled");
+                self.put_back(&r, true, "withdraw_not_reconciled");
                 U128(0)
             }
             Err(_) => {
-                self.strand(&token_id, amount, "withdraw_unverified");
+                self.put_back(&r, false, "withdraw_unverified");
                 U128(0)
             }
         }
@@ -1271,6 +1372,14 @@ impl YieldVault {
     /// The vault's Ref deposit shows `amount` on top of what is already stranded.
     fn ref_holds(&self, token: &AccountId, amount: u128, dep: &Result<U128, PromiseError>) -> bool {
         matches!(dep, Ok(d) if d.0 >= self.stranded_of(token).saturating_add(amount))
+    }
+
+    /// No swap, recovery, release or owner withdrawal is moving tokens.
+    fn sync_idle(&self) -> bool {
+        self.in_flight.is_none()
+            && self.recovery.is_none()
+            && self.release.is_none()
+            && self.withdrawals_pending == 0
     }
 
     fn assert_owner(&self) {
@@ -1337,15 +1446,6 @@ impl YieldVault {
         }
     }
 
-    fn unstrand(&mut self, token: &AccountId, amount: u128) {
-        if let Some(v) = self.stranded.get_mut(token) {
-            *v = v.saturating_sub(amount);
-            if *v == 0 {
-                self.stranded.remove(token);
-            }
-        }
-    }
-
     /// Gives `amount` back to the vault balance and un-counts it from today's
     /// spend (only if the day has not rolled since the debit).
     fn rollback(&mut self, fl: &InFlight, amount: u128) {
@@ -1370,6 +1470,47 @@ impl YieldVault {
             "stranded",
             json!({ "token_id": token, "amount": amount.to_string(), "reason": why }),
         );
+    }
+
+    fn strand_unverified(&mut self, token: &AccountId, amount: u128, why: &str) {
+        if amount == 0 {
+            return;
+        }
+        let e = self.unverified.entry(token.clone()).or_insert(0);
+        *e = e.checked_add(amount).expect("ERR_OVERFLOW: unverified");
+        emit(
+            "stranded",
+            json!({ "token_id": token, "amount": amount.to_string(), "reason": why, "verified": false }),
+        );
+    }
+
+    /// Removes up to `amount` from a strand map.
+    fn take(map: &mut BTreeMap<AccountId, u128>, token: &AccountId, amount: u128) {
+        if let Some(v) = map.get_mut(token) {
+            *v = v.saturating_sub(amount);
+            if *v == 0 {
+                map.remove(token);
+            }
+        }
+    }
+
+    /// Puts a recovery's amount back. If `verified` (a read showed it on Ref)
+    /// the part that came from `stranded` returns there; the rest, and
+    /// everything when not verified, returns to `unverified`.
+    fn put_back(&mut self, r: &Recovery, verified: bool, why: &str) {
+        let s = if verified { r.amount - r.unv } else { 0 };
+        for (map, amt) in [(&mut self.stranded, s), (&mut self.unverified, r.amount - s)] {
+            if amt > 0 {
+                let e = map.entry(r.token_id.clone()).or_insert(0);
+                *e = e.checked_add(amt).expect("ERR_OVERFLOW: stranded");
+            }
+        }
+        if !why.is_empty() {
+            emit(
+                "stranded",
+                json!({ "token_id": r.token_id, "amount": r.amount.to_string(), "reason": why, "verified": verified }),
+            );
+        }
     }
 
     /// Releases the lock and emits `swap_failed`.

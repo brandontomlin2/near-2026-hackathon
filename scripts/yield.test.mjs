@@ -76,6 +76,22 @@ test("--i-approve without --send is a usage error (2)", async () => {
   assert.deepEqual(r.calls, []);
 });
 
+test("--send with --rounds > 1 is a usage error (2) and nothing is spawned", async () => {
+  for (const argv of [
+    ["--send", "--i-approve", "--agent", "skeptic", "--rounds", "2"],
+    ["--rounds", "50", "--send", "--i-approve", "--agent", "skeptic"],
+  ]) {
+    const r = await run(argv, TESTNET_ENV, { hasNear: () => true });
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /--rounds greater than 1 cannot be combined with --send/);
+    assert.deepEqual(r.calls, []);
+    assert.equal(r.stdout, "");
+  }
+  // One round with --send, and many rounds as a dry run, stay allowed.
+  assert.equal((await run(["--send", "--i-approve", "--agent", "skeptic", "--rounds", "1"], TESTNET_ENV, { hasNear: () => true })).code, 0);
+  assert.equal((await run(["--rounds", "3"])).code, 0);
+});
+
 test("--send --i-approve without --agent is refused (2)", async () => {
   const r = await run(["--send", "--i-approve"], TESTNET_ENV, { hasNear: () => true });
   assert.equal(r.code, 2);
@@ -119,7 +135,7 @@ test("--send --i-approve --agent skeptic on testnet spawns only skeptic argv, al
 });
 
 test("--send argv count equals the skeptic executions in --json output", async () => {
-  const r = await run(["--send", "--i-approve", "--agent", "skeptic", "--json", "--rounds", "2"], TESTNET_ENV, { hasNear: () => true });
+  const r = await run(["--send", "--i-approve", "--agent", "skeptic", "--json"], TESTNET_ENV, { hasNear: () => true });
   assert.equal(r.code, 0, r.stderr);
   const doc = JSON.parse(r.stdout);
   assert.equal(doc.dry_run, false);
@@ -130,7 +146,7 @@ test("--send argv count equals the skeptic executions in --json output", async (
 });
 
 test("a failing near exit status stops the run with exit 1", async () => {
-  const r = await run(["--send", "--i-approve", "--agent", "skeptic", "--rounds", "3"], TESTNET_ENV, { hasNear: () => true, spawnStatus: 7 });
+  const r = await run(["--send", "--i-approve", "--agent", "skeptic"], TESTNET_ENV, { hasNear: () => true, spawnStatus: 7 });
   assert.equal(r.code, 1);
   assert.equal(r.calls.length, 1);
   assert.match(r.stderr, /status 7/);

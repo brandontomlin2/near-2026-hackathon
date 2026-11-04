@@ -33,7 +33,8 @@ const USAGE = `Usage: node scripts/yield.mjs [--agent ID] [--rounds N] [--json] 
   --rounds N    debate rounds, 1 to ${MAX_ROUNDS} (default 1)
   --json        print one JSON document instead of text
   --out DIR     where the track record goes: DIR/yield/ledger.json (default out; rewritten each run)
-  --send        really send the accepted execute_swap calls with near-cli-rs. Also needs
+  --send        really send the accepted execute_swap calls with near-cli-rs (one round only:
+                --rounds above 1 is refused with --send). Also needs
                 --i-approve, --agent, NEAR_NETWORK=testnet, YIELD_VAULT_ACCOUNT_ID and
                 YIELD_RUNNER_ACCOUNT_ID (named .testnet accounts). Mainnet is refused.
   -h, --help    print this help and exit 0
@@ -69,6 +70,9 @@ function parseArgs(argv) {
     else throw new UsageError(`unknown argument ${JSON.stringify(a)}`);
   }
   if (o.approve && !o.send) throw new UsageError("--i-approve only applies together with --send");
+  if (o.send && o.rounds > 1) {
+    throw new UsageError("--rounds greater than 1 cannot be combined with --send: the ledger is simulated, so later rounds would sign swaps against state that diverged from the chain. Send one round at a time.");
+  }
   return o;
 }
 
