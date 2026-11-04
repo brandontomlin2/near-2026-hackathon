@@ -40,6 +40,32 @@ Result is `consistent` or `reject`, never `verified`. The CLI prints
 truncated hex; `-- --unreadable-quote` shows it with a 2-byte quote). It always lists what was not
 verified, so "offline fields agree" never hides a field that could not be read.
 
+Exit 2 is shared: `attest-check` also exits 2 on a usage error (an unknown flag,
+or `--tamper` with `--unreadable-quote`), as every CLI in this repo does. A
+script cannot tell the two apart by exit code alone. Usage errors print one
+`attest-check: ...` line to stderr and no verdict, while `BINDING UNREAD` prints
+the verdict on stdout.
+
+## What leaves the machine in live mode, and what stays on disk
+
+With `MOCK_INFERENCE=0`, prompts, the agent's character sheet and the owner's
+`ask` question are sent to `cloud-api.near.ai` (or `NEAR_AI_BASE_URL`). Whether
+that stays inside a TEE depends on the model:
+
+- NEAR AI's "Private" models run in a TEE. The "Anonymised" models (Anthropic,
+  OpenAI, Google, routed through NEAR AI with identifying information removed)
+  do **not** run in a TEE.
+- `NEAR_AI_MODEL` is free text. Nothing in this repo checks which class a model
+  is. The live client prints a one-line warning to stderr when the value is not
+  one of the "Private" text models listed in the vendored skill docs
+  (`TEE_MODELS` in `src/inference/client.mjs`). It is a warning only: the call
+  still goes ahead, and the list can go stale. Mock mode prints nothing.
+- The TEE is not verified anywhere in this repo, whichever model you pick.
+
+On disk, `out/` is gitignored but unencrypted. `out/memory/<id>/log.jsonl` keeps
+the owner's `ask` questions and the agent's answers in plaintext, and `out/`
+also holds the sheets and transcripts. Delete `out/` to remove them.
+
 ### The quote layout assumption behind `quote-binding`
 
 The NEAR AI docs vendored under `.agents/skills/near-ai-cloud` say only that
@@ -57,7 +83,8 @@ byte 48 (2 = TDX 1.0 TD report, 3 = TDX 1.5 TD report; 1 = SGX enclave report
 is rejected) and a `u32` body size at byte 50 (584 or 648, must match the type),
 the body at byte 54, and `report_data` 520 bytes into it, at bytes 574..638.
 The v5 offsets come from Intel's published DCAP v5 layout and are not checked
-against a real v5 quote from NEAR AI; the tests use synthetic quotes. And the raw 32-byte nonce and the raw 20-byte address both
+against a real v5 quote from NEAR AI; the tests use synthetic quotes.
+The check passes when the raw 32-byte nonce and the raw 20-byte address both
 appear somewhere inside those 64 bytes.
 
 How `quote-binding` reports, given that:

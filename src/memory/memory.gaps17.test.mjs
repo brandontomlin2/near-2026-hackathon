@@ -61,7 +61,7 @@ test("a live inference error (HTTP 401) stops npm run swarm with exit 1, one 'sw
   const r = await swarm(["--rounds", "1", "--out", out], {
     MOCK_INFERENCE: "0",
     NEAR_AI_API_KEY: KEY,
-    NEAR_AI_MODEL: "stub/m",
+    NEAR_AI_MODEL: "openai/gpt-oss-120b",
     NEAR_AI_BASE_URL: `http://127.0.0.1:${server.address().port}/v1`,
   }, false);
   assert.ok(hits >= 1, "the live path really ran");

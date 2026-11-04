@@ -193,6 +193,17 @@ test("model binding: the node's model_name beats the report's model, and either 
   assert.equal(withModels("", undefined).status, "fail", "an empty name is a value, not an absence");
 });
 
+test("chat signature: a model id containing ':' still matches; the response hash may not contain ':'", () => {
+  const { report, chatSignature } = good();
+  const hash = requestHash(requestBody);
+  const model = "org/name:tag";
+  const check = (text) => status(run(report, { model, chatSignature: { ...chatSignature, text } }), "signature-text");
+  assert.equal(check(`${model}:${hash}:resp`), "pass");
+  assert.equal(check(`${model}:${hash}:a:b`), "fail");
+  assert.equal(check(`${model}:${hash}:`), "fail", "empty response hash");
+  assert.equal(check(`org/name:${hash}:resp`), "fail", "wrong model prefix");
+});
+
 test("chat signature: right hash but wrong model, missing text or missing signer all fail", () => {
   const { report, chatSignature } = good();
   const hash = requestHash(requestBody);

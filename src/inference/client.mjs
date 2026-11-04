@@ -37,6 +37,14 @@ export const MAX_CONTENT_BYTES = 32 * 1024;
 const RETRY_BASE_DELAY_MS = 250;
 const RETRY_MAX_DELAY_MS = 8_000;
 const MOCK_MODEL = "mock";
+// "Private" (TEE) text models in .agents/skills/near-ai-cloud/references/private-vs-anonymised.md.
+// Not authoritative: used only to decide whether to print a warning.
+export const TEE_MODELS = Object.freeze([
+  "deepseek-ai/DeepSeek-V3.1",
+  "openai/gpt-oss-120b",
+  "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "zai-org/GLM-4.7",
+]);
 
 export class InferenceError extends Error {
   /**
@@ -391,6 +399,7 @@ async function errorSnippet(response, secret, maxBytes, controller) {
  *   maxResponseBytes?: number,
  *   fetch?: typeof fetch,
  *   sleep?: (ms: number) => Promise<void>,
+ *   warn?: (line: string) => void,
  * }} options
  */
 export function createLiveClient(options) {
@@ -402,6 +411,12 @@ export function createLiveClient(options) {
   }
   const apiKey = options.apiKey.trim();
   const model = options.model;
+  if (!TEE_MODELS.includes(model)) {
+    // A warning, not a refusal: the model list changes and NEAR_AI_MODEL is free text.
+    (options.warn ?? ((line) => process.stderr.write(`${line}\n`)))(
+      `warning: NEAR_AI_MODEL ${JSON.stringify(boundLabel(model, "model"))} is not one of the TEE ("Private") models listed in the docs (${TEE_MODELS.join(", ")}); an Anonymised model is not TEE-protected`,
+    );
+  }
   const baseUrl = checkBaseUrl(options.baseUrl ?? DEFAULT_BASE_URL);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
@@ -536,5 +551,6 @@ export function createInferenceClient(options = {}) {
     timeoutMs: options.timeoutMs,
     maxRetries: options.maxRetries,
     maxResponseBytes: options.maxResponseBytes,
+    warn: options.warn,
   });
 }

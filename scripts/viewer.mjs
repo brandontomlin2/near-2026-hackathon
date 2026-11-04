@@ -43,7 +43,8 @@ function parseArgs(argv) {
     const arg = argv[i];
     const value = () => {
       const next = argv[i + 1];
-      if (next === undefined || next.startsWith("--")) throw new UsageError(`${arg} needs a value, got ${JSON.stringify(next)}`);
+      if (next === undefined) throw new UsageError(`${arg} needs a value`);
+      if (next.startsWith("--")) throw new UsageError(`${arg} needs a value, got ${JSON.stringify(next)}`);
       i += 1;
       return argv[i];
     };
