@@ -1,14 +1,12 @@
-# Spike: Shade Agents + chain signatures for the Yield Optimizer
+# Design note: Shade Agents + chain signatures for the Yield Optimizer
 
-Status: Spike complete (dry-run only; nothing was signed, sent or deployed). Go/no-go decision: 2026-11-06. Feature freeze: 2026-11-11.
+Status: in progress, dry-run only. Nothing was signed, sent or deployed, and this is not part of the demo (see the README section "Work in progress: Yield Optimizer"). The Yield Optimizer is a planned fifth personality: a vault with on-chain rules, plus an agent that can act on it through chain signatures without holding a private key.
 
-## Verdict
+## What is established
 
-**Conditional GO, scoped down.** Take the decentralized path only as a *testnet, thin-slice* demo, and keep the existing centralized executor as the default path that the judge walkthrough relies on.
-
-- The risky cryptographic half is de-risked. The ed25519 key that the MPC network will derive for our agent contract is computed offline and matched the live testnet contract byte-for-byte (13 passing tests, `spikes/shade/chainsig.test.mjs`). The sign request and the NEAR transaction it signs are built and printed by `node spikes/shade/dry-run.mjs`.
-- The unproven half is the live loop: deploying the agent contract, registering a TEE (or whitelisted local) agent, and getting one real signature back. That needs spending testnet NEAR and, for the real attestation story, a paid Phala deployment. Neither was done here.
-- Rule for 2026-11-06: **GO** if Brandon approves the three items in "What Brandon must approve" by end of day 2026-11-06. **NO-GO** (fall back to centralized executor plus this document and the dry-run as "designed, derivation verified") if not approved by then, because approving later leaves under 5 days to the 2026-11-11 freeze for a live loop plus a Phala deploy that nobody has run yet. The NO-GO fallback still ships real, tested value.
+- The ed25519 key that the MPC network will derive for the agent contract is computed offline and matches the live testnet contract byte for byte (13 passing tests, `spikes/shade/chainsig.test.mjs`). The sign request and the NEAR transaction it signs are built and printed by `node spikes/shade/dry-run.mjs`.
+- Not yet done: the live loop (deploying the agent contract, registering a TEE or whitelisted local agent, and getting one real signature back). Local mode needs testnet NEAR; a real attestation needs a Phala deployment. Neither has been done.
+- If the live loop is not completed, the project keeps a centralized executor and this note plus the dry run stand as a design with a verified key derivation.
 
 ## Q1. Shade Agents: local dev mode, what needs Phala, attestation
 
@@ -46,28 +44,17 @@ Shade Agent (local mode, later Phala TEE): fetches quotes, decides, builds tx, a
 
 - **Vault** keeps the policy: allowed tokens, max amount per swap, min output, only `executor` may call `execute_swap`. The agent is untrusted by construction; the TEE adds "it ran the published code", the vault adds "even a compromised agent can only do bounded swaps".
 - **Reuse.** The agent contract is the unmodified template (it already has `request_signature` with Eddsa). New code is just the agent (quote, tx build, sign, broadcast) and a vault method; `chainsig.mjs` already provides key derivation, borsh tx and sign request.
-- **Slice, in priority order** (cut from the bottom): (1) dry-run plan printed by `dry-run.mjs` and unit tests, already done; (2) agent contract deployed on testnet, local-mode agent whitelisted, one real signature obtained, one tx broadcast; (3) the same with a Phala TEE and approved measurements; (4) reproducible build.
+- **Slice, in priority order** (cut from the bottom): (1) dry-run plan printed by `dry-run.mjs` and unit tests (done); (2) agent contract deployed on testnet, local-mode agent whitelisted, one real signature obtained, one tx broadcast; (3) the same with a Phala TEE and approved measurements; (4) reproducible build.
 - **What is demonstrable on testnet without sending anything now:** the live `public_key` and `derived_public_key` view calls, the offline derivation matching them, and the full printed plan (AddKey, execute_swap tx hash, MPC sign args). A judge can run `node spikes/shade/dry-run.mjs` and `node --test spikes/shade/*.test.mjs` and compare against the evidence file. Anything beyond this requires signing.
 
 ## Cost
 
 | Item | Estimate | Note |
 | --- | --- | --- |
-| Agent contract funding | 8 NEAR testnet (template default `funding_amount: 8`) | testnet, free from faucet; mainnet not needed |
+| Agent contract funding | 8 NEAR testnet (template default `funding_amount: 8`) | testnet faucet; mainnet not needed |
 | Sign call | 1 yocto + 15 Tgas per signature | negligible on testnet |
 | Dev accounts (executor, vault, agent contract) | small testnet balances | |
-| Phala Cloud (`tdx.small`) | not measured; not stated in the cloned docs | check the Phala dashboard price before approving; delete the deployment afterwards (README warns about ongoing cost) |
+| Phala Cloud (`tdx.small`) | not measured | only needed for a real TEE attestation; ongoing cost until the deployment is deleted |
 | Docker Hub account/image | free tier | needs `docker login` |
-| Engineering | live loop about 1 to 1.5 days, Phala TEE about 1 more day, plus unknowns | estimate, not measured |
 
 All of this is testnet; no mainnet action is needed. NEAR Intents is the only mainnet-only integration and is out of scope here.
-
-## What Brandon must approve
-
-By 2026-11-06 (needed for GO):
-
-1. Creating testnet accounts and spending testnet NEAR (about 8 for the agent contract plus small amounts), including `AddKey` on the executor account and deploying the agent contract and vault. These are signed transactions, so they need an explicit yes.
-2. Phala Cloud account, API key and a paid `tdx.small` deployment (check price first), plus a Docker Hub login. Optional: without it the demo stays in local mode with `requires_tee = false` and must be described honestly as plumbing only, not trust.
-3. Feature-freeze rule: if the live signature is not obtained by end of 2026-11-09, stop and ship the NO-GO fallback (dry-run plus tests plus this document), so the freeze on 2026-11-11 is not at risk.
-
-Also decide: whether the README presents this as a working feature or as a verified design (recommended: say exactly what was and was not run).

@@ -158,7 +158,7 @@ test("--out and --media-base reject a following flag as their value, with the of
   assert.equal(out.code, 2);
   assert.equal(out.err, 'error: --out needs a file path, got "--force" (see --help)');
   const none = await run1(["--out"]);
-  assert.equal(none.err, "error: --out needs a file path, got undefined (see --help)");
+  assert.equal(none.err, "error: --out needs a file path, got no value (see --help)");
   const mb = await run1(["--media-base", "--send"]);
   assert.equal(mb.code, 2);
   assert.equal(mb.err, 'error: --media-base needs a value, got "--send" (see --help)');

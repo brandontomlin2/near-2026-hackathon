@@ -25,13 +25,13 @@ function parseArgs(argv) {
       options.json = true;
     } else if (arg === "--system") {
       const raw = argv[i + 1];
-      if (raw === undefined || raw.trim() === "" || raw.startsWith("-")) throw new Error(`--system needs a non-empty value, got ${JSON.stringify(raw)}`);
+      if (raw === undefined || raw.trim() === "" || raw.startsWith("-")) throw new Error(`--system needs a non-empty value, got ${raw === undefined ? "no value" : JSON.stringify(raw)}`);
       options.system = raw;
       i += 1;
     } else if (arg === "--seed") {
       const raw = argv[i + 1];
       if (raw === undefined || !/^(0|[1-9][0-9]*)$/.test(raw) || !Number.isSafeInteger(Number(raw))) {
-        throw new Error(`--seed must be a non-negative integer, got ${JSON.stringify(raw)}`);
+        throw new Error(`--seed must be a non-negative integer, got ${raw === undefined ? "no value" : JSON.stringify(raw)}`);
       }
       options.seed = Number(raw);
       i += 1;

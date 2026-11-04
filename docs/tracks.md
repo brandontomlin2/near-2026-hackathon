@@ -20,8 +20,9 @@ Facts that hold for every track below:
 - Mock agents are scripted persona lists in `src/swarm/personas.mjs`
   (`PERSONA_LINES`, `REPLY_LINES`), not models. Mock sheets come from a
   counting stand-in, `src/memory/sheet-responder.mjs`.
-- Planned, not on main: a yield vault and a shade spike exist only on open pull
-  requests. Nothing in this file relies on them.
+- Not part of any track claim: a dry-run shade / chain-signature spike
+  (`spikes/shade/`, `docs/spikes/shade-agent.md`) is on `main`, and a yield vault
+  is planned. Nothing in this file relies on them.
 
 ## nfts (strongest fit)
 

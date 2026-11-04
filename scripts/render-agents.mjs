@@ -63,12 +63,12 @@ function parseArgs(argv) {
     const flag = argv[i];
     const value = argv[i + 1];
     if (flag === "--style") {
-      if (!value || value.startsWith("-")) throw new Error(`--style needs a name, got ${JSON.stringify(value)}`);
+      if (!value || value.startsWith("-")) throw new Error(`--style needs a name, got ${value === undefined ? "no value" : JSON.stringify(value)}`);
       if (value !== "all") getStyle(value); // throws "unknown style" with the valid names
       opts.style = value;
       i++;
     } else if (flag === "--out") {
-      if (!value || value.startsWith("-")) throw new Error(`--out needs a directory, got ${JSON.stringify(value)}`);
+      if (!value || value.startsWith("-")) throw new Error(`--out needs a directory, got ${value === undefined ? "no value" : JSON.stringify(value)}`);
       opts.out = value;
       i++;
     } else {

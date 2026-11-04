@@ -41,7 +41,7 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === "--out") {
       const value = argv[i + 1];
-      if (!value || value.startsWith("-")) throw new Error(`--out needs a directory, got ${JSON.stringify(value)}`);
+      if (!value || value.startsWith("-")) throw new Error(`--out needs a directory, got ${value === undefined ? "no value" : JSON.stringify(value)}`);
       opts.out = value;
       i++;
     } else if (opts.agentId === undefined && arg.startsWith("-")) {

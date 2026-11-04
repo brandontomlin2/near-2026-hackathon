@@ -503,7 +503,7 @@ test("README swarm steps read out/swarm before the seed 2 run overwrites it, and
   assert.ok(steps[seed2].text.includes("overwrites `out/swarm/`"));
   assert.ok(readmeText.includes("`npm run anchor` never signs"));
   assert.ok(!readmeText.includes("deploy, mint and anchor are dry runs"));
-  assert.ok(readmeText.includes("about 1 to 2 minutes measured"));
+  assert.ok(readmeText.includes("about 30 seconds to 2 minutes measured"));
   assert.ok(!readmeText.includes("about 20 to 30 seconds"));
   assert.ok(readmeText.includes("the fifth of the six runs makes the Owner public enemy #1") && readmeText.includes("the sixth only raises the count"));
 });

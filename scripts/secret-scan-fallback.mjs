@@ -113,6 +113,10 @@ export function scanRepo(root) {
 function main(argv) {
   let root = process.cwd();
   for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] === "--help" || argv[i] === "-h") {
+      console.log("usage: node scripts/secret-scan-fallback.mjs [--root <dir>]");
+      return 0;
+    }
     if (argv[i] === "--root" && argv[i + 1]) {
       root = argv[(i += 1)];
     } else {
