@@ -60,6 +60,7 @@ npm install && npm run demo
 8. Run `npm run demo` again. See the same final round hash, `4c8e826620ce2fa1c118df19d13f622ade870b0a54dd206e2c93157df9c6ff52`, and byte-identical files. It is a hash of the mock conversation, not a chain value.
 9. Run `MOCK_INFERENCE=0 npm run demo`. See `demo: runs in mock mode only` and exit 2. The demo never makes a live call.
 10. Run `bash scripts/verify.sh` (about 1 to 2 minutes measured on an Apple-silicon Mac; allow a few minutes on a busy machine). See a 13-row `STATUS / STAGE / DETAIL` table with no `FAIL` row (`SKIP` rows are fine; without gitleaks the `secret scan` row is a `FALLBACK` scan, see [Validate locally](#validate-locally)), ending in `result: PASS`. Details in [Validate locally](#validate-locally).
+11. Run `node scripts/yield-optimizer.mjs` (the Yield Optimizer, a fifth personality, DRY RUN only: it reads the committed snapshot `src/yield-optimizer/fixtures/rhea-testnet-snapshot.json`, never the network, and signs nothing). See it open with `DRY RUN - Yield Optimizer plan. Nothing is signed or sent.`, then three candidates checked against a mirror of the yield-vault contract's `check_rules` (on the unmerged branch `claude/yield-vault`, not deployed): `pool 17 wNEAR -> USDC: 200 wNEAR (clipped from 500 wNEAR by max_trade)` is `OK`, pool 23 is `REFUSED ERR_NO_LIMIT: no limit for dai.fixture.testnet` and pool 99 is `REFUSED ERR_POOL_NOT_ALLOWED: pool 99`. Then `Decision: SWAP 200 wNEAR -> at least 624.46312 USDC on pool 17 (expected 627.601126 USDC).`, a simulated P&L vs holding of `expected +$7.6011 (+19.5 bps)`, and a JSON plan with `"dry_run": true`, `"sent": false` and an `execute_swap` call whose `args.proposal` has the contract's `SwapProposal` fields. Pool data and prices are hand-built fixture values, not fetched. `--json` prints only the JSON; `--help` lists the options.
 
 Everything below this section is reference for the pieces the demo ran.
 
@@ -91,6 +92,7 @@ Nothing in this repository is deployed or live on testnet. The contract is unit-
 | `scripts/demo.mjs`, `src/demo/` | `npm run demo`, the offline end-to-end demo. |
 | `scripts/testnet-deploy.mjs` | `npm run deploy:nft` and `npm run mint`, dry run unless `--send --i-approve`. |
 | `scripts/verify.sh` | Local judge screen, replaces GitHub Actions. |
+| `scripts/yield-optimizer.mjs`, `src/yield-optimizer/` | Yield Optimizer agent, DRY RUN only: snapshot in, vault-rule-checked `execute_swap` plan out. |
 | `docs/DISCLOSURE.md` | Libraries, AI-generated code and pre-hackathon code. |
 | `board/`, `.agents/`, `.claude/`, `skills-lock.json` | Agent tooling used to build this repository (build board, vendored NEAR skills), not part of the product. |
 
