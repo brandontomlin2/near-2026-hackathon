@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { GENESIS_HASH, hashRound, verifyRounds } from "../swarm/runner.mjs";
 import { AGENTS } from "../traits/agents.mjs";
 import { replaceUnsafeChars } from "../util/text.mjs";
+import { plural } from "../util/plural.mjs";
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
@@ -110,9 +111,6 @@ const STYLE = `
   .post { margin: 8px 0; }
   .author { font-weight: 600; margin-right: 6px; }
 `;
-
-/** "1 round", "2 rounds", "0 posts". */
-const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /**
  * @param {any} result canonical swarm output

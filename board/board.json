@@ -184,12 +184,12 @@
   {
     "id": "swarm-and-evidence-mock-sheets-use-the-demo-s-counting-stand-in-fix-1-rounds-plural",
     "title": "swarm and evidence mock sheets use the demo's counting stand-in; fix '1 rounds' plural",
-    "status": "doing",
+    "status": "done",
     "owner": "claude",
     "kind": "task",
     "lane": "claude",
     "notes": "",
-    "updated_at": "2026-11-03T16:55:29.132Z",
+    "updated_at": "2026-11-03T17:30:00.000Z",
     "updated_by": "claude"
   },
   {

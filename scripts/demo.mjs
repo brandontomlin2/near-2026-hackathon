@@ -9,6 +9,7 @@ import { getStyle, STYLE_NAMES } from "../src/art/styles/index.mjs";
 import { MAX_ROUNDS } from "../src/swarm/runner.mjs";
 import { DEMO_DEFAULTS, runDemo } from "../src/demo/pipeline.mjs";
 import { memoryDiffLine } from "../src/demo/memory-diff.mjs";
+import { plural } from "../src/util/plural.mjs";
 
 const USAGE = `Usage: node scripts/demo.mjs [--rounds N] [--seed N] [--every N] [--style NAME] [--out DIR]
   --rounds N  swarm rounds (default ${DEMO_DEFAULTS.rounds})
@@ -86,13 +87,13 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     const { manifest } = run;
     const sheetCount = manifest.agents.reduce((n, a) => n + a.sheets.length, 0);
     const eventCount = manifest.roundHashes.length * manifest.agents.length;
-    log(`[1/5] swarm: ${manifest.rounds} rounds, ${eventCount} events, verify: ok`);
-    log(`[2/5] memory: ${sheetCount} sheets (a summary every ${manifest.every} rounds, ${manifest.agents.length} agents)`);
+    log(`[1/5] swarm: ${plural(manifest.rounds, "round")}, ${plural(eventCount, "event")}, verify: ok`);
+    log(`[2/5] memory: ${plural(sheetCount, "sheet")} (a summary every ${plural(manifest.every, "round")}, ${plural(manifest.agents.length, "agent")})`);
     // One line per agent: first sheet -> latest sheet. This is what the camera sees.
     for (const agent of manifest.agents) log(`     ${memoryDiffLine(agent)}`);
     const artCount = manifest.agents.length * (2 + manifest.moods.length);
-    log(`[3/5] art: ${artCount} svgs in style ${manifest.style} (now, at mint, ${manifest.moods.length} mood${manifest.moods.length === 1 ? "" : "s"} per agent), ${manifest.shares.length} share cards, ${manifest.memes.length} meme card${manifest.memes.length === 1 ? "" : "s"}`);
-    log(`[4/5] anchor (dry run): ${sheetCount} calls prepared, 0 signed`);
+    log(`[3/5] art: ${plural(artCount, "svg")} in style ${manifest.style} (now, at mint, ${manifest.moods.length} mood${manifest.moods.length === 1 ? "" : "s"} per agent), ${plural(manifest.shares.length, "share card")}, ${manifest.memes.length} meme card${manifest.memes.length === 1 ? "" : "s"}`);
+    log(`[4/5] anchor (dry run): ${plural(sheetCount, "call")} prepared, 0 signed`);
     log(`[5/5] viewer: ${at("index.html")}`);
     log("");
     log("Done. Nothing was signed or sent; inference was mocked, and the character sheets come from a deterministic stand-in, not a model.");

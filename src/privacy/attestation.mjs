@@ -10,6 +10,7 @@
 // docs/privacy.md before claiming anything to a judge.
 
 import { sha256Hex } from "../anchor/hash.mjs";
+import { plural } from "../util/plural.mjs";
 
 export const VERDICT = Object.freeze({
   CONSISTENT: "consistent", // structure and bindings agree; nothing cryptographic checked
@@ -88,7 +89,7 @@ function checkQuoteReportData(quote, nonce, signingAddress) {
   const bytes = toBytes(quote);
   if (!bytes) return ["fail", "intel_quote is not hex"];
   if (bytes.length < TDX_V4_QUOTE_MIN_LENGTH) {
-    return ["unverifiable", `intel_quote is ${bytes.length} bytes, too short to hold TDX report data`];
+    return ["unverifiable", `intel_quote is ${plural(bytes.length, "byte")}, too short to hold TDX report data`];
   }
   const version = bytes.readUInt16LE(0);
   const teeType = bytes.readUInt32LE(4);

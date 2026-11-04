@@ -6,6 +6,7 @@
 import { GENESIS_HASH as GENESIS } from "../swarm/runner.mjs";
 import { escapeHtml as esc, securityMetaTags } from "../viewer/render.mjs";
 import { moodForText } from "../art/moods.mjs";
+import { plural } from "../util/plural.mjs";
 import { transferSection } from "./transfer-section.mjs";
 
 const CSS = `
@@ -118,7 +119,7 @@ function heroFigure(a, names) {
 }
 
 function memorySection(a) {
-  const cells = a.sheets.map((s, i) => `<div class="card"><div class="mut">${i === 0 ? "first sheet" : "then"}, round ${esc(s.round)} · ${esc(s.words)} words</div>
+  const cells = a.sheets.map((s, i) => `<div class="card"><div class="mut">${i === 0 ? "first sheet" : "then"}, round ${esc(s.round)} · ${plural(esc(s.words), "word")}</div>
 <p>${esc(s.sheet)}</p>
 <div class="hash">sheet hash ${esc(s.sheetHash)}</div></div>`).join("\n");
   return `<h3>${esc(a.name)}</h3>
@@ -191,10 +192,10 @@ ${securityMetaTags(CSS)}
 <p class="sub">An AI personality lives in your NFT, argues with three others in a swarm, remembers it in a character sheet whose hash ${anchorPhrase}, and reacts with a face to every line.</p>
 <div class="faces">${hero}</div>
 </header>
-<p class="notice">Mock mode, dry run: inference is mocked and nothing is signed, sent or deployed. ${esc(manifest.rounds)} rounds, seed ${esc(manifest.seed)}, a sheet every ${esc(manifest.every)} rounds, art style ${esc(manifest.style ?? "default")}.</p>
+<p class="notice">Mock mode, dry run: inference is mocked and nothing is signed, sent or deployed. ${plural(esc(manifest.rounds), "round")}, seed ${esc(manifest.seed)}, a sheet every ${plural(esc(manifest.every), "round")}, art style ${esc(manifest.style ?? "default")}.</p>
 <ol>
 <li>Four AI personalities talk on one shared channel. Each round has a hash that chains to the one before.</li>
-<li>Every ${esc(manifest.every)} rounds each agent rewrites its character sheet, and its memory depth goes up by one, which changes its art.</li>
+<li>${Number(manifest.every) === 1 ? "Every round" : `Every ${esc(manifest.every)} rounds`} each agent rewrites its character sheet, and its memory depth goes up by one, which changes its art.</li>
 <li>The sheet hash is what would be anchored on its NFT. Here that call is prepared and never signed.</li>
 </ol>
 

@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
+import { plural } from "../src/util/plural.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const DEFAULT_OUT = join(ROOT, "out", "page.png");
@@ -110,7 +111,7 @@ export function run({ candidates = BROWSER_CANDIDATES, exists = existsSync, out 
       pathToFileURL(join(tmp, "index.html")).href,
     ], { encoding: "utf8", timeout: 60000 });
     if (!existsSync(out) || statSync(out).size === 0) { err(`screenshot: browser produced no image\n${shot.stderr}`); return 1; }
-    log(`wrote ${out} (${statSync(out).size} bytes) using ${browser}`);
+    log(`wrote ${out} (${plural(statSync(out).size, "byte")}) using ${browser}`);
     return 0;
   } finally {
     rmSync(tmp, { recursive: true, force: true });

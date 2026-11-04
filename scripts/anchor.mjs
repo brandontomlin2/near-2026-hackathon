@@ -9,6 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { prepareAnchor, submitAnchor } from "../src/anchor/anchor.mjs";
 import { hashSheet } from "../src/anchor/hash.mjs";
+import { plural } from "../src/util/plural.mjs";
 import { runSwarm, verifyRounds } from "../src/swarm/runner.mjs";
 
 const MOCK_SHEET = "Aloof. Observer. Watches the channel, speaks rarely.\nAllies: none yet.\n";
@@ -77,7 +78,7 @@ export async function main(argv = process.argv.slice(2), out = console.log) {
       console.error("FAIL: the same mock run gave different hashes");
       return 1;
     }
-    out(`OK: round hashes are deterministic (${first.roundHashes.length} rounds, same mock run twice)`);
+    out(`OK: round hashes are deterministic (${plural(first.roundHashes.length, "round")}, same mock run twice)`);
   }
   out(JSON.stringify(first, null, 2));
   return 0;
