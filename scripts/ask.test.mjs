@@ -218,7 +218,7 @@ test("--help and -h print usage on stdout and exit 0; help wins over other argum
 
 // ---- error contract --------------------------------------------------------------
 
-test("no character sheet: exact message, exit 2, mode line first, nothing created", () => {
+test("no character sheet: exact message, exit 2, no mode line, nothing created", () => {
   const out = scratch("ask-cli-nomem-");
   const r = ask(["--out", out, "chaotic", "hello?"]);
   assert.equal(r.code, 2);
@@ -226,7 +226,7 @@ test("no character sheet: exact message, exit 2, mode line first, nothing create
   const mem = join(out, "memory");
   assert.equal(
     r.stderr,
-    `${MODE_LINE}ask: no character sheet for chaotic under ${mem} (expected ${join(mem, "chaotic", "sheet.json")}). Run npm run demo first, then ask again.\n`,
+    `ask: no character sheet for chaotic under ${mem} (expected ${join(mem, "chaotic", "sheet.json")}). Run npm run demo first, then ask again.\n`,
   );
   assert.ok(noStack(r.stderr));
   assert.deepEqual(readdirSync(out), []);
@@ -238,7 +238,7 @@ test("a sheet missing for one agent only fails that agent and leaves the rest in
   const before = snapshot(out);
   const r = ask(["--out", out, "social", "hello?"]);
   assert.equal(r.code, 2);
-  assert.match(r.stderr, /^mode: mock model: mock-persona\nask: no character sheet for social under /);
+  assert.match(r.stderr, /^ask: no character sheet for social under /);
   assert.deepEqual(snapshot(out), before);
 });
 

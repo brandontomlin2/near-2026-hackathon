@@ -22,7 +22,7 @@ const BAD_ARGS = [
   ["--seed fractional", ["--seed", "1.5", "hi"], /--seed must be a non-negative integer, got "1.5"/],
   ["--seed beyond the safe integer range", ["--seed", "9007199254740993", "hi"], /--seed must be a non-negative integer/],
   ["--seed not a number", ["--seed", "abc", "hi"], /--seed must be a non-negative integer, got "abc"/],
-  ["--system with no value", ["--system"], /^infer: --system needs a non-empty value, got undefined \(see --help\)\n$/],
+  ["--system with no value", ["--system"], /^infer: --system needs a value \(see --help\)\n$/],
   ["--system blank", ["--system", "   ", "hi"], /--system needs a non-empty value, got "   "/],
   ["--system followed by a flag", ["--system", "--json", "hi"], /--system needs a non-empty value, got "--json"/],
   ["unknown long flag", ["--bogus", "hi"], /^infer: unknown flag --bogus \(see --help\)\n$/],

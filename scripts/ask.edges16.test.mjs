@@ -207,7 +207,7 @@ test("before any npm run demo: every agent says to run npm run demo, exit 2, the
     const r = ask(["--out", out, id, "hello?"]);
     assert.equal(r.code, 2, id);
     assert.equal(r.stdout, "");
-    assert.match(r.stderr, new RegExp(`^${MODE_LINE}ask: no character sheet for ${id} under .*memory \\(expected .*${id}.sheet\\.json\\)\\. Run npm run demo first, then ask again\\.\\n$`));
+    assert.match(r.stderr, new RegExp(`^ask: no character sheet for ${id} under .*memory \\(expected .*${id}.sheet\\.json\\)\\. Run npm run demo first, then ask again\\.\\n$`));
   }
   assert.deepEqual(readdirSync(root), []);
 });

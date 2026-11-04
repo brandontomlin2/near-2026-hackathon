@@ -32,13 +32,13 @@ test("every bad argument exits 2 with one exact 'swarm: ...' line on stderr and 
   const cwd = await scratch(t);
   const rows = [
     [["--rounds", "0"], 'swarm: --rounds must be a positive integer, got "0" (see --help)\n'],
-    [["--rounds"], "swarm: --rounds must be a positive integer, got undefined (see --help)\n"],
+    [["--rounds"], "swarm: --rounds needs a value (see --help)\n"],
     [["--rounds", "007"], 'swarm: --rounds must be a positive integer, got "007" (see --help)\n'],
     [["--rounds", "1001"], "swarm: --rounds must be at most 1000, got 1001 (see --help)\n"],
     [["--every", "1001"], "swarm: --every must be at most 1000, got 1001 (see --help)\n"],
     [["--seed", "-1"], 'swarm: --seed must be a non-negative integer, got "-1" (see --help)\n'],
     [["--seed", "1.5"], 'swarm: --seed must be a non-negative integer, got "1.5" (see --help)\n'],
-    [["--out"], "swarm: --out needs a directory, got undefined (see --help)\n"],
+    [["--out"], "swarm: --out needs a value (see --help)\n"],
     [["--out", "--rounds"], 'swarm: --out needs a directory, got "--rounds" (see --help)\n'],
     [["stray"], 'swarm: unknown argument "stray" (see --help)\n'],
   ];

@@ -11,6 +11,7 @@
 // memory and question. Live NEAR AI Cloud with MOCK_INFERENCE=0, which needs
 // NEAR_AI_API_KEY and NEAR_AI_MODEL like npm run infer. Nothing is signed or sent.
 
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -91,6 +92,12 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
       : "";
     console.error(`ask: ${label(error)}: ${firstLine(error)}${hint}`);
     return error instanceof InferenceError && error.code === "bad_config" ? 2 : 1;
+  }
+
+  // Sheet check before the mode line, so a usage mistake prints one error line and nothing else.
+  if (!existsSync(join(memoryDir, agent.id, "sheet.json"))) {
+    console.error(`ask: no character sheet for ${agent.id} under ${memoryDir} (expected ${join(memoryDir, agent.id, "sheet.json")}). Run npm run demo first, then ask again.`);
+    return 2;
   }
   process.stderr.write(`mode: ${answerClient.mode} model: ${answerClient.model}\n`);
 

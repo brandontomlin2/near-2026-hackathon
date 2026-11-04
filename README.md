@@ -69,7 +69,7 @@ The mock transcript is scripted. In mock mode each agent's lines are drawn from 
 
 Privacy check. `npm run attest:check` runs the offline attestation consistency check (`src/privacy/attestation.mjs`) against the hand-made fixture report in `src/privacy/fixture.mjs`, not against a live NEAR AI Cloud TEE report. It prints `CONSISTENT, NOT VERIFIED` and exits 0, or with `-- --tamper` prints `REJECT` and exits 1, or with `-- --unreadable-quote` swaps in a 2-byte hex quote and exits 2 (`--tamper` and `--unreadable-quote` cannot be combined; `--help` lists both; exit 2 also means the quote was truncated hex, too short to hold report data; a non-hex or stale quote is a `REJECT`, and so is a report with no nonce echo and no passing quote binding, which fails `request-binding`), and in each case lists what it did not verify: no TDX quote signature, NVIDIA attestation or chat signature is checked, and nothing has been run against a real report. That is why the "Inference (NEAR AI Cloud)" badge says `mocked` and `privacy` is not a claimed track. Limits and what a real check would need: [`docs/privacy.md`](docs/privacy.md).
 
-Nothing in this repository is deployed or live on testnet. The contract is unit-tested locally; deploy and mint are dry runs that sign nothing unless a human adds `--send --i-approve`; `npm run anchor` never signs (it only does dry runs); anchoring is sent only by `npm run live-proof -- --send --i-approve --media-base <url>`. Every hash, transaction and chain value in the demo output is a MOCK stand-in. Design: [`PRODUCT.md`](PRODUCT.md). Libraries, AI-generated code and pre-hackathon code (none): [`docs/DISCLOSURE.md`](docs/DISCLOSURE.md).
+Nothing in this repository is deployed or live on testnet. The contract is unit-tested locally; deploy and mint are dry runs that sign nothing unless a human adds `--send --i-approve`; `npm run anchor` never signs (run it as `npm run anchor -- --dry-run`; the CLI refuses without that flag); anchoring is sent only by `npm run live-proof -- --send --i-approve --media-base <url>`. Every hash, transaction and chain value in the demo output is a MOCK stand-in. Design: [`PRODUCT.md`](PRODUCT.md). Libraries, AI-generated code and pre-hackathon code (none): [`docs/DISCLOSURE.md`](docs/DISCLOSURE.md).
 
 ## Repository layout
 
@@ -167,7 +167,7 @@ Each token's SVG is drawn deterministically from its traits in one of four style
 2. Open `out/styles/sticker/sheet.svg` in a browser. See one row per agent and one column per mood.
 3. Run `npm run render -- --style all`. See every style rendered under `out/styles/`: 5 files for `default` (4 agents and `sheet.svg`) and 17 (16 moods and `sheet.svg`) for each of the other three.
 
-Run the JavaScript tests with `npm test`.
+Run the JavaScript tests with `npm test`. It prints one line per test, then a summary that ends `ℹ pass <N>` and `ℹ fail 0` (any other `fail` count is a failure).
 
 ## Validate locally
 

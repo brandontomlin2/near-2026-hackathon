@@ -10,6 +10,7 @@ import { MAX_ROUNDS } from "../src/swarm/runner.mjs";
 import { DEMO_DEFAULTS, runDemo } from "../src/demo/pipeline.mjs";
 import { memoryDiffLine } from "../src/demo/memory-diff.mjs";
 import { plural } from "../src/util/plural.mjs";
+import { describeWriteFailure } from "../src/util/outdir.mjs";
 import { assertEveryWithinRounds } from "../src/memory/loop.mjs";
 
 const USAGE = `Usage: node scripts/demo.mjs [--rounds N] [--seed N] [--every N] [--style NAME] [--out DIR]
@@ -117,7 +118,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     const shown = /[^\w./@:+-]/.test(page) ? JSON.stringify(page) : page;
     log(`Open the page: open ${shown}  (${pathToFileURL(resolve(page)).href})`);
   } catch (error) {
-    console.error(`${name}: ${error.message}`);
+    console.error(`${name}: ${describeWriteFailure(opts.out, error) ?? error.message}`);
     return 1;
   }
   return 0;
