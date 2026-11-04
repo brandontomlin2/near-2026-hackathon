@@ -231,3 +231,10 @@ test("CLI: --help wins and prints the style names, exit 0, writes nothing", () =
     rmSync(out, { recursive: true, force: true });
   }
 });
+
+test("getStyle only accepts a string name: an array or object that stringifies to one is unknown", () => {
+  const boxed = { toString: () => "sticker" };
+  for (const bad of [["sticker"], boxed, new String("pixel")]) {
+    assert.throws(() => getStyle(bad), /^Error: unknown style: .*\(expected one of default, sticker, pixel, deepfried\)$/);
+  }
+});
