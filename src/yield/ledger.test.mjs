@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 import { createInferenceClient } from "../inference/client.mjs";
 import { AGENT_IDS, runRound } from "./debate.mjs";
-import { createLedger, formatScoreboard, formatUsd, ledgerPath } from "./ledger.mjs";
+import { createLedger, formatScoreboard, formatUsd, ledgerPath, mockFill } from "./ledger.mjs";
 import { yieldMockResponder } from "./mock.mjs";
 import { loadPoolFixture } from "./pools.mjs";
 import { defaultVaultConfig } from "./strategies.mjs";
@@ -121,4 +121,17 @@ test("formatUsd and formatScoreboard render signed micro-USD", () => {
   assert.equal(formatUsd("-123"), "-0.000123");
   const text = formatScoreboard([{ agent: "aloof", rounds: 1, trades: 1, vetoes: 0, rejected: 0, invalid: 0, pnl_micro_usd: "-123" }]);
   assert.match(text, /aloof .*-0\.000123/);
+});
+
+test("mockFill values both sides at reference prices when the pool spot ratio differs from the reference ratio", () => {
+  // Pool 1 holds NUSDT/NUSDC at about 5.3:1, but both tokens have a $1 reference price (6 decimals each).
+  const sell = mockFill({ pool_id: 1, token_in: "nusdt.ft-fin.testnet", token_out: "nusdc.ft-fin.testnet", amount_in: "500", min_amount_out: "1" }, { fixture });
+  assert.equal(sell.amount_out, "93");
+  const loss = BigInt(sell.pnl_micro_usd);
+  assert.ok(loss >= -408n && loss <= -406n, `selling 500 for 93 is about -407 micro-USD, got ${loss}`);
+  const buy = mockFill({ pool_id: 1, token_in: "nusdc.ft-fin.testnet", token_out: "nusdt.ft-fin.testnet", amount_in: "500", min_amount_out: "1" }, { fixture });
+  const out = BigInt(buy.amount_out);
+  assert.ok(out > 500n);
+  const gain = BigInt(buy.pnl_micro_usd);
+  assert.ok(gain >= out - 500n - 2n && gain <= out - 500n + 2n, `the reference-value gain is out - 500, got ${gain} for out ${out}`);
 });

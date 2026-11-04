@@ -1,10 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, existsSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { assertSafeOutDir } from "../src/util/outdir.mjs";
+import { initialState } from "../src/yield/ledger.mjs";
+import { defaultVaultConfig } from "../src/yield/strategies.mjs";
 import { main } from "./yield.mjs";
 
 const TESTNET_ENV = {
@@ -12,6 +14,16 @@ const TESTNET_ENV = {
   YIELD_VAULT_ACCOUNT_ID: "vault.x.testnet",
   YIELD_RUNNER_ACCOUNT_ID: "runner.x.testnet",
 };
+
+/** Write a --vault-state file (the target vault's get_config()/get_state()) and return its path. */
+function vaultStateFile(overrides = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "yield-vs-"));
+  const doc = { config: defaultVaultConfig("skeptic", { runner: "runner.x.testnet" }), state: initialState(), ...overrides };
+  const file = join(dir, "vault.json");
+  writeFileSync(file, JSON.stringify(doc));
+  return file;
+}
+const VS = () => ["--vault-state", vaultStateFile()];
 
 /** Run main() in-process with captured output, a recording spawner and a fresh out dir. */
 async function run(argv, env = {}, { spawnStatus = 0, hasNear } = {}) {
@@ -119,8 +131,46 @@ test("NEAR_NETWORK=mainnet without --send is refused with exit 1", async () => {
   assert.deepEqual(r.calls, []);
 });
 
-test("--send --i-approve --agent skeptic on testnet spawns only skeptic argv, all testnet", async () => {
+test("--send without --vault-state is refused with exit 1 and nothing is spawned", async () => {
   const r = await run(["--send", "--i-approve", "--agent", "skeptic"], TESTNET_ENV, { hasNear: () => true });
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /--send needs --vault-state FILE/);
+  assert.deepEqual(r.calls, []);
+});
+
+test("--send with an unreadable or incomplete --vault-state is refused and nothing is spawned", async () => {
+  const missing = await run(["--send", "--i-approve", "--agent", "skeptic", "--vault-state", "/nonexistent/vault.json"], TESTNET_ENV, { hasNear: () => true });
+  assert.equal(missing.code, 1);
+  assert.match(missing.stderr, /cannot read --vault-state/);
+  assert.deepEqual(missing.calls, []);
+  const noState = await run(["--send", "--i-approve", "--agent", "skeptic", "--vault-state", vaultStateFile({ state: null })], TESTNET_ENV, { hasNear: () => true });
+  assert.equal(noState.code, 1);
+  assert.match(noState.stderr, /needs both "config" and "state"/);
+  assert.deepEqual(noState.calls, []);
+});
+
+test("--send checks proposals against the vault's real state: a paused vault gets no transaction", async () => {
+  const paused = { ...initialState(), paused: true };
+  const r = await run(["--send", "--i-approve", "--agent", "skeptic", "--vault-state", vaultStateFile({ state: paused })], TESTNET_ENV, { hasNear: () => true });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.calls, []);
+  assert.doesNotMatch(r.stdout, /execute_swap/);
+});
+
+test("--send checks proposals against the vault's real config: a vault with no limits gets no transaction", async () => {
+  const config = { ...defaultVaultConfig("skeptic", { runner: "runner.x.testnet" }), limits: [] };
+  const r = await run(["--send", "--i-approve", "--agent", "skeptic", "--vault-state", vaultStateFile({ config })], TESTNET_ENV, { hasNear: () => true });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.calls, []);
+});
+
+test("--vault-state without --send is a usage error (2)", async () => {
+  const r = await run(["--vault-state", vaultStateFile()], {});
+  assert.equal(r.code, 2);
+});
+
+test("--send --i-approve --agent skeptic on testnet spawns only skeptic argv, all testnet", async () => {
+  const r = await run(["--send", "--i-approve", "--agent", "skeptic", ...VS()], TESTNET_ENV, { hasNear: () => true });
   assert.equal(r.code, 0, r.stderr);
   assert.ok(r.calls.length >= 1, "skeptic should have sent at least one swap");
   for (const c of r.calls) {
@@ -135,7 +185,7 @@ test("--send --i-approve --agent skeptic on testnet spawns only skeptic argv, al
 });
 
 test("--send argv count equals the skeptic executions in --json output", async () => {
-  const r = await run(["--send", "--i-approve", "--agent", "skeptic", "--json"], TESTNET_ENV, { hasNear: () => true });
+  const r = await run(["--send", "--i-approve", "--agent", "skeptic", "--json", ...VS()], TESTNET_ENV, { hasNear: () => true });
   assert.equal(r.code, 0, r.stderr);
   const doc = JSON.parse(r.stdout);
   assert.equal(doc.dry_run, false);
@@ -146,14 +196,14 @@ test("--send argv count equals the skeptic executions in --json output", async (
 });
 
 test("a failing near exit status stops the run with exit 1", async () => {
-  const r = await run(["--send", "--i-approve", "--agent", "skeptic"], TESTNET_ENV, { hasNear: () => true, spawnStatus: 7 });
+  const r = await run(["--send", "--i-approve", "--agent", "skeptic", ...VS()], TESTNET_ENV, { hasNear: () => true, spawnStatus: 7 });
   assert.equal(r.code, 1);
   assert.equal(r.calls.length, 1);
   assert.match(r.stderr, /status 7/);
 });
 
 test("--send refuses when near-cli-rs is not available", async () => {
-  const r = await run(["--send", "--i-approve", "--agent", "skeptic"], TESTNET_ENV, { hasNear: () => false });
+  const r = await run(["--send", "--i-approve", "--agent", "skeptic", ...VS()], TESTNET_ENV, { hasNear: () => false });
   assert.equal(r.code, 1);
   assert.deepEqual(r.calls, []);
 });
