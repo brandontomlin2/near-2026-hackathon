@@ -119,13 +119,25 @@ Submit `nfts`, `swarms`, and `agents`. Add `privacy` only if a TEE
 attestation check ships in the demo. Until that check exists, leave
 `privacy` off the submission.
 
+## The fifth personality: Yield Optimizer (dry run only)
+
+The Yield Optimizer is the fifth personality. Today it is dry-run only:
+it reads a committed, hand-built snapshot (never the network), checks each
+candidate swap against an off-chain mirror of the vault contract's
+`check_rules`, and prints a plan. `node scripts/yield-optimizer.mjs` shows the
+candidates (OK or REFUSED with the contract's error code), the decision, a
+simulated P&L vs holding, and a JSON `execute_swap` plan with `"dry_run": true`
+and `"sent": false`. It signs and sends nothing. The vault contract (PR #159)
+and the Shade Agent are not on main, so there is no on-chain execution yet.
+It is not one of the four swarm agents above and is not part of the demo.
+
 ## Out of scope for the Nov 11 freeze
 
 - Mainnet.
 - Marketplace or trading.
 - A user-minting UI beyond a simple CLI or page.
 - AI-generated art at mint.
-- More than 4 agents.
+- More than 4 swarm agents (the dry-run Yield Optimizer personality is the exception, above).
 - On-chain storage of full logs.
 - Token economics or payments.
 - Intents.
