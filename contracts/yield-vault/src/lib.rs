@@ -64,6 +64,10 @@ pub const GAS_FT_TRANSFER: Gas = Gas::from_tgas(30);
 pub const MIN_WITHDRAW_GAS: Gas = Gas::from_tgas(80);
 /// Gas for `ref.storage_deposit`.
 pub const GAS_STORAGE_DEPOSIT: Gas = Gas::from_tgas(30);
+/// `on_recover_pre`: own body (~10) + Ref withdraw (40) + `on_recover` (40) + margin.
+pub const GAS_CB_RECOVER_PRE: Gas = Gas::from_tgas(100);
+/// Minimum prepaid gas for `recover_from_ref`: `get_deposit` (10) + `on_recover_pre` (100) + body + fees + margin.
+pub const MIN_RECOVER_GAS: Gas = Gas::from_tgas(150);
 /// `on_register` body (may create one transfer).
 pub const GAS_CB_REGISTER: Gas = Gas::from_tgas(10);
 /// Minimum prepaid gas for `register_on_ref`: storage_deposit (30) + on_register (10) + fees + margin.
@@ -205,6 +209,8 @@ pub struct Recovery {
     pub token_id: AccountId,
     pub amount: u128,
     pub started_at: u64,
+    /// Ref's `get_deposit` of `token_id` read before the withdraw (set by `on_recover_pre`).
+    pub pre: u128,
 }
 
 /// Ref `swap` action.
@@ -1030,6 +1036,10 @@ impl YieldVault {
             "ERR_SWAP_IN_FLIGHT: another recovery is in flight"
         );
         require!(amount.0 > 0, "ERR_ZERO_AMOUNT: amount must be > 0");
+        require!(
+            env::prepaid_gas() >= MIN_RECOVER_GAS,
+            "ERR_INSUFFICIENT_GAS: attach at least 150 TGas"
+        );
         let have = self.stranded.get(&token_id).copied().unwrap_or(0);
         require!(
             have >= amount.0,
@@ -1043,13 +1053,52 @@ impl YieldVault {
             token_id: token_id.clone(),
             amount: amount.0,
             started_at: env::block_timestamp(),
+            pre: 0,
         });
-        Promise::new(self.ref_exchange_id.clone())
+        self.ref_deposit_query(&token_id).then(
+            Self::ext(env::current_account_id())
+                .with_static_gas(GAS_CB_RECOVER_PRE)
+                .on_recover_pre(recovery_id),
+        )
+    }
+
+    /// Recovery hop 1: records Ref's deposit before the withdraw, so the
+    /// reconcile can credit exactly what left Ref. Refuses (restoring the
+    /// stranded record) if Ref does not hold `amount` or the read failed.
+    #[private]
+    pub fn on_recover_pre(
+        &mut self,
+        recovery_id: u64,
+        #[callback_result] pre: Result<U128, PromiseError>,
+    ) -> PromiseOrValue<U128> {
+        Self::assert_self();
+        let Some(mut r) = self.current_recovery(recovery_id) else {
+            return PromiseOrValue::Value(U128(0));
+        };
+        let pre = match pre {
+            Ok(d) if d.0 >= r.amount => d.0,
+            other => {
+                self.recovery = None;
+                *self.stranded.entry(r.token_id.clone()).or_insert(0) += r.amount;
+                emit(
+                    "recover_refused",
+                    json!({
+                        "token_id": r.token_id,
+                        "amount": r.amount.to_string(),
+                        "on_ref": other.ok().map(|d| d.0.to_string()),
+                    }),
+                );
+                return PromiseOrValue::Value(U128(0));
+            }
+        };
+        r.pre = pre;
+        self.recovery = Some(r.clone());
+        let p = Promise::new(self.ref_exchange_id.clone())
             .function_call(
                 "withdraw".to_string(),
                 json_bytes(json!({
-                    "token_id": token_id,
-                    "amount": amount,
+                    "token_id": r.token_id,
+                    "amount": U128(r.amount),
                     "unregister": null,
                     "skip_unwrap_near": true,
                 })),
@@ -1060,7 +1109,8 @@ impl YieldVault {
                 Self::ext(env::current_account_id())
                     .with_static_gas(GAS_CB_WITHDRAW_DONE)
                     .on_recover(recovery_id),
-            )
+            );
+        PromiseOrValue::Promise(p)
     }
 
     /// Hop after Ref `withdraw` in a recovery: restores the stranded record if
@@ -1085,8 +1135,10 @@ impl YieldVault {
         ))
     }
 
-    /// Credits recovered funds only if Ref's deposit shows they left Ref, then
-    /// releases the recovery lock. `stranded` already excludes the amount here.
+    /// Credits recovered funds only if Ref's deposit dropped by at least
+    /// `amount` since `on_recover_pre` read it (exact: the recovery lock keeps
+    /// every other vault operation off Ref meanwhile), then releases the lock.
+    /// A stranded record larger than what Ref holds cannot fake a success.
     #[private]
     pub fn on_recover_reconciled(
         &mut self,
@@ -1098,10 +1150,9 @@ impl YieldVault {
             return U128(0);
         };
         self.recovery = None;
-        let (token_id, amount) = (r.token_id, r.amount);
-        let baseline = self.stranded_of(&token_id).saturating_add(amount);
+        let (token_id, amount, pre) = (r.token_id, r.amount, r.pre);
         match deposit {
-            Ok(d) if d.0 < baseline => {
+            Ok(d) if pre.saturating_sub(d.0) >= amount => {
                 self.credit(&token_id, amount);
                 emit(
                     "recovered",

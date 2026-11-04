@@ -1107,13 +1107,111 @@ fn recover_moves_stranded_then_credits_on_success() {
     testing_env!(ctx1("owner.testnet").build());
     let _ = v.recover_from_ref(rft(), U128(300));
     assert_eq!(stranded(&v, &rft()), 200);
+    pre_read(&mut v, 500);
     cb_ctx(PromiseResult::Successful(vec![]), T0);
     let r = v.on_recover(1);
     assert!(matches!(r, PromiseOrValue::Promise(_)));
     assert_eq!(bal(&v, &rft()), 0, "not credited before reconciliation");
     cb_ctx(PromiseResult::Failed, T0);
-    v.on_recover_reconciled(1,Ok(U128(0)));
+    v.on_recover_reconciled(1,Ok(U128(200)));
     assert_eq!(bal(&v, &rft()), 300);
+}
+
+/// Recovery hop 1 for recovery id 1: Ref reports `pre` before the withdraw.
+fn pre_read(v: &mut YieldVault, pre: u128) {
+    cb_ctx(ok_result(&U128(pre)), T0);
+    let r = v.on_recover_pre(1, Ok(U128(pre)));
+    assert!(matches!(r, PromiseOrValue::Promise(_)), "withdraw issued");
+    assert_eq!(v.recovery.as_ref().unwrap().pre, pre);
+}
+
+#[test]
+fn recover_from_ref_reads_ref_before_withdrawing() {
+    let mut v = funded();
+    v.stranded.insert(rft(), 500);
+    testing_env!(ctx1("owner.testnet").build());
+    let _ = v.recover_from_ref(rft(), U128(300));
+    let calls = created_calls();
+    assert_eq!(calls.len(), 2, "get_deposit then on_recover_pre, no withdraw yet");
+    assert_eq!(calls[0].1, "get_deposit");
+    assert_eq!(calls[1].1, "on_recover_pre");
+}
+
+#[test]
+fn recover_refused_when_ref_holds_less_than_amount() {
+    // The stranded record (500) is larger than what is really on Ref (200).
+    let mut v = funded();
+    v.stranded.insert(rft(), 500);
+    testing_env!(ctx1("owner.testnet").build());
+    let _ = v.recover_from_ref(rft(), U128(300));
+    cb_ctx(ok_result(&U128(200)), T0);
+    let r = v.on_recover_pre(1, Ok(U128(200)));
+    assert!(matches!(r, PromiseOrValue::Value(U128(0))), "no withdraw");
+    assert!(!v.get_state().recovery_in_flight);
+    assert_eq!(stranded(&v, &rft()), 500);
+    assert_eq!(bal(&v, &rft()), 0);
+    assert!(get_logs().join("\n").contains("recover_refused"));
+}
+
+#[test]
+fn recover_refused_when_pre_read_fails() {
+    let mut v = funded();
+    v.stranded.insert(rft(), 500);
+    testing_env!(ctx1("owner.testnet").build());
+    let _ = v.recover_from_ref(rft(), U128(300));
+    cb_ctx(PromiseResult::Failed, T0);
+    let _ = v.on_recover_pre(1, Err(PromiseError::Failed));
+    assert!(!v.get_state().recovery_in_flight);
+    assert_eq!(stranded(&v, &rft()), 500);
+}
+
+#[test]
+fn phantom_stranded_record_cannot_make_failed_withdraw_look_successful() {
+    // Record says 500, Ref really holds 300. Recovering 300: Ref's withdraw
+    // returns normally but its ft_transfer failed and Ref re-credited, so the
+    // deposit is still 300. The old baseline (200 + 300 = 500 > 300) would
+    // have credited; the before/after delta (300 - 300 = 0) does not.
+    let mut v = funded();
+    v.stranded.insert(rft(), 500);
+    testing_env!(ctx1("owner.testnet").build());
+    let _ = v.recover_from_ref(rft(), U128(300));
+    pre_read(&mut v, 300);
+    cb_ctx(PromiseResult::Successful(vec![]), T0);
+    let _ = v.on_recover(1);
+    cb_ctx(ok_result(&U128(300)), T0);
+    assert_eq!(v.on_recover_reconciled(1, Ok(U128(300))).0, 0);
+    assert_eq!(bal(&v, &rft()), 0, "nothing credited");
+    assert_eq!(stranded(&v, &rft()), 500, "record restored");
+}
+
+#[test]
+#[should_panic(expected = "ERR_INSUFFICIENT_GAS")]
+fn recover_from_ref_rejects_low_gas() {
+    let mut v = funded();
+    v.stranded.insert(rft(), 500);
+    let mut c = ctx1("owner.testnet");
+    c.prepaid_gas(Gas::from_tgas(149));
+    testing_env!(c.build());
+    let _ = v.recover_from_ref(rft(), U128(300));
+}
+
+#[test]
+fn recover_from_ref_fits_in_exactly_min_gas_in_unit_vm() {
+    let mut v = funded();
+    v.stranded.insert(rft(), 500);
+    let mut c = ctx1("owner.testnet");
+    c.prepaid_gas(MIN_RECOVER_GAS);
+    testing_env!(c.build());
+    let _ = v.recover_from_ref(rft(), U128(300));
+    assert!(v.get_state().recovery_in_flight);
+}
+
+#[test]
+#[should_panic(expected = "Method is private")]
+fn on_recover_pre_rejects_non_self() {
+    let mut v = funded();
+    at("mallory.testnet", T0);
+    let _ = v.on_recover_pre(1, Ok(U128(0)));
 }
 
 #[test]
@@ -1123,6 +1221,7 @@ fn recover_failure_restores_stranded() {
     testing_env!(ctx1("owner.testnet").build());
     let _ = v.recover_from_ref(rft(), U128(500));
     assert_eq!(stranded(&v, &rft()), 0);
+    pre_read(&mut v, 500);
     cb_ctx(PromiseResult::Failed, T0);
     let _ = v.on_recover(1);
     assert_eq!(stranded(&v, &rft()), 500);
@@ -1872,6 +1971,7 @@ fn recovering() -> YieldVault {
     v.stranded.insert(rft(), 500);
     testing_env!(ctx1("owner.testnet").build());
     let _ = v.recover_from_ref(rft(), U128(300));
+    pre_read(&mut v, 500);
     cb_ctx(PromiseResult::Successful(vec![]), T0);
     let r = v.on_recover(1);
     assert!(matches!(r, PromiseOrValue::Promise(_)));
@@ -1881,7 +1981,7 @@ fn recovering() -> YieldVault {
 #[test]
 fn recover_ok_but_ref_deposit_unchanged_is_restranded_not_credited() {
     let mut v = recovering();
-    // 200 still stranded + 300 in flight = 500 baseline; Ref still shows 500.
+    // Ref showed 500 before the withdraw and still shows 500: nothing left Ref.
     cb_ctx(ok_result(&U128(500)), T0);
     assert_eq!(v.on_recover_reconciled(1,Ok(U128(500))).0, 0);
     assert_eq!(bal(&v, &rft()), 0);
