@@ -27,7 +27,13 @@ Direct dependencies in `contracts/personality-nft/Cargo.toml`, with versions loc
 - `near-sdk` 5.30.0 (runtime dependency of the contract; also a dev-dependency with the `unit-testing` feature)
 - `near-contract-standards` 5.30.0
 
-`Cargo.lock` also pins their transitive dependencies. Building the contract to wasm needs [cargo-near](https://github.com/near/cargo-near), a build tool that is not a dependency of the crate.
+Direct dependencies in `contracts/yield-vault/Cargo.toml` (the Yield Optimizer vault, same rustc 1.95.0 pin, tested with `cargo test` in that directory), with versions locked in its own `Cargo.lock`:
+
+- `near-sdk` 5.30.0 (runtime dependency; also a dev-dependency with the `unit-testing` feature)
+
+The vault calls the Rhea (Ref Finance) testnet exchange contract `ref-finance-101.testnet` at runtime; no Ref code is vendored or imported.
+
+`Cargo.lock` also pins their transitive dependencies. Building a contract to wasm needs [cargo-near](https://github.com/near/cargo-near), a build tool that is not a dependency of the crate.
 
 ### Agent skills and templates
 
