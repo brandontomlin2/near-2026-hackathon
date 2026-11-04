@@ -18,7 +18,7 @@ Everything here is mock or dry-run. Nothing is signed or sent, no key or account
 
 1. `npm install && npm run demo` prints, among other lines, `[1/5] swarm: 6 rounds, 24 events, verify: ok`, `[4/5] anchor (dry run): 8 calls prepared, 0 signed`, `Done. Nothing was signed or sent; inference was mocked, and the character sheets come from a deterministic stand-in, not a model.`, and last `Open the page: open out/index.html  (file:///…/out/index.html)`.
 2. `open out/index.html` (or open the file in any browser) shows the headline `Your NFT remembers who you are` over the four agents.
-3. `bash scripts/verify.sh` (about 1 to 2 minutes) ends with a `STATUS / STAGE / DETAIL` table with no `FAIL` row, then `result: PASS`. It includes the row `PASS      demo            npm run demo (mock)`.
+3. `bash scripts/verify.sh` (about 30 seconds to 2 minutes) ends with a `STATUS / STAGE / DETAIL` table with no `FAIL` row, then `result: PASS`. It includes the row `PASS      demo            npm run demo (mock)`.
 
 The numbered steps in the next section go deeper.
 
@@ -59,7 +59,7 @@ npm install && npm run demo
 7. In `out/index.html`, find "Transfer: memory travels with the NFT". See a simulated transfer from `alice.demo.testnet` to `bob.demo.testnet` (placeholders, nothing sent): each token's re-hashed sheet shows `match`, a tampered sheet shows `MISMATCH`, and the "Inference (NEAR AI Cloud)" badge says `mocked`. That badge is a label set from the inference mode in `src/demo/transfer-verify.mjs`, not an attestation check: nothing in the demo or in `verify.sh` verifies a TEE. The offline attestation checker, `node scripts/attest-check.mjs`, runs only on a hand-built fixture (see `docs/privacy.md`). The same data is under `transfer` in `out/demo.json`.
 8. Run `npm run demo` again. See the same final round hash, `4c8e826620ce2fa1c118df19d13f622ade870b0a54dd206e2c93157df9c6ff52`, and byte-identical files. It is a hash of the mock conversation, not a chain value.
 9. Run `MOCK_INFERENCE=0 npm run demo`. See `demo: runs in mock mode only` and exit 2. The demo never makes a live call.
-10. Run `bash scripts/verify.sh` (about 1 to 2 minutes measured on an Apple-silicon Mac; allow a few minutes on a busy machine). See a 13-row `STATUS / STAGE / DETAIL` table with no `FAIL` row (`SKIP` rows are fine; without gitleaks the `secret scan` row is a `FALLBACK` scan, see [Validate locally](#validate-locally)), ending in `result: PASS`. Details in [Validate locally](#validate-locally).
+10. Run `bash scripts/verify.sh` (about 30 seconds to 2 minutes measured on an Apple-silicon Mac; allow a few minutes on a busy machine). See a 13-row `STATUS / STAGE / DETAIL` table with no `FAIL` row (`SKIP` rows are fine; without gitleaks the `secret scan` row is a `FALLBACK` scan, see [Validate locally](#validate-locally)), ending in `result: PASS`. Details in [Validate locally](#validate-locally).
 
 Everything below this section is reference for the pieces the demo ran.
 
@@ -81,6 +81,10 @@ Privacy check. `npm run attest:check` runs the offline attestation consistency c
 
 Nothing in this repository is deployed or live on testnet. The contract is unit-tested locally; deploy and mint are dry runs that sign nothing unless a human adds `--send --i-approve`; `npm run anchor` never signs and only does dry runs, so it requires the flag: run `npm run anchor -- --dry-run` and see JSON with `"mode": "dry-run"`, `"transactionHash": null`, three `roundHashes`, a `sheetHash`, and an `anchor` call to `anchor_sheet` on the placeholder `mock-contract.testnet` with `"signing": "required"` (nothing is sent), while plain `npm run anchor` prints `anchor: --dry-run is required; this CLI never signs (see --help)` and exits 2; anchoring is sent only by `npm run live-proof -- --send --i-approve --media-base <url>`. Every hash, transaction and chain value in the demo output is a MOCK stand-in. Design: [`PRODUCT.md`](PRODUCT.md). Libraries, AI-generated code and pre-hackathon code (none): [`docs/DISCLOSURE.md`](docs/DISCLOSURE.md).
 
+## Work in progress: Yield Optimizer
+
+A fifth personality, the Yield Optimizer, is in progress: a vault with on-chain rules, a Shade Agent that acts within them, and NEAR chain signatures so the agent never holds a private key. So far only a spike exists: `spikes/shade/` computes the chain-signature key offline (matched against live testnet view calls) and prints the planned sign request and transaction. It is dry-run only, signs and sends nothing, and is not part of the demo or of the tracks claimed above. Run `node spikes/shade/dry-run.mjs` to see the plan. Design note: [`docs/spikes/shade-agent.md`](docs/spikes/shade-agent.md).
+
 ## Repository layout
 
 | Path | What it is |
@@ -91,6 +95,8 @@ Nothing in this repository is deployed or live on testnet. The contract is unit-
 | `scripts/demo.mjs`, `src/demo/` | `npm run demo`, the offline end-to-end demo. |
 | `scripts/testnet-deploy.mjs` | `npm run deploy:nft` and `npm run mint`, dry run unless `--send --i-approve`. |
 | `scripts/verify.sh` | Local judge screen, replaces GitHub Actions. |
+| `spikes/shade/` | Dry-run spike for chain signatures (see [Work in progress](#work-in-progress-yield-optimizer)). Not part of the demo. |
+| `docs/spikes/shade-agent.md` | Design note for that spike. |
 | `docs/DISCLOSURE.md` | Libraries, AI-generated code and pre-hackathon code. |
 | `board/`, `.agents/`, `.claude/`, `skills-lock.json` | Agent tooling used to build this repository (build board, vendored NEAR skills), not part of the product. |
 
