@@ -27,6 +27,7 @@ import { MAX_EVENT_TEXT_CHARS, makeEvent, summarize } from "../memory/summarizer
 import { AGENTS } from "../traits/agents.mjs";
 import { MAX_REPLY_BYTES, personaPrompt } from "../swarm/runner.mjs";
 import { capUtf8Bytes, replaceUnsafeChars } from "../util/text.mjs";
+import { plural } from "../util/plural.mjs";
 
 /** The owner's name in the token log. It is what the sheet stand-in puts on the scorecard. */
 export const OWNER_NAME = "Owner";
@@ -132,7 +133,6 @@ const TEMPLATES = Object.freeze({
   }),
 });
 
-const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 /** "Skeptic (5 fights)" -> "Skeptic"; "none" -> null. */
 const nameIn = (fact) => /^([A-Z][A-Za-z]*)\b/.exec(fact)?.[1] ?? null;

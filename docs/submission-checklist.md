@@ -1,12 +1,28 @@
 # Submission checklist
 
-Mirrors `docs/HACKATHON.md` (byte-identical to the live https://nearhackathon.com/HACKATHON.md when last walked, 2026-11-03). The live version wins: re-read it before submitting. Tick items with evidence, not memory.
+Mirrors `docs/HACKATHON.md` (matched the live https://nearhackathon.com/HACKATHON.md on 2026-11-03; not re-fetched on 2026-11-04, that pass made no network calls). The live version wins: re-read it before submitting. Tick items with evidence, not memory.
 
 Submission is one attempt per repository and cannot be edited. Window: 2026-11-01T00:00Z to **2026-11-14T23:59Z**. Outside it the API returns 403: tell the human, do not retry. Judging starts 2026-11-16T00:00Z; results by 2026-11-18T23:59Z.
 
 Agents never do the items marked **HUMAN**. Without an explicit yes, agents must not send the submission, post on X, make the repo public, push, or sign or spend anything.
 
-Status key: **done** (evidence given), **missing** (agent-doable work not finished), **needs Brandon** (only the human can supply or do it). Last walked: 2026-11-03 on branch `claude/checklist-walk`.
+Status key: **done** (evidence given), **missing** (agent-doable work not finished), **needs Brandon** (only the human can supply or do it). Last walked: 2026-11-04 on branch `claude/docs-accuracy27`, based on main `c8e48d8`.
+
+## At a glance: what the hackathon requires, and where it stands
+
+| Requirement (source) | Status | Where |
+| --- | --- | --- |
+| Public repo before 2026-11-14T23:59Z, kept public through judging | **HUMAN** (only they can make it public; the repo cannot show its visibility) | Section 1 |
+| README: what it is, the problem, how NEAR fits, numbered "do X, see Y" steps | done | Section 2 |
+| `LICENSE` | done (MIT) | Section 1 |
+| Libraries, templates, AI-generated code listed; pre-hackathon code disclosed | done (`docs/DISCLOSURE.md`: none predates the window) | Section 2 |
+| Pre-hackathon / `hackathon-submission` tags and README diff link (Q-003) | not applicable: no code predates 2026-11-01 (first commit `992acee`, 2026-11-02); no such tags exist | Section 3 |
+| Demo video, 60 to 90 s (Q-012: screenshots alone are not enough if judges cannot open a hosted demo) | **HUMAN** records it; shot list is `docs/demo-video.md`, the 2.5 minute script is `docs/demo-script.md` | Section 4 |
+| X post: says built at NEAR HACKATHON, tags `@NEARProtocol` and `#NEARHackathon`, video or screenshots attached | drafts done (3, each at most 280 characters, both tags); **HUMAN** edits, attaches media and publishes | Section 4 |
+| Form fields: project name, lead name, email, team size, tracks, payout account, repo URL, demo post URL, idea, consent | all **HUMAN** | Section 6 |
+| At most 2 projects per person, each independent and named in the other's README (Q-015) | **HUMAN** to answer; README names no second project | Sections 2 and 5 |
+| Submission itself (one attempt, cannot be edited) | **HUMAN** confirms the printed payload; not started | Section 7 |
+| Hosted demo (optional, a plus) | **HUMAN** (needs their hosting account); `npm run site` builds it | Section 2 |
 
 ## 1. Repository
 
@@ -26,7 +42,7 @@ Status key: **done** (evidence given), **missing** (agent-doable work not finish
 | What the product is, the problem, how NEAR fits; no marketing | done | README "What this is", "How NEAR fits". |
 | Numbered "do X, see Y" steps from a fresh clone | done | README "Try it (judge path)" steps 1-11. Re-check each command exists in `package.json` before submit. |
 | Works with no keys (`MOCK_INFERENCE=1`); live env vars documented | done | README "Inference" section. |
-| Track ids named in README | done | README top: `nfts`, `swarms`, `agents` (fixed 2026-11-03; it said only `nfts` and `agents`). `docs/HACKATHON.md` lists all 13 valid ids. |
+| Track ids named in README | done | README line 21, under the title: "Tracks: `nfts`, `swarms` and `agents`." `docs/HACKATHON.md` lists all 13 valid ids. |
 | Libraries, templates, AI-generated code listed (Q-005) | done | `docs/DISCLOSURE.md`, linked from README "Disclosure". |
 | Pre-hackathon code disclosed (Q-002, Q-003) | done | README "Mock caveats and status" and "Disclosure": none. `docs/DISCLOSURE.md` names first commit `992acee`. |
 | Planned features not described as shipped | done | README "Mock caveats and status" and "Live on testnet" say nothing is deployed and there are no hashes to show. Re-check after any live run. |
@@ -47,7 +63,7 @@ Submissions open 2026-11-01; the code baseline cutoff is 2026-10-19 (announcemen
 
 ## 4. Demo post on X (**HUMAN** writes and publishes)
 
-Requirements from Procedure step 2. Drafts: `docs/x-post.md` (3 drafts, all under 280 characters with links counted as 23; each has `@NEARProtocol`, `#NEARHackathon` and "Built at NEAR HACKATHON"). Video plan: `docs/demo-video.md`, `docs/demo-script.md`.
+Requirements from Procedure step 2. Drafts: `docs/x-post.md` (3 drafts, counted the way X does, link 23 and emoji 2: 270, 262 and 277 characters; each has `@NEARProtocol`, `#NEARHackathon` and "built at NEAR HACKATHON"; `scripts/docs-accuracy.test.mjs` re-checks all of this). Video plan: `docs/demo-video.md`, `docs/demo-script.md`.
 
 | Requirement | Status | Evidence / next step |
 | --- | --- | --- |
@@ -66,7 +82,7 @@ Valid ids (API table): `defi`, `thesis`, `privacy`, `business`, `swarms`, `secur
 | Requirement | Status | Evidence / next step |
 | --- | --- | --- |
 | Plan: `nfts`, `swarms`, `agents` | done (plan) | `PRODUCT.md` "Tracks"; README matches since 2026-11-03. |
-| `privacy` only if a TEE attestation check ships | missing | No attestation check exists; `privacy` stays off (`PRODUCT.md`, `docs/privacy.md`). |
+| `privacy` only if a TEE attestation check ships | not met, stays off | `npm run attest:check` exists but only checks a hand-made fixture offline and ends `CONSISTENT, NOT VERIFIED`: no TDX quote signature, NVIDIA attestation or chat signature is checked, and nothing has run against a real report. So `privacy` stays off (`PRODUCT.md`, `docs/privacy.md`). |
 | Final track list confirmed | needs Brandon | Human picks every track the project fits. |
 | Q-015: at most 2 projects per person, each independent and named in the other's README; at most 2 submissions per email | needs Brandon | Ask whether a second project is planned; record the answer here. |
 
@@ -106,7 +122,7 @@ Status of this section: not started, correctly. This walk drafted no payload and
 | --- | --- | --- |
 | Build on testnet first; testnet-only projects are eligible in all tracks (Q-010) | done | Contract targets testnet; `scripts/testnet-deploy.mjs` refuses any `NEAR_NETWORK` but `testnet`; `scripts/verify.sh` refuses `mainnet`. |
 | Product uses no mainnet or Intents (no testnet for Intents, Q-007) | done | `PRODUCT.md` out of scope: Mainnet, Intents. If that changes: separate dev accounts, tiny amounts, `dry: true` quotes, human's yes per action. |
-| Deploy, mint and anchor are dry runs unless both `--send` and `--i-approve` are given | done | README "Deploy to testnet"; `npm run deploy:nft` and `npm run mint` print only; `--send` without `--i-approve` is refused; `npm run live-proof` hands its `--i-approve` on to both and refuses any `NEAR_NETWORK` but `testnet`. |
+| Deploy, mint and anchor are dry runs unless both `--send` and `--i-approve` are given | done | README "Deploy to testnet"; `npm run mint` prints only (`dry-run: nothing is signed or sent`), and `npm run deploy:nft` stops with `error: wasm not found ... Run npm run build:contract first` until the contract is built, then prints only; `--send` without `--i-approve` is refused; `npm run live-proof` hands its `--i-approve` on to both and refuses any `NEAR_NETWORK` but `testnet`. |
 | Live testnet run | needs Brandon | Needs a testnet account and the human's yes. `npm run live:check` is read-only preflight. |
 | Payout account is mainnet (not testnet) | needs Brandon | Section 6. Receiving a prize needs no repo action. |
 

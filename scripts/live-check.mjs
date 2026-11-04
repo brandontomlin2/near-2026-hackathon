@@ -12,6 +12,7 @@
 import { statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { plural } from "../src/util/plural.mjs";
 import { NETWORK, defaultWasmPath, isTestnetNetwork, validateAccountId } from "./testnet-deploy.mjs";
 
 export const RPC_URL = "https://rpc.testnet.near.org";
@@ -62,7 +63,7 @@ export async function check(env = process.env, deps = {}) {
 
   try {
     const size = statWasm(wasm);
-    add(size > 0, size > 0 ? `wasm built: ${wasm} (${size} bytes)` : `wasm is empty at ${wasm}. ${BUILD_HINT}`);
+    add(size > 0, size > 0 ? `wasm built: ${wasm} (${plural(size, "byte")})` : `wasm is empty at ${wasm}. ${BUILD_HINT}`);
   } catch {
     add(false, wasmMessage(wasm));
   }

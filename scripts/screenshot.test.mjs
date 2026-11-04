@@ -39,10 +39,10 @@ test("parseArgs rejects unknown flags, a missing --out value, and --out with --u
   assert.throws(() => parseArgs(["--out", "x.png", "--update-docs"]), /not both/);
 });
 
-test("CLI: a bad flag exits 1 with a one-line error plus usage, before looking for a browser", () => {
+test("CLI: a bad flag exits 2 with a one-line error ending (see --help), before looking for a browser", () => {
   const r = spawnSync(process.execPath, [SCRIPT, "--bogus"], { cwd: ROOT, encoding: "utf8" });
-  assert.equal(r.status, 1);
-  assert.match(r.stderr, /^screenshot: unknown argument --bogus\nUsage: /);
+  assert.equal(r.status, 2);
+  assert.equal(r.stderr, "screenshot: unknown argument --bogus (see --help)\n");
   assert.doesNotMatch(r.stderr, /Chrome/);
 });
 

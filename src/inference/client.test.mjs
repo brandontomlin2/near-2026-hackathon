@@ -323,3 +323,18 @@ test("live client wraps network failures as retryable errors", async () => {
     (err) => err instanceof InferenceError && err.code === "network" && err.retryable === true,
   );
 });
+
+test("live client redacts the percent-encoded form of the key from provider error text", async () => {
+  const encodedKey = "test key/with+specials&more";
+  const cloud = await fakeCloud(() => ({ status: 400, body: `rejected key=${encodeURIComponent(encodedKey)} raw=${encodedKey}`, contentType: "text/plain" }));
+  try {
+    const client = createLiveClient({ apiKey: encodedKey, model: "m", baseUrl: cloud.baseUrl, sleep: noSleep });
+    const caught = await client.chat({ messages: [{ role: "user", content: "x" }] }).catch((err) => err);
+    assert.ok(caught instanceof InferenceError);
+    assert.ok(!caught.message.includes(encodeURIComponent(encodedKey)));
+    assert.ok(!caught.message.includes(encodedKey));
+    assert.match(caught.message, /\[redacted\]/);
+  } finally {
+    await cloud.close();
+  }
+});

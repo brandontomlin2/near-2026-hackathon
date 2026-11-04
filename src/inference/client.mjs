@@ -313,7 +313,8 @@ function isRetryableStatus(status) {
 }
 
 function redact(text, secret) {
-  return secret ? text.split(secret).join("[redacted]") : text;
+  if (!secret) return text;
+  return text.split(secret).join("[redacted]").split(encodeURIComponent(secret)).join("[redacted]");
 }
 
 /**

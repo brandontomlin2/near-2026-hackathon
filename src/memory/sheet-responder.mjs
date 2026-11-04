@@ -18,6 +18,7 @@
 // the same request always gives the same sheet.
 
 import { pickBy } from "../util/pick.mjs";
+import { plural } from "../util/plural.mjs";
 
 const MAX_QUOTE_WORDS = 12;
 
@@ -60,7 +61,6 @@ function clip(text, max = MAX_QUOTE_WORDS) {
   return words.length > max ? `${cut}...` : cut;
 }
 
-const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 // Text of one "Label: ..." section of a one-line sheet, up to the next label.
 function section(sheet, label, next) {

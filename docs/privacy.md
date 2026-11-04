@@ -49,28 +49,36 @@ quote format version is returned, nor how `intel_quote` is encoded. Nothing in
 this repository has been run against a real report, so the code works from an
 assumption, and it says so in its output.
 
-The assumption: `intel_quote` is hex; it is an Intel DCAP quote format v4 with
-a TDX TD report 1.0 body, so the header's first `u16` little-endian is `4`, the
+The assumption: `intel_quote` is hex; it is an Intel DCAP quote format v4 or v5
+with a TDX TD report body. v4: the header's first `u16` little-endian is `4`, the
 `u32` at byte 4 is `0x81` (TDX), and the 64-byte `report_data` field sits at
-bytes 568..632; and the raw 32-byte nonce and the raw 20-byte address both
+bytes 568..632. v5: version `5`, tee type `0x81`, then a `u16` body type at
+byte 48 (2 = TDX 1.0 TD report, 3 = TDX 1.5 TD report; 1 = SGX enclave report
+is rejected) and a `u32` body size at byte 50 (584 or 648, must match the type),
+the body at byte 54, and `report_data` 520 bytes into it, at bytes 574..638.
+The v5 offsets come from Intel's published DCAP v5 layout and are not checked
+against a real v5 quote from NEAR AI; the tests use synthetic quotes. And the raw 32-byte nonce and the raw 20-byte address both
 appear somewhere inside those 64 bytes.
 
 How `quote-binding` reports, given that:
 
 - `pass` when `intel_quote` is hex, at least 632 bytes, and both raw values
-  are found in bytes 568..632, and the 48-byte header says version 4 with TEE
-  type `0x81` (TDX). The detail always says the quote is unauthenticated.
+  are found in `report_data` (v4: bytes 568..632; v5 with a TDX 1.0/1.5 body:
+  bytes 574..638), and the 48-byte header says version 4 or 5 with TEE type
+  `0x81` (TDX). The detail always says the quote is unauthenticated.
 - `fail` when `intel_quote` is not hex (the report claims a quote we cannot even
   read as bytes); when it is 632+ bytes and the header does not say version 4
-  and TDX (checked first, with the version and TEE type it did say, and the
-  report data is not read, so correct bytes at 568..632 do not save it); or when
-  the header is v4/TDX and bytes 568..632 lack our nonce or the signing address
-  (stale, replayed, another node's quote). A genuine v5 quote, and a genuine
-  report that
-  hashes the binding, would also fail here; we accept
-  that rather than let a replayed quote through.
+  or 5 and TDX (checked first, with the version and TEE type it did say, and
+  the report data is not read, so correct bytes at 568..632 do not save it);
+  when it is v5 with a body type other than 2 or 3 (for example an SGX body), or
+  a body size that contradicts the body type; or when the header is v4/v5 TDX
+  and `report_data` lacks our nonce or the signing address
+  (stale, replayed, another node's quote). A genuine report that
+  hashes the binding would also fail here; we accept that rather than let a
+  replayed quote through.
 - `unverifiable`, with the reason, only when `intel_quote` is valid hex but
-  shorter than 632 bytes (a truncated quote). That is the one input that
+  shorter than 632 bytes, or a v5 quote shorter than its declared body
+  (54 + 584 or 54 + 648 bytes) (a truncated quote). That is the one input that
   reaches `BINDING UNREAD` / exit 2. The result is still `consistent` only if
   the report echoes our nonce; the summary says `BINDING UNREAD` and the result
   lists the ids in `unverifiable`.
@@ -92,8 +100,9 @@ would take; it is not evidence that NEAR AI binds the values that way.
 - The TDX quote's signature and Intel certificate chain. Needs `dcap-qvl` and
   Intel collateral. Without it, the REPORTDATA check above reads
   unauthenticated bytes: anyone can write a JSON file that passes it. What the
-  check does verify about a quote is only: it is hex, at least 632 bytes, its
-  header says version 4 and TEE type TDX, and bytes 568..632 hold our nonce and
+  check does verify about a quote is only: it is hex, long enough for its body, its
+  header says version 4 or 5 and TEE type TDX (v5: a TDX 1.0 or 1.5 body type),
+  and `report_data` (568..632 for v4, 574..638 for v5) holds our nonce and
   the signing address. It does not verify the quote signature, the certificate
   chain, the measurements (MRTD, RTMRs, `mr_config`) or the TCB status.
 - NVIDIA NRAS. Needs a POST to `nras.attestation.nvidia.com`; then JWT
