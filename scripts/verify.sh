@@ -96,7 +96,8 @@ print_summary() {
   # each one has a row, so a lost results file can never look like a clean pass.
   local expected_stages=(
     "fresh clone" "workflows" "symlinks" "secret files" "npm install" "tests"
-    "secret scan" "deploy nft" "mint" "swarm" "demo" "round hash" "evidence"
+    "secret scan" "deploy nft" "mint" "swarm" "demo" "round hash" "yield" "vault tests"
+    "evidence"
   )
   local status stage detail seen=$'\n' missing=""
   echo
@@ -663,6 +664,26 @@ fi
 
 planned "demo" "demo" mock
 planned "round hash" "anchor" mock --dry-run --check
+# Yield Optimizer: one mock debate round, dry run (nothing signed or sent).
+planned "yield" "yield" mock
+
+# Yield vault contract unit tests. The build cache is the source checkout's
+# gitignored target/ so a fresh clone does not recompile near-sdk every run.
+echo
+echo "==> vault tests"
+if [[ ! -f contracts/yield-vault/Cargo.toml ]]; then
+  echo "SKIP (not built yet)"
+  record SKIP "vault tests" "SKIP (not built yet)"
+elif ! command -v cargo >/dev/null 2>&1; then
+  echo "WARN: cargo not installed; the yield vault contract tests did NOT run" >&2
+  record SKIP "vault tests" "NOT RUN: cargo not installed"
+elif (cd contracts/yield-vault && CARGO_TARGET_DIR="${source_root}/contracts/yield-vault/target" cargo test --quiet); then
+  record PASS "vault tests" "cargo test (contracts/yield-vault)"
+else
+  echo "FAIL: cargo test failed in contracts/yield-vault"
+  record FAIL "vault tests" "cargo test failed (contracts/yield-vault)"
+  failed=1
+fi
 
 planned "evidence" "evidence" auto
 if [[ "$last_outcome" == "pass" ]]; then
