@@ -148,6 +148,13 @@ export function parseSnapshot(raw) {
   need(ISO_UTC.test(takenAt), "taken_at must be an ISO-8601 time with Z or an offset, e.g. 2026-11-04T12:00:00Z");
   const ms = Date.parse(takenAt);
   need(Number.isFinite(ms) && ms >= 0, "taken_at must be an ISO-8601 UTC time");
+  // Date.parse rolls impossible dates over (Feb 30 -> Mar 2); refuse them instead.
+  const [y, mo, d, h, mi, s] = takenAt.match(/\d+/g).slice(0, 6).map(Number);
+  const cal = new Date(Date.UTC(y, mo - 1, d));
+  need(
+    cal.getUTCFullYear() === y && cal.getUTCMonth() === mo - 1 && cal.getUTCDate() === d && h < 24 && mi < 60 && s < 60,
+    `taken_at ${takenAt} is not a real calendar date and time`,
+  );
   need(isObj(raw.tokens), "tokens must be an object keyed by token account id");
   // No prototype: a token id like "toString" or "__proto__" is just a key.
   const tokens = Object.create(null);

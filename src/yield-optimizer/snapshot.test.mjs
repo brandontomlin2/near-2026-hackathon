@@ -62,6 +62,15 @@ describe("parseSnapshot", () => {
   it("rejects a bad taken_at", () => rejects((r) => (r.taken_at = "not a date"), /taken_at/));
   it("rejects a taken_at without Z or an offset (local-time ambiguity)", () =>
     rejects((r) => (r.taken_at = "2026-11-04T12:00:00"), /taken_at/));
+  it("rejects an impossible calendar date instead of rolling it over", () =>
+    rejects((r) => (r.taken_at = "2026-02-30T00:00:00Z"), /not a real calendar date/));
+  it("rejects an impossible time of day", () =>
+    rejects((r) => (r.taken_at = "2026-11-04T24:00:00Z"), /not a real calendar date/));
+  it("accepts an explicit offset", () => {
+    const raw = JSON.parse(fs.readFileSync(FIXTURE, "utf8"));
+    raw.taken_at = "2026-11-04T06:00:00-06:00";
+    assert.equal(parseSnapshot(raw).now_ns, BigInt(Date.parse("2026-11-04T12:00:00Z")) * 1_000_000n);
+  });
   it("rejects a non-boolean paused flag", () => rejects((r) => (r.vault.state.paused = "no"), /paused/));
   it("rejects a non-positive price", () => rejects((r) => (r.tokens["wrap.testnet"].price_usd = "0"), /price_usd/));
 
