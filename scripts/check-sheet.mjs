@@ -46,6 +46,8 @@ Exit 0 MATCH, 1 MISMATCH or IN-FLIGHT, 2 usage or RPC error.`;
 
 // A stalled RPC must not hang the check: each view call is aborted after this.
 export const RPC_TIMEOUT_MS = 15000;
+export const MAX_RESPONSE_BYTES = 1024 * 1024;
+const MAX_SHEET_BYTES = 1024 * 1024;
 
 const VALUE_FLAGS = new Set(["--contract", "--token", "--sheet", "--rpc", "--out"]);
 
@@ -85,6 +87,9 @@ export function parseArgs(argv) {
 export function readSheetFile(file) {
   let text;
   try {
+    const st = fs.statSync(file);
+    if (!st.isFile()) throw Object.assign(new Error("not a regular file"), { code: "ENOTFILE" });
+    if (st.size > MAX_SHEET_BYTES) throw Object.assign(new Error("too large"), { code: "E2BIG (over 1 MiB)" });
     text = fs.readFileSync(file, "utf8");
   } catch (err) {
     throw new UsageError(`cannot read sheet file ${file}: ${err.code ?? err.message}`);
@@ -94,7 +99,7 @@ export function readSheetFile(file) {
     try {
       parsed = JSON.parse(text);
     } catch (err) {
-      throw new UsageError(`sheet file ${file} is not valid JSON: ${err.message}`);
+      throw new UsageError(`sheet file ${file} is not valid JSON`);
     }
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed) || typeof parsed.sheet !== "string") {
       throw new UsageError(`sheet file ${file} must be a JSON object with a string "sheet" field`);
@@ -122,6 +127,43 @@ function verdict({ sheetHash, anchorHash, inFlight }) {
 
 const fail = (error) => ({ code: 2, error });
 
+/** Server-supplied text is untrusted: no control characters (ANSI escapes), at most 200 chars. */
+export function sanitizeRemote(text) {
+  return String(text).replace(/[\u0000-\u001f\u007f-\u009f]/g, "?").slice(0, 200);
+}
+
+/**
+ * Wraps a fetch so the response body is read through a byte counter and aborted past maxBytes.
+ * Returns { ok, status, json } built from the capped text. Throws "response too large".
+ */
+export async function readCapped(res, maxBytes = MAX_RESPONSE_BYTES) {
+  const tooLarge = () => new Error(`response too large (over ${maxBytes} bytes)`);
+  const declared = Number(res.headers?.get?.("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await res.body?.cancel?.().catch(() => {});
+    throw tooLarge();
+  }
+  if (!res.body || typeof res.body.getReader !== "function") {
+    // No stream to meter (only hand-written stubs lack one): fall back to the parsed body.
+    return { ok: res.ok, status: res.status, json: () => res.json() };
+  }
+  const reader = res.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {});
+      throw tooLarge();
+    }
+    chunks.push(Buffer.from(value));
+  }
+  const text = Buffer.concat(chunks).toString("utf8");
+  return { ok: res.ok, status: res.status, json: async () => JSON.parse(text) };
+}
+
 /** Replaces every form of the RPC URL that may carry a key (as given, normalized, path+query) with its origin. */
 export function redact(text, rpcUrl, origin) {
   const url = new URL(rpcUrl);
@@ -144,13 +186,14 @@ export async function checkTestnet({ contract, token, sheetHash, rpcUrl = DEFAUL
     throw new UsageError("--rpc must be an https URL whose host names testnet (value not shown); mainnet or unlabelled endpoints are refused");
   }
   // redirect: "error" so a testnet-named host cannot bounce the call to another host.
-  const timedFetch = (url, init) => fetchImpl(url, { ...init, redirect: "error", signal: AbortSignal.timeout(RPC_TIMEOUT_MS) });
+  const timedFetch = async (url, init) =>
+    readCapped(await fetchImpl(url, { ...init, redirect: "error", signal: AbortSignal.timeout(RPC_TIMEOUT_MS) }));
   const call = (method) => viewCall({ fetchImpl: timedFetch, rpcUrl, contract: account, method, args: { token_id: token } });
   const anchorView = await call("sheet_anchor");
   const flightView = await call("nft_in_flight");
   for (const view of [anchorView, flightView]) {
     if (view.error) {
-      const message = redact(String(view.error), rpcUrl, rpc);
+      const message = sanitizeRemote(redact(String(view.error), rpcUrl, rpc));
       return fail(`RPC error: ${message}`);
     }
   }
@@ -199,7 +242,7 @@ export function checkMock({ outDir = "out", token, sheetHash, contract, cwd = pr
   if (contract !== undefined && contract !== anchors.contractId) {
     return fail(`--contract does not match ${shown} (it holds ${anchors.contractId})`);
   }
-  const last = anchors.calls.filter((c) => c?.tokenId === token).at(-1);
+  const last = anchors.calls.filter((c) => c?.method === "anchor_sheet" && c?.tokenId === token).at(-1);
   const anchorHash = last?.args?.sheet_hash;
   if (!last) return fail(`token ${token} not found in ${shown}`);
   if (typeof anchorHash !== "string" || !SHEET_HASH_RE.test(anchorHash)) return fail(`${shown} has a malformed sheet_hash for ${token}`);

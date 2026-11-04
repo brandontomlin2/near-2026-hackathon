@@ -215,6 +215,7 @@ export async function viewCall({ fetchImpl, rpcUrl, contract, method, args, extr
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
+    if (json === null || typeof json !== "object") throw new Error("malformed response (not a JSON object)");
     record.response = json;
     if (json.error) throw new Error(`RPC error: ${JSON.stringify(json.error)}`);
     const out = json.result;

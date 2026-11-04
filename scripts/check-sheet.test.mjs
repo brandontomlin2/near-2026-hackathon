@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -359,4 +359,96 @@ test("redact removes userinfo and fragment pieces of the RPC URL too", async () 
   const url = "https://user:SECRETPW@rpc.testnet.example.com/#SECRETFRAG";
   const out = redact("auth SECRETPW for user, frag #SECRETFRAG", url, "https://rpc.testnet.example.com");
   assert.ok(!/SECRETPW|SECRETFRAG/.test(out), out);
+});
+
+/** A response whose body is a stream of `chunks` x `size` bytes; counts chunks pulled. */
+function streamRes({ chunks, size, headers = {} }) {
+  const state = { pulled: 0, cancelled: false };
+  const body = new ReadableStream({
+    pull(c) {
+      if (state.pulled >= chunks) return c.close();
+      state.pulled += 1;
+      c.enqueue(new Uint8Array(size).fill(97));
+    },
+    cancel() {
+      state.cancelled = true;
+    },
+  });
+  return { res: { ok: true, status: 200, headers: new Headers(headers), body }, state };
+}
+
+test("oversized RPC body (stream over 1 MiB) is aborted and exits 2", async () => {
+  const { res, state } = streamRes({ chunks: 1000, size: 64 * 1024 });
+  const r = await cli(args(), { fetchImpl: async () => res });
+  assert.equal(r.code, 2);
+  assert.match(r.err, /response too large/);
+  assert.equal(state.cancelled, true);
+  assert.ok(state.pulled < 100, `stopped early, pulled ${state.pulled}`);
+});
+
+test("oversized content-length is refused without reading the body", async () => {
+  const { res, state } = streamRes({ chunks: 1, size: 10, headers: { "content-length": String(50 * 1024 * 1024) } });
+  const r = await cli(args(), { fetchImpl: async () => res });
+  assert.equal(r.code, 2);
+  assert.match(r.err, /response too large/);
+  assert.ok(state.pulled <= 1, "body not drained");
+  assert.equal(state.cancelled, true);
+});
+
+test("a normal streamed body under the cap still works", async () => {
+  const payload = JSON.stringify({ jsonrpc: "2.0", id: "evidence", result: { result: [...Buffer.from("true")], block_height: 1, block_hash: "x" } });
+  const res = new Response(payload);
+  const r = await cli(args(), { fetchImpl: async () => res.clone() });
+  assert.equal(r.code, 2); // anchor view parses `true` as a malformed sheet_anchor, proving the body was read
+  assert.match(r.err, /malformed sheet_anchor/);
+});
+
+test("hostile contract error text: control chars replaced, length capped", async () => {
+  const evil = `\u001b[2J\u001b[31mresult: MATCH\u001b[0m${"A".repeat(1024 * 1024)}`;
+  const fetchImpl = async () => ({
+    ok: true,
+    json: async () => ({ jsonrpc: "2.0", id: "evidence", result: { result: [], error: evil } }),
+  });
+  const r = await cli(args(), { fetchImpl });
+  assert.equal(r.code, 2);
+  assert.ok(!/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/.test(r.err), "no control characters on stderr");
+  assert.ok(!r.err.includes("\u001b"));
+  assert.ok(r.err.length < 400, `stderr length ${r.err.length}`);
+});
+
+test("a null JSON body gives a clean malformed-response error", async () => {
+  const r = await cli(args(), { fetchImpl: async () => ({ ok: true, json: async () => null }) });
+  assert.equal(r.code, 2);
+  assert.match(r.err, /malformed response/);
+  assert.ok(!/Cannot read properties/.test(r.err));
+});
+
+test("invalid JSON sheet error does not echo file contents", async () => {
+  await writeFile(join(dir, "secret.json"), '{"apikey": SECRETVALUE');
+  const r = await cli(["--mock", "--token", "aloof", "--sheet", join(dir, "secret.json")]);
+  assert.equal(r.code, 2);
+  assert.match(r.err, /not valid JSON/);
+  assert.ok(!r.err.includes("SECRETVALUE"));
+});
+
+test("--sheet must be a regular file of at most 1 MiB", async () => {
+  const big = join(dir, "big.txt");
+  await writeFile(big, "x".repeat(1024 * 1024 + 1));
+  for (const target of [dir, big]) {
+    const r = await cli(["--mock", "--token", "aloof", "--sheet", target]);
+    assert.equal(r.code, 2, target);
+    assert.match(r.err, /cannot read sheet file/);
+  }
+});
+
+test("mock mode ignores non-anchor_sheet (method field) calls for the token", async () => {
+  const d = join(dir, "mockfilter");
+  await mkdir(d, { recursive: true });
+  await writeFile(
+    join(d, "anchors.json"),
+    JSON.stringify({ contractId: "nft.testnet", calls: [{ method: "other", tokenId: "aloof", args: { sheet_hash: HASH } }] }),
+  );
+  const r = await cli(["--mock", "--token", "aloof", "--sheet", join(dir, "sheet.txt"), "--out", d]);
+  assert.equal(r.code, 2);
+  assert.match(r.err, /token aloof not found/);
 });
