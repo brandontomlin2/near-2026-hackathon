@@ -17,7 +17,6 @@
 
 use near_sdk::json_types::U128;
 use near_sdk::serde_json::{self, json, Value};
-use near_sdk::store::LookupMap;
 use near_sdk::{
     assert_one_yocto, env, near, require, AccountId, Gas, NearToken, PanicOnDefault, Promise,
     PromiseError, PromiseOrValue,
@@ -52,6 +51,8 @@ pub const GAS_CB_SWAP: Gas = Gas::from_tgas(100);
 pub const GAS_CB_DEPOSIT: Gas = Gas::from_tgas(160);
 /// Minimum prepaid gas for `execute_swap` (70 + 160 + own body + margin).
 pub const MIN_EXECUTE_GAS: Gas = Gas::from_tgas(250);
+/// A swap lock older than this (ns, 10 minutes) may be force-released by the owner.
+pub const STALE_LOCK_NS: u64 = 600 * 1_000_000_000;
 /// Gas for an owner `ft_transfer` out.
 pub const GAS_FT_TRANSFER: Gas = Gas::from_tgas(30);
 /// Gas for `ref.storage_deposit`.
@@ -133,6 +134,8 @@ pub struct InFlight {
     /// `day` the spend was counted on (rollback only applies the same day).
     pub day: u64,
     pub amount_out: u128,
+    /// Block timestamp (ns) when the swap started; used by the stale-lock escape.
+    pub started_at: u64,
 }
 
 /// Ref `swap` action.
@@ -160,8 +163,6 @@ pub struct YieldVault {
     balances: BTreeMap<AccountId, u128>,
     stranded: BTreeMap<AccountId, u128>,
     swaps_executed: u64,
-    /// Unused marker keeping a typed map available for future per-runner data.
-    _reserved: LookupMap<AccountId, u8>,
 }
 
 fn emit(event: &str, data: Value) {
@@ -230,7 +231,6 @@ impl YieldVault {
             balances: BTreeMap::new(),
             stranded: BTreeMap::new(),
             swaps_executed: 0,
-            _reserved: LookupMap::new(b"r".to_vec()),
         };
         emit("config_updated", json!({ "config": this.config }));
         this
@@ -361,6 +361,7 @@ impl YieldVault {
             min_amount_out: proposal.min_amount_out.0,
             day: today,
             amount_out: 0,
+            started_at: env::block_timestamp(),
         });
         emit(
             "swap_proposed",
@@ -397,6 +398,7 @@ impl YieldVault {
         &mut self,
         #[callback_result] used: Result<U128, PromiseError>,
     ) -> PromiseOrValue<U128> {
+        Self::assert_self();
         let Some(mut fl) = self.in_flight.clone() else {
             return PromiseOrValue::Value(U128(0));
         };
@@ -443,6 +445,7 @@ impl YieldVault {
         &mut self,
         #[callback_result] out: Result<U128, PromiseError>,
     ) -> PromiseOrValue<U128> {
+        Self::assert_self();
         let Some(mut fl) = self.in_flight.clone() else {
             return PromiseOrValue::Value(U128(0));
         };
@@ -486,6 +489,7 @@ impl YieldVault {
     /// Hop 3 callback: credits token_out, releases the lock.
     #[private]
     pub fn on_withdraw_done(&mut self) -> U128 {
+        Self::assert_self();
         let ok = env::promise_result_checked(0, 4096).is_ok();
         let Some(fl) = self.in_flight.clone() else {
             return U128(0);
@@ -514,6 +518,7 @@ impl YieldVault {
     /// Restores the balance if the owner's `ft_transfer` failed.
     #[private]
     pub fn on_owner_withdraw(&mut self, token_id: AccountId, amount: U128) {
+        Self::assert_self();
         if env::promise_result_checked(0, 4096).is_err() {
             self.credit(&token_id, amount.0);
             emit(
@@ -584,6 +589,29 @@ impl YieldVault {
         emit("config_updated", json!({ "config": self.config }));
     }
 
+    /// Escape hatch for a lock stuck because a callback never ran (for example
+    /// out of gas). Only after `STALE_LOCK_NS`. The debited amount is recorded
+    /// as stranded on Ref (it may be on Ref or still with the vault; the owner
+    /// reconciles via `recover_from_ref`, which fails harmlessly if nothing is there).
+    #[payable]
+    pub fn force_release_lock(&mut self) {
+        self.owner_one_yocto();
+        let Some(fl) = self.in_flight.clone() else {
+            env::panic_str("ERR_NO_SWAP_IN_FLIGHT: nothing to release");
+        };
+        require!(
+            env::block_timestamp().saturating_sub(fl.started_at) >= STALE_LOCK_NS,
+            "ERR_LOCK_NOT_STALE: wait 10 minutes after the swap started"
+        );
+        let (token, amount) = if fl.amount_out > 0 {
+            (fl.token_out.clone(), fl.amount_out)
+        } else {
+            (fl.token_in.clone(), fl.amount_in)
+        };
+        self.strand(&token, amount, "lock_force_released");
+        self.fail(&fl, "lock_force_released");
+    }
+
     /// Owner pays Ref storage for the vault's internal Ref account.
     #[payable]
     pub fn register_on_ref(&mut self) -> Promise {
@@ -637,6 +665,7 @@ impl YieldVault {
     /// Credits recovered funds, or restores the stranded record on failure.
     #[private]
     pub fn on_recover(&mut self, token_id: AccountId, amount: U128) {
+        Self::assert_self();
         if env::promise_result_checked(0, 4096).is_ok() {
             self.credit(&token_id, amount.0);
             emit(
@@ -652,6 +681,14 @@ impl YieldVault {
 // ------------------------------------------------------------------- internals
 
 impl YieldVault {
+    /// Defence in depth on top of `#[private]`: callbacks only run for the contract itself.
+    fn assert_self() {
+        require!(
+            env::predecessor_account_id() == env::current_account_id(),
+            "ERR_PRIVATE_CALLBACK: Method is private"
+        );
+    }
+
     fn assert_owner(&self) {
         require!(
             env::predecessor_account_id() == self.owner_id,
