@@ -59,14 +59,18 @@ pub const MIN_EXECUTE_GAS: Gas = Gas::from_tgas(270);
 pub const STALE_LOCK_NS: u64 = 600 * 1_000_000_000;
 /// Gas for an owner `ft_transfer` out.
 pub const GAS_FT_TRANSFER: Gas = Gas::from_tgas(30);
+/// Minimum prepaid gas for owner `withdraw`: ft_transfer (30) + on_owner_withdraw (15)
+/// + own body + receipt fees + margin (60 is too little even in the unit-test VM).
+pub const MIN_WITHDRAW_GAS: Gas = Gas::from_tgas(80);
 /// Gas for `ref.storage_deposit`.
 pub const GAS_STORAGE_DEPOSIT: Gas = Gas::from_tgas(30);
 /// NEP-141 view `ft_balance_of`.
 pub const GAS_FT_VIEW: Gas = Gas::from_tgas(10);
 /// `on_force_release_*` bodies.
 pub const GAS_CB_RELEASE: Gas = Gas::from_tgas(20);
-/// Minimum prepaid gas for `force_release_lock`: three 10 TGas views + 20 callback + own body + margin.
-pub const MIN_FORCE_RELEASE_GAS: Gas = Gas::from_tgas(70);
+/// Minimum prepaid gas for `force_release_lock`: three 10 TGas views + 20 callback
+/// + own body + four receipts' fees + margin (70 is too little even in the unit-test VM).
+pub const MIN_FORCE_RELEASE_GAS: Gas = Gas::from_tgas(100);
 
 const ONE_YOCTO: NearToken = NearToken::from_yoctonear(1);
 
@@ -430,6 +434,12 @@ impl YieldVault {
         require!(
             self.release.is_none(),
             "ERR_RELEASE_PENDING: a force release is reconciling balances"
+        );
+        // Without this, on_owner_withdraw could be starved after the debit and
+        // a failed ft_transfer would never be re-credited.
+        require!(
+            env::prepaid_gas() >= MIN_WITHDRAW_GAS,
+            "ERR_INSUFFICIENT_GAS: attach at least 80 TGas"
         );
         self.debit(&token_id, amount.0);
         emit(
@@ -795,7 +805,7 @@ impl YieldVault {
         self.owner_one_yocto();
         require!(
             env::prepaid_gas() >= MIN_FORCE_RELEASE_GAS,
-            "ERR_INSUFFICIENT_GAS: attach at least 70 TGas"
+            "ERR_INSUFFICIENT_GAS: attach at least 100 TGas"
         );
         let (token, other, started_at, is_recovery) = if let Some(r) = &self.recovery {
             (r.token_id.clone(), None, r.started_at, true)

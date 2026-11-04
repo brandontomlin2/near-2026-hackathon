@@ -741,6 +741,50 @@ fn withdraw_callback_success_keeps_debit() {
 }
 
 #[test]
+#[should_panic(expected = "ERR_INSUFFICIENT_GAS")]
+fn withdraw_rejects_low_gas_before_debiting() {
+    let mut v = funded();
+    let mut c = ctx1("owner.testnet");
+    c.prepaid_gas(Gas::from_tgas(79));
+    testing_env!(c.build());
+    let _ = v.withdraw(wrap(), U128(1_500));
+}
+
+#[test]
+fn withdraw_accepts_exactly_min_gas() {
+    let mut v = funded();
+    let mut c = ctx1("owner.testnet");
+    c.prepaid_gas(MIN_WITHDRAW_GAS);
+    testing_env!(c.build());
+    let _ = v.withdraw(wrap(), U128(1_500));
+    assert_eq!(bal(&v, &wrap()), 8_500);
+}
+
+/// The unit-test VM charges receipt fees, so these catch a minimum that cannot
+/// even pay for the promises it creates. They are not a real-chain measurement.
+#[test]
+fn execute_swap_fits_in_exactly_min_gas_in_unit_vm() {
+    let mut v = funded();
+    let mut c = ctx("runner.testnet", T0);
+    c.prepaid_gas(MIN_EXECUTE_GAS);
+    testing_env!(c.build());
+    let _ = v.execute_swap(proposal(100));
+    assert!(v.get_state().swap_in_flight);
+}
+
+#[test]
+fn force_release_fits_in_exactly_min_gas_in_unit_vm() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    let mut c = ctx("owner.testnet", T0 + STALE_LOCK_NS);
+    c.attached_deposit(NearToken::from_yoctonear(1));
+    c.prepaid_gas(MIN_FORCE_RELEASE_GAS);
+    testing_env!(c.build());
+    let _ = v.force_release_lock();
+    assert!(v.get_state().release_in_flight);
+}
+
+#[test]
 #[should_panic(expected = "ERR_NOT_OWNER")]
 fn withdraw_rejects_non_owner() {
     let mut v = funded();
