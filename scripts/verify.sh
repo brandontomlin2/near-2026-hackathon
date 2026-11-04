@@ -27,8 +27,10 @@ path; the script cd's into a fresh clone):
 
 The script clones HEAD into a temp directory, installs dependencies when
 package.json exists, runs node --test on test files that exist, and scans
-with gitleaks when that binary is installed (when it is not, the secret scan
-stage prints WARN lines and records SKIP; it never fails). Planned npm scripts are:
+with gitleaks when that binary is installed. When it is not, the stage runs
+scripts/secret-scan-fallback.mjs (a narrower built-in scan of git-tracked files)
+and records PASS or FAIL labelled FALLBACK; only if node is also missing does it
+print WARN lines and record SKIP. Planned npm scripts are:
 
   deploy:nft   testnet deploy of the NFT contract (live only)
   mint         mint 4 tokens (mock unless --live)
@@ -141,6 +143,17 @@ secret_scan() {
   local gitleaks_args
   echo
   echo "==> secret scan"
+  if ! command -v gitleaks >/dev/null 2>&1 && command -v node >/dev/null 2>&1 && [[ -f scripts/secret-scan-fallback.mjs ]]; then
+    echo "NOTE: gitleaks is not installed; running the narrower built-in fallback scan (scripts/secret-scan-fallback.mjs)."
+    if node scripts/secret-scan-fallback.mjs; then
+      record PASS "secret scan" "FALLBACK scan, no findings (gitleaks not installed; narrower than gitleaks)"
+    else
+      echo "FAIL: fallback secret scan reported findings or failed"
+      record FAIL "secret scan" "FALLBACK scan reported findings or failed (gitleaks not installed)"
+      failed=1
+    fi
+    return 0
+  fi
   if ! command -v gitleaks >/dev/null 2>&1; then
     secret_scan_skipped=1
     echo "WARN: secret scan did NOT run: gitleaks is not installed on this machine."

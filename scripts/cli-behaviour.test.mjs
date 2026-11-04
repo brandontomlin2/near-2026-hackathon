@@ -432,8 +432,8 @@ test("readme-asset: unknown flag fails before generating anything", () => {
   const cwd = scratch();
   const before = listing(cwd);
   const r = run("readme-asset.mjs", ["--bogus"], { cwd });
-  assert.equal(r.code, 1);
-  assert.ok(r.stderr.startsWith("readme-asset: unknown argument --bogus\nUsage: node scripts/readme-asset.mjs"), r.stderr);
+  assert.equal(r.code, 2);
+  assert.equal(r.stderr, "readme-asset: unknown argument --bogus (see --help)\n");
   assert.ok(noStack(r.stderr));
   assert.equal(listing(cwd), before);
 });
@@ -442,8 +442,8 @@ test("readme-asset: --out together with --update-docs is refused with nothing ge
   const cwd = scratch();
   const before = listing(cwd);
   const r = run("readme-asset.mjs", ["--out", "dir", "--update-docs"], { cwd });
-  assert.equal(r.code, 1);
-  assert.match(r.stderr, /^readme-asset: use --out or --update-docs, not both\n/);
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /^readme-asset: use --out or --update-docs, not both \(see --help\)\n/);
   assert.equal(r.stdout, "");
   assert.equal(listing(cwd), before);
 });
@@ -453,7 +453,7 @@ test("readme-asset: an --out under a file fails with one ENOTDIR line and no sta
   const r = run("readme-asset.mjs", ["--out", "afile/x"], { cwd });
   assert.equal(r.code, 1);
   assert.ok(oneLine(r.stderr), r.stderr);
-  assert.match(r.stderr, /^readme-asset: cannot write .*afile\/x: ENOTDIR/);
+  assert.match(r.stderr, /^readme-asset: cannot write .*afile\/x: .*a file is in the way/);
   assert.ok(noStack(r.stderr));
   assert.equal(r.stdout, "");
 });
@@ -473,7 +473,7 @@ test("screenshot run(): an out under a file returns 1 with one ENOTDIR message a
   const code = screenshotRun({ candidates: [browser], out: join(cwd, "afile", "x", "page.png"), log: (m) => logs.push(m), err: (m) => errs.push(m) });
   assert.equal(code, 1);
   assert.equal(errs.length, 1);
-  assert.match(errs[0], /^screenshot: cannot write .*: ENOTDIR/);
+  assert.match(errs[0], /^screenshot: cannot write .*: .*a file is in the way/);
   assert.deepEqual(logs, []);
 });
 

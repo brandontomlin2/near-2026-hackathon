@@ -8,11 +8,26 @@ import { checkAttestation } from "../src/privacy/attestation.mjs";
 import { mockAttestation, MOCK_MODEL, TAMPERED_ADDRESS } from "../src/privacy/fixture.mjs";
 
 const USAGE = "usage: node scripts/attest-check.mjs [--tamper | --unreadable-quote]";
+const HELP = `${USAGE}
+  --tamper            swap in a different signing address: REJECT, exit 1
+  --unreadable-quote  swap in a 2-byte hex quote: consistent but unverifiable, exit 2
+  -h, --help          print this help and exit 0
+Exit 0: consistent. 1: reject. 2: usage error, or the quote was too short to hold report data.
+--tamper and --unreadable-quote cannot be combined.`;
 const FLAGS = new Set(["--tamper", "--unreadable-quote"]);
+if (process.argv.slice(2).some((arg) => arg === "--help" || arg === "-h")) {
+  console.log(HELP);
+  process.exit(0);
+}
 const unknown = process.argv.slice(2).find((arg) => !FLAGS.has(arg));
 if (unknown !== undefined) {
   // A typo such as --tampr must not quietly run the clean check and exit 0.
   console.error(`attest-check: unknown argument ${JSON.stringify(unknown)} (${USAGE})`);
+  process.exit(2);
+}
+
+if (process.argv.includes("--tamper") && process.argv.includes("--unreadable-quote")) {
+  console.error(`attest-check: --tamper and --unreadable-quote cannot be combined (${USAGE})`);
   process.exit(2);
 }
 

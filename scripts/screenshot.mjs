@@ -11,6 +11,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { plural } from "../src/util/plural.mjs";
+import { pathProblem } from "../src/util/path-problem.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const DEFAULT_OUT = join(ROOT, "out", "page.png");
@@ -18,7 +19,9 @@ export const DOCS_OUT = join(ROOT, "docs", "img", "page.png");
 const USAGE = `Usage: node scripts/screenshot.mjs [--out FILE | --update-docs] [--force]
   --out FILE      where to write the PNG (default out/page.png, gitignored)
   --update-docs   refresh the tracked docs/img/page.png the README embeds
-  --force         replace an existing --out that is not a PNG this tool wrote`;
+  --force         replace an existing --out that is not a PNG this tool wrote
+  -h, --help      print this help and exit 0
+Exit 0: wrote the PNG. 1: failure. 2: usage error, or no browser found.`;
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -69,7 +72,8 @@ export function parseArgs(argv) {
   let force = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--update-docs") docs = true;
+    if (a === "--help" || a === "-h") return { help: true };
+    else if (a === "--update-docs") docs = true;
     else if (a === "--force") force = true;
     else if (a === "--out") {
       const v = argv[i + 1];
@@ -101,7 +105,7 @@ export function run({ candidates = BROWSER_CANDIDATES, exists = existsSync, out 
       mkdirSync(dirname(out), { recursive: true });
     } catch (e) {
       // An unwritable --out is a runtime failure: one line, no stack trace, exit 1.
-      err(`screenshot: cannot write ${out}: ${e.message}`);
+      err(`screenshot: cannot write ${out}: ${pathProblem(e, "--out") ?? e.message}`);
       return 1;
     }
     const shot = spawnSync(browser, [
@@ -123,8 +127,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   try {
     opts = parseArgs(process.argv.slice(2));
   } catch (e) {
-    console.error(`screenshot: ${e.message}\n${USAGE}`);
-    process.exitCode = 1;
+    console.error(`screenshot: ${e.message} (see --help)`);
+    process.exitCode = 2;
   }
-  if (opts) process.exitCode = run(opts);
+  if (opts?.help) console.log(USAGE);
+  else if (opts) process.exitCode = run(opts);
 }
