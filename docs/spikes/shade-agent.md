@@ -1,6 +1,6 @@
 # Spike: Shade Agents + chain signatures for the Yield Optimizer
 
-Status: DONE (dry-run evidence only; nothing was signed, sent or deployed). Go/no-go decision: 2026-11-06. Feature freeze: 2026-11-11.
+Status: Spike complete (dry-run only; nothing was signed, sent or deployed). Go/no-go decision: 2026-11-06. Feature freeze: 2026-11-11.
 
 ## Verdict
 
@@ -8,7 +8,7 @@ Status: DONE (dry-run evidence only; nothing was signed, sent or deployed). Go/n
 
 - The risky cryptographic half is de-risked. The ed25519 key that the MPC network will derive for our agent contract is computed offline and matched the live testnet contract byte-for-byte (13 passing tests, `spikes/shade/chainsig.test.mjs`). The sign request and the NEAR transaction it signs are built and printed by `node spikes/shade/dry-run.mjs`.
 - The unproven half is the live loop: deploying the agent contract, registering a TEE (or whitelisted local) agent, and getting one real signature back. That needs spending testnet NEAR and, for the real attestation story, a paid Phala deployment. Neither was done here.
-- Rule for 2026-11-06: **GO** if Brandon approves the three items in "What Brandon must approve" by end of day 2026-11-07. **NO-GO** (fall back to centralized executor plus this document and the dry-run as "designed, derivation verified") if not approved by then, because that leaves 4 days to the freeze for a live loop plus a Phala deploy that nobody has run yet. The NO-GO fallback still ships real, tested value.
+- Rule for 2026-11-06: **GO** if Brandon approves the three items in "What Brandon must approve" by end of day 2026-11-06. **NO-GO** (fall back to centralized executor plus this document and the dry-run as "designed, derivation verified") if not approved by then, because approving later leaves under 5 days to the 2026-11-11 freeze for a live loop plus a Phala deploy that nobody has run yet. The NO-GO fallback still ships real, tested value.
 
 ## Q1. Shade Agents: local dev mode, what needs Phala, attestation
 
