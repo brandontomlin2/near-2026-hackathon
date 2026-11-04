@@ -57,7 +57,8 @@ byte 48 (2 = TDX 1.0 TD report, 3 = TDX 1.5 TD report; 1 = SGX enclave report
 is rejected) and a `u32` body size at byte 50 (584 or 648, must match the type),
 the body at byte 54, and `report_data` 520 bytes into it, at bytes 574..638.
 The v5 offsets come from Intel's published DCAP v5 layout and are not checked
-against a real v5 quote from NEAR AI; the tests use synthetic quotes. And the raw 32-byte nonce and the raw 20-byte address both
+against a real v5 quote from NEAR AI; the tests use synthetic quotes.
+The check passes when the raw 32-byte nonce and the raw 20-byte address both
 appear somewhere inside those 64 bytes.
 
 How `quote-binding` reports, given that:

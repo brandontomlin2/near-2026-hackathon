@@ -52,6 +52,14 @@ test("v5 quote with values at the v4 offset (568) is not accepted", () => {
   assert.equal(r.verdict, VERDICT.REJECT);
 });
 
+test("v5 quote with the nonce and address both outside 574..638 is not accepted", () => {
+  // Address ends at 556 (before the window), nonce starts at 640 (after it). Neither
+  // byte of either value is inside the v5 report_data window.
+  const { c, r } = binding(quote({ version: 5, bodyType: 3, nonceAt: 640, addrAt: 536 }));
+  assert.equal(c.status, "fail");
+  assert.equal(r.verdict, VERDICT.REJECT);
+});
+
 test("v5 quote with an SGX body or an unknown body type is rejected, report data unread", () => {
   for (const bodyType of [1, 0, 4]) {
     const { c, r } = binding(quote({ version: 5, bodyType, len: 700 }));
@@ -66,6 +74,12 @@ test("v5 quote whose declared body size contradicts its body type is rejected", 
   const { c } = binding(quote({ version: 5, bodyType: 2, bodySize: 648, len: 700 }));
   assert.equal(c.status, "fail");
   assert.match(c.detail, /declares 648 bytes, expected 584/);
+});
+
+test("v5 TDX 1.5 quote whose declared body size is the TDX 1.0 size is rejected", () => {
+  const { c } = binding(quote({ version: 5, bodyType: 3, bodySize: 584, len: 700 }));
+  assert.equal(c.status, "fail");
+  assert.match(c.detail, /declares 584 bytes, expected 648/);
 });
 
 test("v5 quote with a non-TDX tee_type is rejected", () => {
