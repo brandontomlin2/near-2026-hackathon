@@ -198,18 +198,48 @@ test("chat signature: a model id containing ':' still matches; the response hash
   const hash = requestHash(requestBody);
   const model = "org/name:tag";
   const check = (text) => status(run(report, { model, chatSignature: { ...chatSignature, text } }), "signature-text");
-  assert.equal(check(`${model}:${hash}:resp`), "pass");
+  assert.equal(check(`${model}:${hash}:${sha256Hex("r")}`), "pass");
   assert.equal(check(`${model}:${hash}:a:b`), "fail");
   assert.equal(check(`${model}:${hash}:`), "fail", "empty response hash");
-  assert.equal(check(`org/name:${hash}:resp`), "fail", "wrong model prefix");
+  assert.equal(check(`org/name:${hash}:${sha256Hex("r")}`), "fail", "wrong model prefix");
+});
+
+test("chat signature: the response hash must be exactly 64 lowercase hex characters", () => {
+  const { report, chatSignature } = good();
+  const hash = requestHash(requestBody);
+  const resp = sha256Hex("a response");
+  const check = (tail) => status(run(report, { chatSignature: { ...chatSignature, text: `${MOCK_MODEL}:${hash}:${tail}` } }), "signature-text");
+  assert.equal(check(resp), "pass");
+  assert.equal(check(`${resp}\n`), "fail", "trailing newline");
+  assert.equal(check(` ${resp}`), "fail", "leading space");
+  assert.equal(check(resp.toUpperCase()), "fail", "uppercase hex");
+  assert.equal(check(resp.slice(1)), "fail", "63 chars");
+  assert.equal(check(`${resp}0`), "fail", "65 chars");
+  assert.equal(check(`${"g".repeat(64)}`), "fail", "64 non-hex chars");
+  const r = run(report, { chatSignature: { ...chatSignature, text: `${MOCK_MODEL}:${hash}:junk` } });
+  assert.equal(r.verdict, VERDICT.REJECT);
+});
+
+test("chat signature: a non-string or empty expected model is rejected with a clear message, not turned into a prefix", () => {
+  const { report, chatSignature } = good();
+  const hash = requestHash(requestBody);
+  const resp = sha256Hex("a response");
+  for (const model of [undefined, null, 7, "", {}]) {
+    const text = `${String(model)}:${hash}:${resp}`;
+    const r = checkAttestation(report, { requestBody, model, chatSignature: { ...chatSignature, text } });
+    const c = r.checks.find((x) => x.id === "signature-text");
+    assert.equal(c.status, "fail", `model ${String(model)}`);
+    assert.match(c.detail, /expected model must be a non-empty string/);
+    assert.equal(r.verdict, VERDICT.REJECT);
+  }
 });
 
 test("chat signature: right hash but wrong model, missing text or missing signer all fail", () => {
   const { report, chatSignature } = good();
   const hash = requestHash(requestBody);
   const check = (sig, id) => status(run(report, { chatSignature: sig }), id);
-  assert.equal(check({ ...chatSignature, text: `other-model:${hash}:resp` }, "signature-text"), "fail");
-  assert.equal(check({ ...chatSignature, text: `${MOCK_MODEL}:${hash}:anything-goes` }, "signature-text"), "pass", "the response hash is not checked offline");
+  assert.equal(check({ ...chatSignature, text: `other-model:${hash}:${sha256Hex("r")}` }, "signature-text"), "fail");
+  assert.equal(check({ ...chatSignature, text: `${MOCK_MODEL}:${hash}:${sha256Hex("anything")}` }, "signature-text"), "pass", "the response hash format is checked, its value is not");
   assert.equal(check({ ...chatSignature, text: `${MOCK_MODEL}:${hash}` }, "signature-text"), "fail", "exactly three parts");
   assert.equal(check({ ...chatSignature, text: `${MOCK_MODEL}:${hash}:a:b` }, "signature-text"), "fail");
   assert.equal(check({ ...chatSignature, text: undefined }, "signature-text"), "fail");

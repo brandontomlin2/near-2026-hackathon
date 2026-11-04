@@ -236,12 +236,16 @@ export function checkAttestation(report, expected) {
     // Match the known "model:requestHash:" prefix instead of splitting on ":",
     // so a model id that contains ":" still works. The response hash is the
     // one remaining segment and must not contain ":".
-    const prefix = `${expected.model}:${requestHash(expected.requestBody)}:`;
-    const text = String(sig.text ?? "");
-    const tail = text.startsWith(prefix) ? text.slice(prefix.length) : "";
-    const ok = tail.length > 0 && !tail.includes(":");
-    add(checks, "signature-text", ok ? "pass" : "fail",
-      ok ? "signed text names our model and request hash" : "signed text does not match our model and request hash");
+    if (typeof expected.model !== "string" || expected.model === "") {
+      add(checks, "signature-text", "fail", "expected model must be a non-empty string to check the signed text");
+    } else {
+      const prefix = `${expected.model}:${requestHash(expected.requestBody)}:`;
+      const text = String(sig.text ?? "");
+      const tail = text.startsWith(prefix) ? text.slice(prefix.length) : "";
+      const ok = HEX64.test(tail);
+      add(checks, "signature-text", ok ? "pass" : "fail",
+        ok ? "signed text names our model and request hash" : "signed text does not match our model and request hash");
+    }
     const known = entries.some((e) => e?.signing_address?.toLowerCase() === String(sig.signing_address).toLowerCase());
     add(checks, "signature-signer", known ? "pass" : "fail",
       known ? "signature's signing_address matches an attested node (signature itself not recovered)" : "signing_address not among attested nodes");

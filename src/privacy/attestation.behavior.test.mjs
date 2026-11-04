@@ -420,10 +420,10 @@ test("chatSignature text must be exactly three parts with our model and hash", (
   const { report } = good();
   const sig = (text) => ({ text, signature: "0x", signing_address: MOCK_SIGNING_ADDRESS });
   const st = (text) => status(run(report, { chatSignature: sig(text) }), "signature-text");
-  assert.equal(st(`${MOCK_MODEL}:${NONCE}:resp`), "pass");
+  assert.equal(st(`${MOCK_MODEL}:${NONCE}:${requestHash("resp")}`), "pass");
   assert.equal(st(`${MOCK_MODEL}:${NONCE}:a:b`), "fail");
-  assert.equal(st(`other-model:${NONCE}:resp`), "fail");
-  assert.equal(st(`${MOCK_MODEL}:${requestHash("other")}:resp`), "fail");
+  assert.equal(st(`other-model:${NONCE}:${requestHash("resp")}`), "fail");
+  assert.equal(st(`${MOCK_MODEL}:${requestHash("other")}:${requestHash("resp")}`), "fail");
 });
 
 test("chatSignature signer match ignores letter case in either direction", () => {
