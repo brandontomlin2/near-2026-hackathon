@@ -242,7 +242,7 @@ export function checkAttestation(report, expected) {
     const ok = tail.length > 0 && !tail.includes(":");
     add(checks, "signature-text", ok ? "pass" : "fail",
       ok ? "signed text names our model and request hash" : "signed text does not match our model and request hash");
-    const known = entries.some((e) => e?.signing_address?.toLowerCase() === String(sig.signing_address).toLowerCase());
+    const known = entries.some((e) => typeof e?.signing_address === "string" && e.signing_address.toLowerCase() === String(sig.signing_address).toLowerCase());
     add(checks, "signature-signer", known ? "pass" : "fail",
       known ? "signature's signing_address matches an attested node (signature itself not recovered)" : "signing_address not among attested nodes");
   }
