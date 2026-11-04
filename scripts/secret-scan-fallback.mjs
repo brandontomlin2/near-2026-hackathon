@@ -89,7 +89,7 @@ export function scanText(file, text) {
 }
 
 export function scanRepo(root) {
-  const out = execFileSync("git", ["-C", root, "ls-files", "-z"], { encoding: "buffer", maxBuffer: 64 * 1024 * 1024 });
+  const out = execFileSync("git", ["-C", root, "ls-files", "-z"], { encoding: "buffer", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
   const files = out.toString("utf8").split("\0").filter(Boolean);
   const findings = [];
   let scanned = 0;
@@ -128,7 +128,7 @@ function main(argv) {
   try {
     result = scanRepo(root);
   } catch (err) {
-    console.error(`secret-scan-fallback: could not scan git-tracked files in ${root}: ${err.message}`);
+    console.error(`secret-scan-fallback: could not scan git-tracked files in ${root}: ${(err.stderr ? err.stderr.toString().trim() : "") || err.message}`);
     return 2;
   }
   for (const f of result.findings) console.log(`${f.file}:${f.line}: ${f.rule} (value not shown)`);
