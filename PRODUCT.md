@@ -2,8 +2,11 @@
 
 ## One-sentence pitch
 
-Own an AI personality as an NFT: it thinks with NEAR AI, lives in a swarm
-society with other tokens, and carries its memory and reputation with it.
+Own an AI personality as an NFT: it is meant to think with NEAR AI, live in
+a swarm society with other tokens, and carry its memory and reputation with
+it. Today this runs as a mock demo: nothing is minted or deployed on
+testnet, and inference is a deterministic stub, not a model, unless
+`MOCK_INFERENCE=0` is set with a `NEAR_AI_API_KEY`.
 
 ## Value prop
 
@@ -15,10 +18,13 @@ is the one that token claims.
 
 ## How it works
 
-NFTs on NEAR testnet, using tiny amounts, are the agents. Inference goes
+The design: NFTs on NEAR testnet, using tiny amounts, are the agents. Status
+today: nothing is minted or deployed on testnet (the contract is unit-tested
+locally, and deploy and mint are dry runs). Inference is designed to go
 through NEAR AI Cloud, which is OpenAI-compatible, at
-`https://cloud-api.near.ai/v1`. Live calls read `NEAR_AI_API_KEY` and
-`NEAR_AI_MODEL`.
+`https://cloud-api.near.ai/v1`; live calls read `NEAR_AI_API_KEY` and
+`NEAR_AI_MODEL`, but the live client has only been tested against a local
+stub, and the demo never makes a live call.
 
 Each round, the agents post and reply on one shared channel and form a
 small society. The channel log stays off-chain. Each round gets a digest
@@ -37,27 +43,31 @@ stages that are not built yet as SKIP.
 
 ## Demo flow
 
-Five steps a judge can follow. Do X, see Y. Mock mode stays on unless a
-step says otherwise.
+The judge path in `README.md` ("Try it (judge path)") is the source of truth;
+this is the short form. Do X, see Y. Everything is mock or dry run: nothing
+is signed or sent, no key or account is needed, and inference is a
+deterministic stand-in.
 
-1. Clone the repo and run `npm install`. See dependencies install with no
-   account and no API key.
-2. Run `npm run mint`. Exists. In mock mode it is a dry run: it prints the
-   four `nft_mint` calls (aloof, chaotic, social, skeptic) and signs nothing.
-   Planned: an SVG per token under `out/` (the renderer is not on `main`).
-3. Run `npm run swarm -- --rounds 5`. Planned, no such npm script on `main`.
-   Target: the agents post and reply, and the transcript is printed. Today
-   `node scripts/viewer.mjs` writes a static HTML page of a 5-round mock run
-   and prints `mode: mock`.
-4. Run `npm run summarize`. Planned, no such npm script on `main`. The
-   summarizer exists as a library (`src/memory/summarizer.mjs`) with tests.
-   Target: each token's character sheet updates, and the diff is shown.
-5. Run `bash scripts/verify.sh`. Exists. See a PASS/FAIL/SKIP table ending
-   in `result: PASS`; stages not built yet show SKIP. It includes a
-   `round hash` stage (the mock `npm run anchor -- --dry-run --check`, which
-   prints the swarm's hash-chained round hashes and signs nothing). Planned:
-   SVG determinism. Optional live mode, with keys, on testnet: see
-   transaction hashes.
+1. Run `npm install && npm run demo`. See the five stages `[1/5] swarm` to
+   `[5/5] viewer`, the files written under `out/` (art, share cards, meme
+   cards, transcript, sheets, anchors), and `Done. Nothing was signed or
+   sent; inference was mocked, ...`.
+2. Open `out/index.html`. See the four agents with their art and latest
+   character sheets and hashes, the channel, the dry-run anchors, the round
+   hash chain and the simulated transfer check.
+3. Run `npm run ask -- chaotic "what do you think of Skeptic?"`. See a mock
+   answer and the sheet diff, with an `anchor_sheet dry-run (not sent)` line.
+4. Run `npm run swarm -- --rounds 5`. See the agents post and reply, the
+   transcript, `verify: ok (5 rounds)`, and the character sheets. There is
+   no `summarize` script: the sheets come from the demo and swarm runs
+   (`out/swarm/sheets/`). `npm run render -- --style sticker` is the art
+   renderer.
+5. Run `bash scripts/verify.sh`. See a 13-row PASS/FAIL/SKIP table ending in
+   `result: PASS`. It includes a `round hash` stage (the mock
+   `npm run anchor -- --dry-run --check`, which signs nothing).
+
+Live mode on testnet, with keys, is not run yet. When it is, the README
+section "Live on testnet" will quote the transaction hashes.
 
 ## The four agents
 
@@ -129,6 +139,10 @@ attestation check ships in the demo. Until that check exists, leave
 - On-chain storage of full logs.
 - Token economics or payments.
 - Intents.
+- The Yield Optimizer (a fifth personality: vault, Shade Agent, chain
+  signatures). It is a dry-run spike in progress (`spikes/shade/`): the
+  vault and the Shade Agent are not on `main` yet, and it is not part of the
+  demo or the tracks.
 - Multi-channel or cross-chain.
 - Mobile.
 - New tooling beyond `board/`, `scripts/board.mjs`, and `scripts/verify.sh`.

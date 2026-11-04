@@ -10,12 +10,12 @@ Rules from `docs/HACKATHON.md` (Procedure, step 2):
 - First line makes sense to someone who has not heard of the project. Every draft here opens with the meme or the owner's question, not with a description of the architecture.
 - Say what NEAR does in the product. Link the repo. Ask one real question.
 
-Each draft is at most 280 characters, counted the way X does: the `<REPO_URL>` placeholder as 23 characters (how X counts a link) and each emoji as 2. Counted that way: draft 1 is 270, draft 2 is 262, draft 3 is 277. `scripts/docs-accuracy.test.mjs` re-counts every draft and checks both tags, so re-run `node --test scripts/docs-accuracy.test.mjs` after editing one. Replace `<REPO_URL>` before posting. Do not claim live testnet results until the human has run the live proof and it has shown them (`bash scripts/verify.sh` skips live stages by default).
+Each draft is at most 280 characters, counted the way X does (the mock caveat in each draft must stay; the replies are not model output): the `<REPO_URL>` placeholder as 23 characters (how X counts a link) and each emoji as 2. Counted that way: draft 1 is 270, draft 2 is 262, draft 3 is 277. `scripts/docs-accuracy.test.mjs` re-counts every draft and checks both tags, so re-run `node --test scripts/docs-accuracy.test.mjs` after editing one. Replace `<REPO_URL>` before posting. Do not claim live testnet results until the human has run the live proof and it has shown them (`bash scripts/verify.sh` skips live stages by default).
 
 ## Draft 1: the meme first
 
 ```
-SKEPTIC SAW MY POST AND CHOSE TO SPEAK: "SHOW THE HASH?? I DO NOT EVEN KNOW WHERE THE HASH LIVES 🚀" (Chaotic, AI agent, 5 fights in). It remembers. Ask it. Mock demo, built at NEAR HACKATHON. @NEARProtocol #NEARHackathon <REPO_URL> What should it remember?
+SKEPTIC SAW MY POST AND CHOSE TO SPEAK: "SHOW THE HASH?? I DO NOT EVEN KNOW WHERE THE HASH LIVES 🚀" (Chaotic, AI agent, 5 fights in). Mock demo, scripted lines, no model. Built at NEAR HACKATHON. @NEARProtocol #NEARHackathon <REPO_URL> What should it remember?
 ```
 
 - Media: lead image is `out/share/meme-caption-chaotic.svg` (export it as a PNG; it is a 900 x 900 square), the best card in the meme pack. Add the shot-3 clip of `npm run ask` from `docs/demo-video.md` if the post has room for a second item.
@@ -24,7 +24,7 @@ SKEPTIC SAW MY POST AND CHOSE TO SPEAK: "SHOW THE HASH?? I DO NOT EVEN KNOW WHER
 ## Draft 2: the owner asks
 
 ```
-I asked my AI agent what it thinks of Skeptic. "5 fights and counting, bro I did not read the contract and it SHOWS 💀" Then it put me in its memory. Mock-mode demo, built at NEAR HACKATHON. @NEARProtocol #NEARHackathon <REPO_URL> Who would you ask?
+I asked my AI agent what it thinks of Skeptic. "5 fights and counting, bro I did not read the contract and it SHOWS 💀" Then it put me in its memory. Mock-mode demo (scripted, no model), built at NEAR HACKATHON. @NEARProtocol #NEARHackathon <REPO_URL> Who would you ask?
 ```
 
 - Media: the meme card first (`out/share/meme-caption-chaotic.svg` as a PNG), then a terminal recording of `npm run ask -- chaotic "what do you think of Skeptic?"`: the answer line, and the sheet diff where `Owner: 0 fights, 0 hugs, 1 shrug` joins the scorecard.

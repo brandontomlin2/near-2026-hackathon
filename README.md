@@ -83,7 +83,7 @@ Nothing in this repository is deployed or live on testnet. The contract is unit-
 
 ## Work in progress: Yield Optimizer
 
-A fifth personality, the Yield Optimizer, is in progress: a vault with on-chain rules, a Shade Agent that acts within them, and NEAR chain signatures so the agent never holds a private key. So far only a spike exists: `spikes/shade/` computes the chain-signature key offline (matched against live testnet view calls) and prints the planned sign request and transaction. It is dry-run only, signs and sends nothing, and is not part of the demo or of the tracks claimed above. Run `node spikes/shade/dry-run.mjs` to see the plan. Design note: [`docs/spikes/shade-agent.md`](docs/spikes/shade-agent.md).
+A fifth personality, the Yield Optimizer, is in progress. The plan is a vault with on-chain rules, a Shade Agent that acts within them, and NEAR chain signatures so the agent never holds a private key. The vault and the Shade Agent are not on `main` yet: neither exists in this repository. So far only a spike exists: `spikes/shade/` computes the chain-signature key offline (the result matches the captured testnet views in `spikes/shade/evidence/testnet-mpc-views.txt`; the run itself makes no network call) and prints the planned sign request and transaction. The accounts it prints (such as `yield-vault.testnet`) are placeholders, not real accounts. It is dry-run only, signs and sends nothing, and is not part of the demo or of the tracks claimed above. Run `node spikes/shade/dry-run.mjs` to see the plan. Design note: [`docs/spikes/shade-agent.md`](docs/spikes/shade-agent.md).
 
 ## Repository layout
 

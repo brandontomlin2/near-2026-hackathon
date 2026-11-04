@@ -6,7 +6,7 @@ Submission is one attempt per repository and cannot be edited. Window: 2026-11-0
 
 Agents never do the items marked **HUMAN**. Without an explicit yes, agents must not send the submission, post on X, make the repo public, push, or sign or spend anything.
 
-Status key: **done** (evidence given), **missing** (agent-doable work not finished), **needs Brandon** (only the human can supply or do it). Last walked: 2026-11-04 on branch `claude/docs-accuracy27`, based on main `c8e48d8`.
+Status key: **done** (evidence given), **missing** (agent-doable work not finished), **needs Brandon** (only the human can supply or do it). Last walked: 2026-11-04 on branch `claude/docs35`, based on main `8ba3f4d` (run `git log -1 --format=%h main` for the current commit).
 
 ## At a glance: what the hackathon requires, and where it stands
 
@@ -42,7 +42,7 @@ Status key: **done** (evidence given), **missing** (agent-doable work not finish
 | What the product is, the problem, how NEAR fits; no marketing | done | README "What this is", "How NEAR fits". |
 | Numbered "do X, see Y" steps from a fresh clone | done | README "Try it (judge path)" steps 1-10. Re-check each command exists in `package.json` before submit. |
 | Works with no keys (`MOCK_INFERENCE=1`); live env vars documented | done | README "Inference" section. |
-| Track ids named in README | done | README line 21, under the title: "Tracks: `nfts`, `swarms` and `agents`." `docs/HACKATHON.md` lists all 13 valid ids. |
+| Track ids named in README | done | README "What this is" section: "Tracks: `nfts`, `swarms` and `agents`." `docs/HACKATHON.md` lists all 13 valid ids. |
 | Libraries, templates, AI-generated code listed (Q-005) | done | `docs/DISCLOSURE.md`, linked from README "Disclosure". |
 | Pre-hackathon code disclosed (Q-002, Q-003) | done | README "Mock caveats and status" and "Disclosure": none. `docs/DISCLOSURE.md` names first commit `992acee`. |
 | Planned features not described as shipped | done | README "Mock caveats and status" and "Live on testnet" say nothing is deployed and there are no hashes to show. Re-check after any live run. |
@@ -121,7 +121,7 @@ Status of this section: not started, correctly. This walk drafted no payload and
 | Requirement | Status | Evidence / next step |
 | --- | --- | --- |
 | Build on testnet first; testnet-only projects are eligible in all tracks (Q-010) | done | Contract targets testnet; `scripts/testnet-deploy.mjs` refuses any `NEAR_NETWORK` but `testnet`; `scripts/verify.sh` refuses `mainnet`. |
-| Product uses no mainnet or Intents (no testnet for Intents, Q-007) | done | `PRODUCT.md` out of scope: Mainnet, Intents. If that changes: separate dev accounts, tiny amounts, `dry: true` quotes, human's yes per action. |
+| Product uses no mainnet or Intents (no testnet for Intents, Q-007) | done | `PRODUCT.md` out of scope: Mainnet, Intents, and the Yield Optimizer (a dry-run spike). If that changes: separate dev accounts, tiny amounts, `dry: true` quotes, human's yes per action. |
 | Deploy, mint and anchor are dry runs unless both `--send` and `--i-approve` are given | done | README "Deploy to testnet"; `npm run mint` prints only (`dry-run: nothing is signed or sent`), and `npm run deploy:nft` stops with `error: wasm not found ... Run npm run build:contract first` until the contract is built, then prints only; `--send` without `--i-approve` is refused; `npm run live-proof` hands its `--i-approve` on to both and refuses any `NEAR_NETWORK` but `testnet`. |
 | Live testnet run | needs Brandon | Needs a testnet account and the human's yes. `npm run live:check` is read-only preflight. |
 | Payout account is mainnet (not testnet) | needs Brandon | Section 6. Receiving a prize needs no repo action. |

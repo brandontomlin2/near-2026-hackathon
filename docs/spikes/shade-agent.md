@@ -4,7 +4,7 @@ Status: in progress, dry-run only. Nothing was signed, sent or deployed, and thi
 
 ## What is established
 
-- The ed25519 key that the MPC network will derive for the agent contract is computed offline and matches the live testnet contract byte for byte (13 passing tests, `spikes/shade/chainsig.test.mjs`). The sign request and the NEAR transaction it signs are built and printed by `node spikes/shade/dry-run.mjs`.
+- The ed25519 key that the MPC network will derive for the agent contract is computed offline and matches the captured testnet views byte for byte (`spikes/shade/evidence/testnet-mpc-views.txt`; the offline run makes no network call) (13 passing tests, `spikes/shade/chainsig.test.mjs`). The sign request and the NEAR transaction it signs are built and printed by `node spikes/shade/dry-run.mjs`.
 - Not yet done: the live loop (deploying the agent contract, registering a TEE or whitelisted local agent, and getting one real signature back). Local mode needs testnet NEAR; a real attestation needs a Phala deployment. Neither has been done.
 - If the live loop is not completed, the project keeps a centralized executor and this note plus the dry run stand as a design with a verified key derivation.
 
