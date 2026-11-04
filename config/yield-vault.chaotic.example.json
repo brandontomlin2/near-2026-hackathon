@@ -1,0 +1,15 @@
+{
+  "strategy": "chaotic",
+  "allowed_pools": [
+    {
+      "pool_id": 0,
+      "token_a": "wrap.testnet",
+      "token_b": "rft.tokenfactory.testnet"
+    }
+  ],
+  "max_trade": "1000000000000000000000000",
+  "daily_cap": "3000000000000000000000000",
+  "runners": [
+    "runner.yield-demo.testnet"
+  ]
+}

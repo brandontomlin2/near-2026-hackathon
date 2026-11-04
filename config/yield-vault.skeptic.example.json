@@ -1,0 +1,15 @@
+{
+  "strategy": "skeptic",
+  "allowed_pools": [
+    {
+      "pool_id": 1,
+      "token_a": "nusdt.ft-fin.testnet",
+      "token_b": "nusdc.ft-fin.testnet"
+    }
+  ],
+  "max_trade": "10000",
+  "daily_cap": "20000",
+  "runners": [
+    "runner.yield-demo.testnet"
+  ]
+}

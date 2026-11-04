@@ -1,0 +1,90 @@
+{
+  "_source": "Ref/Rhea testnet exchange ref-finance-101.testnet, view get_pools {from_index:0,limit:300}, via https://test.rpc.fastnear.com (query/call_function, finality final).",
+  "_block_height": 276143441,
+  "_block_hash": "8uFVJpEaF5Bwf1caRZSq7TDWgadPA7XYbQdASRAPUgAj",
+  "_note": "Decoded snapshot of selected pools. Testnet liquidity is thin and some reserves are junk; used only for constant-product quotes and mock fills. Amounts are base units (decimal strings). total_fee is in bps (of 10000).",
+  "exchange": "ref-finance-101.testnet",
+  "tokens": {
+    "wrap.testnet": {
+      "decimals": 24,
+      "stable": false,
+      "mock_usd_price": "3.00"
+    },
+    "nusdt.ft-fin.testnet": {
+      "decimals": 6,
+      "stable": true,
+      "mock_usd_price": "1.00"
+    },
+    "nusdc.ft-fin.testnet": {
+      "decimals": 6,
+      "stable": true,
+      "mock_usd_price": "1.00"
+    },
+    "rft.tokenfactory.testnet": {
+      "decimals": 8,
+      "stable": false,
+      "mock_usd_price": null
+    },
+    "banana.ft-fin.testnet": {
+      "decimals": 18,
+      "stable": false,
+      "mock_usd_price": null
+    }
+  },
+  "pools": [
+    {
+      "pool_id": 0,
+      "pool_kind": "SIMPLE_POOL",
+      "token_a": "wrap.testnet",
+      "token_b": "rft.tokenfactory.testnet",
+      "reserve_a": "1496547808525727993920481284",
+      "reserve_b": "14167390236552",
+      "total_fee": 40
+    },
+    {
+      "pool_id": 1,
+      "pool_kind": "SIMPLE_POOL",
+      "token_a": "nusdt.ft-fin.testnet",
+      "token_b": "nusdc.ft-fin.testnet",
+      "reserve_a": "237316",
+      "reserve_b": "44411",
+      "total_fee": 20
+    },
+    {
+      "pool_id": 2,
+      "pool_kind": "SIMPLE_POOL",
+      "token_a": "wrap.testnet",
+      "token_b": "rft.tokenfactory.testnet",
+      "reserve_a": "293555376894865027299647623",
+      "reserve_b": "1504148507026",
+      "total_fee": 20
+    },
+    {
+      "pool_id": 5,
+      "pool_kind": "SIMPLE_POOL",
+      "token_a": "banana.ft-fin.testnet",
+      "token_b": "nusdt.ft-fin.testnet",
+      "reserve_a": "27324061349",
+      "reserve_b": "1826",
+      "total_fee": 10
+    },
+    {
+      "pool_id": 6,
+      "pool_kind": "SIMPLE_POOL",
+      "token_a": "wrap.testnet",
+      "token_b": "nusdc.ft-fin.testnet",
+      "reserve_a": "327081",
+      "reserve_b": "1000000000000000000003128",
+      "total_fee": 20
+    },
+    {
+      "pool_id": 8,
+      "pool_kind": "SIMPLE_POOL",
+      "token_a": "rft.tokenfactory.testnet",
+      "token_b": "wrap.testnet",
+      "reserve_a": "9077430456",
+      "reserve_b": "13780356513507131835149548",
+      "total_fee": 20
+    }
+  ]
+}

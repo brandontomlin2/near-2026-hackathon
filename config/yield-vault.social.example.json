@@ -1,0 +1,20 @@
+{
+  "strategy": "social",
+  "allowed_pools": [
+    {
+      "pool_id": 0,
+      "token_a": "wrap.testnet",
+      "token_b": "rft.tokenfactory.testnet"
+    },
+    {
+      "pool_id": 1,
+      "token_a": "nusdt.ft-fin.testnet",
+      "token_b": "nusdc.ft-fin.testnet"
+    }
+  ],
+  "max_trade": "1000000000000000000000000",
+  "daily_cap": "2000000000000000000000000",
+  "runners": [
+    "runner.yield-demo.testnet"
+  ]
+}
