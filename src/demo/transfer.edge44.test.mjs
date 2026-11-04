@@ -125,3 +125,28 @@ describe("buildTransfer edge inputs", () => {
     }
   });
 });
+
+describe("malformed or missing transfer data", () => {
+  it("buildTransfer skips an agent with no sheets list, a missing anchors object, or a call without args", () => {
+    const noSheets = { id: "a", name: "a", personality: "p", traits: {} };
+    assert.deepEqual(buildTransfer([noSheets], { calls: [] }, opts).tokens, []);
+    assert.deepEqual(buildTransfer([agent("a", ["s"])], undefined, opts).tokens, []);
+    assert.deepEqual(buildTransfer([agent("a", ["s"])], {}, opts).tokens, []);
+    const t = buildTransfer([agent("a", ["s"])], { calls: [{ tokenId: "a" }] }, opts);
+    assert.deepEqual(t.tokens, []);
+    assert.equal(t.tamper, null);
+  });
+
+  it("transferSection renders nothing for a null manifest or a null transfer", () => {
+    assert.equal(transferSection(null), "");
+    assert.equal(transferSection({ transfer: null }), "");
+  });
+
+  it("transferSection with a transfer that has no tokens list renders an empty table, not a crash", () => {
+    const t = buildTransfer([], { calls: [] }, opts);
+    delete t.tokens;
+    const html = transferSection({ transfer: t });
+    assert.ok(html.includes("<th>Token</th>"));
+    assert.ok(html.includes("Mint metadata"));
+  });
+});
