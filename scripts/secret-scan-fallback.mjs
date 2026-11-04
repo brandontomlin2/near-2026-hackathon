@@ -27,6 +27,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const B58 = "[1-9A-HJ-NP-Za-km-z]";
 const WORD = "[a-z]{3,8}";
@@ -134,6 +135,8 @@ function main(argv) {
   return 0;
 }
 
-if (import.meta.url === `file://${process.argv[1]}` || process.argv[1] === new URL(import.meta.url).pathname) {
+// Compare real file paths, not URL strings: a path with a space or '#' is percent-encoded
+// in import.meta.url, and a mismatch here would make the scan a silent no-op that exits 0.
+if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))) {
   process.exitCode = main(process.argv.slice(2));
 }

@@ -128,6 +128,26 @@ function runVerifyStage(t, dir, tools, { copyScript = true } = {}) {
 }
 const git = () => execFileSync("which", ["git"], { encoding: "utf8" }).trim();
 
+test("the script itself runs (and finds a key) when its own path contains spaces or other URL-escaped characters", (t) => {
+  const dir = tempRepo(t, { "leak.env": `K=${fakeKey()}\n` });
+  const odd = fs.mkdtempSync(path.join(os.tmpdir(), "scan copy #%20 "));
+  t.after(() => fs.rmSync(odd, { recursive: true, force: true }));
+  const copy = path.join(odd, "secret-scan-fallback.mjs");
+  fs.copyFileSync(SCRIPT, copy);
+  const r = spawnSync(process.execPath, [copy, "--root", dir], { encoding: "utf8" });
+  assert.equal(r.status, 1, `silent no-op? stdout=${JSON.stringify(r.stdout)} stderr=${JSON.stringify(r.stderr)}`);
+  assert.match(r.stdout, /leak\.env:1: near-ed25519-private-key/);
+});
+
+test("verify.sh fallback works in a clone path with spaces", (t) => {
+  const clean = runVerifyStage(t, tempRepo(t, { "a.txt": "ok\n" }, "secscan space "), [process.execPath, git()]);
+  assert.match(clean.stdout, /^RECORD\tPASS\tsecret scan\tFALLBACK/m, clean.stdout + clean.stderr);
+  const leaky = runVerifyStage(t, tempRepo(t, { "x.env": `K=${fakeKey()}\n` }, "secscan space "), [process.execPath, git()]);
+  assert.match(leaky.stdout, /^RECORD\tFAIL\tsecret scan\tFALLBACK/m, leaky.stdout + leaky.stderr);
+  assert.match(leaky.stdout, /^failed=1 /m);
+  assert.doesNotMatch(leaky.stdout, /ed25519:[1-9A-HJ-NP-Za-km-z]{20}/, "the key value must not be echoed");
+});
+
 test("verify.sh with neither gitleaks nor node records a loud SKIP, never a PASS", (t) => {
   const r = runVerifyStage(t, tempRepo(t, { "a.txt": "ok\n" }), [git()]);
   assert.match(r.stdout, /^RECORD\tSKIP\tsecret scan\t/m, r.stdout + r.stderr);
