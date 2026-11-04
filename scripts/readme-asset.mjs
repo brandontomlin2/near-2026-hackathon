@@ -22,7 +22,9 @@ export const SHEET_NAME = "chaotic-sheet.txt";
 const USAGE = `Usage: node scripts/readme-asset.mjs [--out DIR | --update-docs] [--force]
   --out DIR       where to write the assets (default out/readme-asset, gitignored)
   --update-docs   refresh the tracked docs/img assets the README embeds
-  --force         replace an existing asset file that this tool did not write`;
+  --force         replace an existing asset file that this tool did not write
+  -h, --help      print this help and exit 0
+Exit 0: wrote the assets. 1: failure. 2: usage error.`;
 
 // An earlier file from this tool: the share card is an SVG document, the sheet
 // starts with the responder's first label. Anything else is someone's file.
@@ -70,7 +72,8 @@ export function parseArgs(argv) {
   let force = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--update-docs") docs = true;
+    if (a === "--help" || a === "-h") return { help: true };
+    else if (a === "--update-docs") docs = true;
     else if (a === "--force") force = true;
     else if (a === "--out") {
       const v = argv[i + 1];
@@ -98,8 +101,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try {
     opts = parseArgs(process.argv.slice(2));
   } catch (e) {
-    console.error(`readme-asset: ${e.message}\n${USAGE}`);
-    process.exitCode = 1;
+    console.error(`readme-asset: ${e.message} (see --help)`);
+    process.exitCode = 2;
+  }
+  if (opts?.help) {
+    console.log(USAGE);
+    opts = null;
   }
   if (opts) {
     try {
