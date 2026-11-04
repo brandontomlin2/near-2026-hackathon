@@ -856,7 +856,7 @@ fn register_on_ref_rejects_non_owner() {
 fn force_release_rejects_non_owner() {
     let mut v = funded();
     testing_env!(ctx1("runner.testnet").build());
-    v.force_release_lock();
+    let _ = v.force_release_lock();
 }
 
 #[test]
@@ -1009,7 +1009,7 @@ fn force_release_too_early_rejected() {
     let mut v = funded();
     run(&mut v, proposal(100));
     testing_env!(ctx1("owner.testnet").build());
-    v.force_release_lock();
+    let _ = v.force_release_lock();
 }
 
 #[test]
@@ -1017,19 +1017,199 @@ fn force_release_too_early_rejected() {
 fn force_release_without_lock_rejected() {
     let mut v = funded();
     testing_env!(ctx1("owner.testnet").build());
-    v.force_release_lock();
+    let _ = v.force_release_lock();
+}
+
+/// Owner calls `force_release_lock` once the lock is stale; returns the release id.
+fn force_release(v: &mut YieldVault) -> u64 {
+    let mut c = ctx("owner.testnet", T0 + STALE_LOCK_NS);
+    c.attached_deposit(NearToken::from_yoctonear(1));
+    testing_env!(c.build());
+    let _ = v.force_release_lock();
+    let id = v.release.expect("release pending");
+    assert!(v.get_state().release_in_flight);
+    assert!(
+        v.get_state().swap_in_flight || v.get_state().recovery_in_flight,
+        "lock held until the reconcile runs"
+    );
+    id
+}
+fn release_cb() {
+    cb_ctx(PromiseResult::Successful(vec![]), T0 + STALE_LOCK_NS);
 }
 
 #[test]
-fn force_release_after_timeout_strands_and_unlocks() {
+fn force_release_tokens_never_left_vault_rolls_back_not_strands() {
+    // Stuck before ft_transfer_call moved anything: the vault still holds all
+    // 10_000 wrap (9_900 tracked + 100 debited), Ref holds none.
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    assert_eq!(bal(&v, &wrap()), 9_900);
+    let id = force_release(&mut v);
+    release_cb();
+    v.on_force_release_swap(id, Ok(U128(10_000)), Ok(U128(0)), Ok(U128(0)));
+    assert!(!v.get_state().swap_in_flight && !v.get_state().release_in_flight);
+    assert_eq!(bal(&v, &wrap()), 10_000, "re-credited, not orphaned");
+    assert_eq!(stranded(&v, &wrap()), 0, "not double counted as stranded");
+    assert_eq!(spent_view(&v, &wrap()), 0, "spend rolled back");
+    assert!(get_logs().join("\n").contains("lock_force_released_in_vault"));
+}
+
+#[test]
+fn force_release_tokens_on_ref_strands_not_credits() {
+    // Deposit reached Ref, on_deposit never ran: the vault holds only 9_900.
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    let id = force_release(&mut v);
+    release_cb();
+    v.on_force_release_swap(id, Ok(U128(9_900)), Ok(U128(100)), Ok(U128(0)));
+    assert!(!v.get_state().swap_in_flight);
+    assert_eq!(bal(&v, &wrap()), 9_900, "not credited");
+    assert_eq!(stranded(&v, &wrap()), 100, "recoverable from Ref");
+    assert_eq!(spent_view(&v, &wrap()), 100);
+}
+
+#[test]
+fn force_release_both_places_show_it_prefers_ref_record_only_once() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    let id = force_release(&mut v);
+    release_cb();
+    v.on_force_release_swap(id, Ok(U128(10_000)), Ok(U128(100)), Ok(U128(0)));
+    assert_eq!(bal(&v, &wrap()), 9_900);
+    assert_eq!(stranded(&v, &wrap()), 100);
+    assert!(get_logs().join("\n").contains("lock_force_released_ambiguous"));
+}
+
+#[test]
+fn force_release_after_swap_ran_on_ref_strands_untracked_token_out() {
+    // ft_transfer_call and ref.swap both ran but on_swap never did: token_in
+    // is gone, Ref holds 95 rft the vault does not track (10 already stranded).
+    let mut v = funded();
+    v.stranded.insert(rft(), 10);
+    run(&mut v, proposal(100));
+    let id = force_release(&mut v);
+    release_cb();
+    v.on_force_release_swap(id, Ok(U128(9_900)), Ok(U128(0)), Ok(U128(105)));
+    assert_eq!(bal(&v, &wrap()), 9_900);
+    assert_eq!(stranded(&v, &wrap()), 0, "no phantom token_in record");
+    assert_eq!(stranded(&v, &rft()), 105, "10 + the 95 untracked rft");
+    assert!(get_logs().join("\n").contains("lock_force_released_swapped"));
+}
+
+#[test]
+fn force_release_with_failed_reads_strands_unverified() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    let id = force_release(&mut v);
+    release_cb();
+    v.on_force_release_swap(
+        id,
+        Err(PromiseError::Failed),
+        Err(PromiseError::Failed),
+        Err(PromiseError::Failed),
+    );
+    assert!(!v.get_state().swap_in_flight);
+    assert_eq!(bal(&v, &wrap()), 9_900);
+    assert_eq!(stranded(&v, &wrap()), 100);
+    assert!(get_logs().join("\n").contains("lock_force_released_unverified"));
+}
+
+#[test]
+fn force_release_token_out_already_in_vault_completes_swap() {
+    // on_withdraw_done never ran but Ref's withdraw delivered 390 rft.
+    let mut v = funded();
+    run(&mut v, proposal(400));
+    cb_ctx(ok_result(&U128(400)), T0);
+    let _ = v.on_deposit(1, Ok(U128(400)));
+    cb_ctx(ok_result(&U128(390)), T0);
+    let _ = v.on_swap(1, Ok(U128(390)));
+    let id = force_release(&mut v);
+    release_cb();
+    v.on_force_release_swap(id, Ok(U128(390)), Ok(U128(0)), Ok(U128(0)));
+    assert!(!v.get_state().swap_in_flight);
+    assert_eq!(bal(&v, &rft()), 390);
+    assert_eq!(stranded(&v, &rft()), 0);
+    assert_eq!(v.get_state().swaps_executed, 1);
+}
+
+#[test]
+fn force_release_token_out_still_on_ref_strands_it() {
+    let mut v = swap_at_withdraw_cb();
+    let id = force_release(&mut v);
+    release_cb();
+    v.on_force_release_swap(id, Ok(U128(0)), Ok(U128(390)), Ok(U128(390)));
+    assert_eq!(bal(&v, &rft()), 0);
+    assert_eq!(stranded(&v, &rft()), 390);
+}
+
+#[test]
+fn pending_release_blocks_withdraw_refunds_deposits_and_mutes_stuck_callbacks() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    let id = force_release(&mut v);
+    // A deposit now would skew the FT balance read: refunded.
+    testing_env!(ctx(wrap().as_str(), T0).build());
+    let r = v.ft_on_transfer(acct("owner.testnet"), U128(5), String::new());
+    assert!(matches!(r, PromiseOrValue::Value(U128(5))));
+    // A late callback of the stuck swap must not resolve it behind the release.
+    cb_ctx(ok_result(&U128(0)), T0 + STALE_LOCK_NS);
+    let _ = v.on_deposit(1, Ok(U128(0)));
+    assert_eq!(bal(&v, &wrap()), 9_900);
+    assert!(v.get_state().swap_in_flight);
+    // A stale release callback (superseded id) is ignored.
+    release_cb();
+    v.on_force_release_swap(id + 100, Ok(U128(10_000)), Ok(U128(0)), Ok(U128(0)));
+    assert!(v.get_state().release_in_flight);
+}
+
+#[test]
+#[should_panic(expected = "ERR_RELEASE_PENDING")]
+fn withdraw_refused_while_release_pending() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    force_release(&mut v);
+    let mut c = ctx1("owner.testnet");
+    c.block_timestamp(T0 + STALE_LOCK_NS);
+    testing_env!(c.build());
+    let _ = v.withdraw(wrap(), U128(1));
+}
+
+#[test]
+fn force_release_can_be_retried_and_older_release_is_superseded() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    let first = force_release(&mut v);
+    let second = force_release(&mut v);
+    assert!(second > first);
+    release_cb();
+    v.on_force_release_swap(first, Ok(U128(10_000)), Ok(U128(0)), Ok(U128(0)));
+    assert!(v.get_state().swap_in_flight, "superseded release is a no-op");
+    v.on_force_release_swap(second, Ok(U128(10_000)), Ok(U128(0)), Ok(U128(0)));
+    assert!(!v.get_state().swap_in_flight);
+    assert_eq!(bal(&v, &wrap()), 10_000);
+}
+
+#[test]
+#[should_panic(expected = "ERR_INSUFFICIENT_GAS")]
+fn force_release_rejects_low_gas() {
     let mut v = funded();
     run(&mut v, proposal(100));
     let mut c = ctx("owner.testnet", T0 + STALE_LOCK_NS);
     c.attached_deposit(NearToken::from_yoctonear(1));
+    c.prepaid_gas(Gas::from_tgas(50));
     testing_env!(c.build());
-    v.force_release_lock();
-    assert!(!v.get_state().swap_in_flight);
-    assert_eq!(stranded(&v, &wrap()), 100);
+    let _ = v.force_release_lock();
+}
+
+#[test]
+#[should_panic(expected = "Method is private")]
+fn force_release_callbacks_reject_non_self() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    let id = force_release(&mut v);
+    at("mallory.testnet", T0);
+    v.on_force_release_swap(id, Ok(U128(10_000)), Ok(U128(0)), Ok(U128(0)));
 }
 
 // ------------------------------------------------------- check_proposal
@@ -1131,17 +1311,16 @@ fn events_follow_nep297() {
 fn late_callback_of_force_released_swap_cannot_touch_new_swap() {
     let mut v = funded();
     run(&mut v, proposal(100)); // id 1
-    let mut c = ctx("owner.testnet", T0 + STALE_LOCK_NS);
-    c.attached_deposit(NearToken::from_yoctonear(1));
-    testing_env!(c.build());
-    v.force_release_lock();
-    run_at(&mut v, proposal(200), T0 + STALE_LOCK_NS); // id 2
+    let rid = force_release(&mut v); // id 2
+    release_cb();
+    v.on_force_release_swap(rid, Ok(U128(9_900)), Ok(U128(100)), Ok(U128(0)));
+    run_at(&mut v, proposal(200), T0 + STALE_LOCK_NS); // id 3
     cb_ctx(PromiseResult::Failed, T0 + STALE_LOCK_NS);
     let r = v.on_deposit(1, Err(PromiseError::Failed));
     assert!(matches!(r, PromiseOrValue::Value(U128(0))));
     assert_eq!(v.on_deposit_reconciled(1, Ok(U128(0))).0, 0);
     assert!(v.get_state().swap_in_flight);
-    assert_eq!(v.in_flight.as_ref().unwrap().id, 2);
+    assert_eq!(v.in_flight.as_ref().unwrap().id, 3);
     assert_eq!(bal(&v, &wrap()), 9_700);
 }
 
@@ -1517,10 +1696,9 @@ fn withdraw_ok_and_get_deposit_errors_is_stranded_unverified() {
 #[test]
 fn late_reconcile_of_force_released_swap_is_a_noop() {
     let mut v = swap_at_withdraw_cb();
-    let mut c = ctx("owner.testnet", T0 + STALE_LOCK_NS);
-    c.attached_deposit(NearToken::from_yoctonear(1));
-    testing_env!(c.build());
-    v.force_release_lock();
+    let rid = force_release(&mut v);
+    release_cb();
+    v.on_force_release_swap(rid, Ok(U128(0)), Ok(U128(390)), Ok(U128(390)));
     let stranded_before = stranded(&v, &rft());
     cb_ctx(PromiseResult::Failed, T0 + STALE_LOCK_NS);
     assert_eq!(v.on_withdraw_reconciled(1, Ok(U128(0))).0, 0);
@@ -1718,16 +1896,39 @@ fn recovery_lock_released_after_reconcile() {
 fn force_release_recovery_too_early_rejected() {
     let mut v = recovery_started();
     testing_env!(ctx1("owner.testnet").build());
-    v.force_release_lock();
+    let _ = v.force_release_lock();
+}
+
+#[test]
+fn force_release_recovery_whose_withdraw_landed_credits_once() {
+    // Ref's withdraw delivered the 300 rft to the vault; Ref still holds the
+    // other 200 stranded. Credited, not restored to stranded.
+    let mut v = recovering();
+    let rid = force_release(&mut v);
+    release_cb();
+    v.on_force_release_recovery(rid, Ok(U128(300)), Ok(U128(200)));
+    assert!(!v.get_state().recovery_in_flight);
+    assert_eq!(bal(&v, &rft()), 300);
+    assert_eq!(stranded(&v, &rft()), 200);
+}
+
+#[test]
+fn force_release_recovery_with_failed_reads_restores_stranded() {
+    let mut v = recovering();
+    let rid = force_release(&mut v);
+    release_cb();
+    v.on_force_release_recovery(rid, Err(PromiseError::Failed), Err(PromiseError::Failed));
+    assert_eq!(bal(&v, &rft()), 0);
+    assert_eq!(stranded(&v, &rft()), 500);
+    assert!(get_logs().join("\n").contains("recovery_force_released_unverified"));
 }
 
 #[test]
 fn force_release_stale_recovery_restores_stranded_and_late_callbacks_are_noops() {
     let mut v = recovering();
-    let mut c = ctx("owner.testnet", T0 + STALE_LOCK_NS);
-    c.attached_deposit(NearToken::from_yoctonear(1));
-    testing_env!(c.build());
-    v.force_release_lock();
+    let rid = force_release(&mut v);
+    release_cb();
+    v.on_force_release_recovery(rid, Ok(U128(0)), Ok(U128(500)));
     assert!(!v.get_state().recovery_in_flight);
     assert_eq!(stranded(&v, &rft()), 500);
     // The late reconcile of the released recovery must not credit or re-strand.

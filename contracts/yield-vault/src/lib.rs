@@ -61,6 +61,12 @@ pub const STALE_LOCK_NS: u64 = 600 * 1_000_000_000;
 pub const GAS_FT_TRANSFER: Gas = Gas::from_tgas(30);
 /// Gas for `ref.storage_deposit`.
 pub const GAS_STORAGE_DEPOSIT: Gas = Gas::from_tgas(30);
+/// NEP-141 view `ft_balance_of`.
+pub const GAS_FT_VIEW: Gas = Gas::from_tgas(10);
+/// `on_force_release_*` bodies.
+pub const GAS_CB_RELEASE: Gas = Gas::from_tgas(20);
+/// Minimum prepaid gas for `force_release_lock`: three 10 TGas views + 20 callback + own body + margin.
+pub const MIN_FORCE_RELEASE_GAS: Gas = Gas::from_tgas(70);
 
 const ONE_YOCTO: NearToken = NearToken::from_yoctonear(1);
 
@@ -140,6 +146,8 @@ pub struct VaultState {
     pub paused: bool,
     pub swap_in_flight: bool,
     pub recovery_in_flight: bool,
+    /// A `force_release_lock` reconcile is pending.
+    pub release_in_flight: bool,
     pub day: u64,
     pub spent_today: Vec<(AccountId, U128)>,
     pub balances: Vec<(AccountId, U128)>,
@@ -164,6 +172,18 @@ pub struct InFlight {
     pub amount_out: u128,
     /// Block timestamp (ns) when the swap started; used by the stale-lock escape.
     pub started_at: u64,
+}
+
+impl InFlight {
+    /// The token and amount the vault is owed by this swap right now:
+    /// token_out once `on_swap` recorded an output, token_in before that.
+    pub fn held(&self) -> (AccountId, u128) {
+        if self.amount_out > 0 {
+            (self.token_out.clone(), self.amount_out)
+        } else {
+            (self.token_in.clone(), self.amount_in)
+        }
+    }
 }
 
 /// The single `recover_from_ref` that may be in flight. While it is, swaps,
@@ -200,6 +220,10 @@ pub struct YieldVault {
     paused: bool,
     in_flight: Option<InFlight>,
     recovery: Option<Recovery>,
+    /// Id of a pending `force_release_lock` reconcile. While set, the stuck
+    /// swap/recovery's own callbacks are no-ops, owner withdrawals are refused
+    /// and deposits are refunded, so the balances it reads cannot move.
+    release: Option<u64>,
     day: u64,
     spent_today: BTreeMap<AccountId, u128>,
     balances: BTreeMap<AccountId, u128>,
@@ -303,6 +327,7 @@ impl YieldVault {
             paused: false,
             in_flight: None,
             recovery: None,
+            release: None,
             day: day_of(env::block_timestamp()),
             spent_today: BTreeMap::new(),
             balances: BTreeMap::new(),
@@ -330,6 +355,7 @@ impl YieldVault {
             paused: self.paused,
             swap_in_flight: self.in_flight.is_some(),
             recovery_in_flight: self.recovery.is_some(),
+            release_in_flight: self.release.is_some(),
             day: self.day,
             spent_today: if now_day == self.day {
                 self.spent_today
@@ -384,7 +410,7 @@ impl YieldVault {
             .allowed_pools
             .iter()
             .any(|p| p.token_a == token || p.token_b == token);
-        if sender_id != self.owner_id || !known || amount.0 == 0 {
+        if sender_id != self.owner_id || !known || amount.0 == 0 || self.release.is_some() {
             return PromiseOrValue::Value(amount);
         }
         self.credit(&token, amount.0);
@@ -401,6 +427,10 @@ impl YieldVault {
         self.assert_owner();
         assert_one_yocto();
         require!(amount.0 > 0, "ERR_ZERO_AMOUNT: amount must be > 0");
+        require!(
+            self.release.is_none(),
+            "ERR_RELEASE_PENDING: a force release is reconciling balances"
+        );
         self.debit(&token_id, amount.0);
         emit(
             "withdraw",
@@ -754,36 +784,163 @@ impl YieldVault {
     }
 
     /// Escape hatch for a lock stuck because a callback never ran (for example
-    /// out of gas). Only after `STALE_LOCK_NS`. The debited amount is recorded
-    /// as stranded on Ref (it may be on Ref or still with the vault; the owner
-    /// reconciles via `recover_from_ref`, which fails harmlessly if nothing is there).
-    /// A stuck recovery is released the same way: its amount goes back to stranded.
+    /// out of gas). Only after `STALE_LOCK_NS`. It does not guess where the
+    /// held amount is: it reads the vault's own FT balance and its Ref deposit
+    /// of the held token (and, for a swap, Ref's deposit of token_out), then
+    /// `on_force_release_swap` / `on_force_release_recovery` credit, roll back
+    /// or strand it. The lock stays held until that callback runs; if it never
+    /// does, call this again (a newer call supersedes the older one).
     #[payable]
-    pub fn force_release_lock(&mut self) {
+    pub fn force_release_lock(&mut self) -> Promise {
         self.owner_one_yocto();
-        if let Some(r) = self.recovery.clone() {
-            require!(
-                env::block_timestamp().saturating_sub(r.started_at) >= STALE_LOCK_NS,
-                "ERR_LOCK_NOT_STALE: wait 10 minutes after the recovery started"
-            );
-            self.recovery = None;
-            self.strand(&r.token_id, r.amount, "recovery_force_released");
-            return;
-        }
-        let Some(fl) = self.in_flight.clone() else {
+        require!(
+            env::prepaid_gas() >= MIN_FORCE_RELEASE_GAS,
+            "ERR_INSUFFICIENT_GAS: attach at least 70 TGas"
+        );
+        let (token, other, started_at, is_recovery) = if let Some(r) = &self.recovery {
+            (r.token_id.clone(), None, r.started_at, true)
+        } else if let Some(fl) = &self.in_flight {
+            let (held, _) = fl.held();
+            (held, Some(fl.token_out.clone()), fl.started_at, false)
+        } else {
             env::panic_str("ERR_NO_SWAP_IN_FLIGHT: nothing to release");
         };
         require!(
-            env::block_timestamp().saturating_sub(fl.started_at) >= STALE_LOCK_NS,
-            "ERR_LOCK_NOT_STALE: wait 10 minutes after the swap started"
+            env::block_timestamp().saturating_sub(started_at) >= STALE_LOCK_NS,
+            "ERR_LOCK_NOT_STALE: wait 10 minutes after the swap or recovery started"
         );
-        let (token, amount) = if fl.amount_out > 0 {
-            (fl.token_out.clone(), fl.amount_out)
+        self.next_swap_id += 1;
+        let release_id = self.next_swap_id;
+        self.release = Some(release_id);
+        emit(
+            "force_release_started",
+            json!({ "release_id": release_id, "token_id": token }),
+        );
+        let reads = Promise::new(token.clone())
+            .function_call(
+                "ft_balance_of".to_string(),
+                json_bytes(json!({ "account_id": env::current_account_id() })),
+                NearToken::from_yoctonear(0),
+                GAS_FT_VIEW,
+            )
+            .and(self.ref_deposit_query(&token));
+        let cb = Self::ext(env::current_account_id()).with_static_gas(GAS_CB_RELEASE);
+        if is_recovery {
+            reads.then(cb.on_force_release_recovery(release_id))
         } else {
-            (fl.token_in.clone(), fl.amount_in)
+            let out = other.expect("swap has token_out");
+            reads
+                .and(self.ref_deposit_query(&out))
+                .then(cb.on_force_release_swap(release_id))
+        }
+    }
+
+    /// Resolves a force-released swap from the three reads of `force_release_lock`.
+    /// - only the vault holds the amount: token_in is rolled back, or token_out
+    ///   is credited (the swap completed but its last callback never ran);
+    /// - Ref holds it (alone or also the vault): it is stranded, recoverable;
+    /// - neither, while token_in was held: the swap ran on Ref, so Ref's
+    ///   untracked token_out (deposit minus stranded) is stranded instead;
+    /// - otherwise (or a read failed): stranded as `lock_force_released_unverified`.
+    /// No branch credits more than one place, so nothing is double counted.
+    #[private]
+    pub fn on_force_release_swap(
+        &mut self,
+        release_id: u64,
+        #[callback_result] vault_ft: Result<U128, PromiseError>,
+        #[callback_result] ref_held: Result<U128, PromiseError>,
+        #[callback_result] ref_out: Result<U128, PromiseError>,
+    ) {
+        Self::assert_self();
+        if self.release != Some(release_id) {
+            return;
+        }
+        self.release = None;
+        let Some(fl) = self.in_flight.clone() else {
+            return;
         };
-        self.strand(&token, amount, "lock_force_released");
-        self.fail(&fl, "lock_force_released");
+        let (token, amount) = fl.held();
+        let held_out = fl.amount_out > 0;
+        let in_vault = self.vault_holds(&token, amount, &vault_ft);
+        let on_ref = self.ref_holds(&token, amount, &ref_held);
+        if in_vault && !on_ref {
+            if held_out {
+                self.credit(&token, amount);
+                self.swaps_executed += 1;
+                self.in_flight = None;
+                emit(
+                    "swap_executed",
+                    json!({
+                        "pool_id": fl.pool_id,
+                        "token_in": fl.token_in,
+                        "token_out": fl.token_out,
+                        "amount_in": fl.amount_in.to_string(),
+                        "amount_out": fl.amount_out.to_string(),
+                        "via": "force_release",
+                    }),
+                );
+            } else {
+                self.rollback(&fl, amount);
+                self.fail(&fl, "lock_force_released_in_vault");
+            }
+            return;
+        }
+        if on_ref {
+            let why = if in_vault {
+                "lock_force_released_ambiguous"
+            } else {
+                "lock_force_released"
+            };
+            self.strand(&token, amount, why);
+            self.fail(&fl, why);
+            return;
+        }
+        if !held_out && ref_out.is_ok() && vault_ft.is_ok() && ref_held.is_ok() {
+            let d = ref_out.map(|d| d.0).unwrap_or(0);
+            let extra = d.saturating_sub(self.stranded_of(&fl.token_out));
+            if extra > 0 {
+                self.strand(&fl.token_out, extra, "lock_force_released_swapped");
+                self.fail(&fl, "lock_force_released_swapped");
+                return;
+            }
+        }
+        self.strand(&token, amount, "lock_force_released_unverified");
+        self.fail(&fl, "lock_force_released_unverified");
+    }
+
+    /// Resolves a force-released recovery: credited if only the vault holds the
+    /// amount (Ref's withdraw went through), otherwise restored to stranded.
+    #[private]
+    pub fn on_force_release_recovery(
+        &mut self,
+        release_id: u64,
+        #[callback_result] vault_ft: Result<U128, PromiseError>,
+        #[callback_result] ref_held: Result<U128, PromiseError>,
+    ) {
+        Self::assert_self();
+        if self.release != Some(release_id) {
+            return;
+        }
+        self.release = None;
+        let Some(r) = self.recovery.take() else {
+            return;
+        };
+        let in_vault = self.vault_holds(&r.token_id, r.amount, &vault_ft);
+        let on_ref = self.ref_holds(&r.token_id, r.amount, &ref_held);
+        if in_vault && !on_ref {
+            self.credit(&r.token_id, r.amount);
+            emit(
+                "recovered",
+                json!({ "token_id": r.token_id, "amount": r.amount.to_string(), "via": "force_release" }),
+            );
+        } else {
+            let why = if on_ref {
+                "recovery_force_released"
+            } else {
+                "recovery_force_released_unverified"
+            };
+            self.strand(&r.token_id, r.amount, why);
+        }
     }
 
     /// Owner pays Ref storage for the vault's internal Ref account.
@@ -921,14 +1078,32 @@ impl YieldVault {
         );
     }
 
-    /// The in-flight swap, only if it is the one `swap_id` belongs to.
+    /// The in-flight swap, only if it is the one `swap_id` belongs to and no
+    /// force release is reconciling it.
     fn current(&self, swap_id: u64) -> Option<InFlight> {
+        if self.release.is_some() {
+            return None;
+        }
         self.in_flight.clone().filter(|f| f.id == swap_id)
     }
 
-    /// The recovery in flight, if it is `recovery_id`.
+    /// The recovery in flight, if it is `recovery_id` and not being force-released.
     fn current_recovery(&self, recovery_id: u64) -> Option<Recovery> {
+        if self.release.is_some() {
+            return None;
+        }
         self.recovery.clone().filter(|r| r.id == recovery_id)
+    }
+
+    /// The vault's FT balance shows `amount` on top of what it already tracks.
+    fn vault_holds(&self, token: &AccountId, amount: u128, ft: &Result<U128, PromiseError>) -> bool {
+        let tracked = self.balances.get(token).copied().unwrap_or(0);
+        matches!(ft, Ok(b) if b.0 >= tracked.saturating_add(amount))
+    }
+
+    /// The vault's Ref deposit shows `amount` on top of what is already stranded.
+    fn ref_holds(&self, token: &AccountId, amount: u128, dep: &Result<U128, PromiseError>) -> bool {
+        matches!(dep, Ok(d) if d.0 >= self.stranded_of(token).saturating_add(amount))
     }
 
     fn assert_owner(&self) {
