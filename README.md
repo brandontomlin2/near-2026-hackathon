@@ -177,7 +177,7 @@ Each token's SVG is drawn deterministically from its traits in one of four style
 2. Open `out/styles/sticker/sheet.svg` in a browser. See one row per agent and one column per mood.
 3. Run `npm run render -- --style all`. See every style rendered under `out/styles/`: 5 files for `default` (4 agents and `sheet.svg`) and 17 (16 moods and `sheet.svg`) for each of the other three.
 
-Run the JavaScript tests with `npm test`.
+Run the JavaScript tests with `npm test`. It prints one line per test, then a summary that ends `ℹ pass <N>` and `ℹ fail 0` (any other `fail` count is a failure).
 
 ## Validate locally
 
