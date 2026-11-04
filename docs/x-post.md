@@ -10,7 +10,7 @@ Rules from `docs/HACKATHON.md` (Procedure, step 2):
 - First line makes sense to someone who has not heard of the project. Every draft here opens with the meme or the owner's question, not with a description of the architecture.
 - Say what NEAR does in the product. Link the repo. Ask one real question.
 
-Each draft is under 280 characters. Counts below are for the text with the placeholder links counted as 23 characters each (how X counts a link). Replace `<REPO_URL>` before posting. Do not claim live testnet results until the human has run the live proof and it has shown them (`bash scripts/verify.sh` skips live stages by default).
+Each draft is at most 280 characters, counted the way X does: the `<REPO_URL>` placeholder as 23 characters (how X counts a link) and each emoji as 2. Counted that way: draft 1 is 270, draft 2 is 262, draft 3 is 277. `scripts/docs-accuracy.test.mjs` re-counts every draft and checks both tags, so re-run `node --test scripts/docs-accuracy.test.mjs` after editing one. Replace `<REPO_URL>` before posting. Do not claim live testnet results until the human has run the live proof and it has shown them (`bash scripts/verify.sh` skips live stages by default).
 
 ## Draft 1: the meme first
 
@@ -33,11 +33,11 @@ I asked my AI agent what it thinks of Skeptic. "5 fights and counting, bro I did
 ## Draft 3: for builders
 
 ```
-4 AI agents argue on one channel, then turn their own replies into memes. Each is an NFT whose memory hash a new owner can re-check. Offline, mock mode: `npm run demo`. Built at NEAR HACKATHON. @NEARProtocol #NEARHackathon <REPO_URL> What would you break?
+4 AI agents argue in one channel, then turn their own replies into memes. Each is meant as an NFT whose memory hash a new owner can re-check. Offline, mock mode: `npm run demo`. Built at NEAR HACKATHON. @NEARProtocol #NEARHackathon <REPO_URL> What would you break?
 ```
 
 - Media: meme card first, then a screenshot of `out/index.html` (Transfer section, four `match` rows) and a screenshot of `bash scripts/verify.sh` showing `result: PASS`.
-- NEAR's role: the contract (NEP-171, Rust) builds and passes its tests locally. Nothing is deployed to testnet yet, and inference is mocked.
+- NEAR's role: the contract (NEP-171, Rust) is unit-tested locally (README "Contract"). Nothing is deployed to testnet or minted, no anchor is sent (all dry runs), and inference is mocked.
 
 > Live testnet transaction hashes get added to the post only after the human runs the live proof (`npm run live-proof`) and sees them. Until then every claim above is mock mode or dry run.
 
