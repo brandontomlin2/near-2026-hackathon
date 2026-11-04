@@ -59,6 +59,26 @@ const TDX_REPORT_DATA_OFFSET = 568;
 const TDX_REPORT_DATA_LENGTH = 64;
 const TDX_V4_QUOTE_MIN_LENGTH = TDX_REPORT_DATA_OFFSET + TDX_REPORT_DATA_LENGTH;
 
+// Intel DCAP quote format v5 (sgx_quote5_t / tdx_quote5 in Intel's
+// SGX/TDX DCAP QuoteGeneration headers). Offsets used, all little-endian:
+//   0..48   header: u16 version (5), u16 att_key_type, u32 tee_type (0x81 TDX),
+//           then reserved, QE vendor id and user data (same 48 bytes as v4)
+//   48..50  u16 quote body type: 1 = SGX enclave report (384 bytes, rejected),
+//           2 = TDX 1.0 TD report (584 bytes), 3 = TDX 1.5 TD report (648 bytes)
+//   50..54  u32 body size in bytes (must equal 584 for type 2, 648 for type 3)
+//   54..    the body. The TD 1.5 report is the 1.0 report plus 64 trailing
+//           bytes (tee_tcb_svn2, mr_servicetd), so REPORTDATA stays 520 bytes
+//           into the body for both: 54 + 520 = 574, i.e. bytes 574..638.
+// (v4 has no body-type/size fields: body at 48, REPORTDATA at 568..632.)
+// Written from Intel's published layout, not checked against a real v5 quote
+// from this repo; the tests use synthetic quotes built from the same offsets.
+const TDX_V5_BODY_OFFSET = 54;
+const TDX_V5_BODIES = new Map([
+  [2, { size: 584, name: "TD report 1.0" }],
+  [3, { size: 648, name: "TD report 1.5" }],
+]);
+const TDX_V5_REPORT_DATA_OFFSET = TDX_V5_BODY_OFFSET + 520;
+
 const HEX64 = /^[0-9a-f]{64}$/;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
@@ -93,22 +113,39 @@ function checkQuoteReportData(quote, nonce, signingAddress) {
   }
   const version = bytes.readUInt16LE(0);
   const teeType = bytes.readUInt32LE(4);
-  if (version !== TDX_QUOTE_VERSION || teeType !== TDX_TEE_TYPE) {
-    return ["fail", `intel_quote header says version ${version}, tee_type 0x${teeType.toString(16)}, not a TDX v4 quote (version ${TDX_QUOTE_VERSION}, tee_type 0x${TDX_TEE_TYPE.toString(16)}); report data not read`];
+  const hex = (n) => `0x${n.toString(16)}`;
+  let kind, offset;
+  if (version === TDX_QUOTE_VERSION && teeType === TDX_TEE_TYPE) {
+    kind = "TDX v4 quote";
+    offset = TDX_REPORT_DATA_OFFSET;
+  } else if (version === 5 && teeType === TDX_TEE_TYPE) {
+    const bodyType = bytes.readUInt16LE(48);
+    const bodySize = bytes.readUInt32LE(50);
+    const body = TDX_V5_BODIES.get(bodyType);
+    if (!body) {
+      return ["fail", `intel_quote is a v5 quote with body type ${bodyType}, not a TDX 1.0 or 1.5 TD report (type 2 or 3); report data not read`];
+    }
+    if (bodySize !== body.size) {
+      return ["fail", `intel_quote is a v5 quote whose ${body.name} body declares ${bodySize} bytes, expected ${body.size}; report data not read`];
+    }
+    if (bytes.length < TDX_V5_BODY_OFFSET + body.size) {
+      return ["unverifiable", `intel_quote is ${bytes.length} bytes, too short to hold a v5 ${body.name} body (${TDX_V5_BODY_OFFSET + body.size})`];
+    }
+    kind = `TDX v5 quote (${body.name})`;
+    offset = TDX_V5_REPORT_DATA_OFFSET;
+  } else {
+    return ["fail", `intel_quote header says version ${version}, tee_type ${hex(teeType)}, not a TDX v4 or v5 quote (version 4 or 5, tee_type ${hex(TDX_TEE_TYPE)}); report data not read`];
   }
-  const kind = "TDX v4 quote";
-  const reportData = bytes.subarray(
-    TDX_REPORT_DATA_OFFSET,
-    TDX_REPORT_DATA_OFFSET + TDX_REPORT_DATA_LENGTH,
-  );
+  const range = `${offset}..${offset + TDX_REPORT_DATA_LENGTH}`;
+  const reportData = bytes.subarray(offset, offset + TDX_REPORT_DATA_LENGTH);
   const hasNonce = reportData.includes(Buffer.from(nonce, "hex"));
   const addr = toBytes(signingAddress);
   const hasAddress = addr !== null && reportData.includes(addr);
   if (hasNonce && hasAddress) {
-    return ["pass", `${kind}; bytes 568..632 hold our nonce and the signing address as raw bytes (quote itself unauthenticated)`];
+    return ["pass", `${kind}; bytes ${range} hold our nonce and the signing address as raw bytes (quote itself unauthenticated)`];
   }
   const missing = [!hasNonce && "nonce", !hasAddress && "signing address"].filter(Boolean).join(" and ");
-  return ["fail", `${kind}; bytes 568..632 do not hold the raw ${missing} (stale, replayed or another node's quote)`];
+  return ["fail", `${kind}; bytes ${range} do not hold the raw ${missing} (stale, replayed or another node's quote)`];
 }
 
 /**
