@@ -68,9 +68,9 @@ export function tamperSheet(sheet) {
 export function buildTransfer(agents, anchors, { contractId, mode }) {
   const tokens = [];
   for (const a of agents) {
-    const latest = a.sheets.at(-1);
-    const anchor = anchors.calls.filter((c) => c.tokenId === a.id).at(-1);
-    if (!latest || !anchor) continue;
+    const latest = a.sheets?.at(-1);
+    const anchor = (anchors?.calls ?? []).filter((c) => c.tokenId === a.id).at(-1);
+    if (!latest || typeof anchor?.args?.sheet_hash !== "string") continue;
     const anchoredHash = anchor.args.sheet_hash;
     tokens.push({
       tokenId: a.id,
