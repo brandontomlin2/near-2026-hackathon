@@ -20,6 +20,7 @@
     "render": "node scripts/render-agents.mjs",
     "swarm": "node scripts/swarm.mjs",
     "demo": "node scripts/demo.mjs",
+    "yield": "node scripts/yield.mjs",
     "screenshot": "node scripts/screenshot.mjs",
     "readme-asset": "node scripts/readme-asset.mjs",
     "site": "node scripts/site.mjs",

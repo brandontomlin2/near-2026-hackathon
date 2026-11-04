@@ -1,0 +1,230 @@
+#!/usr/bin/env node
+// Yield Optimizer: one debate round (or more) of the four strategy agents, dry run by default.
+//
+//   npm run yield
+//   npm run yield -- --agent skeptic --rounds 3 --json
+//
+// Each agent proposes a swap with NEAR AI (mock by default: offline, no keys, same bytes
+// every run; live with MOCK_INFERENCE=0 and NEAR_AI_API_KEY like npm run infer). Every
+// proposal is checked off chain against the vault's hard rules (the same error codes, same
+// order) and the agent's own strategy. Accepted proposals print the execute_swap call as a
+// DRY RUN. Sending needs --send AND --i-approve AND NEAR_NETWORK=testnet AND
+// YIELD_VAULT_ACCOUNT_ID and YIELD_RUNNER_ACCOUNT_ID (named .testnet accounts). Mainnet is refused.
+
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+import { InferenceError, createInferenceClient, parseMode } from "../src/inference/client.mjs";
+import { AGENTS } from "../src/traits/agents.mjs";
+import { assertSafeOutDir } from "../src/util/outdir.mjs";
+import { AGENT_IDS, runRound } from "../src/yield/debate.mjs";
+import { createLedger, formatScoreboard, formatUsd } from "../src/yield/ledger.mjs";
+import { yieldMockResponder } from "../src/yield/mock.mjs";
+import { loadPoolFixture } from "../src/yield/pools.mjs";
+import { RefusalError, assertNotMainnet, assertSendAllowed, buildExecuteSwapArgv, formatCommand } from "../src/yield/send.mjs";
+import { PLACEHOLDER_RUNNER, PLACEHOLDER_VAULT, defaultVaultConfig, strategyFor } from "../src/yield/strategies.mjs";
+
+const MAX_ROUNDS = 50;
+const MOCK_EPOCH_MS = Date.UTC(2026, 10, 3);
+
+const USAGE = `Usage: node scripts/yield.mjs [--agent ID] [--rounds N] [--json] [--out DIR] [--send --i-approve]
+  --agent ID    show (and, with --send, execute) only this agent: ${AGENT_IDS.join(", ")}
+                (the whole swarm still debates, so social and skeptic keep their inputs)
+  --rounds N    debate rounds, 1 to ${MAX_ROUNDS} (default 1)
+  --json        print one JSON document instead of text
+  --out DIR     where the track record goes: DIR/yield/ledger.json (default out; rewritten each run)
+  --send        really send the accepted execute_swap calls with near-cli-rs. Also needs
+                --i-approve, --agent, NEAR_NETWORK=testnet, YIELD_VAULT_ACCOUNT_ID and
+                YIELD_RUNNER_ACCOUNT_ID (named .testnet accounts). Mainnet is refused.
+  -h, --help    print this help and exit 0
+Default is a dry run: nothing is signed or sent. Mock by default (offline, no keys);
+live NEAR AI Cloud with MOCK_INFERENCE=0, NEAR_AI_API_KEY and NEAR_AI_MODEL.
+A proposal that fails the vault's hard rules off chain is never sent.
+Exit 0 ok, 1 refused or failed, 2 usage error.`;
+
+class UsageError extends Error {}
+
+function parseArgs(argv) {
+  const o = { agent: undefined, rounds: 1, json: false, out: "out", send: false, approve: false, help: false };
+  if (argv.some((a) => a === "--help" || a === "-h")) return { ...o, help: true };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    const value = () => {
+      const v = argv[i + 1];
+      if (v === undefined || v.startsWith("-")) throw new UsageError(`${a} needs a value`);
+      i++;
+      return v;
+    };
+    if (a === "--agent") {
+      o.agent = value().toLowerCase();
+      if (!AGENT_IDS.includes(o.agent)) throw new UsageError(`unknown agent ${JSON.stringify(o.agent)}; one of ${AGENT_IDS.join(", ")}`);
+    } else if (a === "--rounds") {
+      const v = value();
+      if (!/^[0-9]+$/.test(v) || Number(v) < 1 || Number(v) > MAX_ROUNDS) throw new UsageError(`--rounds must be an integer from 1 to ${MAX_ROUNDS}`);
+      o.rounds = Number(v);
+    } else if (a === "--out") o.out = value();
+    else if (a === "--json") o.json = true;
+    else if (a === "--send") o.send = true;
+    else if (a === "--i-approve") o.approve = true;
+    else throw new UsageError(`unknown argument ${JSON.stringify(a)}`);
+  }
+  if (o.approve && !o.send) throw new UsageError("--i-approve only applies together with --send");
+  return o;
+}
+
+function defaultSpawner(bin, args) {
+  const r = spawnSync(bin, args, { stdio: ["ignore", "inherit", "inherit"] });
+  return r.error ? 127 : (r.status ?? 1);
+}
+
+/**
+ * @param {string[]} argv
+ * @param {{ env?: object, log?: (s: string) => void, err?: (s: string) => void, spawner?: (bin: string, args: string[]) => number, hasNear?: () => boolean, now?: () => number }} [io]
+ */
+export async function main(argv = process.argv.slice(2), io = {}) {
+  const { env = process.env, log = console.log, err = (s) => console.error(s), spawner = defaultSpawner, now = Date.now } = io;
+  let opts;
+  try {
+    opts = parseArgs(argv);
+  } catch (e) {
+    if (!(e instanceof UsageError)) throw e;
+    err(`yield: ${e.message} (see --help)`);
+    return 2;
+  }
+  if (opts.help) {
+    log(USAGE);
+    return 0;
+  }
+
+  try {
+    assertNotMainnet(env); // before anything else
+    if (opts.send) assertSendAllowed(env, { approve: opts.approve, agent: opts.agent });
+  } catch (e) {
+    if (!(e instanceof RefusalError)) throw e;
+    err(`yield: ${e.message}`);
+    return e.exitCode;
+  }
+
+  let outDir;
+  try {
+    outDir = assertSafeOutDir(opts.out);
+  } catch (e) {
+    err(`yield: ${e.message}`);
+    return 2;
+  }
+
+  let client;
+  try {
+    client = createInferenceClient({ env, responder: yieldMockResponder });
+  } catch (e) {
+    if (!(e instanceof InferenceError)) throw e;
+    const hint = e.code === "missing_api_key" || e.code === "missing_model" ? " (set NEAR_AI_API_KEY and NEAR_AI_MODEL, or unset MOCK_INFERENCE for mock mode)" : "";
+    err(`yield: ${e.code}: ${e.message.split("\n")[0]}${hint}`);
+    return e.code === "bad_config" ? 2 : 1;
+  }
+  const mode = parseMode(env.MOCK_INFERENCE);
+  err(`mode: ${mode} model: ${client.model}`);
+
+  const vault = env.YIELD_VAULT_ACCOUNT_ID || PLACEHOLDER_VAULT;
+  const runner = env.YIELD_RUNNER_ACCOUNT_ID || PLACEHOLDER_RUNNER;
+  const fixture = loadPoolFixture();
+  const configs = Object.fromEntries(AGENT_IDS.map((id) => [id, defaultVaultConfig(id, { runner })]));
+  const ledger = createLedger({ fixture });
+  const shown = opts.agent ? [opts.agent] : AGENT_IDS;
+
+  if (opts.send) {
+    const hasNear = io.hasNear ?? (() => spawner("near", ["--version"]) === 0);
+    if (!hasNear()) {
+      err("yield: near-cli-rs (the `near` command) is not on PATH. Nothing was sent.");
+      return 1;
+    }
+  }
+
+  const rounds = [];
+  const sent = [];
+  let exitCode = 0;
+  for (let round = 1; round <= opts.rounds; round++) {
+    const nowMs = mode === "mock" ? MOCK_EPOCH_MS + (round - 1) * 3_600_000 : now();
+    const record = await runRound({ client, configs, states: ledger.states, fixture, round, nowMs, runnerId: runner });
+    ledger.record(record);
+    for (const x of record.executions) {
+      x.argv = buildExecuteSwapArgv({ vault, runner, proposal: x.proposal });
+      x.command = formatCommand(x.argv);
+    }
+    if (opts.send) {
+      for (const x of record.executions.filter((e) => e.agent === opts.agent)) {
+        const status = spawner("near", x.argv);
+        sent.push({ round, agent: x.agent, status });
+        if (status !== 0) {
+          err(`yield: near exited with status ${status} sending round ${round}; stopping`);
+          exitCode = 1;
+          break;
+        }
+      }
+    }
+    rounds.push(record);
+    if (exitCode !== 0) break;
+  }
+  const ledgerFile = await ledger.save(outDir);
+  const scoreboard = ledger.scoreboard();
+
+  if (opts.json) {
+    log(JSON.stringify({
+      mode, dry_run: !opts.send, vault, runner, pool_snapshot_block: fixture._block_height,
+      configs: Object.fromEntries(shown.map((id) => [id, configs[id]])),
+      rounds: rounds.map((r) => ({
+        round: r.round,
+        now_ms: r.now_ms,
+        consensus: r.consensus,
+        decisions: Object.fromEntries(shown.map((id) => [id, r.decisions[id]])),
+        executions: r.executions.filter((x) => shown.includes(x.agent)).map(({ agent, proposal, vault_args, command }) => ({ agent, proposal, vault_args, command, sent: opts.send })),
+      })),
+      sent, scoreboard, ledger: ledgerFile,
+    }, null, 2));
+    return exitCode;
+  }
+
+  const head = opts.send ? "SENDING to testnet (--send --i-approve)" : "DRY RUN, not sent (nothing is signed)";
+  log(`Yield Optimizer: ${opts.rounds} round(s), ${mode} inference, ${head}`);
+  log(`vault ${vault} | runner ${runner} | Ref testnet pool snapshot at block ${fixture._block_height}`);
+  for (const r of rounds) {
+    log("");
+    log(`== round ${r.round} ==`);
+    if (r.consensus) log(`swarm consensus: pool ${r.consensus.pool_id} ${r.consensus.token_in} -> ${r.consensus.token_out}, ${r.consensus.supporters.join(" + ")}`);
+    for (const id of shown) log(...renderAgent(r.decisions[id], r, opts.send));
+  }
+  log("");
+  log(formatScoreboard(scoreboard));
+  log(`track record written to ${ledgerFile}`);
+  return exitCode;
+}
+
+function renderAgent(d, round, sending) {
+  const s = strategyFor(d.agent);
+  const name = AGENTS.find((a) => a.id === d.agent).name;
+  const lines = [`\n[${d.agent}] ${name}: ${s.name}`];
+  if (d.status === "invalid") lines.push(`  invalid reply (${d.error.code}): ${d.error.message}; ignored`);
+  else if (!d.proposal) lines.push(`  no proposal (${d.status === "abstained" ? "abstained" : "none"})`);
+  else {
+    const p = d.proposal;
+    lines.push(`  proposal: pool ${p.pool_id} ${p.token_in} -> ${p.token_out}, amount_in ${p.amount_in}, min_amount_out ${p.min_amount_out}`);
+    lines.push(`  why: ${p.rationale}`);
+    lines.push(`  vault rules (off chain): ${d.hard.ok ? "OK" : `${d.hard.code}: ${d.hard.reason}`}`);
+    lines.push(`  strategy checks: ${d.soft.ok ? "OK" : d.soft.violations.map((v) => `${v.code}: ${v.reason}`).join("; ")}`);
+  }
+  if (d.veto) lines.push(`  VETOED by ${d.veto.by}: ${d.veto.reason}`);
+  lines.push(`  outcome: ${d.outcome}`);
+  const x = round.executions.find((e) => e.agent === d.agent);
+  if (x) {
+    lines.push(sending ? "  SENDING:" : "  DRY RUN, not sent:");
+    lines.push(`    args: ${JSON.stringify(x.vault_args)}`);
+    lines.push(`    ${x.command}`);
+  }
+  return [lines.join("\n")];
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().then((code) => {
+    process.exitCode = code;
+  });
+}

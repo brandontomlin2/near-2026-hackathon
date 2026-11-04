@@ -12,6 +12,7 @@ import { ProposalError, parseProposal, parseReview, vaultArgs } from "./proposal
 import { evaluateProposal } from "./rules.mjs";
 import { systemPrompt, userPrompt } from "./prompt.mjs";
 import { AGENTS } from "../traits/agents.mjs";
+import { strategyFor } from "./strategies.mjs";
 
 export const AGENT_IDS = AGENTS.map((a) => a.id);
 
@@ -97,18 +98,29 @@ export async function runRound({ client, configs, states, fixture, round, nowMs,
     const others = reviewed.map((id) => {
       const p = decisions[id].proposal;
       const pool = poolById(p.pool_id, fixture);
+      // The rationale is the other model's free text, so the reviewer never sees it: only the proposal fields and computed metrics.
+      const { rationale: _untrusted, ...fields } = p;
       return {
         agent: id,
-        proposal: p,
+        proposal: fields,
         size_bps_of_max_trade: Number((BigInt(p.amount_in) * 10000n) / BigInt(configs[id].max_trade)),
         slippage_bps: pool ? slippageBps(pool, p) : null,
       };
     });
     const d = decisions.skeptic;
+    // The audit thresholds are also applied here in code, so a model that waves a risky proposal through cannot lift the veto.
+    const audit = strategyFor("skeptic").params.audit;
+    for (const o of others) {
+      if (o.size_bps_of_max_trade > audit.veto_size_bps) {
+        decisions[o.agent].veto = { by: "skeptic", reason: `size is ${o.size_bps_of_max_trade} bps of max_trade, above the ${audit.veto_size_bps} bps audit line` };
+      } else if (o.slippage_bps === null || o.slippage_bps > audit.veto_slippage_bps) {
+        decisions[o.agent].veto = { by: "skeptic", reason: `slippage allowance ${o.slippage_bps ?? "unquotable"} bps is above the ${audit.veto_slippage_bps} bps audit line` };
+      }
+    }
     try {
       review = parseReview(await ask(client, "skeptic", "review", { ...base("skeptic"), others }), AGENT_IDS);
       for (const v of review.vetoes) {
-        if (decisions[v.agent]?.proposal) decisions[v.agent].veto = { by: "skeptic", reason: v.reason };
+        if (decisions[v.agent]?.proposal && !decisions[v.agent].veto) decisions[v.agent].veto = { by: "skeptic", reason: v.reason };
       }
       if (review.hedge) {
         d.proposal = review.hedge;
@@ -121,6 +133,8 @@ export async function runRound({ client, configs, states, fixture, round, nowMs,
       if (!(error instanceof ProposalError)) throw error;
       d.status = "invalid";
       d.error = { code: error.code, message: error.message };
+      // Fail closed: an unusable review leaves the reviewed proposals unreviewed, so they are held back.
+      for (const o of others) decisions[o.agent].veto ??= { by: "skeptic", reason: `review unusable (${error.code}); held back` };
     }
   }
 
