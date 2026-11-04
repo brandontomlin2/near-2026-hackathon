@@ -22,12 +22,15 @@ import { AGENT_IDS, runRound } from "../src/yield/debate.mjs";
 import { createLedger, formatScoreboard, formatUsd } from "../src/yield/ledger.mjs";
 import { yieldMockResponder } from "../src/yield/mock.mjs";
 import { loadPoolFixture } from "../src/yield/pools.mjs";
-import { validateVaultConfig } from "../src/yield/rules.mjs";
+import { dayOf, validateVaultConfig } from "../src/yield/rules.mjs";
 import { RefusalError, assertNotMainnet, assertSendAllowed, buildExecuteSwapArgv, formatCommand } from "../src/yield/send.mjs";
 import { PLACEHOLDER_RUNNER, PLACEHOLDER_VAULT, defaultVaultConfig, strategyFor } from "../src/yield/strategies.mjs";
 
 const MAX_ROUNDS = 50;
 const MOCK_EPOCH_MS = Date.UTC(2026, 10, 3);
+/** A --vault-state snapshot older than this is refused: the chain is the authority, the file is only a cache. */
+export const MAX_VAULT_STATE_AGE_MS = 10 * 60 * 1000;
+const MAX_CLOCK_SKEW_MS = 60 * 1000;
 
 const USAGE = `Usage: node scripts/yield.mjs [--agent ID] [--rounds N] [--json] [--out DIR] [--send --i-approve --vault-state FILE]
   --agent ID    show (and, with --send, execute) only this agent: ${AGENT_IDS.join(", ")}
@@ -36,8 +39,10 @@ const USAGE = `Usage: node scripts/yield.mjs [--agent ID] [--rounds N] [--json] 
   --json        print one JSON document instead of text
   --out DIR     where the track record goes: DIR/yield/ledger.json (default out; rewritten each run)
   --vault-state FILE  JSON {"config": <get_config()>, "state": <get_state()>} of the target vault
-                (state: paused, in_flight, spent {day, amounts}, balances). Required with --send:
-                proposals are checked against it, never against the built-in demo config.
+                (state: paused, in_flight, spent {day, amounts}, balances), plus "fetched_at" (ISO time) and
+                "block_height" of the view calls. Required with --send: proposals are checked against
+                it, never against the built-in demo config. Refused if older than 10 minutes. It is
+                only a cache: the chain is the authority and re-checks every rule on execute_swap.
   --send        really send the accepted execute_swap calls with near-cli-rs (one round only:
                 --rounds above 1 is refused with --send). Also needs
                 --i-approve, --agent, NEAR_NETWORK=testnet, YIELD_VAULT_ACCOUNT_ID and
@@ -84,17 +89,26 @@ function parseArgs(argv) {
 }
 
 /** Read the target vault's real config and state; throws an Error with a clear message. */
-function loadVaultState(file) {
+function loadVaultState(file, nowMs) {
   let doc;
   try {
     doc = JSON.parse(readFileSync(file, "utf8"));
   } catch (e) {
     throw new Error(`cannot read --vault-state ${file}: ${e.message.split("\n")[0]}`);
   }
-  const { config, state } = doc ?? {};
+  const { config, state, fetched_at: fetchedAt, block_height: blockHeight } = doc ?? {};
   if (!config || typeof config !== "object" || !state || typeof state !== "object") throw new Error(`--vault-state ${file} needs both "config" and "state" objects`);
   const problems = validateVaultConfig(config);
   if (problems.length) throw new Error(`--vault-state config is invalid: ${problems.join("; ")}`);
+  const fetchedMs = typeof fetchedAt === "string" ? Date.parse(fetchedAt) : NaN;
+  if (Number.isNaN(fetchedMs) || !Number.isInteger(blockHeight) || blockHeight <= 0) {
+    throw new Error(`--vault-state ${file} needs "fetched_at" (ISO time) and "block_height" (positive integer) from when the view calls were made`);
+  }
+  if (fetchedMs > nowMs + MAX_CLOCK_SKEW_MS) throw new Error(`--vault-state fetched_at is in the future`);
+  if (nowMs - fetchedMs > MAX_VAULT_STATE_AGE_MS) {
+    throw new Error(`--vault-state is stale (fetched_at older than ${MAX_VAULT_STATE_AGE_MS / 60000} minutes); re-fetch get_config and get_state`);
+  }
+  if (Number.isInteger(state.spent?.day) && state.spent.day > dayOf(nowMs)) throw new Error("--vault-state spent.day is in the future");
   return { config, state };
 }
 
@@ -162,7 +176,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
       return 1;
     }
     try {
-      const v = loadVaultState(opts.vaultState);
+      const v = loadVaultState(opts.vaultState, now());
       configs[opts.agent] = v.config;
       ledger.states[opts.agent] = v.state;
     } catch (e) {
@@ -184,9 +198,11 @@ export async function main(argv = process.argv.slice(2), io = {}) {
   const sent = [];
   let exitCode = 0;
   for (let round = 1; round <= opts.rounds; round++) {
-    const nowMs = mode === "mock" ? MOCK_EPOCH_MS + (round - 1) * 3_600_000 : now();
+    // With --send the real clock always applies: the vault's daily cap is keyed on the real UTC day.
+    const nowMs = mode === "mock" && !opts.send ? MOCK_EPOCH_MS + (round - 1) * 3_600_000 : now();
     const record = await runRound({ client, configs, states: ledger.states, fixture, round, nowMs, runnerId: runner });
-    ledger.record(record);
+    // A sent round starts from the real vault state: simulated fills must not be merged into it or the track record.
+    if (!opts.send) ledger.record(record);
     for (const x of record.executions) {
       x.argv = buildExecuteSwapArgv({ vault, runner, proposal: x.proposal });
       x.command = formatCommand(x.argv);
@@ -205,7 +221,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     rounds.push(record);
     if (exitCode !== 0) break;
   }
-  const ledgerFile = await ledger.save(outDir);
+  const ledgerFile = opts.send ? null : await ledger.save(outDir);
   const scoreboard = ledger.scoreboard();
 
   if (opts.json) {
@@ -235,7 +251,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
   }
   log("");
   log(formatScoreboard(scoreboard));
-  log(`track record written to ${ledgerFile}`);
+  log(ledgerFile ? `track record written to ${ledgerFile}` : "track record not updated (--send: simulated fills are not merged with real vault state)");
   return exitCode;
 }
 

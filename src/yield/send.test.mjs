@@ -111,3 +111,8 @@ test("formatCommand shell-quotes the json args and leaves plain words bare", () 
   assert.ok(cmd.includes("prepaid-gas '300.0 Tgas'"));
   assert.equal(formatCommand(["a", "it's"]), "near a 'it'\\''s'");
 });
+
+test("L1: assertSendAllowed refuses vault === runner", () => {
+  const same = { ...GOOD, YIELD_RUNNER_ACCOUNT_ID: GOOD.YIELD_VAULT_ACCOUNT_ID };
+  assert.match(refusal(() => assertSendAllowed(same, OK)).message, /different accounts/);
+});

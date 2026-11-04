@@ -39,6 +39,9 @@ export function assertSendAllowed(env, { approve, agent }) {
       throw new RefusalError(`--send needs ${name} set to a named .${NETWORK} account (value not shown). Nothing was sent.`);
     }
   }
+  if (env.YIELD_VAULT_ACCOUNT_ID === env.YIELD_RUNNER_ACCOUNT_ID) {
+    throw new RefusalError("--send needs the vault and the runner to be different accounts (value not shown). Nothing was sent.");
+  }
 }
 
 /** near-cli-rs argv for one execute_swap. */

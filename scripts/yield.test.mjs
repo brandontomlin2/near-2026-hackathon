@@ -9,6 +9,7 @@ import { initialState } from "../src/yield/ledger.mjs";
 import { defaultVaultConfig } from "../src/yield/strategies.mjs";
 import { main } from "./yield.mjs";
 
+const NOW_MS = Date.UTC(2026, 10, 3);
 const TESTNET_ENV = {
   NEAR_NETWORK: "testnet",
   YIELD_VAULT_ACCOUNT_ID: "vault.x.testnet",
@@ -18,7 +19,7 @@ const TESTNET_ENV = {
 /** Write a --vault-state file (the target vault's get_config()/get_state()) and return its path. */
 function vaultStateFile(overrides = {}) {
   const dir = mkdtempSync(join(tmpdir(), "yield-vs-"));
-  const doc = { config: defaultVaultConfig("skeptic", { runner: "runner.x.testnet" }), state: initialState(), ...overrides };
+  const doc = { config: defaultVaultConfig("skeptic", { runner: "runner.x.testnet" }), state: initialState(), fetched_at: new Date(NOW_MS - 60_000).toISOString(), block_height: 123456, ...overrides };
   const file = join(dir, "vault.json");
   writeFileSync(file, JSON.stringify(doc));
   return file;
@@ -40,7 +41,7 @@ async function run(argv, env = {}, { spawnStatus = 0, hasNear } = {}) {
       calls.push({ bin, args });
       return spawnStatus;
     },
-    now: () => Date.UTC(2026, 10, 3),
+    now: () => NOW_MS,
   };
   if (hasNear) io.hasNear = hasNear;
   try {
@@ -227,4 +228,70 @@ test("usage errors: unknown agent, bad rounds, unknown flag exit 2; --help exits
   const h = await run(["--help"]);
   assert.equal(h.code, 0);
   assert.match(h.stdout, /^Usage: /);
+});
+
+const SEND = ["--send", "--i-approve", "--agent", "skeptic"];
+
+test("M1: --send in mock mode uses the real clock, not the mock epoch", async () => {
+  const r = await run([...SEND, "--json", ...VS()], TESTNET_ENV, { hasNear: () => true });
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).rounds[0].now_ms, NOW_MS);
+});
+
+test("M1: --send refuses a vault-state whose spent.day is in the future", async () => {
+  const day = Math.floor(NOW_MS / 86_400_000) + 1;
+  const state = { ...initialState(), spent: { day, amounts: {} } };
+  const r = await run([...SEND, "--vault-state", vaultStateFile({ state })], TESTNET_ENV, { hasNear: () => true });
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /spent\.day is in the future/);
+  assert.deepEqual(r.calls, []);
+});
+
+test("M1: the daily cap is enforced off chain against the real day under --send", async () => {
+  const day = Math.floor(NOW_MS / 86_400_000);
+  const config = defaultVaultConfig("skeptic", { runner: "runner.x.testnet" });
+  const amounts = Object.fromEntries(config.limits.map((l) => [l.token_id, l.daily_cap]));
+  const state = { ...initialState(), spent: { day, amounts } };
+  const r = await run([...SEND, "--vault-state", vaultStateFile({ state })], TESTNET_ENV, { hasNear: () => true });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.calls, [], "cap already spent today: nothing may be sent");
+});
+
+test("M2: --send refuses a vault-state without fetched_at or block_height", async () => {
+  for (const o of [{ fetched_at: undefined }, { block_height: undefined }, { fetched_at: "not a date" }, { block_height: 0 }, { block_height: "5" }]) {
+    const r = await run([...SEND, "--vault-state", vaultStateFile(o)], TESTNET_ENV, { hasNear: () => true });
+    assert.equal(r.code, 1, JSON.stringify(o));
+    assert.match(r.stderr, /fetched_at/);
+    assert.deepEqual(r.calls, []);
+  }
+});
+
+test("M2: --send refuses a stale vault-state and one fetched in the future", async () => {
+  const stale = await run([...SEND, "--vault-state", vaultStateFile({ fetched_at: new Date(NOW_MS - 11 * 60_000).toISOString() })], TESTNET_ENV, { hasNear: () => true });
+  assert.equal(stale.code, 1);
+  assert.match(stale.stderr, /stale/);
+  const future = await run([...SEND, "--vault-state", vaultStateFile({ fetched_at: new Date(NOW_MS + 10 * 60_000).toISOString() })], TESTNET_ENV, { hasNear: () => true });
+  assert.equal(future.code, 1);
+  assert.match(future.stderr, /in the future/);
+  assert.deepEqual([...stale.calls, ...future.calls], []);
+  const fresh = await run([...SEND, ...["--vault-state", vaultStateFile({ fetched_at: new Date(NOW_MS - 9 * 60_000).toISOString() })]], TESTNET_ENV, { hasNear: () => true });
+  assert.equal(fresh.code, 0, fresh.stderr);
+});
+
+test("L1: --send refuses vault === runner", async () => {
+  const r = await run([...SEND, ...VS()], { ...TESTNET_ENV, YIELD_RUNNER_ACCOUNT_ID: "vault.x.testnet" }, { hasNear: () => true });
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /different accounts/);
+  assert.deepEqual(r.calls, []);
+});
+
+test("L3: --send does not write simulated P&L into the ledger", async () => {
+  const out = mkdtempSync(join(tmpdir(), "yield-cli-"));
+  try {
+    const code = await main([...SEND, ...VS(), "--out", out], { env: TESTNET_ENV, log: () => {}, err: () => {}, spawner: () => 0, hasNear: () => true, now: () => NOW_MS });
+    assert.equal(code, 0);
+    assert.ok(!existsSync(join(out, "yield", "ledger.json")), "no ledger written under --send");
+  } finally {
+    rmSync(out, { recursive: true, force: true });
+  }
 });
