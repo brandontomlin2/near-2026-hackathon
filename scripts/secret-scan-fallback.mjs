@@ -37,8 +37,9 @@ export const ALLOWLIST = [
 ];
 
 export const RULES = [
-  { name: "near-ed25519-private-key", re: new RegExp(`\\bed25519:${B58}{86,88}(?!${B58})`, "g") },
-  { name: "near-secp256k1-private-key", re: new RegExp(`\\bsecp256k1:${B58}{43,44}(?!${B58})`, "g") },
+  // (?<![A-Za-z0-9]) rather than \b: \b does not fire after "_" (a word character).
+  { name: "near-ed25519-private-key", re: new RegExp(`(?<![A-Za-z0-9])ed25519:${B58}{86,88}(?!${B58})`, "g") },
+  { name: "near-secp256k1-private-key", re: new RegExp(`(?<![A-Za-z0-9])secp256k1:${B58}{43,44}(?!${B58})`, "g") },
   { name: "pem-private-key", re: /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----/g },
   {
     name: "seed-phrase",
