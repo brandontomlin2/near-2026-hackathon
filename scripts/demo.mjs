@@ -121,6 +121,10 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
       console.error(`${name}: cannot write to ${JSON.stringify(opts.out)}: it, or a parent, is a file, not a directory. Pass a directory path that is free or does not exist yet (see --help)`);
       return 1;
     }
+    if (error.code === "EACCES" || error.code === "EPERM" || error.code === "EROFS") {
+      console.error(`${name}: cannot write to ${JSON.stringify(opts.out)}: permission denied or read-only. Pass a directory you can write to (see --help)`);
+      return 1;
+    }
     console.error(`${name}: ${error.message}`);
     return 1;
   }
