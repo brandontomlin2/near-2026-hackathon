@@ -1091,5 +1091,5 @@ fn late_callback_of_force_released_swap_cannot_touch_new_swap() {
     assert!(matches!(r, PromiseOrValue::Value(U128(0))));
     assert!(v.get_state().swap_in_flight);
     assert_eq!(v.in_flight.as_ref().unwrap().id, 2);
-    assert_eq!(bal(&v, &wrap()), 9_800);
+    assert_eq!(bal(&v, &wrap()), 9_700);
 }

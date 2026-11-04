@@ -85,7 +85,7 @@ All callbacks use `#[callback_result]` (or `promise_result_checked`) and never p
 | `ref.swap` failed | token_in is on Ref | `stranded_on_ref[token_in] += amount`, `stranded` event |
 | `amount_out < min_amount_out` (or 0) | token_out is on Ref | `stranded_on_ref[token_out] += amount_out` |
 | `ref.withdraw` failed | token_out is on Ref | `stranded_on_ref[token_out] += amount_out` |
-| Callback never ran (e.g. out of gas) | unknown | after 10 minutes the owner calls `force_release_lock` |
+| Callback never ran (e.g. out of gas) | unknown | after 10 minutes the owner calls `force_release_lock`; each swap carries an id passed to its callbacks, so late callbacks of a released swap are no-ops |
 
 The owner recovers stranded funds with `recover_from_ref(token_id, amount)`. A failed recovery restores the stranded record.
 
@@ -103,7 +103,7 @@ NEP-297, `standard: "yield_vault"`, `version: "1.0.0"`: `deposit`, `withdraw`, `
 
 ```
 cd contracts/yield-vault
-cargo test                                          # 90 unit tests
+cargo test                                          # 91 unit tests
 cargo clippy --all-targets
 cargo build --target wasm32-unknown-unknown --release
 ```
