@@ -46,6 +46,32 @@ export function publicRpcUrl(rpcUrl) {
   return url.origin;
 }
 
+const SECRET_ENV_NAMES = ["NEAR_AI_API_KEY"];
+
+/**
+ * Scrub an error message before it is recorded: each full RPC URL becomes its
+ * origin, and the values of known secret env vars (raw and encodeURIComponent
+ * forms) become [REDACTED]. Messages from fetch or the RPC may quote either.
+ */
+export function scrubErrorMessage(message, { rpcUrl, env = process.env } = {}) {
+  let text = String(message);
+  let origin;
+  try {
+    origin = new URL(rpcUrl).origin;
+  } catch {
+    origin = undefined;
+  }
+  if (origin) {
+    for (const full of new Set([rpcUrl, new URL(rpcUrl).href])) text = text.split(full).join(origin);
+  }
+  for (const name of SECRET_ENV_NAMES) {
+    const secret = env[name];
+    if (!secret) continue;
+    for (const form of new Set([secret, encodeURIComponent(secret)])) text = text.split(form).join("[REDACTED]");
+  }
+  return text;
+}
+
 /**
  * Testnet evidence must be read from a testnet endpoint over https: the host
  * must carry a "testnet" label and no "mainnet" anywhere. Returns the public
@@ -224,7 +250,7 @@ export async function viewCall({ fetchImpl, rpcUrl, contract, method, args, extr
     record.block_hash = out.block_hash;
     record.result = JSON.parse(Buffer.from(out.result).toString("utf8"));
   } catch (err) {
-    record.error = err.message;
+    record.error = scrubErrorMessage(err.message, { rpcUrl });
   }
   return record;
 }
