@@ -152,6 +152,7 @@ function runBlock(block, cwd, timeoutMs) {
     maxBuffer: 64 * 1024 * 1024,
   });
   fs.rmSync(home, { recursive: true, force: true });
+  if (res.error && res.error.code !== "ETIMEDOUT") return { status: "FAIL", detail: `could not run: ${res.error.message}` };
   const output = `${res.stdout ?? ""}${res.stderr ?? ""}`;
   process.stdout.write(output.endsWith("\n") || output === "" ? output : output + "\n");
   return evaluate(
@@ -164,7 +165,7 @@ function readPre(file) {
   if (!file || !fs.existsSync(file)) return [];
   return fs
     .readFileSync(file, "utf8")
-    .split("\n")
+    .split(/\r?\n/)
     .filter(Boolean)
     .map((l) => {
       const [status, step, detail = ""] = l.split("\t");
@@ -180,7 +181,14 @@ function main(argv) {
     if (a === "--readme") opts.readme = rest[++i];
     else if (a === "--cwd") opts.cwd = rest[++i];
     else if (a === "--pre") opts.pre = rest[++i];
-    else if (a === "--timeout-ms") opts.timeoutMs = Number(rest[++i]);
+    else if (a === "--timeout-ms") {
+      const v = rest[++i];
+      if (!/^[1-9]\d*$/.test(v ?? "")) {
+        console.error("--timeout-ms needs a positive integer (milliseconds)");
+        return 2;
+      }
+      opts.timeoutMs = Number(v);
+    }
     else if (a === "--allow-empty") opts.allowEmpty = true;
     else {
       console.error(`unknown argument: ${a}`);
