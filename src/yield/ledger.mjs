@@ -74,7 +74,7 @@ export function initialState() {
   return {
     paused: false,
     in_flight: false,
-    spent: { day: 0, amount: "0" },
+    spent: { day: 0, amounts: {} }, // per token_in, decimal strings
     balances: {
       "wrap.testnet": "1000000000000000000000000000",
       "rft.tokenfactory.testnet": "1000000000000",
@@ -121,8 +121,9 @@ export function createLedger({ seed = 0, fixture = loadPoolFixture(), agents = A
             continue;
           }
           const st = states[d.agent];
-          const before = st.spent.day === day ? BigInt(st.spent.amount) : 0n;
-          st.spent = { day, amount: (before + BigInt(d.proposal.amount_in)).toString() };
+          const amounts = st.spent.day === day ? st.spent.amounts : {};
+          const before = BigInt(amounts[d.proposal.token_in] ?? "0");
+          st.spent = { day, amounts: { ...amounts, [d.proposal.token_in]: (before + BigInt(d.proposal.amount_in)).toString() } };
           st.balances[d.proposal.token_in] = (BigInt(st.balances[d.proposal.token_in]) - BigInt(d.proposal.amount_in)).toString();
           st.balances[d.proposal.token_out] = (BigInt(st.balances[d.proposal.token_out] ?? "0") + BigInt(fill.amount_out)).toString();
           a.trades.push({ round: round.round, proposal: d.proposal, amount_out: fill.amount_out, pnl_micro_usd: fill.pnl_micro_usd, drift_bps: fill.drift_bps, cost_bps: fill.cost_bps });

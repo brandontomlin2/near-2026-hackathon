@@ -1,14 +1,16 @@
 // Personality = strategy. The four seeded agents (src/traits/agents.mjs) each run one
 // yield strategy. The params here are the soft, agent-level policy; the vault's
-// VaultConfig (max_trade, daily_cap, allowed_pools, runners) is the hard limit that
+// VaultConfig (per-token limits, price floors, allowed_pools, runners) is the hard limit that
 // holds whatever the agent or the model says.
 
 import { AGENTS } from "../traits/agents.mjs";
+import { loadPoolFixture, poolById } from "./pools.mjs";
 
 export const STRATEGY_VERSION = 1;
 export const WNEAR = "wrap.testnet";
 export const NUSDT = "nusdt.ft-fin.testnet";
 export const NUSDC = "nusdc.ft-fin.testnet";
+export const RFT = "rft.tokenfactory.testnet";
 export const EXCHANGE = "ref-finance-101.testnet";
 export const PLACEHOLDER_RUNNER = "runner.yield-demo.testnet";
 export const PLACEHOLDER_VAULT = "vault.yield-demo.testnet";
@@ -17,7 +19,7 @@ export const PLACEHOLDER_VAULT = "vault.yield-demo.testnet";
  * @typedef {object} StrategyParams
  * @property {boolean} stable_only only stable/stable pools
  * @property {string[] | null} token_in_allow input tokens the strategy trades, null = any
- * @property {number} size_bps largest proposal as bps of the vault's max_trade
+ * @property {number} size_bps largest proposal as bps of the vault's max_trade for token_in
  * @property {number} slippage_bps widest slippage allowance the strategy accepts
  * @property {boolean} follows_consensus adopts the majority of the other agents' proposals
  * @property {{ veto_size_bps: number, veto_slippage_bps: number, hedge_size_bps: number } | null} audit
@@ -68,32 +70,69 @@ export function strategyFor(agentId) {
   return s;
 }
 
-// Per-agent vault configs. max_trade and daily_cap are in token_in units, so each
-// config is written for one input-token family (stable 6-decimal units, or wNEAR yocto).
+// Per-agent vault configs (config v2). Limits are per token_in, in that token's own base
+// units, so one vault can trade several tokens without mixing decimals. A token without an
+// entry in `limits` cannot be sold. max_trade / daily_cap below are in whole tokens and are
+// scaled with the fixture's token decimals.
 const CONFIG_TABLE = {
-  aloof: { pools: [1], max_trade: "10000", daily_cap: "30000" },
-  chaotic: { pools: [0], max_trade: "1000000000000000000000000", daily_cap: "3000000000000000000000000" },
-  social: { pools: [0, 1], max_trade: "1000000000000000000000000", daily_cap: "2000000000000000000000000" },
-  skeptic: { pools: [1], max_trade: "10000", daily_cap: "20000" },
+  aloof: { pools: [1], limits: { [NUSDT]: ["0.01", "0.03"], [NUSDC]: ["0.01", "0.03"] } },
+  chaotic: { pools: [0], limits: { [WNEAR]: ["1", "3"], [RFT]: ["10", "30"] } },
+  social: { pools: [0, 1], limits: { [WNEAR]: ["1", "2"], [RFT]: ["10", "20"], [NUSDT]: ["0.01", "0.02"], [NUSDC]: ["0.01", "0.02"] } },
+  skeptic: { pools: [1], limits: { [NUSDT]: ["0.01", "0.02"], [NUSDC]: ["0.01", "0.02"] } },
 };
 
 const POOL_PAIRS = {
-  0: { pool_id: 0, token_a: WNEAR, token_b: "rft.tokenfactory.testnet" },
+  0: { pool_id: 0, token_a: WNEAR, token_b: RFT },
   1: { pool_id: 1, token_a: NUSDT, token_b: NUSDC },
 };
 
+/** Margin below the snapshot's spot price that the price floor leaves, in bps (50%: generous, a sanity floor, not a slippage rule). */
+export const FLOOR_MARGIN_BPS = 5000n;
+
+const gcd = (a, b) => (b === 0n ? a : gcd(b, a % b));
+
+/** Whole-token decimal string ("0.01") to base units for `token`, using the fixture's decimals. */
+function toBaseUnits(whole, token, fixture) {
+  const decimals = fixture.tokens[token].decimals;
+  const [int, frac = ""] = whole.split(".");
+  return (BigInt(int) * 10n ** BigInt(decimals) + BigInt((frac + "0".repeat(decimals)).slice(0, decimals))).toString();
+}
+
 /**
- * Example VaultConfig for an agent (mirrors the contract's VaultConfig).
- * @returns {{ strategy: string, allowed_pools: object[], max_trade: string, daily_cap: string, runners: string[] }}
+ * Price floor for selling `tokenIn` in `pool`, as {num, den} decimal strings with
+ * min_amount_out * den >= amount_in * num on chain. Derived from the snapshot's spot price
+ * (reserve_out / reserve_in, no fee, no impact) minus FLOOR_MARGIN_BPS:
+ *   num / den = reserve_out * (10000 - margin) / (reserve_in * 10000)
+ * reduced by the gcd. Both are in base units, so the decimals are already accounted for.
  */
-export function defaultVaultConfig(agentId, { runner = PLACEHOLDER_RUNNER } = {}) {
+function floorRate(pool, tokenIn) {
+  const [rIn, rOut] = tokenIn === pool.token_a ? [BigInt(pool.reserve_a), BigInt(pool.reserve_b)] : [BigInt(pool.reserve_b), BigInt(pool.reserve_a)];
+  const num = rOut * (10000n - FLOOR_MARGIN_BPS);
+  const den = rIn * 10000n;
+  const g = gcd(num, den);
+  return { num: (num / g).toString(), den: (den / g).toString() };
+}
+
+/** The limits entry for `tokenId` ({token_id, max_trade, daily_cap}), or undefined when the token cannot be sold. */
+export function limitFor(config, tokenId) {
+  return (config.limits ?? []).find((l) => l.token_id === tokenId);
+}
+
+/**
+ * Example VaultConfig (v2) for an agent (mirrors the contract's VaultConfig).
+ * @returns {{ strategy: string, allowed_pools: object[], limits: object[], runners: string[] }}
+ */
+export function defaultVaultConfig(agentId, { runner = PLACEHOLDER_RUNNER, fixture = loadPoolFixture() } = {}) {
   strategyFor(agentId);
   const c = CONFIG_TABLE[agentId];
   return {
     strategy: agentId,
-    allowed_pools: c.pools.map((id) => ({ ...POOL_PAIRS[id] })),
-    max_trade: c.max_trade,
-    daily_cap: c.daily_cap,
+    allowed_pools: c.pools.map((id) => {
+      const pair = POOL_PAIRS[id];
+      const pool = poolById(id, fixture);
+      return { ...pair, min_rate_a_to_b: floorRate(pool, pair.token_a), min_rate_b_to_a: floorRate(pool, pair.token_b) };
+    }),
+    limits: Object.entries(c.limits).map(([token_id, [max, cap]]) => ({ token_id, max_trade: toBaseUnits(max, token_id, fixture), daily_cap: toBaseUnits(cap, token_id, fixture) })),
     runners: [runner],
   };
 }

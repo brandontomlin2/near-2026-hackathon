@@ -12,7 +12,13 @@ import { ProposalError, parseProposal, parseReview, vaultArgs } from "./proposal
 import { evaluateProposal } from "./rules.mjs";
 import { systemPrompt, userPrompt } from "./prompt.mjs";
 import { AGENTS } from "../traits/agents.mjs";
-import { strategyFor } from "./strategies.mjs";
+import { limitFor, strategyFor } from "./strategies.mjs";
+
+/** amount_in as bps of the vault's max_trade for token_in; a token with no limit counts as far over (100000 bps). */
+const sizeBps = (p, config) => {
+  const limit = limitFor(config, p.token_in);
+  return limit ? Number((BigInt(p.amount_in) * 10000n) / BigInt(limit.max_trade)) : 100_000;
+};
 
 export const AGENT_IDS = AGENTS.map((a) => a.id);
 
@@ -26,7 +32,7 @@ const ask = async (client, agentId, task, facts) => {
   return res.content;
 };
 
-const spentToday = (state, today) => (state.spent && state.spent.day === today ? state.spent.amount : "0");
+const spentToday = (state, today) => (state.spent && state.spent.day === today ? { ...state.spent.amounts } : {});
 
 function median(values) {
   const sorted = [...values].map(BigInt).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
@@ -103,7 +109,7 @@ export async function runRound({ client, configs, states, fixture, round, nowMs,
       return {
         agent: id,
         proposal: fields,
-        size_bps_of_max_trade: Number((BigInt(p.amount_in) * 10000n) / BigInt(configs[id].max_trade)),
+        size_bps_of_max_trade: sizeBps(p, configs[id]),
         slippage_bps: pool ? slippageBps(pool, p) : null,
       };
     });
@@ -154,8 +160,8 @@ export async function runRound({ client, configs, states, fixture, round, nowMs,
   for (const d of Object.values(decisions)) {
     if (d.status === "invalid") d.outcome = "invalid";
     else if (d.status === "abstained" || !d.proposal) d.outcome = "none";
+    else if (!d.hard.ok) d.outcome = "rejected_hard"; // the vault would revert it: this wins over a veto (the veto stays on the record)
     else if (d.veto) d.outcome = "vetoed";
-    else if (!d.hard.ok) d.outcome = "rejected_hard";
     else if (!d.soft.ok) d.outcome = "rejected_soft";
     else {
       d.outcome = "execute";

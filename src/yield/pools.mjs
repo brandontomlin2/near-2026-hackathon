@@ -70,3 +70,10 @@ export function slippageBps(pool, proposal) {
   const diff = (quote - minOut) * 10000n;
   return Number(diff / quote);
 }
+
+/** Smallest min_amount_out that satisfies an on-chain floor {num, den}: ceil(amount_in * num / den). */
+export function floorMinOut(rate, amountIn) {
+  const n = BigInt(amountIn) * BigInt(rate.num);
+  const d = BigInt(rate.den);
+  return (n + d - 1n) / d;
+}

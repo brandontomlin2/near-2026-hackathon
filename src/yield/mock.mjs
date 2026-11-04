@@ -3,30 +3,42 @@
 // a model: the schedule below is fixed per round so the demo shows every outcome.
 
 import { createMockClient } from "../inference/client.mjs";
-import { loadPoolFixture, minOutFor, poolById } from "./pools.mjs";
+import { floorMinOut, loadPoolFixture, minOutFor, poolById } from "./pools.mjs";
 import { NUSDC, NUSDT, WNEAR, strategyFor } from "./strategies.mjs";
 
-// Chaotic's size (bps of max_trade) and slippage by round, cycling: a big one the skeptic
-// vetoes, a modest one that passes, one over the vault's max_trade (the rules discard it),
-// and a loose-slippage one the skeptic vetoes.
+// Chaotic's size (bps of max_trade for wNEAR) and slippage by round, cycling: a big one the
+// skeptic vetoes, a modest one that passes, one over the vault's max_trade (the hard rules
+// discard it: ERR_MAX_TRADE), a loose-slippage one the skeptic vetoes, and one whose
+// min_amount_out sits below the pool's price floor (the hard rules discard it: ERR_PRICE_FLOOR).
+// `below_floor` skips the floor clamp on purpose; every other entry respects the floor.
 const CHAOTIC_SCHEDULE = [
   { size_bps: 10000, slip: 300 },
   { size_bps: 6000, slip: 150 },
   { size_bps: 13000, slip: 300 },
   { size_bps: 6500, slip: 400 },
+  { size_bps: 6000, slip: 6000, below_floor: true },
 ];
 
 const fraction = (value, bps) => ((BigInt(value) * BigInt(bps)) / 10000n).toString();
 
-function build(pool, tokenIn, amountIn, slip, rationale, fixture) {
+// The vault's max_trade for `tokenIn` from the facts (a token without a limit cannot be sold: 0).
+const maxTradeOf = (facts, tokenIn) => facts.limits.find((l) => l.token_id === tokenIn)?.max_trade ?? "0";
+
+function build(pool, tokenIn, amountIn, slip, rationale, fixture, { belowFloor = false } = {}) {
   const p = poolById(pool.pool_id, fixture);
   const tokenOut = tokenIn === p.token_a ? p.token_b : p.token_a;
+  let minOut = minOutFor(p, tokenIn, amountIn, slip);
+  const rate = pool[tokenIn === p.token_a ? "min_rate_a_to_b" : "min_rate_b_to_a"];
+  if (rate && !belowFloor) {
+    const floor = floorMinOut(rate, amountIn);
+    if (minOut < floor) minOut = floor;
+  }
   return {
     pool_id: p.pool_id,
     token_in: tokenIn,
     token_out: tokenOut,
     amount_in: amountIn,
-    min_amount_out: minOutFor(p, tokenIn, amountIn, slip).toString(),
+    min_amount_out: minOut.toString(),
     rationale,
   };
 }
@@ -42,16 +54,18 @@ function propose(facts, fixture) {
   const volatile = pools.find((p) => !p.stable);
   if (agent === "aloof" || agent === "skeptic") {
     const size = agent === "skeptic" ? s.audit.hedge_size_bps : s.size_bps;
-    return build(stable, stableIn(round), fraction(facts.max_trade, size), s.slippage_bps, "Stable pair, small size, tight slippage.", fixture);
+    const tokenIn = stableIn(round);
+    return build(stable, tokenIn, fraction(maxTradeOf(facts, tokenIn), size), s.slippage_bps, "Stable pair, small size, tight slippage.", fixture);
   }
   if (agent === "chaotic") {
     const step = CHAOTIC_SCHEDULE[(round - 1) % CHAOTIC_SCHEDULE.length];
-    return build(volatile, WNEAR, fraction(facts.max_trade, step.size_bps), step.slip, "Momentum is up, size up and ride it.", fixture);
+    return build(volatile, WNEAR, fraction(maxTradeOf(facts, WNEAR), step.size_bps), step.slip, "Momentum is up, size up and ride it.", fixture, { belowFloor: step.below_floor });
   }
   // social: adopt the consensus, capped at its own max_trade
   const c = facts.consensus;
-  const amount = BigInt(c.amount_in) > BigInt(facts.max_trade) ? facts.max_trade : c.amount_in;
-  return build({ pool_id: c.pool_id }, c.token_in, amount, s.slippage_bps, `Following the swarm: ${c.supporters.join(" and ")} agree.`, fixture);
+  const max = maxTradeOf(facts, c.token_in);
+  const amount = BigInt(c.amount_in) > BigInt(max) ? max : c.amount_in;
+  return build(pools.find((x) => x.pool_id === c.pool_id) ?? { pool_id: c.pool_id }, c.token_in, amount, s.slippage_bps, `Following the swarm: ${c.supporters.join(" and ")} agree.`, fixture);
 }
 
 function review(facts, fixture) {

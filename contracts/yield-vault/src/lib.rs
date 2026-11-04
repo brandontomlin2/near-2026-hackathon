@@ -8,10 +8,8 @@
 //! revoke-all kill switch. Approved swaps run on Rhea (Ref Finance) with the
 //! deposit -> swap -> withdraw pattern through a chain of private callbacks.
 //!
-//! Daily cap simplification: the cap is counted in `token_in` units of each
-//! swap, summed across tokens without conversion. Operators should therefore
-//! set the cap with a single quote token in mind (or allow only pools whose
-//! input tokens have the same decimals/value).
+//! Limits are per `token_in`, in that token's own base units (`limits`), and
+//! each allowed pool carries an owner-set price floor per direction.
 //!
 //! NOT DEPLOYED. See README.md.
 
@@ -45,12 +43,18 @@ pub const GAS_REF_SWAP: Gas = Gas::from_tgas(50);
 pub const GAS_REF_WITHDRAW: Gas = Gas::from_tgas(40);
 /// `on_withdraw_done` / `on_recover` / `on_owner_withdraw` bodies.
 pub const GAS_CB_FINAL: Gas = Gas::from_tgas(15);
-/// `on_swap`: own body (~10) + withdraw (40) + final callback (15) + margin.
+/// Ref view `get_deposit`.
+pub const GAS_REF_VIEW: Gas = Gas::from_tgas(10);
+/// Reconciliation callbacks (`on_*_reconciled`) bodies.
+pub const GAS_CB_RECONCILE: Gas = Gas::from_tgas(15);
+/// `on_withdraw_done` / `on_recover`: own body (~10) + `get_deposit` (10) + reconcile (15) + margin.
+pub const GAS_CB_WITHDRAW_DONE: Gas = Gas::from_tgas(40);
+/// `on_swap`: own body (~10) + withdraw (40) + `on_withdraw_done` (40) + margin.
 pub const GAS_CB_SWAP: Gas = Gas::from_tgas(100);
-/// `on_deposit`: own body (~10) + swap (50) + `on_swap` (100).
-pub const GAS_CB_DEPOSIT: Gas = Gas::from_tgas(160);
-/// Minimum prepaid gas for `execute_swap` (70 + 160 + own body + margin).
-pub const MIN_EXECUTE_GAS: Gas = Gas::from_tgas(250);
+/// `on_deposit`: own body (~10) + swap (50) + `on_swap` (100) + margin.
+pub const GAS_CB_DEPOSIT: Gas = Gas::from_tgas(170);
+/// Minimum prepaid gas for `execute_swap` (70 + 170 + own body + margin). Max tx gas is 300.
+pub const MIN_EXECUTE_GAS: Gas = Gas::from_tgas(270);
 /// A swap lock older than this (ns, 10 minutes) may be force-released by the owner.
 pub const STALE_LOCK_NS: u64 = 600 * 1_000_000_000;
 /// Gas for an owner `ft_transfer` out.
@@ -67,6 +71,29 @@ pub struct AllowedPool {
     pub pool_id: u64,
     pub token_a: AccountId,
     pub token_b: AccountId,
+    /// Floor for token_a -> token_b: `min_amount_out * den >= amount_in * num`.
+    pub min_rate_a_to_b: Rate,
+    /// Floor for token_b -> token_a.
+    pub min_rate_b_to_a: Rate,
+}
+
+/// A rational `num/den` price floor, in output base units per input base unit.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Rate {
+    pub num: U128,
+    pub den: U128,
+}
+
+/// Per-`token_in` limits, in that token's own base units.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TokenLimit {
+    pub token_id: AccountId,
+    /// Max `amount_in` of a single swap.
+    pub max_trade: U128,
+    /// Max sum of `amount_in` per UTC day.
+    pub daily_cap: U128,
 }
 
 /// Owner-set hard limits and approvals.
@@ -76,10 +103,8 @@ pub struct VaultConfig {
     /// "aloof" | "chaotic" | "social" | "skeptic".
     pub strategy: String,
     pub allowed_pools: Vec<AllowedPool>,
-    /// Max `amount_in` of a single swap (token_in units).
-    pub max_trade: U128,
-    /// Max sum of `amount_in` per UTC day (token_in units, see crate docs).
-    pub daily_cap: U128,
+    /// Per-token_in limits; a token without an entry cannot be sold.
+    pub limits: Vec<TokenLimit>,
     /// Accounts allowed to call `execute_swap`.
     pub runners: Vec<AccountId>,
 }
@@ -115,7 +140,7 @@ pub struct VaultState {
     pub paused: bool,
     pub swap_in_flight: bool,
     pub day: u64,
-    pub spent_today: U128,
+    pub spent_today: Vec<(AccountId, U128)>,
     pub balances: Vec<(AccountId, U128)>,
     pub stranded_on_ref: Vec<(AccountId, U128)>,
     pub swaps_executed: u64,
@@ -161,7 +186,7 @@ pub struct YieldVault {
     paused: bool,
     in_flight: Option<InFlight>,
     day: u64,
-    spent_today: u128,
+    spent_today: BTreeMap<AccountId, u128>,
     balances: BTreeMap<AccountId, u128>,
     stranded: BTreeMap<AccountId, u128>,
     swaps_executed: u64,
@@ -187,12 +212,24 @@ fn validate_config(c: &VaultConfig) {
         STRATEGIES.contains(&c.strategy.as_str()),
         "ERR_BAD_CONFIG: strategy must be aloof, chaotic, social or skeptic"
     );
-    require!(c.max_trade.0 > 0, "ERR_BAD_CONFIG: max_trade must be > 0");
-    require!(
-        c.daily_cap.0 >= c.max_trade.0,
-        "ERR_BAD_CONFIG: daily_cap must be >= max_trade"
-    );
+    for (i, l) in c.limits.iter().enumerate() {
+        require!(l.max_trade.0 > 0, "ERR_BAD_CONFIG: max_trade must be > 0");
+        require!(
+            l.daily_cap.0 >= l.max_trade.0,
+            "ERR_BAD_CONFIG: daily_cap must be >= max_trade"
+        );
+        require!(
+            !c.limits[..i].iter().any(|q| q.token_id == l.token_id),
+            "ERR_BAD_CONFIG: duplicate limit token"
+        );
+    }
     for (i, p) in c.allowed_pools.iter().enumerate() {
+        for r in [&p.min_rate_a_to_b, &p.min_rate_b_to_a] {
+            require!(
+                r.num.0 > 0 && r.den.0 > 0,
+                "ERR_BAD_CONFIG: rate num and den must be > 0"
+            );
+        }
         require!(
             p.token_a != p.token_b,
             "ERR_BAD_CONFIG: token_a must differ from token_b"
@@ -210,6 +247,23 @@ fn validate_config(c: &VaultConfig) {
     }
 }
 
+/// Full 256-bit product of two u128 as `(hi, lo)`; tuples compare numerically.
+fn mul_wide(a: u128, b: u128) -> (u128, u128) {
+    const M: u128 = u64::MAX as u128;
+    let (a0, a1) = (a & M, a >> 64);
+    let (b0, b1) = (b & M, b >> 64);
+    let (p00, p01, p10, p11) = (a0 * b0, a0 * b1, a1 * b0, a1 * b1);
+    let mid = (p00 >> 64) + (p01 & M) + (p10 & M);
+    let lo = (p00 & M) | (mid << 64);
+    let hi = p11 + (p01 >> 64) + (p10 >> 64) + (mid >> 64);
+    (hi, lo)
+}
+
+/// `min_out * rate.den >= amount_in * rate.num`, without overflow.
+fn meets_floor(amount_in: u128, min_out: u128, rate: &Rate) -> bool {
+    mul_wide(min_out, rate.den.0) >= mul_wide(amount_in, rate.num.0)
+}
+
 #[near]
 impl YieldVault {
     #[init]
@@ -220,6 +274,10 @@ impl YieldVault {
         ref_exchange_id: AccountId,
         config: VaultConfig,
     ) -> Self {
+        require!(
+            env::predecessor_account_id() == env::current_account_id(),
+            "ERR_PRIVATE_INIT: only the contract account can initialize"
+        );
         validate_config(&config);
         let this = Self {
             owner_id,
@@ -230,7 +288,7 @@ impl YieldVault {
             paused: false,
             in_flight: None,
             day: day_of(env::block_timestamp()),
-            spent_today: 0,
+            spent_today: BTreeMap::new(),
             balances: BTreeMap::new(),
             stranded: BTreeMap::new(),
             swaps_executed: 0,
@@ -256,7 +314,14 @@ impl YieldVault {
             paused: self.paused,
             swap_in_flight: self.in_flight.is_some(),
             day: self.day,
-            spent_today: U128(self.spent_on(now_day)),
+            spent_today: if now_day == self.day {
+                self.spent_today
+                    .iter()
+                    .map(|(k, v)| (k.clone(), U128(*v)))
+                    .collect()
+            } else {
+                Vec::new()
+            },
             balances: self
                 .balances
                 .iter()
@@ -350,13 +415,14 @@ impl YieldVault {
         }
         require!(
             env::prepaid_gas() >= MIN_EXECUTE_GAS,
-            "ERR_INSUFFICIENT_GAS: attach at least 250 TGas"
+            "ERR_INSUFFICIENT_GAS: attach at least 270 TGas"
         );
         let amount = proposal.amount_in.0;
         let today = day_of(env::block_timestamp());
         self.roll_day(today);
         self.debit(&proposal.token_in, amount);
-        self.spent_today += amount; // bounded by daily_cap check
+        // Bounded by the daily_cap check.
+        *self.spent_today.entry(proposal.token_in.clone()).or_insert(0) += amount;
         self.next_swap_id += 1;
         let swap_id = self.next_swap_id;
         self.in_flight = Some(InFlight {
@@ -412,10 +478,18 @@ impl YieldVault {
         };
         let used = match used {
             Ok(u) => u.0.min(fl.amount_in),
-            Err(_) => 0,
+            Err(_) => {
+                // A failed promise result does not prove nothing reached Ref
+                // (e.g. the resolve step ran out of gas). Ask Ref.
+                return PromiseOrValue::Promise(self.ref_deposit_query(&fl.token_in).then(
+                    Self::ext(env::current_account_id())
+                        .with_static_gas(GAS_CB_RECONCILE)
+                        .on_deposit_reconciled(swap_id),
+                ));
+            }
         };
         if used == 0 {
-            // Nothing reached Ref: the tokens are still with the vault.
+            // Ref reported it used nothing: the tokens are still with the vault.
             self.rollback(&fl, fl.amount_in);
             self.fail(&fl, "deposit_failed");
             return PromiseOrValue::Value(U128(0));
@@ -445,6 +519,36 @@ impl YieldVault {
                     .on_swap(swap_id),
             );
         PromiseOrValue::Promise(p)
+    }
+
+    /// After a failed `ft_transfer_call`: roll back only if Ref's deposit shows
+    /// the tokens did not land; otherwise (or if unknown) strand them.
+    #[private]
+    pub fn on_deposit_reconciled(
+        &mut self,
+        swap_id: u64,
+        #[callback_result] deposit: Result<U128, PromiseError>,
+    ) -> U128 {
+        Self::assert_self();
+        let Some(fl) = self.current(swap_id) else {
+            return U128(0);
+        };
+        let baseline = self.stranded_of(&fl.token_in).saturating_add(fl.amount_in);
+        match deposit {
+            Ok(d) if d.0 < baseline => {
+                self.rollback(&fl, fl.amount_in);
+                self.fail(&fl, "deposit_failed");
+            }
+            Ok(_) => {
+                self.strand(&fl.token_in, fl.amount_in, "deposit_landed_on_ref");
+                self.fail(&fl, "deposit_landed_on_ref");
+            }
+            Err(_) => {
+                self.strand(&fl.token_in, fl.amount_in, "deposit_unverified");
+                self.fail(&fl, "deposit_unverified");
+            }
+        }
+        U128(0)
     }
 
     /// Hop 2 callback: reads `amount_out`, then withdraws it from Ref.
@@ -487,7 +591,7 @@ impl YieldVault {
                     )
                     .then(
                         Self::ext(env::current_account_id())
-                            .with_static_gas(GAS_CB_FINAL)
+                            .with_static_gas(GAS_CB_WITHDRAW_DONE)
                             .on_withdraw_done(swap_id),
                     );
                 PromiseOrValue::Promise(p)
@@ -495,18 +599,52 @@ impl YieldVault {
         }
     }
 
-    /// Hop 3 callback: credits token_out, releases the lock.
+    /// Hop 3 callback: if Ref's `withdraw` did not fail, verifies against Ref's
+    /// deposit before crediting (Ref re-credits and returns normally when the
+    /// token transfer fails).
     #[private]
-    pub fn on_withdraw_done(&mut self, swap_id: u64) -> U128 {
+    pub fn on_withdraw_done(&mut self, swap_id: u64) -> PromiseOrValue<U128> {
         Self::assert_self();
         let ok = env::promise_result_checked(0, 4096).is_ok();
         let Some(fl) = self.current(swap_id) else {
-            return U128(0);
+            return PromiseOrValue::Value(U128(0));
         };
         if !ok {
             self.strand(&fl.token_out, fl.amount_out, "withdraw_failed");
             self.fail(&fl, "withdraw_failed");
+            return PromiseOrValue::Value(U128(0));
+        }
+        PromiseOrValue::Promise(self.ref_deposit_query(&fl.token_out).then(
+            Self::ext(env::current_account_id())
+                .with_static_gas(GAS_CB_RECONCILE)
+                .on_withdraw_reconciled(swap_id),
+        ))
+    }
+
+    /// Credits token_out only if Ref's deposit shows the funds left Ref.
+    #[private]
+    pub fn on_withdraw_reconciled(
+        &mut self,
+        swap_id: u64,
+        #[callback_result] deposit: Result<U128, PromiseError>,
+    ) -> U128 {
+        Self::assert_self();
+        let Some(fl) = self.current(swap_id) else {
             return U128(0);
+        };
+        let baseline = self.stranded_of(&fl.token_out).saturating_add(fl.amount_out);
+        match deposit {
+            Ok(d) if d.0 < baseline => {}
+            Ok(_) => {
+                self.strand(&fl.token_out, fl.amount_out, "withdraw_not_reconciled");
+                self.fail(&fl, "withdraw_not_reconciled");
+                return U128(0);
+            }
+            Err(_) => {
+                self.strand(&fl.token_out, fl.amount_out, "withdraw_unverified");
+                self.fail(&fl, "withdraw_unverified");
+                return U128(0);
+            }
         }
         self.credit(&fl.token_out, fl.amount_out);
         self.swaps_executed += 1;
@@ -645,6 +783,10 @@ impl YieldVault {
     #[payable]
     pub fn recover_from_ref(&mut self, token_id: AccountId, amount: U128) -> Promise {
         self.owner_one_yocto();
+        require!(
+            self.in_flight.is_none(),
+            "ERR_SWAP_IN_FLIGHT: cannot recover during a swap"
+        );
         require!(amount.0 > 0, "ERR_ZERO_AMOUNT: amount must be > 0");
         let have = self.stranded.get(&token_id).copied().unwrap_or(0);
         require!(
@@ -666,23 +808,55 @@ impl YieldVault {
             )
             .then(
                 Self::ext(env::current_account_id())
-                    .with_static_gas(GAS_CB_FINAL)
+                    .with_static_gas(GAS_CB_WITHDRAW_DONE)
                     .on_recover(token_id, amount),
             )
     }
 
-    /// Credits recovered funds, or restores the stranded record on failure.
+    /// Hop after Ref `withdraw` in a recovery: restores the stranded record if
+    /// it failed, otherwise verifies against Ref's deposit.
     #[private]
-    pub fn on_recover(&mut self, token_id: AccountId, amount: U128) {
+    pub fn on_recover(&mut self, token_id: AccountId, amount: U128) -> PromiseOrValue<U128> {
         Self::assert_self();
-        if env::promise_result_checked(0, 4096).is_ok() {
-            self.credit(&token_id, amount.0);
-            emit(
-                "recovered",
-                json!({ "token_id": token_id, "amount": amount.0.to_string() }),
-            );
-        } else {
+        if env::promise_result_checked(0, 4096).is_err() {
             *self.stranded.entry(token_id).or_insert(0) += amount.0;
+            return PromiseOrValue::Value(U128(0));
+        }
+        PromiseOrValue::Promise(self.ref_deposit_query(&token_id).then(
+            Self::ext(env::current_account_id())
+                .with_static_gas(GAS_CB_RECONCILE)
+                .on_recover_reconciled(token_id, amount),
+        ))
+    }
+
+    /// Credits recovered funds only if Ref's deposit shows they left Ref.
+    /// `stranded` already excludes `amount` here.
+    #[private]
+    pub fn on_recover_reconciled(
+        &mut self,
+        token_id: AccountId,
+        amount: U128,
+        #[callback_result] deposit: Result<U128, PromiseError>,
+    ) -> U128 {
+        Self::assert_self();
+        let baseline = self.stranded_of(&token_id).saturating_add(amount.0);
+        match deposit {
+            Ok(d) if d.0 < baseline => {
+                self.credit(&token_id, amount.0);
+                emit(
+                    "recovered",
+                    json!({ "token_id": token_id, "amount": amount.0.to_string() }),
+                );
+                amount
+            }
+            Ok(_) => {
+                self.strand(&token_id, amount.0, "withdraw_not_reconciled");
+                U128(0)
+            }
+            Err(_) => {
+                self.strand(&token_id, amount.0, "withdraw_unverified");
+                U128(0)
+            }
         }
     }
 }
@@ -717,10 +891,10 @@ impl YieldVault {
         assert_one_yocto();
     }
 
-    /// Spent amount for `now_day` (0 if the stored day is older).
-    fn spent_on(&self, now_day: u64) -> u128 {
+    /// Spent amount of `token` for `now_day` (0 if the stored day is older).
+    fn spent_on(&self, now_day: u64, token: &AccountId) -> u128 {
         if now_day == self.day {
-            self.spent_today
+            self.spent_today.get(token).copied().unwrap_or(0)
         } else {
             0
         }
@@ -729,8 +903,25 @@ impl YieldVault {
     fn roll_day(&mut self, now_day: u64) {
         if now_day != self.day {
             self.day = now_day;
-            self.spent_today = 0;
+            self.spent_today.clear();
         }
+    }
+
+    fn stranded_of(&self, token: &AccountId) -> u128 {
+        self.stranded.get(token).copied().unwrap_or(0)
+    }
+
+    /// Ref view: the vault's internal Ref balance of `token`.
+    fn ref_deposit_query(&self, token: &AccountId) -> Promise {
+        Promise::new(self.ref_exchange_id.clone()).function_call(
+            "get_deposit".to_string(),
+            json_bytes(json!({
+                "account_id": env::current_account_id(),
+                "token_id": token,
+            })),
+            NearToken::from_yoctonear(0),
+            GAS_REF_VIEW,
+        )
     }
 
     fn credit(&mut self, token: &AccountId, amount: u128) {
@@ -764,7 +955,12 @@ impl YieldVault {
     fn rollback(&mut self, fl: &InFlight, amount: u128) {
         self.credit(&fl.token_in, amount);
         if self.day == fl.day {
-            self.spent_today = self.spent_today.saturating_sub(amount);
+            if let Some(v) = self.spent_today.get_mut(&fl.token_in) {
+                *v = v.saturating_sub(amount);
+                if *v == 0 {
+                    self.spent_today.remove(&fl.token_in);
+                }
+            }
         }
     }
 
@@ -828,19 +1024,33 @@ impl YieldVault {
         if p.min_amount_out.0 == 0 {
             return Err("ERR_ZERO_MIN_OUT: min_amount_out must be > 0".to_string());
         }
-        if p.amount_in.0 > self.config.max_trade.0 {
+        let rate = if fwd {
+            &pool.min_rate_a_to_b
+        } else {
+            &pool.min_rate_b_to_a
+        };
+        if !meets_floor(p.amount_in.0, p.min_amount_out.0, rate) {
             return Err(format!(
-                "ERR_MAX_TRADE: {} exceeds max_trade {}",
-                p.amount_in.0, self.config.max_trade.0
+                "ERR_PRICE_FLOOR: min_amount_out {} below floor {}/{} of amount_in {}",
+                p.min_amount_out.0, rate.num.0, rate.den.0, p.amount_in.0
             ));
         }
-        let spent = self.spent_on(day_of(env::block_timestamp()));
+        let Some(limit) = self.config.limits.iter().find(|l| l.token_id == p.token_in) else {
+            return Err(format!("ERR_NO_LIMIT: no limit for {}", p.token_in));
+        };
+        if p.amount_in.0 > limit.max_trade.0 {
+            return Err(format!(
+                "ERR_MAX_TRADE: {} exceeds max_trade {}",
+                p.amount_in.0, limit.max_trade.0
+            ));
+        }
+        let spent = self.spent_on(day_of(env::block_timestamp()), &p.token_in);
         match spent.checked_add(p.amount_in.0) {
-            Some(total) if total <= self.config.daily_cap.0 => {}
+            Some(total) if total <= limit.daily_cap.0 => {}
             _ => {
                 return Err(format!(
                     "ERR_DAILY_CAP: spent {} + {} exceeds daily_cap {}",
-                    spent, p.amount_in.0, self.config.daily_cap.0
+                    spent, p.amount_in.0, limit.daily_cap.0
                 ))
             }
         }

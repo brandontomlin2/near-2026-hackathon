@@ -44,29 +44,57 @@ fn cb_ctx(result: PromiseResult, ts: u64) {
     testing_env_with_promise_results(ctx("vault.testnet", ts).build(), result);
 }
 
+/// Permissive floor: output must be at least 1/1_000_000 of the input.
+fn lax_rate() -> Rate {
+    Rate {
+        num: U128(1),
+        den: U128(1_000_000),
+    }
+}
+fn pool(pool_id: u64, token_a: AccountId, token_b: AccountId) -> AllowedPool {
+    AllowedPool {
+        pool_id,
+        token_a,
+        token_b,
+        min_rate_a_to_b: lax_rate(),
+        min_rate_b_to_a: lax_rate(),
+    }
+}
+fn limit(token_id: AccountId, max_trade: u128, daily_cap: u128) -> TokenLimit {
+    TokenLimit {
+        token_id,
+        max_trade: U128(max_trade),
+        daily_cap: U128(daily_cap),
+    }
+}
+/// `spent_today` as shown by the view, for one token.
+fn spent_view(v: &YieldVault, t: &AccountId) -> u128 {
+    v.get_state()
+        .spent_today
+        .iter()
+        .find(|(k, _)| k == t)
+        .map(|(_, a)| a.0)
+        .unwrap_or(0)
+}
+
 fn config() -> VaultConfig {
     VaultConfig {
         strategy: "chaotic".to_string(),
         allowed_pools: vec![
-            AllowedPool {
-                pool_id: 0,
-                token_a: wrap(),
-                token_b: rft(),
-            },
-            AllowedPool {
-                pool_id: 1,
-                token_a: usdt(),
-                token_b: usdc(),
-            },
+            pool(0, wrap(), rft()),
+            pool(1, usdt(), usdc()),
         ],
-        max_trade: U128(1_000),
-        daily_cap: U128(2_500),
+        limits: vec![
+            limit(wrap(), 1_000, 2_500),
+            limit(rft(), 1_000, 2_500),
+            limit(usdt(), 1_000, 2_500),
+        ],
         runners: vec![acct("runner.testnet")],
     }
 }
 
 fn new_vault_with(c: VaultConfig) -> YieldVault {
-    at("owner.testnet", T0);
+    at("vault.testnet", T0);
     YieldVault::new(
         acct("owner.testnet"),
         acct("nft.testnet"),
@@ -122,7 +150,7 @@ fn init_ok_sets_state() {
     assert_eq!(s.token_id, "1");
     assert!(!s.paused && !s.swap_in_flight);
     assert_eq!(s.day, 10);
-    assert_eq!(s.spent_today.0, 0);
+    assert!(s.spent_today.is_empty());
     assert_eq!(v.get_config(), config());
 }
 
@@ -147,7 +175,7 @@ fn init_accepts_all_four_strategies() {
 #[should_panic(expected = "ERR_BAD_CONFIG: max_trade")]
 fn init_rejects_zero_max_trade() {
     let mut c = config();
-    c.max_trade = U128(0);
+    c.limits[0].max_trade = U128(0);
     new_vault_with(c);
 }
 
@@ -155,14 +183,16 @@ fn init_rejects_zero_max_trade() {
 #[should_panic(expected = "ERR_BAD_CONFIG: daily_cap")]
 fn init_rejects_cap_below_max_trade() {
     let mut c = config();
-    c.daily_cap = U128(999);
+    c.limits[0].daily_cap = U128(999);
     new_vault_with(c);
 }
 
 #[test]
 fn init_accepts_cap_equal_max_trade() {
     let mut c = config();
-    c.daily_cap = c.max_trade;
+    for l in c.limits.iter_mut() {
+        l.daily_cap = l.max_trade;
+    }
     new_vault_with(c);
 }
 
@@ -317,7 +347,7 @@ fn swap_accepts_exactly_max_trade() {
 #[should_panic(expected = "ERR_DAILY_CAP")]
 fn swap_rejects_over_daily_cap() {
     let mut v = funded();
-    v.spent_today = 2_000;
+    v.spent_today.insert(wrap(), 2_000);
     v.day = 10;
     run(&mut v, proposal(501));
 }
@@ -376,7 +406,7 @@ fn swap_happy_path_debits_and_locks() {
     let mut v = funded();
     run(&mut v, proposal(400));
     assert_eq!(bal(&v, &wrap()), 9_600);
-    assert_eq!(v.get_state().spent_today.0, 400);
+    assert_eq!(spent_view(&v, &wrap()), 400);
     assert!(v.get_state().swap_in_flight);
     assert!(get_logs()
         .iter()
@@ -412,7 +442,12 @@ fn full_chain_success_credits_token_out() {
     let _ = v.on_swap(1, Ok(U128(390)));
     assert_eq!(v.in_flight.as_ref().unwrap().amount_out, 390);
     cb_ctx(PromiseResult::Successful(vec![]), T0);
-    let out = v.on_withdraw_done(1);
+    let r = v.on_withdraw_done(1);
+    assert!(matches!(r, PromiseOrValue::Promise(_)));
+    assert!(v.get_state().swap_in_flight);
+    assert_eq!(bal(&v, &rft()), 0, "not credited before reconciliation");
+    cb_ctx(PromiseResult::Failed, T0);
+    let out = v.on_withdraw_reconciled(1, Ok(U128(0)));
     assert_eq!(out.0, 390);
     assert!(!v.get_state().swap_in_flight);
     assert_eq!(bal(&v, &rft()), 390);
@@ -434,7 +469,7 @@ fn daily_cap_accumulates_then_blocks() {
         run(&mut v, proposal(1_000));
         v.in_flight = None;
     }
-    assert_eq!(v.get_state().spent_today.0, 2_000);
+    assert_eq!(spent_view(&v, &wrap()), 2_000);
     let r = v.check_proposal(proposal(501), acct("runner.testnet"));
     assert!(!r.ok && r.reason.starts_with("ERR_DAILY_CAP"));
     let r = v.check_proposal(proposal(500), acct("runner.testnet"));
@@ -450,12 +485,12 @@ fn daily_cap_resets_next_day() {
     }
     run(&mut v, proposal(500));
     v.in_flight = None;
-    assert_eq!(v.spent_today, 2_500);
+    assert_eq!(v.spent_today.get(&wrap()).copied(), Some(2_500));
     // Next UTC day: view shows zero and the swap is allowed.
     at("runner.testnet", T0 + DAY);
-    assert_eq!(v.get_state().spent_today.0, 0);
+    assert_eq!(spent_view(&v, &wrap()), 0);
     run_at(&mut v, proposal(1_000), T0 + DAY);
-    assert_eq!(v.get_state().spent_today.0, 1_000);
+    assert_eq!(spent_view(&v, &wrap()), 1_000);
     assert_eq!(v.get_state().day, 11);
 }
 
@@ -467,10 +502,12 @@ fn deposit_failed_rolls_back() {
     run(&mut v, proposal(400));
     cb_ctx(PromiseResult::Failed, T0);
     let r = v.on_deposit(1, Err(PromiseError::Failed));
-    assert!(matches!(r, PromiseOrValue::Value(U128(0))));
+    assert!(matches!(r, PromiseOrValue::Promise(_)));
+    // Ref's deposit shows the tokens did not land: roll back.
+    v.on_deposit_reconciled(1, Ok(U128(0)));
     assert!(!v.get_state().swap_in_flight);
     assert_eq!(bal(&v, &wrap()), 10_000);
-    assert_eq!(v.get_state().spent_today.0, 0);
+    assert_eq!(spent_view(&v, &wrap()), 0);
     assert!(v.stranded.is_empty());
     assert!(get_logs()
         .iter()
@@ -485,7 +522,7 @@ fn deposit_used_zero_rolls_back() {
     let _ = v.on_deposit(1, Ok(U128(0)));
     assert!(!v.get_state().swap_in_flight);
     assert_eq!(bal(&v, &wrap()), 10_000);
-    assert_eq!(v.get_state().spent_today.0, 0);
+    assert_eq!(spent_view(&v, &wrap()), 0);
 }
 
 #[test]
@@ -497,7 +534,7 @@ fn deposit_partial_use_refunds_remainder_and_swaps_used() {
     assert!(matches!(r, PromiseOrValue::Promise(_)));
     assert_eq!(v.in_flight.as_ref().unwrap().amount_in, 300);
     assert_eq!(bal(&v, &wrap()), 9_700);
-    assert_eq!(v.get_state().spent_today.0, 300);
+    assert_eq!(spent_view(&v, &wrap()), 300);
 }
 
 #[test]
@@ -516,10 +553,13 @@ fn deposit_rollback_after_day_roll_keeps_new_day_counter() {
     run(&mut v, proposal(400));
     // Day rolls while the swap is in flight, and someone else's spend is booked.
     v.day = 11;
-    v.spent_today = 50;
+    v.spent_today.clear();
+    v.spent_today.insert(wrap(), 50);
     cb_ctx(PromiseResult::Failed, T0 + DAY);
     let _ = v.on_deposit(1, Err(PromiseError::Failed));
-    assert_eq!(v.spent_today, 50);
+    cb_ctx(PromiseResult::Failed, T0 + DAY);
+    v.on_deposit_reconciled(1, Ok(U128(0)));
+    assert_eq!(v.spent_today.get(&wrap()).copied(), Some(50));
     assert_eq!(bal(&v, &wrap()), 10_000);
 }
 
@@ -578,7 +618,7 @@ fn withdraw_failed_strands_token_out() {
     let _ = v.on_swap(1, Ok(U128(390)));
     cb_ctx(PromiseResult::Failed, T0);
     let out = v.on_withdraw_done(1);
-    assert_eq!(out.0, 0);
+    assert!(matches!(out, PromiseOrValue::Value(U128(0))));
     assert!(!v.get_state().swap_in_flight);
     assert_eq!(stranded(&v, &rft()), 390);
     assert_eq!(bal(&v, &rft()), 0);
@@ -591,6 +631,7 @@ fn lock_is_free_after_each_failure() {
     run(&mut v, proposal(100));
     cb_ctx(PromiseResult::Failed, T0);
     let _ = v.on_deposit(1, Err(PromiseError::Failed));
+    v.on_deposit_reconciled(1, Ok(U128(0)));
     run(&mut v, proposal(100));
     assert!(v.get_state().swap_in_flight);
 }
@@ -607,7 +648,12 @@ fn callbacks_without_in_flight_are_noops() {
         v.on_swap(1, Err(PromiseError::Failed)),
         PromiseOrValue::Value(U128(0))
     ));
-    assert_eq!(v.on_withdraw_done(1).0, 0);
+    assert!(matches!(
+        v.on_withdraw_done(1),
+        PromiseOrValue::Value(U128(0))
+    ));
+    assert_eq!(v.on_deposit_reconciled(1, Ok(U128(0))).0, 0);
+    assert_eq!(v.on_withdraw_reconciled(1, Ok(U128(0))).0, 0);
     assert_eq!(bal(&v, &wrap()), 10_000);
 }
 
@@ -650,7 +696,7 @@ fn on_owner_withdraw_rejects_non_self() {
 fn on_recover_rejects_non_self() {
     let mut v = funded();
     at("owner.testnet", T0);
-    v.on_recover(wrap(), U128(1));
+    let _ = v.on_recover(wrap(), U128(1));
 }
 
 // ------------------------------------------------------- owner withdraw
@@ -896,8 +942,7 @@ fn update_config_applies_and_validates() {
     let mut v = funded();
     let mut c = config();
     c.strategy = "skeptic".into();
-    c.max_trade = U128(50);
-    c.daily_cap = U128(100);
+    c.limits = vec![limit(wrap(), 50, 100)];
     testing_env!(ctx1("owner.testnet").build());
     v.update_config(c.clone());
     assert_eq!(v.get_config(), c);
@@ -926,7 +971,11 @@ fn recover_moves_stranded_then_credits_on_success() {
     let _ = v.recover_from_ref(rft(), U128(300));
     assert_eq!(stranded(&v, &rft()), 200);
     cb_ctx(PromiseResult::Successful(vec![]), T0);
-    v.on_recover(rft(), U128(300));
+    let r = v.on_recover(rft(), U128(300));
+    assert!(matches!(r, PromiseOrValue::Promise(_)));
+    assert_eq!(bal(&v, &rft()), 0, "not credited before reconciliation");
+    cb_ctx(PromiseResult::Failed, T0);
+    v.on_recover_reconciled(rft(), U128(300), Ok(U128(0)));
     assert_eq!(bal(&v, &rft()), 300);
 }
 
@@ -938,7 +987,7 @@ fn recover_failure_restores_stranded() {
     let _ = v.recover_from_ref(rft(), U128(500));
     assert_eq!(stranded(&v, &rft()), 0);
     cb_ctx(PromiseResult::Failed, T0);
-    v.on_recover(rft(), U128(500));
+    let _ = v.on_recover(rft(), U128(500));
     assert_eq!(stranded(&v, &rft()), 500);
     assert_eq!(bal(&v, &rft()), 0);
 }
@@ -1014,10 +1063,10 @@ fn check_proposal_mirrors_every_rule() {
     p.min_amount_out = U128(0);
     assert!(reason(&v, p, r).starts_with("ERR_ZERO_MIN_OUT"));
     assert!(reason(&v, proposal(1_001), r).starts_with("ERR_MAX_TRADE"));
-    v.spent_today = 2_400;
+    v.spent_today.insert(wrap(), 2_400);
     v.day = 10;
     assert!(reason(&v, proposal(101), r).starts_with("ERR_DAILY_CAP"));
-    v.spent_today = 0;
+    v.spent_today.clear();
     v.balances.insert(wrap(), 5);
     assert!(reason(&v, proposal(6), r).starts_with("ERR_INSUFFICIENT_BALANCE"));
     v.paused = true;
@@ -1039,7 +1088,7 @@ fn check_proposal_has_no_side_effects() {
 #[test]
 fn check_proposal_uses_fresh_day_for_cap() {
     let mut v = funded();
-    v.spent_today = 2_500;
+    v.spent_today.insert(wrap(), 2_500);
     v.day = 10;
     assert!(!v
         .check_proposal(proposal(1), acct("runner.testnet"))
@@ -1053,10 +1102,11 @@ fn check_proposal_uses_fresh_day_for_cap() {
 #[test]
 fn check_proposal_overflow_safe() {
     let mut c = config();
-    c.max_trade = U128(u128::MAX);
-    c.daily_cap = U128(u128::MAX);
+    c.limits = vec![limit(wrap(), u128::MAX, u128::MAX)];
+    // Floor 1/u128::MAX so that amount_in = u128::MAX with min_out = 1 passes it.
+    c.allowed_pools[0].min_rate_a_to_b.den = U128(u128::MAX);
     let mut v = new_vault_with(c);
-    v.spent_today = u128::MAX;
+    v.spent_today.insert(wrap(), u128::MAX);
     v.day = 10;
     deposit(&mut v, wrap(), 5);
     let r = v.check_proposal(proposal(u128::MAX), acct("runner.testnet"));
@@ -1089,7 +1139,507 @@ fn late_callback_of_force_released_swap_cannot_touch_new_swap() {
     cb_ctx(PromiseResult::Failed, T0 + STALE_LOCK_NS);
     let r = v.on_deposit(1, Err(PromiseError::Failed));
     assert!(matches!(r, PromiseOrValue::Value(U128(0))));
+    assert_eq!(v.on_deposit_reconciled(1, Ok(U128(0))).0, 0);
     assert!(v.get_state().swap_in_flight);
     assert_eq!(v.in_flight.as_ref().unwrap().id, 2);
     assert_eq!(bal(&v, &wrap()), 9_700);
+}
+
+// ================================================ audit fixes: new coverage
+
+fn runner() -> AccountId {
+    acct("runner.testnet")
+}
+fn rate(num: u128, den: u128) -> Rate {
+    Rate {
+        num: U128(num),
+        den: U128(den),
+    }
+}
+fn stranded_view(v: &YieldVault, t: &AccountId) -> u128 {
+    v.get_state()
+        .stranded_on_ref
+        .iter()
+        .find(|(k, _)| k == t)
+        .map(|(_, a)| a.0)
+        .unwrap_or(0)
+}
+
+// ---- (1) per-token limits
+
+fn two_limit_vault() -> YieldVault {
+    let mut c = config();
+    c.limits = vec![limit(wrap(), 1_000, 2_500), limit(usdt(), 100, 150)];
+    let mut v = new_vault_with(c);
+    deposit(&mut v, wrap(), 10_000);
+    deposit(&mut v, usdt(), 10_000);
+    v
+}
+fn usdt_proposal(amount: u128) -> SwapProposal {
+    SwapProposal {
+        pool_id: 1,
+        token_in: usdt(),
+        token_out: usdc(),
+        amount_in: U128(amount),
+        min_amount_out: U128(1),
+    }
+}
+
+#[test]
+fn max_trade_is_per_token() {
+    let v = two_limit_vault();
+    assert!(v.check_proposal(proposal(1_000), runner()).ok);
+    assert!(v.check_proposal(usdt_proposal(100), runner()).ok);
+    let r = v.check_proposal(usdt_proposal(101), runner());
+    assert!(r.reason.starts_with("ERR_MAX_TRADE"), "{}", r.reason);
+}
+
+#[test]
+fn daily_cap_is_independent_per_token() {
+    let mut v = two_limit_vault();
+    run(&mut v, usdt_proposal(100));
+    v.in_flight = None;
+    // usdt: 100 spent of 150, so 51 is too much; wrap is untouched.
+    let r = v.check_proposal(usdt_proposal(51), runner());
+    assert!(r.reason.starts_with("ERR_DAILY_CAP"), "{}", r.reason);
+    assert!(v.check_proposal(usdt_proposal(50), runner()).ok);
+    assert!(v.check_proposal(proposal(1_000), runner()).ok);
+    // Spending wrap does not eat into usdt's cap.
+    run(&mut v, proposal(1_000));
+    v.in_flight = None;
+    run(&mut v, proposal(1_000));
+    v.in_flight = None;
+    assert_eq!(spent_view(&v, &wrap()), 2_000);
+    assert_eq!(spent_view(&v, &usdt()), 100);
+    assert!(v.check_proposal(usdt_proposal(50), runner()).ok);
+    let r = v.check_proposal(proposal(501), runner());
+    assert!(r.reason.starts_with("ERR_DAILY_CAP"), "{}", r.reason);
+}
+
+#[test]
+#[should_panic(expected = "ERR_NO_LIMIT")]
+fn token_without_limit_cannot_be_sold() {
+    let mut v = two_limit_vault();
+    deposit(&mut v, rft(), 100);
+    let p = SwapProposal {
+        pool_id: 0,
+        token_in: rft(),
+        token_out: wrap(),
+        amount_in: U128(10),
+        min_amount_out: U128(1),
+    };
+    run(&mut v, p);
+}
+
+#[test]
+fn per_token_spend_rolls_back_only_that_token() {
+    let mut v = two_limit_vault();
+    run(&mut v, usdt_proposal(100));
+    v.in_flight = None;
+    run(&mut v, proposal(300));
+    cb_ctx(PromiseResult::Failed, T0);
+    let _ = v.on_deposit(2, Err(PromiseError::Failed));
+    v.on_deposit_reconciled(2, Ok(U128(0)));
+    assert_eq!(spent_view(&v, &wrap()), 0);
+    assert_eq!(spent_view(&v, &usdt()), 100);
+}
+
+#[test]
+#[should_panic(expected = "ERR_BAD_CONFIG: duplicate limit token")]
+fn init_rejects_duplicate_limit_token() {
+    let mut c = config();
+    c.limits.push(limit(wrap(), 5, 5));
+    new_vault_with(c);
+}
+
+#[test]
+fn init_accepts_empty_limits_but_nothing_is_sellable() {
+    let mut c = config();
+    c.limits.clear();
+    let mut v = new_vault_with(c);
+    deposit(&mut v, wrap(), 100);
+    let r = v.check_proposal(proposal(10), runner());
+    assert!(r.reason.starts_with("ERR_NO_LIMIT"), "{}", r.reason);
+}
+
+// ---- (2) on-chain price floor
+
+fn floor_vault() -> YieldVault {
+    let mut c = config();
+    c.allowed_pools[0].min_rate_a_to_b = rate(2, 1);
+    c.allowed_pools[0].min_rate_b_to_a = rate(1, 4);
+    let mut v = new_vault_with(c);
+    deposit(&mut v, wrap(), 10_000);
+    deposit(&mut v, rft(), 10_000);
+    v
+}
+fn with_min_out(mut p: SwapProposal, out: u128) -> SwapProposal {
+    p.min_amount_out = U128(out);
+    p
+}
+
+#[test]
+fn price_floor_refuses_below_and_accepts_exactly_at_floor() {
+    let mut v = floor_vault();
+    let r = v.check_proposal(with_min_out(proposal(100), 199), runner());
+    assert!(!r.ok && r.reason.starts_with("ERR_PRICE_FLOOR"), "{}", r.reason);
+    assert!(v.check_proposal(with_min_out(proposal(100), 200), runner()).ok);
+    assert!(v.check_proposal(with_min_out(proposal(100), 201), runner()).ok);
+    run(&mut v, with_min_out(proposal(100), 200));
+    assert!(v.get_state().swap_in_flight);
+}
+
+#[test]
+#[should_panic(expected = "ERR_PRICE_FLOOR")]
+fn execute_swap_panics_below_price_floor() {
+    let mut v = floor_vault();
+    run(&mut v, with_min_out(proposal(100), 199));
+}
+
+#[test]
+fn price_floor_is_per_direction() {
+    let v = floor_vault();
+    let rev = |amount: u128, out: u128| SwapProposal {
+        pool_id: 0,
+        token_in: rft(),
+        token_out: wrap(),
+        amount_in: U128(amount),
+        min_amount_out: U128(out),
+    };
+    // b -> a floor is 1/4: amount_in 100 needs min_out >= 25.
+    let r = v.check_proposal(rev(100, 24), runner());
+    assert!(r.reason.starts_with("ERR_PRICE_FLOOR"), "{}", r.reason);
+    assert!(v.check_proposal(rev(100, 25), runner()).ok);
+}
+
+#[test]
+fn price_floor_rounds_exactly_with_fractions() {
+    // Floor 1/3: 10 in needs out*3 >= 10, i.e. out >= 4 (3 is refused).
+    let mut c = config();
+    c.allowed_pools[0].min_rate_a_to_b = rate(1, 3);
+    let mut v = new_vault_with(c);
+    deposit(&mut v, wrap(), 100);
+    assert!(!v.check_proposal(with_min_out(proposal(10), 3), runner()).ok);
+    assert!(v.check_proposal(with_min_out(proposal(10), 4), runner()).ok);
+}
+
+#[test]
+fn price_floor_does_not_overflow_with_huge_values() {
+    assert_eq!(mul_wide(u128::MAX, u128::MAX), (u128::MAX - 1, 1));
+    assert_eq!(mul_wide(u128::MAX, 1), (0, u128::MAX));
+    assert_eq!(mul_wide(0, u128::MAX), (0, 0));
+    assert_eq!(mul_wide(1u128 << 64, 1u128 << 64), (1, 0));
+    // The naive u128 product would overflow in all of these.
+    assert!(meets_floor(u128::MAX, u128::MAX, &rate(u128::MAX, u128::MAX)));
+    assert!(!meets_floor(u128::MAX, u128::MAX - 1, &rate(u128::MAX, u128::MAX)));
+    assert!(meets_floor(u128::MAX, 1, &rate(1, u128::MAX)));
+    assert!(!meets_floor(u128::MAX, 1, &rate(2, u128::MAX)));
+    assert!(meets_floor(1, u128::MAX, &rate(u128::MAX, 1)));
+    assert!(!meets_floor(2, u128::MAX, &rate(u128::MAX, 1)));
+}
+
+#[test]
+fn price_floor_huge_proposal_through_check_proposal() {
+    let mut c = config();
+    c.limits = vec![limit(wrap(), u128::MAX, u128::MAX)];
+    c.allowed_pools[0].min_rate_a_to_b = rate(u128::MAX, u128::MAX);
+    let mut v = new_vault_with(c);
+    deposit(&mut v, wrap(), 5);
+    let big = |out: u128| with_min_out(proposal(u128::MAX), out);
+    let r = v.check_proposal(big(u128::MAX - 1), runner());
+    assert!(r.reason.starts_with("ERR_PRICE_FLOOR"), "{}", r.reason);
+    // Floor passed; the next rule (balance) now fires instead of a panic.
+    let r = v.check_proposal(big(u128::MAX), runner());
+    assert!(r.reason.starts_with("ERR_INSUFFICIENT_BALANCE"), "{}", r.reason);
+}
+
+#[test]
+fn rule_order_floor_before_limit_and_limit_before_balance() {
+    let mut c = config();
+    c.limits.clear();
+    c.allowed_pools[0].min_rate_a_to_b = rate(2, 1);
+    let v = new_vault_with(c);
+    // No balance, no limit, bad floor: floor is reported first.
+    let r = v.check_proposal(with_min_out(proposal(100), 1), runner());
+    assert!(r.reason.starts_with("ERR_PRICE_FLOOR"), "{}", r.reason);
+    let r = v.check_proposal(with_min_out(proposal(100), 200), runner());
+    assert!(r.reason.starts_with("ERR_NO_LIMIT"), "{}", r.reason);
+}
+
+#[test]
+#[should_panic(expected = "ERR_BAD_CONFIG: rate num and den")]
+fn init_rejects_zero_rate_num() {
+    let mut c = config();
+    c.allowed_pools[0].min_rate_a_to_b = rate(0, 1);
+    new_vault_with(c);
+}
+
+#[test]
+#[should_panic(expected = "ERR_BAD_CONFIG: rate num and den")]
+fn init_rejects_zero_rate_den() {
+    let mut c = config();
+    c.allowed_pools[1].min_rate_b_to_a = rate(1, 0);
+    new_vault_with(c);
+}
+
+#[test]
+#[should_panic(expected = "ERR_BAD_CONFIG: rate num and den")]
+fn update_config_rejects_zero_rate() {
+    let mut v = funded();
+    let mut c = config();
+    c.allowed_pools[0].min_rate_b_to_a = rate(0, 0);
+    testing_env!(ctx1("owner.testnet").build());
+    v.update_config(c);
+}
+
+// ---- (3) balance-based reconciliation
+
+/// Starts swap id 1 (400 wrap in) and leaves it at the deposit callback.
+fn swap_at_deposit_cb() -> YieldVault {
+    let mut v = funded();
+    run(&mut v, proposal(400));
+    cb_ctx(PromiseResult::Failed, T0);
+    let r = v.on_deposit(1, Err(PromiseError::Failed));
+    assert!(matches!(r, PromiseOrValue::Promise(_)), "failed deposit must query Ref");
+    assert!(v.get_state().swap_in_flight, "lock held until reconciled");
+    v
+}
+/// Swap id 1 that Ref swapped for 390 rft, awaiting the withdraw callbacks.
+fn swap_at_withdraw_cb() -> YieldVault {
+    let mut v = funded();
+    run(&mut v, proposal(400));
+    cb_ctx(ok_result(&U128(400)), T0);
+    let _ = v.on_deposit(1, Ok(U128(400)));
+    cb_ctx(ok_result(&U128(390)), T0);
+    let _ = v.on_swap(1, Ok(U128(390)));
+    cb_ctx(PromiseResult::Successful(vec![]), T0);
+    let r = v.on_withdraw_done(1);
+    assert!(matches!(r, PromiseOrValue::Promise(_)), "must query Ref before crediting");
+    assert_eq!(bal(&v, &rft()), 0);
+    v
+}
+
+#[test]
+fn deposit_failed_but_tokens_landed_on_ref_is_stranded_not_rolled_back() {
+    let mut v = swap_at_deposit_cb();
+    cb_ctx(ok_result(&U128(400)), T0);
+    assert_eq!(v.on_deposit_reconciled(1, Ok(U128(400))).0, 0);
+    assert!(!v.get_state().swap_in_flight);
+    assert_eq!(stranded(&v, &wrap()), 400);
+    assert_eq!(bal(&v, &wrap()), 9_600);
+    assert_eq!(spent_view(&v, &wrap()), 400, "spend stays counted");
+    assert!(get_logs().join("\n").contains("deposit_landed_on_ref"));
+}
+
+#[test]
+fn deposit_failed_and_ref_deposit_below_baseline_is_rolled_back() {
+    let mut v = swap_at_deposit_cb();
+    cb_ctx(ok_result(&U128(0)), T0);
+    v.on_deposit_reconciled(1, Ok(U128(399)));
+    assert!(!v.get_state().swap_in_flight);
+    assert_eq!(bal(&v, &wrap()), 10_000);
+    assert_eq!(spent_view(&v, &wrap()), 0);
+    assert!(v.stranded.is_empty());
+}
+
+#[test]
+fn deposit_reconcile_baseline_includes_already_stranded() {
+    // 100 wrap already stranded on Ref: a Ref deposit of 499 (< 100 + 400)
+    // proves the 400 did not land; 500 proves it did.
+    let mut v = swap_at_deposit_cb();
+    v.stranded.insert(wrap(), 100);
+    v.on_deposit_reconciled(1, Ok(U128(499)));
+    assert_eq!(bal(&v, &wrap()), 10_000);
+    assert_eq!(stranded(&v, &wrap()), 100);
+
+    let mut v = swap_at_deposit_cb();
+    v.stranded.insert(wrap(), 100);
+    v.on_deposit_reconciled(1, Ok(U128(500)));
+    assert_eq!(bal(&v, &wrap()), 9_600);
+    assert_eq!(stranded(&v, &wrap()), 500);
+}
+
+#[test]
+fn deposit_failed_and_get_deposit_errors_is_stranded_unverified() {
+    let mut v = swap_at_deposit_cb();
+    cb_ctx(PromiseResult::Failed, T0);
+    v.on_deposit_reconciled(1, Err(PromiseError::Failed));
+    assert!(!v.get_state().swap_in_flight);
+    assert_eq!(stranded(&v, &wrap()), 400);
+    assert_eq!(bal(&v, &wrap()), 9_600);
+    assert!(get_logs().join("\n").contains("deposit_unverified"));
+}
+
+#[test]
+fn withdraw_ok_but_ref_deposit_unchanged_is_stranded_not_credited() {
+    let mut v = swap_at_withdraw_cb();
+    cb_ctx(ok_result(&U128(390)), T0);
+    assert_eq!(v.on_withdraw_reconciled(1, Ok(U128(390))).0, 0);
+    assert!(!v.get_state().swap_in_flight);
+    assert_eq!(bal(&v, &rft()), 0);
+    assert_eq!(stranded(&v, &rft()), 390);
+    assert_eq!(v.get_state().swaps_executed, 0);
+    assert!(get_logs().join("\n").contains("withdraw_not_reconciled"));
+}
+
+#[test]
+fn withdraw_ok_and_ref_deposit_dropped_is_credited() {
+    let mut v = swap_at_withdraw_cb();
+    cb_ctx(ok_result(&U128(0)), T0);
+    assert_eq!(v.on_withdraw_reconciled(1, Ok(U128(389))).0, 390);
+    assert_eq!(bal(&v, &rft()), 390);
+    assert!(v.stranded.is_empty());
+    assert_eq!(v.get_state().swaps_executed, 1);
+    assert!(!v.get_state().swap_in_flight);
+}
+
+#[test]
+fn withdraw_reconcile_baseline_includes_already_stranded() {
+    let mut v = swap_at_withdraw_cb();
+    v.stranded.insert(rft(), 50);
+    // baseline 50 + 390 = 440: a deposit of 440 means nothing left Ref.
+    assert_eq!(v.on_withdraw_reconciled(1, Ok(U128(440))).0, 0);
+    assert_eq!(bal(&v, &rft()), 0);
+    assert_eq!(stranded(&v, &rft()), 440);
+}
+
+#[test]
+fn withdraw_ok_and_get_deposit_errors_is_stranded_unverified() {
+    let mut v = swap_at_withdraw_cb();
+    cb_ctx(PromiseResult::Failed, T0);
+    assert_eq!(v.on_withdraw_reconciled(1, Err(PromiseError::Failed)).0, 0);
+    assert!(!v.get_state().swap_in_flight);
+    assert_eq!(bal(&v, &rft()), 0);
+    assert_eq!(stranded_view(&v, &rft()), 390);
+    assert!(get_logs().join("\n").contains("withdraw_unverified"));
+}
+
+#[test]
+fn late_reconcile_of_force_released_swap_is_a_noop() {
+    let mut v = swap_at_withdraw_cb();
+    let mut c = ctx("owner.testnet", T0 + STALE_LOCK_NS);
+    c.attached_deposit(NearToken::from_yoctonear(1));
+    testing_env!(c.build());
+    v.force_release_lock();
+    let stranded_before = stranded(&v, &rft());
+    cb_ctx(PromiseResult::Failed, T0 + STALE_LOCK_NS);
+    assert_eq!(v.on_withdraw_reconciled(1, Ok(U128(0))).0, 0);
+    assert_eq!(bal(&v, &rft()), 0);
+    assert_eq!(stranded(&v, &rft()), stranded_before);
+}
+
+#[test]
+#[should_panic(expected = "Method is private")]
+fn reconcile_callbacks_reject_non_self() {
+    let mut v = swap_at_withdraw_cb();
+    at("mallory.testnet", T0);
+    v.on_withdraw_reconciled(1, Ok(U128(0)));
+}
+
+#[test]
+#[should_panic(expected = "Method is private")]
+fn deposit_reconcile_rejects_non_self() {
+    let mut v = swap_at_deposit_cb();
+    at("mallory.testnet", T0);
+    v.on_deposit_reconciled(1, Ok(U128(0)));
+}
+
+#[test]
+#[should_panic(expected = "Method is private")]
+fn recover_reconcile_rejects_non_self() {
+    let mut v = funded();
+    at("owner.testnet", T0);
+    v.on_recover_reconciled(rft(), U128(1), Ok(U128(0)));
+}
+
+fn recovering() -> YieldVault {
+    let mut v = funded();
+    v.stranded.insert(rft(), 500);
+    testing_env!(ctx1("owner.testnet").build());
+    let _ = v.recover_from_ref(rft(), U128(300));
+    cb_ctx(PromiseResult::Successful(vec![]), T0);
+    let r = v.on_recover(rft(), U128(300));
+    assert!(matches!(r, PromiseOrValue::Promise(_)));
+    v
+}
+
+#[test]
+fn recover_ok_but_ref_deposit_unchanged_is_restranded_not_credited() {
+    let mut v = recovering();
+    // 200 still stranded + 300 in flight = 500 baseline; Ref still shows 500.
+    cb_ctx(ok_result(&U128(500)), T0);
+    assert_eq!(v.on_recover_reconciled(rft(), U128(300), Ok(U128(500))).0, 0);
+    assert_eq!(bal(&v, &rft()), 0);
+    assert_eq!(stranded(&v, &rft()), 500);
+}
+
+#[test]
+fn recover_ok_and_ref_deposit_dropped_is_credited() {
+    let mut v = recovering();
+    cb_ctx(ok_result(&U128(200)), T0);
+    assert_eq!(v.on_recover_reconciled(rft(), U128(300), Ok(U128(200))).0, 300);
+    assert_eq!(bal(&v, &rft()), 300);
+    assert_eq!(stranded(&v, &rft()), 200);
+    assert!(get_logs().join("\n").contains("\"event\":\"recovered\""));
+}
+
+#[test]
+fn recover_ok_and_get_deposit_errors_is_restranded_unverified() {
+    let mut v = recovering();
+    cb_ctx(PromiseResult::Failed, T0);
+    assert_eq!(v.on_recover_reconciled(rft(), U128(300), Err(PromiseError::Failed)).0, 0);
+    assert_eq!(bal(&v, &rft()), 0);
+    assert_eq!(stranded_view(&v, &rft()), 500);
+    assert!(get_logs().join("\n").contains("withdraw_unverified"));
+}
+
+// ---- (4) private init, (5) recover lock
+
+#[test]
+#[should_panic(expected = "ERR_PRIVATE_INIT")]
+fn new_rejects_foreign_predecessor() {
+    at("mallory.testnet", T0);
+    YieldVault::new(
+        acct("mallory.testnet"),
+        acct("nft.testnet"),
+        "1".to_string(),
+        acct("ref-finance-101.testnet"),
+        config(),
+    );
+}
+
+#[test]
+#[should_panic(expected = "ERR_PRIVATE_INIT")]
+fn new_rejects_the_owner_unless_it_is_the_contract_account() {
+    at("owner.testnet", T0);
+    YieldVault::new(
+        acct("owner.testnet"),
+        acct("nft.testnet"),
+        "1".to_string(),
+        acct("ref-finance-101.testnet"),
+        config(),
+    );
+}
+
+#[test]
+#[should_panic(expected = "ERR_SWAP_IN_FLIGHT")]
+fn recover_from_ref_refused_while_swap_in_flight() {
+    let mut v = funded();
+    v.stranded.insert(rft(), 500);
+    run(&mut v, proposal(100));
+    testing_env!(ctx1("owner.testnet").build());
+    let _ = v.recover_from_ref(rft(), U128(10));
+}
+
+#[test]
+fn recover_from_ref_allowed_again_after_lock_released() {
+    let mut v = funded();
+    v.stranded.insert(rft(), 500);
+    run(&mut v, proposal(100));
+    cb_ctx(PromiseResult::Failed, T0);
+    let _ = v.on_deposit(1, Err(PromiseError::Failed));
+    v.on_deposit_reconciled(1, Ok(U128(0)));
+    testing_env!(ctx1("owner.testnet").build());
+    let _ = v.recover_from_ref(rft(), U128(10));
+    assert_eq!(stranded(&v, &rft()), 490);
 }

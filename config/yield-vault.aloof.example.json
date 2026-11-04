@@ -4,11 +4,29 @@
     {
       "pool_id": 1,
       "token_a": "nusdt.ft-fin.testnet",
-      "token_b": "nusdc.ft-fin.testnet"
+      "token_b": "nusdc.ft-fin.testnet",
+      "min_rate_a_to_b": {
+        "num": "44411",
+        "den": "474632"
+      },
+      "min_rate_b_to_a": {
+        "num": "118658",
+        "den": "44411"
+      }
     }
   ],
-  "max_trade": "10000",
-  "daily_cap": "30000",
+  "limits": [
+    {
+      "token_id": "nusdt.ft-fin.testnet",
+      "max_trade": "10000",
+      "daily_cap": "30000"
+    },
+    {
+      "token_id": "nusdc.ft-fin.testnet",
+      "max_trade": "10000",
+      "daily_cap": "30000"
+    }
+  ],
   "runners": [
     "runner.yield-demo.testnet"
   ]
