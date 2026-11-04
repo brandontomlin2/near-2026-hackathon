@@ -12,6 +12,7 @@
 // YIELD_VAULT_ACCOUNT_ID and YIELD_RUNNER_ACCOUNT_ID (named .testnet accounts). Mainnet is refused.
 
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { InferenceError, createInferenceClient, parseMode } from "../src/inference/client.mjs";
@@ -21,18 +22,22 @@ import { AGENT_IDS, runRound } from "../src/yield/debate.mjs";
 import { createLedger, formatScoreboard, formatUsd } from "../src/yield/ledger.mjs";
 import { yieldMockResponder } from "../src/yield/mock.mjs";
 import { loadPoolFixture } from "../src/yield/pools.mjs";
+import { validateVaultConfig } from "../src/yield/rules.mjs";
 import { RefusalError, assertNotMainnet, assertSendAllowed, buildExecuteSwapArgv, formatCommand } from "../src/yield/send.mjs";
 import { PLACEHOLDER_RUNNER, PLACEHOLDER_VAULT, defaultVaultConfig, strategyFor } from "../src/yield/strategies.mjs";
 
 const MAX_ROUNDS = 50;
 const MOCK_EPOCH_MS = Date.UTC(2026, 10, 3);
 
-const USAGE = `Usage: node scripts/yield.mjs [--agent ID] [--rounds N] [--json] [--out DIR] [--send --i-approve]
+const USAGE = `Usage: node scripts/yield.mjs [--agent ID] [--rounds N] [--json] [--out DIR] [--send --i-approve --vault-state FILE]
   --agent ID    show (and, with --send, execute) only this agent: ${AGENT_IDS.join(", ")}
                 (the whole swarm still debates, so social and skeptic keep their inputs)
   --rounds N    debate rounds, 1 to ${MAX_ROUNDS} (default 1)
   --json        print one JSON document instead of text
   --out DIR     where the track record goes: DIR/yield/ledger.json (default out; rewritten each run)
+  --vault-state FILE  JSON {"config": <get_config()>, "state": <get_state()>} of the target vault
+                (state: paused, in_flight, spent {day, amounts}, balances). Required with --send:
+                proposals are checked against it, never against the built-in demo config.
   --send        really send the accepted execute_swap calls with near-cli-rs. Also needs
                 --i-approve, --agent, NEAR_NETWORK=testnet, YIELD_VAULT_ACCOUNT_ID and
                 YIELD_RUNNER_ACCOUNT_ID (named .testnet accounts). Mainnet is refused.
@@ -45,7 +50,7 @@ Exit 0 ok, 1 refused or failed, 2 usage error.`;
 class UsageError extends Error {}
 
 function parseArgs(argv) {
-  const o = { agent: undefined, rounds: 1, json: false, out: "out", send: false, approve: false, help: false };
+  const o = { agent: undefined, rounds: 1, json: false, out: "out", send: false, approve: false, vaultState: undefined, help: false };
   if (argv.some((a) => a === "--help" || a === "-h")) return { ...o, help: true };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -63,13 +68,30 @@ function parseArgs(argv) {
       if (!/^[0-9]+$/.test(v) || Number(v) < 1 || Number(v) > MAX_ROUNDS) throw new UsageError(`--rounds must be an integer from 1 to ${MAX_ROUNDS}`);
       o.rounds = Number(v);
     } else if (a === "--out") o.out = value();
+    else if (a === "--vault-state") o.vaultState = value();
     else if (a === "--json") o.json = true;
     else if (a === "--send") o.send = true;
     else if (a === "--i-approve") o.approve = true;
     else throw new UsageError(`unknown argument ${JSON.stringify(a)}`);
   }
+  if (o.vaultState && !o.send) throw new UsageError("--vault-state only applies together with --send");
   if (o.approve && !o.send) throw new UsageError("--i-approve only applies together with --send");
   return o;
+}
+
+/** Read the target vault's real config and state; throws an Error with a clear message. */
+function loadVaultState(file) {
+  let doc;
+  try {
+    doc = JSON.parse(readFileSync(file, "utf8"));
+  } catch (e) {
+    throw new Error(`cannot read --vault-state ${file}: ${e.message.split("\n")[0]}`);
+  }
+  const { config, state } = doc ?? {};
+  if (!config || typeof config !== "object" || !state || typeof state !== "object") throw new Error(`--vault-state ${file} needs both "config" and "state" objects`);
+  const problems = validateVaultConfig(config);
+  if (problems.length) throw new Error(`--vault-state config is invalid: ${problems.join("; ")}`);
+  return { config, state };
 }
 
 function defaultSpawner(bin, args) {
@@ -130,6 +152,20 @@ export async function main(argv = process.argv.slice(2), io = {}) {
   const fixture = loadPoolFixture();
   const configs = Object.fromEntries(AGENT_IDS.map((id) => [id, defaultVaultConfig(id, { runner })]));
   const ledger = createLedger({ fixture });
+  if (opts.send) {
+    if (!opts.vaultState) {
+      err("yield: --send needs --vault-state FILE with the target vault's get_config() and get_state(); proposals are never checked against the demo config when sending. Nothing was sent.");
+      return 1;
+    }
+    try {
+      const v = loadVaultState(opts.vaultState);
+      configs[opts.agent] = v.config;
+      ledger.states[opts.agent] = v.state;
+    } catch (e) {
+      err(`yield: ${e.message}. Nothing was sent.`);
+      return 1;
+    }
+  }
   const shown = opts.agent ? [opts.agent] : AGENT_IDS;
 
   if (opts.send) {

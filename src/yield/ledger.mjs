@@ -1,6 +1,6 @@
 // Per-agent track record. Mock fills are priced off the pool snapshot: the constant-product
-// output (fee and price impact included) against the spot rate, then marked by a
-// deterministic drift standing in for the next price move. P&L is in micro-USD at the
+// output, marked by a deterministic drift standing in for the next price move, valued at the
+// reference prices against the input's reference value. P&L is in micro-USD at the
 // fixture's mock reference prices ("ref USD"), so it can be summed across tokens.
 // This is the record that makes an agent NFT worth something to the next owner: how it
 // traded, what it was stopped from doing, and what it earned under the same hard limits.
@@ -63,9 +63,10 @@ export function mockFill(proposal, { fixture = loadPoolFixture(), seed = 0, roun
   if (fair === 0n) return null;
   const ratioPpm = (out * 1_000_000n) / fair;
   const drift = driftBps(seed, round, proposal.token_out, fixture);
-  const value = valueMicroUsd(proposal.token_in, proposal.amount_in, pool, fixture);
-  const marked = ratioPpm * BigInt(10000 + drift);
-  const pnl = (value * (marked - 10_000_000_000n)) / 10_000_000_000n;
+  // Both sides at the stated reference prices, so P&L is in reference USD even when the pool's spot ratio differs from the reference ratio.
+  const valueIn = valueMicroUsd(proposal.token_in, proposal.amount_in, pool, fixture);
+  const valueOut = (valueMicroUsd(proposal.token_out, out, pool, fixture) * BigInt(10000 + drift)) / 10000n;
+  const pnl = valueOut - valueIn;
   return { amount_out: out.toString(), pnl_micro_usd: pnl.toString(), drift_bps: drift, cost_bps: Number(1_000_000n - ratioPpm) / 100 };
 }
 
@@ -124,7 +125,8 @@ export function createLedger({ seed = 0, fixture = loadPoolFixture(), agents = A
           const amounts = st.spent.day === day ? st.spent.amounts : {};
           const before = BigInt(amounts[d.proposal.token_in] ?? "0");
           st.spent = { day, amounts: { ...amounts, [d.proposal.token_in]: (before + BigInt(d.proposal.amount_in)).toString() } };
-          st.balances[d.proposal.token_in] = (BigInt(st.balances[d.proposal.token_in]) - BigInt(d.proposal.amount_in)).toString();
+          st.balances ??= {};
+          st.balances[d.proposal.token_in] = (BigInt(st.balances[d.proposal.token_in] ?? "0") - BigInt(d.proposal.amount_in)).toString();
           st.balances[d.proposal.token_out] = (BigInt(st.balances[d.proposal.token_out] ?? "0") + BigInt(fill.amount_out)).toString();
           a.trades.push({ round: round.round, proposal: d.proposal, amount_out: fill.amount_out, pnl_micro_usd: fill.pnl_micro_usd, drift_bps: fill.drift_bps, cost_bps: fill.cost_bps });
           a.pnl_micro_usd = (BigInt(a.pnl_micro_usd) + BigInt(fill.pnl_micro_usd)).toString();
