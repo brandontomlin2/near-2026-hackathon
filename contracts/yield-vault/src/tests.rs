@@ -2456,6 +2456,15 @@ fn stale_sync_callback_after_a_swap_started_is_a_noop() {
 }
 
 #[test]
+fn stale_sync_callback_after_a_deposit_landed_is_a_noop() {
+    let mut v = funded();
+    let id = start_sync(&mut v, wrap());
+    deposit(&mut v, wrap(), 500); // ft_on_transfer credits 500 while the read is pending
+    sync_cb(&mut v, id, wrap(), Ok(U128(10_500)));
+    assert_eq!(bal(&v, &wrap()), 10_500, "the deposit must not be credited twice");
+}
+
+#[test]
 fn stale_sync_callback_after_a_withdraw_started_is_a_noop() {
     let mut v = funded();
     let id = start_sync(&mut v, wrap());

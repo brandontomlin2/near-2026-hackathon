@@ -460,6 +460,8 @@ impl YieldVault {
             return PromiseOrValue::Value(amount);
         }
         self.credit(&token, amount.0);
+        // A deposit may be inside a pending sync read: drop it so it cannot double-credit.
+        self.sync_id = 0;
         emit(
             "deposit",
             json!({ "token_id": token, "amount": amount.0.to_string(), "sender_id": sender_id }),
