@@ -156,7 +156,7 @@ npm run infer -- --json --seed 3 "Same prompt"
 MOCK_INFERENCE=0 npm run infer -- "hi" 2>&1 || true
 ```
 
-For a live run, put `MOCK_INFERENCE=0`, `NEAR_AI_API_KEY` and `NEAR_AI_MODEL` in `.env` (gitignored) or the environment. Get the key at https://cloud.near.ai and a model id from `GET https://cloud-api.near.ai/v1/models`.
+For a live run, export the variables in your shell first (nothing in this repo loads `.env`): `export MOCK_INFERENCE=0 NEAR_AI_API_KEY=<your-key> NEAR_AI_MODEL=<model-id>`. Get the key at https://cloud.near.ai and a model id from `GET https://cloud-api.near.ai/v1/models`.
 
 ## Swarm
 

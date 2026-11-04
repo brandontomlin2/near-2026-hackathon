@@ -107,11 +107,11 @@ test("live mode against a refused connection: coded network error, exit 1, the k
   const r = run(["hello"], {
     MOCK_INFERENCE: "0",
     NEAR_AI_API_KEY: "test-fake-key-gaps14-do-not-print",
-    NEAR_AI_MODEL: "m",
+    NEAR_AI_MODEL: "openai/gpt-oss-120b",
     NEAR_AI_BASE_URL: "http://127.0.0.1:1/v1",
   });
   assert.equal(r.status, 1);
   assert.equal(r.stdout, "");
-  assert.match(r.stderr, /^mode: live model: m\ninfer: inference error \(network\): request to http:\/\/127\.0\.0\.1:1\/v1\/chat\/completions failed\n$/);
+  assert.match(r.stderr, /^mode: live model: openai\/gpt-oss-120b\ninfer: inference error \(network\): request to http:\/\/127\.0\.0\.1:1\/v1\/chat\/completions failed\n$/);
   assert.ok(!r.stderr.includes("test-fake-key-gaps14-do-not-print"));
 });
