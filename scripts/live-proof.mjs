@@ -28,6 +28,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { prepareAnchor } from "../src/anchor/anchor.mjs";
+import { pathProblem } from "../src/util/path-problem.mjs";
 import { AGENTS, assertTestnetNetwork, run as deployRun, shellQuote, validateAccountId, validateMediaBase, validateTestnetAccountId, UsageError, NETWORK } from "./testnet-deploy.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -116,7 +117,7 @@ function assertOutIsWritable(out, force) {
   try {
     text = readFileSync(out, "utf8");
   } catch (err) {
-    throw new UsageError(`cannot read existing --out ${out}: ${err.message}`);
+    throw new UsageError(`cannot read existing --out ${out}: ${pathProblem(err, "--out") ?? err.message}`);
   }
   if (!isExampleEvidence(text)) {
     throw new UsageError(`--out ${out} exists and is not an example evidence file this tool wrote; pass --force to replace it`);
@@ -363,7 +364,7 @@ export async function run(argv, env = process.env, deps = {}) {
       return 2;
     }
     // Filesystem failures on --out and the like: one line, no stack.
-    errOut(`error: ${String(err?.message ?? err).split("\n")[0]}`);
+    errOut(`error: ${pathProblem(err, "--out") ?? String(err?.message ?? err).split("\n")[0]}`);
     return 1;
   }
 }
