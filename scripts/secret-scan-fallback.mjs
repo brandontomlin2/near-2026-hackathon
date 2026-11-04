@@ -45,7 +45,7 @@ export const RULES = [
     name: "seed-phrase",
     configOnly: true,
     re: new RegExp(
-      `(?:seed|mnemonic|passphrase|recovery|secret)[\\w.-]*["']?\\s*[:=]\\s*["']?(?:${WORD}\\s+){11}${WORD}(?:(?:\\s+${WORD}){12})?(?!\\s*\\w)`,
+      `(?:seed|mnemonic|passphrase|recovery|secret)[\\w.-]{0,40}["']?\\s*[:=]\\s*["']?(?:${WORD}\\s+){11}${WORD}(?:(?:\\s+${WORD}){12})?(?!\\s*\\w)`,
       "gi",
     ),
   },
