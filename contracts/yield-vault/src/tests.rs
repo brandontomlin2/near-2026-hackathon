@@ -1283,7 +1283,7 @@ fn force_release_tokens_never_left_vault_rolls_back_not_strands() {
     assert_eq!(bal(&v, &wrap()), 9_900);
     let id = force_release(&mut v);
     release_cb();
-    v.on_force_release_swap(id, Ok(U128(10_000)), Ok(U128(0)), Ok(U128(0)));
+    v.resolve_release_swap(id, Ok(U128(10_000)), Ok(U128(0)), Ok(U128(0)));
     assert!(!v.get_state().swap_in_flight && !v.get_state().release_in_flight);
     assert_eq!(bal(&v, &wrap()), 10_000, "re-credited, not orphaned");
     assert_eq!(stranded(&v, &wrap()), 0, "not double counted as stranded");
@@ -1298,7 +1298,7 @@ fn force_release_tokens_on_ref_strands_not_credits() {
     run(&mut v, proposal(100));
     let id = force_release(&mut v);
     release_cb();
-    v.on_force_release_swap(id, Ok(U128(9_900)), Ok(U128(100)), Ok(U128(0)));
+    v.resolve_release_swap(id, Ok(U128(9_900)), Ok(U128(100)), Ok(U128(0)));
     assert!(!v.get_state().swap_in_flight);
     assert_eq!(bal(&v, &wrap()), 9_900, "not credited");
     assert_eq!(stranded(&v, &wrap()), 100, "recoverable from Ref");
@@ -1311,7 +1311,7 @@ fn force_release_both_places_show_it_prefers_ref_record_only_once() {
     run(&mut v, proposal(100));
     let id = force_release(&mut v);
     release_cb();
-    v.on_force_release_swap(id, Ok(U128(10_000)), Ok(U128(100)), Ok(U128(0)));
+    v.resolve_release_swap(id, Ok(U128(10_000)), Ok(U128(100)), Ok(U128(0)));
     assert_eq!(bal(&v, &wrap()), 9_900);
     assert_eq!(stranded(&v, &wrap()), 100);
     assert!(get_logs().join("\n").contains("lock_force_released_ambiguous"));
@@ -1326,7 +1326,7 @@ fn force_release_after_swap_ran_on_ref_strands_untracked_token_out() {
     run(&mut v, proposal(100));
     let id = force_release(&mut v);
     release_cb();
-    v.on_force_release_swap(id, Ok(U128(9_900)), Ok(U128(0)), Ok(U128(105)));
+    v.resolve_release_swap(id, Ok(U128(9_900)), Ok(U128(0)), Ok(U128(105)));
     assert_eq!(bal(&v, &wrap()), 9_900);
     assert_eq!(stranded(&v, &wrap()), 0, "no phantom token_in record");
     assert_eq!(stranded(&v, &rft()), 105, "10 + the 95 untracked rft");
@@ -1339,7 +1339,7 @@ fn force_release_with_failed_reads_strands_unverified() {
     run(&mut v, proposal(100));
     let id = force_release(&mut v);
     release_cb();
-    v.on_force_release_swap(
+    v.resolve_release_swap(
         id,
         Err(PromiseError::Failed),
         Err(PromiseError::Failed),
@@ -1357,7 +1357,7 @@ fn force_release_vault_read_ok_but_ref_read_failed_does_not_roll_back() {
     run(&mut v, proposal(100));
     let id = force_release(&mut v);
     release_cb();
-    v.on_force_release_swap(id, Ok(U128(10_000)), Err(PromiseError::Failed), Ok(U128(0)));
+    v.resolve_release_swap(id, Ok(U128(10_000)), Err(PromiseError::Failed), Ok(U128(0)));
     assert_eq!(bal(&v, &wrap()), 9_900, "no rollback on a partial picture");
     assert_eq!(stranded(&v, &wrap()), 100);
     assert!(get_logs().join("\n").contains("lock_force_released_unverified"));
@@ -1369,7 +1369,7 @@ fn force_release_token_out_read_failed_does_not_roll_back() {
     run(&mut v, proposal(100));
     let id = force_release(&mut v);
     release_cb();
-    v.on_force_release_swap(id, Ok(U128(10_000)), Ok(U128(0)), Err(PromiseError::Failed));
+    v.resolve_release_swap(id, Ok(U128(10_000)), Ok(U128(0)), Err(PromiseError::Failed));
     assert_eq!(bal(&v, &wrap()), 9_900);
     assert_eq!(stranded(&v, &wrap()), 100);
 }
@@ -1379,7 +1379,7 @@ fn force_release_recovery_ref_read_failed_does_not_credit() {
     let mut v = recovering();
     let rid = force_release(&mut v);
     release_cb();
-    v.on_force_release_recovery(rid, Ok(U128(300)), Err(PromiseError::Failed));
+    v.resolve_release_recovery(rid, Ok(U128(300)), Err(PromiseError::Failed));
     assert_eq!(bal(&v, &rft()), 0);
     assert_eq!(stranded(&v, &rft()), 500);
 }
@@ -1395,7 +1395,7 @@ fn force_release_token_out_already_in_vault_completes_swap() {
     let _ = v.on_swap(1, Ok(U128(390)));
     let id = force_release(&mut v);
     release_cb();
-    v.on_force_release_swap(id, Ok(U128(390)), Ok(U128(0)), Ok(U128(0)));
+    v.resolve_release_swap(id, Ok(U128(390)), Ok(U128(0)), Ok(U128(0)));
     assert!(!v.get_state().swap_in_flight);
     assert_eq!(bal(&v, &rft()), 390);
     assert_eq!(stranded(&v, &rft()), 0);
@@ -1407,7 +1407,7 @@ fn force_release_token_out_still_on_ref_strands_it() {
     let mut v = swap_at_withdraw_cb();
     let id = force_release(&mut v);
     release_cb();
-    v.on_force_release_swap(id, Ok(U128(0)), Ok(U128(390)), Ok(U128(390)));
+    v.resolve_release_swap(id, Ok(U128(0)), Ok(U128(390)), Ok(U128(390)));
     assert_eq!(bal(&v, &rft()), 0);
     assert_eq!(stranded(&v, &rft()), 390);
 }
@@ -1428,7 +1428,7 @@ fn pending_release_blocks_withdraw_refunds_deposits_and_mutes_stuck_callbacks() 
     assert!(v.get_state().swap_in_flight);
     // A stale release callback (superseded id) is ignored.
     release_cb();
-    v.on_force_release_swap(id + 100, Ok(U128(10_000)), Ok(U128(0)), Ok(U128(0)));
+    v.resolve_release_swap(id + 100, Ok(U128(10_000)), Ok(U128(0)), Ok(U128(0)));
     assert!(v.get_state().release_in_flight);
 }
 
@@ -1452,9 +1452,9 @@ fn force_release_can_be_retried_and_older_release_is_superseded() {
     let second = force_release(&mut v);
     assert!(second > first);
     release_cb();
-    v.on_force_release_swap(first, Ok(U128(10_000)), Ok(U128(0)), Ok(U128(0)));
+    v.resolve_release_swap(first, Ok(U128(10_000)), Ok(U128(0)), Ok(U128(0)));
     assert!(v.get_state().swap_in_flight, "superseded release is a no-op");
-    v.on_force_release_swap(second, Ok(U128(10_000)), Ok(U128(0)), Ok(U128(0)));
+    v.resolve_release_swap(second, Ok(U128(10_000)), Ok(U128(0)), Ok(U128(0)));
     assert!(!v.get_state().swap_in_flight);
     assert_eq!(bal(&v, &wrap()), 10_000);
 }
@@ -1478,7 +1478,7 @@ fn force_release_callbacks_reject_non_self() {
     run(&mut v, proposal(100));
     let id = force_release(&mut v);
     at("mallory.testnet", T0);
-    v.on_force_release_swap(id, Ok(U128(10_000)), Ok(U128(0)), Ok(U128(0)));
+    v.on_force_release_swap(id);
 }
 
 // ------------------------------------------------------- check_proposal
@@ -1582,7 +1582,7 @@ fn late_callback_of_force_released_swap_cannot_touch_new_swap() {
     run(&mut v, proposal(100)); // id 1
     let rid = force_release(&mut v); // id 2
     release_cb();
-    v.on_force_release_swap(rid, Ok(U128(9_900)), Ok(U128(100)), Ok(U128(0)));
+    v.resolve_release_swap(rid, Ok(U128(9_900)), Ok(U128(100)), Ok(U128(0)));
     run_at(&mut v, proposal(200), T0 + STALE_LOCK_NS); // id 3
     cb_ctx(PromiseResult::Failed, T0 + STALE_LOCK_NS);
     let r = v.on_deposit(1, Err(PromiseError::Failed));
@@ -1967,7 +1967,7 @@ fn late_reconcile_of_force_released_swap_is_a_noop() {
     let mut v = swap_at_withdraw_cb();
     let rid = force_release(&mut v);
     release_cb();
-    v.on_force_release_swap(rid, Ok(U128(0)), Ok(U128(390)), Ok(U128(390)));
+    v.resolve_release_swap(rid, Ok(U128(0)), Ok(U128(390)), Ok(U128(390)));
     let stranded_before = stranded(&v, &rft());
     cb_ctx(PromiseResult::Failed, T0 + STALE_LOCK_NS);
     assert_eq!(v.on_withdraw_reconciled(1, Ok(U128(0))).0, 0);
@@ -2176,7 +2176,7 @@ fn force_release_recovery_whose_withdraw_landed_credits_once() {
     let mut v = recovering();
     let rid = force_release(&mut v);
     release_cb();
-    v.on_force_release_recovery(rid, Ok(U128(300)), Ok(U128(200)));
+    v.resolve_release_recovery(rid, Ok(U128(300)), Ok(U128(200)));
     assert!(!v.get_state().recovery_in_flight);
     assert_eq!(bal(&v, &rft()), 300);
     assert_eq!(stranded(&v, &rft()), 200);
@@ -2187,7 +2187,7 @@ fn force_release_recovery_with_failed_reads_restores_stranded() {
     let mut v = recovering();
     let rid = force_release(&mut v);
     release_cb();
-    v.on_force_release_recovery(rid, Err(PromiseError::Failed), Err(PromiseError::Failed));
+    v.resolve_release_recovery(rid, Err(PromiseError::Failed), Err(PromiseError::Failed));
     assert_eq!(bal(&v, &rft()), 0);
     assert_eq!(stranded(&v, &rft()), 500);
     assert!(get_logs().join("\n").contains("recovery_force_released_unverified"));
@@ -2198,7 +2198,7 @@ fn force_release_stale_recovery_restores_stranded_and_late_callbacks_are_noops()
     let mut v = recovering();
     let rid = force_release(&mut v);
     release_cb();
-    v.on_force_release_recovery(rid, Ok(U128(0)), Ok(U128(500)));
+    v.resolve_release_recovery(rid, Ok(U128(0)), Ok(U128(500)));
     assert!(!v.get_state().recovery_in_flight);
     assert_eq!(stranded(&v, &rft()), 500);
     // The late reconcile of the released recovery must not credit or re-strand.
@@ -2216,4 +2216,140 @@ fn recovery_ids_share_the_swap_counter() {
     let _ = v.on_recover(1);
     run(&mut v, proposal(100));
     assert_eq!(v.in_flight.as_ref().map(|f| f.id), Some(2));
+}
+
+// ------------------------------------------------------- abort_release / lenient reads
+
+/// Callback context with several raw promise results (a joined `.and` batch).
+fn cb_ctx_many(results: Vec<PromiseResult>, ts: u64) {
+    testing_env!(
+        ctx("vault.testnet", ts).build(),
+        near_sdk::test_vm_config(),
+        near_sdk::RuntimeFeesConfig::test(),
+        Default::default(),
+        results
+    );
+}
+
+#[test]
+fn malformed_read_payloads_do_not_panic_and_strand_unverified() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    let id = force_release(&mut v);
+    // Successful but not U128 (empty, wrong shape, not JSON): must not panic.
+    cb_ctx_many(
+        vec![
+            PromiseResult::Successful(vec![]),
+            PromiseResult::Successful(b"{\"a\":1}".to_vec()),
+            PromiseResult::Successful(b"not json".to_vec()),
+        ],
+        T0 + STALE_LOCK_NS,
+    );
+    v.on_force_release_swap(id);
+    assert!(!v.get_state().release_in_flight && !v.get_state().swap_in_flight);
+    assert_eq!(stranded(&v, &wrap()), 100);
+    assert!(get_logs().join("\n").contains("lock_force_released_unverified"));
+}
+
+#[test]
+fn malformed_read_payloads_do_not_panic_for_recovery() {
+    let mut v = recovery_started();
+    let id = force_release(&mut v);
+    cb_ctx_many(
+        vec![
+            PromiseResult::Successful(b"\"x\"".to_vec()),
+            PromiseResult::Successful(vec![]),
+        ],
+        T0 + STALE_LOCK_NS,
+    );
+    v.on_force_release_recovery(id);
+    assert!(!v.get_state().release_in_flight && !v.get_state().recovery_in_flight);
+    assert_eq!(stranded(&v, &rft()), 500);
+}
+
+#[test]
+fn well_formed_payloads_still_resolve_through_the_callback() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    let id = force_release(&mut v);
+    cb_ctx_many(
+        vec![ok_result(&U128(10_000)), ok_result(&U128(0)), ok_result(&U128(0))],
+        T0 + STALE_LOCK_NS,
+    );
+    v.on_force_release_swap(id);
+    assert_eq!(bal(&v, &wrap()), 10_000, "rolled back from raw results");
+}
+
+fn abort_ctx(pred: &str, ts: u64) {
+    let mut c = ctx1(pred);
+    c.block_timestamp(ts);
+    testing_env!(c.build());
+}
+
+#[test]
+#[should_panic(expected = "ERR_RELEASE_NOT_STALE")]
+fn abort_release_refused_before_window() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    force_release(&mut v);
+    abort_ctx("owner.testnet", T0 + STALE_LOCK_NS + RELEASE_ABORT_NS - 1);
+    v.abort_release();
+}
+
+#[test]
+#[should_panic(expected = "ERR_NOT_OWNER")]
+fn abort_release_refused_for_non_owner() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    force_release(&mut v);
+    abort_ctx("mallory.testnet", T0 + STALE_LOCK_NS + RELEASE_ABORT_NS);
+    v.abort_release();
+}
+
+#[test]
+#[should_panic(expected = "ERR_NO_RELEASE")]
+fn abort_release_refused_without_pending_release() {
+    let mut v = funded();
+    abort_ctx("owner.testnet", T0 + STALE_LOCK_NS + RELEASE_ABORT_NS);
+    v.abort_release();
+}
+
+#[test]
+fn abort_release_unfreezes_vault_and_owner_can_withdraw() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    let id = force_release(&mut v);
+    abort_ctx("owner.testnet", T0 + STALE_LOCK_NS + RELEASE_ABORT_NS);
+    v.abort_release();
+    let s = v.get_state();
+    assert!(!s.release_in_flight && !s.swap_in_flight);
+    assert_eq!(stranded(&v, &wrap()), 100, "held amount stranded as unverified");
+    assert_eq!(bal(&v, &wrap()), 9_900);
+    let logs = get_logs().join("\n");
+    assert!(logs.contains("force_release_aborted") && logs.contains("lock_force_released_unverified"));
+    // A late callback of the aborted release is a no-op.
+    cb_ctx_many(
+        vec![ok_result(&U128(10_000)), ok_result(&U128(0)), ok_result(&U128(0))],
+        T0 + STALE_LOCK_NS + RELEASE_ABORT_NS,
+    );
+    v.on_force_release_swap(id);
+    assert_eq!(bal(&v, &wrap()), 9_900);
+    assert_eq!(stranded(&v, &wrap()), 100);
+    // Owner can withdraw again.
+    let mut c = ctx1("owner.testnet");
+    c.block_timestamp(T0 + STALE_LOCK_NS + RELEASE_ABORT_NS);
+    c.prepaid_gas(MIN_WITHDRAW_GAS);
+    testing_env!(c.build());
+    let _ = v.withdraw(wrap(), U128(9_900));
+    assert_eq!(bal(&v, &wrap()), 0);
+}
+
+#[test]
+fn abort_release_on_recovery_strands_restores_and_unlocks() {
+    let mut v = recovery_started();
+    force_release(&mut v);
+    abort_ctx("owner.testnet", T0 + STALE_LOCK_NS + RELEASE_ABORT_NS);
+    v.abort_release();
+    assert!(!v.get_state().release_in_flight && !v.get_state().recovery_in_flight);
+    assert_eq!(stranded(&v, &rft()), 500);
 }

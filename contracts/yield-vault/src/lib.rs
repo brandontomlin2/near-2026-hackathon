@@ -57,6 +57,8 @@ pub const GAS_CB_DEPOSIT: Gas = Gas::from_tgas(170);
 pub const MIN_EXECUTE_GAS: Gas = Gas::from_tgas(270);
 /// A swap lock older than this (ns, 10 minutes) may be force-released by the owner.
 pub const STALE_LOCK_NS: u64 = 600 * 1_000_000_000;
+/// A pending force release older than this (ns, 10 minutes) may be aborted by the owner.
+pub const RELEASE_ABORT_NS: u64 = 600 * 1_000_000_000;
 /// Gas for an owner `ft_transfer` out.
 pub const GAS_FT_TRANSFER: Gas = Gas::from_tgas(30);
 /// Minimum prepaid gas for owner `withdraw`: ft_transfer (30) + on_owner_withdraw (15)
@@ -238,6 +240,8 @@ pub struct YieldVault {
     /// swap/recovery's own callbacks are no-ops, owner withdrawals are refused
     /// and deposits are refunded, so the balances it reads cannot move.
     release: Option<u64>,
+    /// Block timestamp (ns) at which `release` was set; gates `abort_release`.
+    release_started_at: u64,
     day: u64,
     spent_today: BTreeMap<AccountId, u128>,
     balances: BTreeMap<AccountId, u128>,
@@ -342,6 +346,7 @@ impl YieldVault {
             in_flight: None,
             recovery: None,
             release: None,
+            release_started_at: 0,
             day: day_of(env::block_timestamp()),
             spent_today: BTreeMap::new(),
             balances: BTreeMap::new(),
@@ -832,6 +837,7 @@ impl YieldVault {
         self.next_swap_id += 1;
         let release_id = self.next_swap_id;
         self.release = Some(release_id);
+        self.release_started_at = env::block_timestamp();
         emit(
             "force_release_started",
             json!({ "release_id": release_id, "token_id": token }),
@@ -867,11 +873,64 @@ impl YieldVault {
     pub fn on_force_release_swap(
         &mut self,
         release_id: u64,
-        #[callback_result] vault_ft: Result<U128, PromiseError>,
-        #[callback_result] ref_held: Result<U128, PromiseError>,
-        #[callback_result] ref_out: Result<U128, PromiseError>,
     ) {
         Self::assert_self();
+        self.resolve_release_swap(
+            release_id,
+            read_u128(0),
+            read_u128(1),
+            read_u128(2),
+        );
+    }
+
+    /// Resolves a force-released recovery: credited if only the vault holds the
+    /// amount (Ref's withdraw went through), otherwise restored to stranded.
+    #[private]
+    pub fn on_force_release_recovery(&mut self, release_id: u64) {
+        Self::assert_self();
+        self.resolve_release_recovery(release_id, read_u128(0), read_u128(1));
+    }
+
+    /// Escape for a reconcile whose callback can never succeed (it panics or
+    /// is out of gas). Owner only, 1 yocto, `RELEASE_ABORT_NS` after the
+    /// release started. Clears the release and strands the held amount as
+    /// unverified, exactly like a reconcile whose reads all failed; any late
+    /// callback of the aborted release is a no-op.
+    #[payable]
+    pub fn abort_release(&mut self) {
+        self.owner_one_yocto();
+        let id = self
+            .release
+            .unwrap_or_else(|| env::panic_str("ERR_NO_RELEASE: no force release is pending"));
+        require!(
+            env::block_timestamp().saturating_sub(self.release_started_at) >= RELEASE_ABORT_NS,
+            "ERR_RELEASE_NOT_STALE: wait 10 minutes after force_release_lock"
+        );
+        emit("force_release_aborted", json!({ "release_id": id }));
+        let fail = || Err(PromiseError::Failed);
+        if self.recovery.is_some() {
+            self.resolve_release_recovery(id, fail(), fail());
+        } else {
+            self.resolve_release_swap(id, fail(), fail(), fail());
+        }
+    }
+}
+
+/// Raw read of promise result `i` as a `U128`. A failed promise and a payload
+/// that does not parse are both `Err`, so a callback never panics on bad data.
+fn read_u128(i: u64) -> Result<U128, PromiseError> {
+    let bytes = env::promise_result_checked(i, 4096).map_err(|_| PromiseError::Failed)?;
+    near_sdk::serde_json::from_slice::<U128>(&bytes).map_err(|_| PromiseError::Failed)
+}
+
+impl YieldVault {
+    pub(crate) fn resolve_release_swap(
+        &mut self,
+        release_id: u64,
+        vault_ft: Result<U128, PromiseError>,
+        ref_held: Result<U128, PromiseError>,
+        ref_out: Result<U128, PromiseError>,
+    ) {
         if self.release != Some(release_id) {
             return;
         }
@@ -930,16 +989,12 @@ impl YieldVault {
         self.fail(&fl, "lock_force_released_unverified");
     }
 
-    /// Resolves a force-released recovery: credited if only the vault holds the
-    /// amount (Ref's withdraw went through), otherwise restored to stranded.
-    #[private]
-    pub fn on_force_release_recovery(
+    pub(crate) fn resolve_release_recovery(
         &mut self,
         release_id: u64,
-        #[callback_result] vault_ft: Result<U128, PromiseError>,
-        #[callback_result] ref_held: Result<U128, PromiseError>,
+        vault_ft: Result<U128, PromiseError>,
+        ref_held: Result<U128, PromiseError>,
     ) {
-        Self::assert_self();
         if self.release != Some(release_id) {
             return;
         }
@@ -966,6 +1021,10 @@ impl YieldVault {
         }
     }
 
+}
+
+#[near]
+impl YieldVault {
     /// Owner pays Ref storage for the vault's internal Ref account.
     ///
     /// `registration_only: false`: the whole deposit stays on Ref as the vault's
