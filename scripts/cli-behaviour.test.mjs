@@ -432,8 +432,8 @@ test("readme-asset: unknown flag fails before generating anything", () => {
   const cwd = scratch();
   const before = listing(cwd);
   const r = run("readme-asset.mjs", ["--bogus"], { cwd });
-  assert.equal(r.code, 1);
-  assert.ok(r.stderr.startsWith("readme-asset: unknown argument --bogus\nUsage: node scripts/readme-asset.mjs"), r.stderr);
+  assert.equal(r.code, 2);
+  assert.equal(r.stderr, "readme-asset: unknown argument --bogus (see --help)\n");
   assert.ok(noStack(r.stderr));
   assert.equal(listing(cwd), before);
 });
@@ -442,8 +442,8 @@ test("readme-asset: --out together with --update-docs is refused with nothing ge
   const cwd = scratch();
   const before = listing(cwd);
   const r = run("readme-asset.mjs", ["--out", "dir", "--update-docs"], { cwd });
-  assert.equal(r.code, 1);
-  assert.match(r.stderr, /^readme-asset: use --out or --update-docs, not both\n/);
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /^readme-asset: use --out or --update-docs, not both \(see --help\)\n/);
   assert.equal(r.stdout, "");
   assert.equal(listing(cwd), before);
 });
