@@ -52,7 +52,7 @@ async function withStub(handler, fn) {
       seen.push({ kind, body, auth: req.headers.authorization });
       const [status, content] = handler(kind, body);
       res.writeHead(status, { "content-type": "application/json" });
-      res.end(JSON.stringify(status === 200 ? { id: "c1", model: "stub-model", choices: [{ message: { content } }] } : { error: "nope" }));
+      res.end(JSON.stringify(status === 200 ? { id: "c1", model: "openai/gpt-oss-120b", choices: [{ message: { content } }] } : { error: "nope" }));
     });
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -65,7 +65,7 @@ async function withStub(handler, fn) {
 }
 
 function runLive(args, baseUrl) {
-  const env = { ...process.env, MOCK_INFERENCE: "0", NEAR_AI_API_KEY: KEY, NEAR_AI_MODEL: "stub-model", NEAR_AI_BASE_URL: baseUrl };
+  const env = { ...process.env, MOCK_INFERENCE: "0", NEAR_AI_API_KEY: KEY, NEAR_AI_MODEL: "openai/gpt-oss-120b", NEAR_AI_BASE_URL: baseUrl };
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [SCRIPT, ...args], { env, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
@@ -84,11 +84,11 @@ test("live ask: one model answers and rewrites the sheet; output, log and sheet.
   await withStub((kind) => [200, kind === "answer" ? ANSWER : NEW_SHEET], async (baseUrl, seen) => {
     const r = await runLive(["--out", out, "chaotic", "what", "about", "Skeptic?"], baseUrl);
     assert.equal(r.code, 0, r.stderr);
-    assert.equal(r.stderr, "mode: live model: stub-model\n");
+    assert.equal(r.stderr, "mode: live model: openai/gpt-oss-120b\n");
 
     const lines = r.stdout.trimEnd().split("\n");
     assert.equal(lines[0], `Chaotic (live): ${ANSWER}`);
-    assert.equal(lines.at(-1), "Nothing was signed or sent; the answer and the sheet come from stub-model on NEAR AI Cloud, the anchor is a dry run.");
+    assert.equal(lines.at(-1), "Nothing was signed or sent; the answer and the sheet come from openai/gpt-oss-120b on NEAR AI Cloud, the anchor is a dry run.");
     assert.doesNotMatch(r.stdout, /mocked|stand-ins/);
     // A free-text live sheet has no labels, so the diff is per sentence, and the anchor line carries the new hash.
     assert.ok(lines.includes("  - Skeptic is my enemy."), r.stdout);

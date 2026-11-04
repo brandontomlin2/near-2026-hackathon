@@ -12,7 +12,7 @@ import { AGENTS } from "../src/traits/agents.mjs";
 import { renderSvg } from "../src/art/render.mjs";
 import { renderSheet } from "../src/art/sheet.mjs";
 import { STYLE_NAMES, getStyle } from "../src/art/styles/index.mjs";
-import { assertSafeOutDir } from "../src/util/outdir.mjs";
+import { assertSafeOutDir, describeWriteFailure } from "../src/util/outdir.mjs";
 
 /** Throw before anything is created if `dir` (or the nearest existing ancestor) cannot take new entries. */
 function assertWritableDir(dir) {
@@ -92,9 +92,16 @@ export function main(argv) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const argv = process.argv.slice(2);
   try {
-    for (const p of main(process.argv.slice(2))) console.log(p);
+    for (const p of main(argv)) console.log(p);
   } catch (err) {
+    const outIndex = argv.lastIndexOf("--out");
+    const io = describeWriteFailure(outIndex >= 0 ? argv[outIndex + 1] : "out", err);
+    if (io) {
+      console.error(`render: ${io}`);
+      process.exit(1);
+    }
     console.error(`render: ${String(err instanceof Error ? err.message : err).split("\n")[0]} (see --help)`);
     process.exit(2);
   }

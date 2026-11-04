@@ -10,7 +10,7 @@ None. The first commit in this repository is `992acee`, "chore: initialize repos
 
 Effectively all of the code, tests, contract, scripts and documentation in this repository was written by AI coding assistants, mainly Claude Code (Anthropic Claude models), under human direction. The human sets the goals and constraints, reviews pull requests, and decides what is submitted, published, signed or spent. The human did not hand-write the code; the human's work is direction, review and approval.
 
-What git shows, at `31895c7` (122 commits): 119 commits carry a `Co-authored-by` or `Co-Authored-By` trailer naming an AI agent (Claude Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5 or plain Claude; Cursor Agent; or the local worker identities "Hack Pilot" and "hp"). The other 3 carry no AI trailer: the merge commit `4f709b7` (PR #2), and `6ae0563` and `ccdadea`, which are authored under the human's name. Git cannot say who wrote those two, so the count of AI-written commits is a lower bound from trailers, not a claim about the remaining two. The commit author field is not evidence either way: 117 commits are authored under the human's GitHub identity and 5 under a default "Your Name" identity, because the sessions committed through the human's git configuration. Reproduce the count with `git log --format=%B | grep -ciE '^co-authored-by:.*(claude|cursor|hack pilot|hp <)'` (counts trailer lines, not commits; a commit can carry several).
+What git shows: every commit on `main` carries a `Co-authored-by` or `Co-Authored-By` trailer naming an AI agent (Claude Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5 or plain Claude; Cursor Agent; or the local worker identities "Hack Pilot" and "hp"), except three: the merge commit `4f709b7` (PR #2), and `6ae0563` and `ccdadea`, which are authored under the human's name. Git cannot say who wrote those two, so trailers give a lower bound on AI-written commits, not a claim about them. The commit author field is not evidence either way: nearly all commits are authored under the human's GitHub identity and a few under a default "Your Name" identity, because the sessions committed through the human's git configuration. This holds as of `dc480da` (155 commits); later commits are not recounted here. Reproduce the count with `git log --format=%B | grep -ciE '^co-authored-by:.*(claude|cursor|hack pilot|hp <)'` (counts trailer lines, not commits; a commit can carry several).
 
 ## Third-party libraries (Q-005)
 
@@ -39,6 +39,12 @@ The vault calls the Rhea (Ref Finance) testnet exchange contract `ref-finance-10
 
 - `.agents/skills/` (symlinked into `.claude/skills/`) holds NEAR agent skills installed from the hackathon starter material, with versions pinned in `skills-lock.json`. They are documentation for coding agents. They are not imported by the product.
 - No application template or boilerplate was used.
+
+### Shade / chain-signature spike (`spikes/shade/`, `docs/spikes/shade-agent.md`)
+
+- `spikes/shade/chainsig.mjs` reimplements, with no dependencies, the key-derivation and sign-request logic of the NEAR MPC signer contract (`near/mpc`, files `kdf.rs`, `sign.rs`, `deposits.rs` under `crates/`), so derived keys can be computed offline. It was written from reading that source; none of it was copied or vendored. The derived keys match live `v1.signer-prod.testnet` view calls byte for byte (`spikes/shade/evidence/testnet-mpc-views.txt`).
+- The design note also draws on the NearDeFi `shade-agent-template` and shade-agent framework repositories (github.com/NearDeFi), which were read in local clones that are not kept. Their exact repository names, commit SHAs, file paths and line numbers are unverified, and the note marks them as such. No code from them is in this repository.
+- Unverified: everything that needs a signature. No transaction was signed or sent; the sign request, nonce, block hash and gas figures in the dry run are placeholders or contract minimums, and no TEE attestation was produced.
 
 ## Other notes
 

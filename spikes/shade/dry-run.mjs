@@ -5,6 +5,8 @@
 // Sends nothing. Holds no private key. Nonce and block hash are placeholders; a live run reads them from RPC.
 //
 // usage: node spikes/shade/dry-run.mjs [--agent <id>] [--path <p>] [--executor <id>] [--vault <id>]
+import { realpathSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import {
   MPC_CONTRACT_TESTNET, SIGN_DEPOSIT_YOCTO, SIGN_MIN_GAS_TGAS,
   deriveEd25519PublicKey, serializeTransaction, sha256, buildSignRequest, base58Encode,
@@ -47,14 +49,20 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--help' || a === '-h') return { help: true };
-    const key = a.replace(/^--/, '');
-    if (!(key in out) || argv[i + 1] === undefined) throw new Error(`unknown or incomplete option: ${a}`);
-    out[key] = argv[++i];
+    const key = a.startsWith('--') ? a.slice(2) : '';
+    if (!Object.hasOwn(out, key) || argv[i + 1] === undefined) throw new Error(`unknown or incomplete option: ${a}`);
+    const value = argv[++i];
+    if (value === '' || value.startsWith('--')) throw new Error(`${a} needs a value, got ${JSON.stringify(value)}`);
+    out[key] = value;
   }
   return out;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+function isMain() {
+  try { return import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href; } catch { return false; }
+}
+
+if (isMain()) {
   try {
     const args = parseArgs(process.argv.slice(2));
     if (args.help) {
