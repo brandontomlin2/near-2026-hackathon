@@ -54,7 +54,7 @@ The chain stores only the sha256 hash of each token's character sheet, not the s
 
    `echo $?` prints `1`.
 
-Mock mode compares with dry-run anchors in a local file, not chain data (`scripts/check-sheet.mjs:182-212`). A `.json` sheet file must be `{"sheet": "<text>"}`, which is what `sheet.json` is; any other file is hashed as a whole (`scripts/check-sheet.mjs:85-109`).
+Mock mode compares with dry-run anchors in a local file, not chain data (`checkMock` in `scripts/check-sheet.mjs`). A `.json` sheet file must be `{"sheet": "<text>"}`, which is what `sheet.json` is; any other file is hashed as a whole (`readSheetFile`; the file must be a regular file of at most 1 MiB).
 
 ## Check a real token on testnet
 
@@ -62,7 +62,7 @@ Mock mode compares with dry-run anchors in a local file, not chain data (`script
 npm run check-sheet -- --contract <id>.testnet --token <token_id> --sheet <file> [--rpc <url>]
 ```
 
-Nothing in this repository is deployed to testnet yet (`README.md:72`, `README.md:194`), so there is no real contract id to give. Once a human deploys one, the output has the same labels as above plus two lines, with values read from the chain (`scripts/check-sheet.mjs:166-178`, `:214-227`):
+Nothing in this repository is deployed to testnet yet (`README.md:72`, `README.md:194`), so there is no real contract id to give. Once a human deploys one, the output has the same labels as above plus two lines, with values read from the chain (`checkTestnet` in `scripts/check-sheet.mjs`):
 
 ```
 check-sheet: testnet, read-only view calls (nothing signed or sent)
@@ -77,9 +77,9 @@ in flight:    <true|false>
 result: <MATCH | MISMATCH | MISMATCH (no sheet anchored yet) | IN-FLIGHT (...)>
 ```
 
-- `MISMATCH (no sheet anchored yet)`: the token exists but `anchor_sheet` was never called, so the anchor hash is `null` (`scripts/check-sheet.mjs:119`; a minted token starts with `sheet_hash: null`, `README.md:89`). There is nothing to verify the file against.
-- `IN-FLIGHT`: an `nft_transfer_call` on the token has not resolved. Its pending `nft_resolve_transfer` may still return the token to its seller, so do not buy until `in flight` is `false` (`scripts/check-sheet.mjs:111-118`; `contracts/personality-nft/src/lib.rs:348-354`). This is reported before the hash comparison.
-- An unknown token or an RPC error prints an error on stderr and exits 2 (`scripts/check-sheet.mjs:143-153`).
+- `MISMATCH (no sheet anchored yet)`: the token exists but `anchor_sheet` was never called, so the anchor hash is `null` (`verdict` in `scripts/check-sheet.mjs`; a minted token starts with `sheet_hash: null`, `README.md:89`). There is nothing to verify the file against.
+- `IN-FLIGHT`: an `nft_transfer_call` on the token has not resolved. Its pending `nft_resolve_transfer` may still return the token to its seller, so do not buy until `in flight` is `false` (`verdict`; `contracts/personality-nft/src/lib.rs:348-354`). This is reported before the hash comparison.
+- An unknown token or an RPC error prints an error on stderr and exits 2 (`checkTestnet`).
 
 | Exit | Meaning |
 | --- | --- |
@@ -87,7 +87,7 @@ result: <MATCH | MISMATCH | MISMATCH (no sheet anchored yet) | IN-FLIGHT (...)>
 | 1 | MISMATCH, MISMATCH (no sheet anchored yet), or IN-FLIGHT |
 | 2 | usage error, unreadable sheet file, unknown token, or RPC error |
 
-`--rpc` defaults to `https://rpc.testnet.near.org` (`scripts/evidence.mjs:27`). It must be an `https` URL whose host names testnet; mainnet hosts are refused, and only the origin (not path or query) is printed (`scripts/evidence.mjs:39-62`). `--contract` must be a named testnet account (`scripts/check-sheet.mjs:137`). Use an RPC endpoint you chose yourself, not one the seller suggests: the host check only rejects mainnet and unlabelled hosts, so a hostile endpoint whose name contains testnet could return a forged `sheet_anchor`. The two view calls are separate requests, not one atomic read, and each is aborted after 15 seconds (`scripts/check-sheet.mjs:48`, `:142`).
+`--rpc` defaults to `https://rpc.testnet.near.org` (`scripts/evidence.mjs:27`). It must be an `https` URL whose host names testnet; mainnet hosts are refused, and only the origin (not path or query) is printed (`scripts/evidence.mjs:39-62`). `--contract` must be a named testnet account (`checkTestnet`). Use an RPC endpoint you chose yourself, not one the seller suggests: the host check only rejects mainnet and unlabelled hosts, so a hostile endpoint whose name contains testnet could return a forged `sheet_anchor`. The two view calls are separate requests, not one atomic read, and the two together share one 15 second wall-clock deadline (`RPC_TIMEOUT_MS`), enforced on the response headers and on every body read, so a server that drips bytes cannot stall the command. Each response is capped at 1 MiB (`readCapped`) and error text from the server is stripped of control and bidi characters and cut to 200 characters. `scripts/evidence.mjs` does not allowlist RPC hosts beyond the testnet-label check, which is why you should pick the endpoint yourself.
 
 ## Handing the sheet from seller to buyer
 

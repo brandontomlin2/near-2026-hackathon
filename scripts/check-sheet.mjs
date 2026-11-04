@@ -129,14 +129,17 @@ const fail = (error) => ({ code: 2, error });
 
 /** Server-supplied text is untrusted: no control characters (ANSI escapes), at most 200 chars. */
 export function sanitizeRemote(text) {
-  return String(text).replace(/[\u0000-\u001f\u007f-\u009f]/g, "?").slice(0, 200);
+  // Also bidi overrides/isolates and line/paragraph separators, which can visually reorder a `result:` line.
+  return String(text)
+    .replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069\u2028\u2029]/g, "?")
+    .slice(0, 200);
 }
 
 /**
  * Wraps a fetch so the response body is read through a byte counter and aborted past maxBytes.
  * Returns { ok, status, json } built from the capped text. Throws "response too large".
  */
-export async function readCapped(res, maxBytes = MAX_RESPONSE_BYTES) {
+export async function readCapped(res, maxBytes = MAX_RESPONSE_BYTES, deadline = Infinity) {
   const tooLarge = () => new Error(`response too large (over ${maxBytes} bytes)`);
   const declared = Number(res.headers?.get?.("content-length"));
   if (Number.isFinite(declared) && declared > maxBytes) {
@@ -144,14 +147,30 @@ export async function readCapped(res, maxBytes = MAX_RESPONSE_BYTES) {
     throw tooLarge();
   }
   if (!res.body || typeof res.body.getReader !== "function") {
-    // No stream to meter (only hand-written stubs lack one): fall back to the parsed body.
+    // No stream to meter. Production fetch (undici) always returns a streaming body, so this branch is
+    // reachable only by hand-written stubs; it skips the size cap by design.
     return { ok: res.ok, status: res.status, json: () => res.json() };
   }
   const reader = res.body.getReader();
   const chunks = [];
   let total = 0;
   for (;;) {
-    const { done, value } = await reader.read();
+    // The fetch signal alone does not reliably bound a slow-drip body, so every read races the deadline.
+    const remaining = deadline - Date.now();
+    let timer;
+    const expired = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error("RPC timeout while reading response body")), Math.max(0, remaining));
+    });
+    let chunk;
+    try {
+      chunk = await Promise.race([reader.read(), expired]);
+    } catch (err) {
+      reader.cancel().catch(() => {}); // not awaited: cancel on a stalled stream may never settle
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+    const { done, value } = chunk;
     if (done) break;
     total += value.byteLength;
     if (total > maxBytes) {
@@ -172,7 +191,7 @@ export function redact(text, rpcUrl, origin) {
 }
 
 /** Two read-only view calls. Never throws for chain/RPC problems; returns { code, error } or a report. */
-export async function checkTestnet({ contract, token, sheetHash, rpcUrl = DEFAULT_RPC_URL, fetchImpl = globalThis.fetch }) {
+export async function checkTestnet({ contract, token, sheetHash, rpcUrl = DEFAULT_RPC_URL, fetchImpl = globalThis.fetch, timeoutMs = RPC_TIMEOUT_MS }) {
   let account;
   let rpc;
   try {
@@ -186,8 +205,25 @@ export async function checkTestnet({ contract, token, sheetHash, rpcUrl = DEFAUL
     throw new UsageError("--rpc must be an https URL whose host names testnet (value not shown); mainnet or unlabelled endpoints are refused");
   }
   // redirect: "error" so a testnet-named host cannot bounce the call to another host.
-  const timedFetch = async (url, init) =>
-    readCapped(await fetchImpl(url, { ...init, redirect: "error", signal: AbortSignal.timeout(RPC_TIMEOUT_MS) }));
+  // One wall-clock deadline covers both view calls, the headers and every body read.
+  const deadline = Date.now() + timeoutMs;
+  const timedFetch = async (url, init) => {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new Error("RPC timeout (overall deadline reached)");
+    let timer;
+    const expired = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error("RPC timeout waiting for response")), remaining);
+    });
+    try {
+      const res = await Promise.race([
+        fetchImpl(url, { ...init, redirect: "error", signal: AbortSignal.timeout(remaining) }),
+        expired,
+      ]);
+      return await readCapped(res, MAX_RESPONSE_BYTES, deadline);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
   const call = (method) => viewCall({ fetchImpl: timedFetch, rpcUrl, contract: account, method, args: { token_id: token } });
   const anchorView = await call("sheet_anchor");
   const flightView = await call("nft_in_flight");
@@ -276,7 +312,7 @@ function render(report, sheetPath) {
 
 export async function main(
   argv = process.argv.slice(2),
-  { fetchImpl = globalThis.fetch, log = console.log, error = console.error, cwd = process.cwd() } = {},
+  { fetchImpl = globalThis.fetch, log = console.log, error = console.error, cwd = process.cwd(), timeoutMs = RPC_TIMEOUT_MS } = {},
 ) {
   try {
     const opts = parseArgs(argv);
@@ -287,7 +323,7 @@ export async function main(
     const sheetHash = readSheetFile(path.resolve(cwd, opts.sheet));
     const report = opts.mock
       ? checkMock({ outDir: opts.out ?? "out", token: opts.token, sheetHash, contract: opts.contract, cwd })
-      : await checkTestnet({ contract: opts.contract, token: opts.token, sheetHash, rpcUrl: opts.rpc ?? DEFAULT_RPC_URL, fetchImpl });
+      : await checkTestnet({ contract: opts.contract, token: opts.token, sheetHash, rpcUrl: opts.rpc ?? DEFAULT_RPC_URL, fetchImpl, timeoutMs });
     if (report.error) {
       error(`check-sheet: ${report.error}`);
       return report.code;

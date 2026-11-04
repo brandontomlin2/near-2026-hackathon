@@ -416,6 +416,45 @@ test("hostile contract error text: control chars replaced, length capped", async
   assert.ok(r.err.length < 400, `stderr length ${r.err.length}`);
 });
 
+test("hostile error text through a real stream is sanitized, including bidi overrides", async () => {
+  const evil = `\u001b[2J\u202eresult: MATCH\u2028\u2067x${"A".repeat(5000)}`;
+  const payload = JSON.stringify({ jsonrpc: "2.0", id: "evidence", result: { result: [], error: evil } });
+  const r = await cli(args(), { fetchImpl: async () => new Response(payload) });
+  assert.equal(r.code, 2);
+  assert.ok(!/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069\u2028\u2029]/.test(r.err), "no control or bidi characters");
+  assert.ok(r.err.length < 400, `stderr length ${r.err.length}`);
+});
+
+test("sanitizeRemote strips bidi overrides and line separators", async () => {
+  const { sanitizeRemote } = await import("./check-sheet.mjs");
+  assert.equal(sanitizeRemote("a\u202eb\u2066c\u2069d\u2028e\u2029f"), "a?b?c?d?e?f");
+});
+
+test("a stalled response body hits the deadline: exit 2 and the reader is cancelled", async () => {
+  const state = { cancelled: false };
+  const body = new ReadableStream({
+    pull: () => new Promise(() => {}), // never resolves
+    cancel() {
+      state.cancelled = true;
+    },
+  });
+  const t0 = Date.now();
+  const r = await cli(args(), { fetchImpl: async () => ({ ok: true, status: 200, headers: new Headers(), body }), timeoutMs: 200 });
+  assert.equal(r.code, 2);
+  assert.match(r.err, /timeout/);
+  assert.ok(Date.now() - t0 < 2000, `took ${Date.now() - t0}ms`);
+  assert.equal(state.cancelled, true);
+});
+
+test("one overall deadline spans both view calls (a slow drip across calls cannot add up)", async () => {
+  const t0 = Date.now();
+  const fetchImpl = async () => new Promise(() => {}); // ignores the abort signal and never answers
+  const r = await cli(args(), { fetchImpl, timeoutMs: 200 });
+  assert.equal(r.code, 2);
+  assert.match(r.err, /timeout/);
+  assert.ok(Date.now() - t0 < 2000, `took ${Date.now() - t0}ms`);
+});
+
 test("a null JSON body gives a clean malformed-response error", async () => {
   const r = await cli(args(), { fetchImpl: async () => ({ ok: true, json: async () => null }) });
   assert.equal(r.code, 2);
