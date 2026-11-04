@@ -117,7 +117,7 @@ function assertOutIsWritable(out, force) {
   try {
     text = readFileSync(out, "utf8");
   } catch (err) {
-    throw new UsageError(`cannot read existing --out ${out}: ${pathProblem(err, "--out") ?? err.message}`);
+    throw new UsageError(err.code === "EISDIR" ? `--out ${out} is a directory; pass a file path` : `cannot read existing --out ${out}: ${err.message}`);
   }
   if (!isExampleEvidence(text)) {
     throw new UsageError(`--out ${out} exists and is not an example evidence file this tool wrote; pass --force to replace it`);
@@ -364,7 +364,8 @@ export async function run(argv, env = process.env, deps = {}) {
       return 2;
     }
     // Filesystem failures on --out and the like: one line, no stack.
-    errOut(`error: ${pathProblem(err, "--out") ?? String(err?.message ?? err).split("\n")[0]}`);
+    const problem = pathProblem(err, "--out");
+    errOut(`error: ${problem ? `cannot write --out: ${problem}` : String(err?.message ?? err).split("\n")[0]}`);
     return 1;
   }
 }

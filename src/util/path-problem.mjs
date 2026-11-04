@@ -1,5 +1,6 @@
 // One-line, plain-English reason for the filesystem errors a bad output path causes,
 // so a CLI never prints a raw Node error (EEXIST / ENOTDIR / EISDIR) to a judge.
+// The caller already names the path; this says what is wrong with it and what to pass instead.
 
 /**
  * @param {unknown} error  an Error thrown by mkdir / writeFile / readFile
@@ -8,10 +9,9 @@
  */
 export function pathProblem(error, flag) {
   const code = error?.code;
-  const where = error?.path ?? "a part of the path";
   if (code === "EEXIST" || code === "ENOTDIR") {
-    return `a file is in the way of ${where}, which must be a directory; pass another ${flag} path (--help shows usage)`;
+    return `a file is in the way, but ${flag} must be a directory (or sit inside one); pass another path (--help shows usage)`;
   }
-  if (code === "EISDIR") return `${where} is a directory; ${flag} needs a file path (--help shows usage)`;
+  if (code === "EISDIR") return `that is a directory; ${flag} needs a file path (--help shows usage)`;
   return null;
 }
