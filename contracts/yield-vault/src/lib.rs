@@ -125,6 +125,8 @@ pub struct VaultState {
 #[near(serializers = [borsh])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InFlight {
+    /// Monotonic id; callbacks of a force-released swap cannot touch a newer one.
+    pub id: u64,
     pub pool_id: u64,
     pub token_in: AccountId,
     pub token_out: AccountId,
@@ -163,6 +165,7 @@ pub struct YieldVault {
     balances: BTreeMap<AccountId, u128>,
     stranded: BTreeMap<AccountId, u128>,
     swaps_executed: u64,
+    next_swap_id: u64,
 }
 
 fn emit(event: &str, data: Value) {
@@ -231,6 +234,7 @@ impl YieldVault {
             balances: BTreeMap::new(),
             stranded: BTreeMap::new(),
             swaps_executed: 0,
+            next_swap_id: 0,
         };
         emit("config_updated", json!({ "config": this.config }));
         this
@@ -353,7 +357,10 @@ impl YieldVault {
         self.roll_day(today);
         self.debit(&proposal.token_in, amount);
         self.spent_today += amount; // bounded by daily_cap check
+        self.next_swap_id += 1;
+        let swap_id = self.next_swap_id;
         self.in_flight = Some(InFlight {
+            id: swap_id,
             pool_id: proposal.pool_id,
             token_in: proposal.token_in.clone(),
             token_out: proposal.token_out.clone(),
@@ -388,7 +395,7 @@ impl YieldVault {
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(GAS_CB_DEPOSIT)
-                    .on_deposit(),
+                    .on_deposit(swap_id),
             )
     }
 
@@ -396,10 +403,11 @@ impl YieldVault {
     #[private]
     pub fn on_deposit(
         &mut self,
+        swap_id: u64,
         #[callback_result] used: Result<U128, PromiseError>,
     ) -> PromiseOrValue<U128> {
         Self::assert_self();
-        let Some(mut fl) = self.in_flight.clone() else {
+        let Some(mut fl) = self.current(swap_id) else {
             return PromiseOrValue::Value(U128(0));
         };
         let used = match used {
@@ -434,7 +442,7 @@ impl YieldVault {
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(GAS_CB_SWAP)
-                    .on_swap(),
+                    .on_swap(swap_id),
             );
         PromiseOrValue::Promise(p)
     }
@@ -443,10 +451,11 @@ impl YieldVault {
     #[private]
     pub fn on_swap(
         &mut self,
+        swap_id: u64,
         #[callback_result] out: Result<U128, PromiseError>,
     ) -> PromiseOrValue<U128> {
         Self::assert_self();
-        let Some(mut fl) = self.in_flight.clone() else {
+        let Some(mut fl) = self.current(swap_id) else {
             return PromiseOrValue::Value(U128(0));
         };
         match out {
@@ -479,7 +488,7 @@ impl YieldVault {
                     .then(
                         Self::ext(env::current_account_id())
                             .with_static_gas(GAS_CB_FINAL)
-                            .on_withdraw_done(),
+                            .on_withdraw_done(swap_id),
                     );
                 PromiseOrValue::Promise(p)
             }
@@ -488,10 +497,10 @@ impl YieldVault {
 
     /// Hop 3 callback: credits token_out, releases the lock.
     #[private]
-    pub fn on_withdraw_done(&mut self) -> U128 {
+    pub fn on_withdraw_done(&mut self, swap_id: u64) -> U128 {
         Self::assert_self();
         let ok = env::promise_result_checked(0, 4096).is_ok();
-        let Some(fl) = self.in_flight.clone() else {
+        let Some(fl) = self.current(swap_id) else {
             return U128(0);
         };
         if !ok {
@@ -687,6 +696,11 @@ impl YieldVault {
             env::predecessor_account_id() == env::current_account_id(),
             "ERR_PRIVATE_CALLBACK: Method is private"
         );
+    }
+
+    /// The in-flight swap, only if it is the one `swap_id` belongs to.
+    fn current(&self, swap_id: u64) -> Option<InFlight> {
+        self.in_flight.clone().filter(|f| f.id == swap_id)
     }
 
     fn assert_owner(&self) {

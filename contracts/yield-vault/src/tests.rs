@@ -405,14 +405,14 @@ fn full_chain_success_credits_token_out() {
     let mut v = funded();
     run(&mut v, proposal(400));
     cb_ctx(ok_result(&U128(400)), T0);
-    let _ = v.on_deposit(Ok(U128(400)));
+    let _ = v.on_deposit(1, Ok(U128(400)));
     assert!(v.get_state().swap_in_flight);
     assert_eq!(v.in_flight.as_ref().unwrap().amount_in, 400);
     cb_ctx(ok_result(&U128(390)), T0);
-    let _ = v.on_swap(Ok(U128(390)));
+    let _ = v.on_swap(1, Ok(U128(390)));
     assert_eq!(v.in_flight.as_ref().unwrap().amount_out, 390);
     cb_ctx(PromiseResult::Successful(vec![]), T0);
-    let out = v.on_withdraw_done();
+    let out = v.on_withdraw_done(1);
     assert_eq!(out.0, 390);
     assert!(!v.get_state().swap_in_flight);
     assert_eq!(bal(&v, &rft()), 390);
@@ -466,7 +466,7 @@ fn deposit_failed_rolls_back() {
     let mut v = funded();
     run(&mut v, proposal(400));
     cb_ctx(PromiseResult::Failed, T0);
-    let r = v.on_deposit(Err(PromiseError::Failed));
+    let r = v.on_deposit(1, Err(PromiseError::Failed));
     assert!(matches!(r, PromiseOrValue::Value(U128(0))));
     assert!(!v.get_state().swap_in_flight);
     assert_eq!(bal(&v, &wrap()), 10_000);
@@ -482,7 +482,7 @@ fn deposit_used_zero_rolls_back() {
     let mut v = funded();
     run(&mut v, proposal(400));
     cb_ctx(ok_result(&U128(0)), T0);
-    let _ = v.on_deposit(Ok(U128(0)));
+    let _ = v.on_deposit(1, Ok(U128(0)));
     assert!(!v.get_state().swap_in_flight);
     assert_eq!(bal(&v, &wrap()), 10_000);
     assert_eq!(v.get_state().spent_today.0, 0);
@@ -493,7 +493,7 @@ fn deposit_partial_use_refunds_remainder_and_swaps_used() {
     let mut v = funded();
     run(&mut v, proposal(400));
     cb_ctx(ok_result(&U128(300)), T0);
-    let r = v.on_deposit(Ok(U128(300)));
+    let r = v.on_deposit(1, Ok(U128(300)));
     assert!(matches!(r, PromiseOrValue::Promise(_)));
     assert_eq!(v.in_flight.as_ref().unwrap().amount_in, 300);
     assert_eq!(bal(&v, &wrap()), 9_700);
@@ -505,7 +505,7 @@ fn deposit_used_over_amount_is_clamped() {
     let mut v = funded();
     run(&mut v, proposal(400));
     cb_ctx(ok_result(&U128(999)), T0);
-    let _ = v.on_deposit(Ok(U128(999)));
+    let _ = v.on_deposit(1, Ok(U128(999)));
     assert_eq!(v.in_flight.as_ref().unwrap().amount_in, 400);
     assert_eq!(bal(&v, &wrap()), 9_600);
 }
@@ -518,7 +518,7 @@ fn deposit_rollback_after_day_roll_keeps_new_day_counter() {
     v.day = 11;
     v.spent_today = 50;
     cb_ctx(PromiseResult::Failed, T0 + DAY);
-    let _ = v.on_deposit(Err(PromiseError::Failed));
+    let _ = v.on_deposit(1, Err(PromiseError::Failed));
     assert_eq!(v.spent_today, 50);
     assert_eq!(bal(&v, &wrap()), 10_000);
 }
@@ -528,9 +528,9 @@ fn swap_failed_strands_token_in_and_releases_lock() {
     let mut v = funded();
     run(&mut v, proposal(400));
     cb_ctx(ok_result(&U128(400)), T0);
-    let _ = v.on_deposit(Ok(U128(400)));
+    let _ = v.on_deposit(1, Ok(U128(400)));
     cb_ctx(PromiseResult::Failed, T0);
-    let r = v.on_swap(Err(PromiseError::Failed));
+    let r = v.on_swap(1, Err(PromiseError::Failed));
     assert!(matches!(r, PromiseOrValue::Value(U128(0))));
     assert!(!v.get_state().swap_in_flight);
     assert_eq!(stranded(&v, &wrap()), 400);
@@ -547,9 +547,9 @@ fn amount_out_below_min_strands_token_out() {
     p.min_amount_out = U128(390);
     run(&mut v, p);
     cb_ctx(ok_result(&U128(400)), T0);
-    let _ = v.on_deposit(Ok(U128(400)));
+    let _ = v.on_deposit(1, Ok(U128(400)));
     cb_ctx(ok_result(&U128(389)), T0);
-    let r = v.on_swap(Ok(U128(389)));
+    let r = v.on_swap(1, Ok(U128(389)));
     assert!(matches!(r, PromiseOrValue::Value(U128(0))));
     assert!(!v.get_state().swap_in_flight);
     assert_eq!(stranded(&v, &rft()), 389);
@@ -561,9 +561,9 @@ fn amount_out_zero_releases_without_stranding() {
     let mut v = funded();
     run(&mut v, proposal(400));
     cb_ctx(ok_result(&U128(400)), T0);
-    let _ = v.on_deposit(Ok(U128(400)));
+    let _ = v.on_deposit(1, Ok(U128(400)));
     cb_ctx(ok_result(&U128(0)), T0);
-    let _ = v.on_swap(Ok(U128(0)));
+    let _ = v.on_swap(1, Ok(U128(0)));
     assert!(!v.get_state().swap_in_flight);
     assert!(v.stranded.is_empty());
 }
@@ -573,11 +573,11 @@ fn withdraw_failed_strands_token_out() {
     let mut v = funded();
     run(&mut v, proposal(400));
     cb_ctx(ok_result(&U128(400)), T0);
-    let _ = v.on_deposit(Ok(U128(400)));
+    let _ = v.on_deposit(1, Ok(U128(400)));
     cb_ctx(ok_result(&U128(390)), T0);
-    let _ = v.on_swap(Ok(U128(390)));
+    let _ = v.on_swap(1, Ok(U128(390)));
     cb_ctx(PromiseResult::Failed, T0);
-    let out = v.on_withdraw_done();
+    let out = v.on_withdraw_done(1);
     assert_eq!(out.0, 0);
     assert!(!v.get_state().swap_in_flight);
     assert_eq!(stranded(&v, &rft()), 390);
@@ -590,7 +590,7 @@ fn lock_is_free_after_each_failure() {
     let mut v = funded();
     run(&mut v, proposal(100));
     cb_ctx(PromiseResult::Failed, T0);
-    let _ = v.on_deposit(Err(PromiseError::Failed));
+    let _ = v.on_deposit(1, Err(PromiseError::Failed));
     run(&mut v, proposal(100));
     assert!(v.get_state().swap_in_flight);
 }
@@ -600,14 +600,14 @@ fn callbacks_without_in_flight_are_noops() {
     let mut v = funded();
     cb_ctx(PromiseResult::Failed, T0);
     assert!(matches!(
-        v.on_deposit(Err(PromiseError::Failed)),
+        v.on_deposit(1, Err(PromiseError::Failed)),
         PromiseOrValue::Value(U128(0))
     ));
     assert!(matches!(
-        v.on_swap(Err(PromiseError::Failed)),
+        v.on_swap(1, Err(PromiseError::Failed)),
         PromiseOrValue::Value(U128(0))
     ));
-    assert_eq!(v.on_withdraw_done().0, 0);
+    assert_eq!(v.on_withdraw_done(1).0, 0);
     assert_eq!(bal(&v, &wrap()), 10_000);
 }
 
@@ -618,7 +618,7 @@ fn callbacks_without_in_flight_are_noops() {
 fn on_deposit_rejects_non_self() {
     let mut v = funded();
     testing_env_with_promise_results(ctx("mallory.testnet", T0).build(), PromiseResult::Failed);
-    let _ = v.on_deposit(Err(PromiseError::Failed));
+    let _ = v.on_deposit(1, Err(PromiseError::Failed));
 }
 
 #[test]
@@ -626,7 +626,7 @@ fn on_deposit_rejects_non_self() {
 fn on_swap_rejects_non_self() {
     let mut v = funded();
     at("mallory.testnet", T0);
-    let _ = v.on_swap(Ok(U128(1)));
+    let _ = v.on_swap(1, Ok(U128(1)));
 }
 
 #[test]
@@ -634,7 +634,7 @@ fn on_swap_rejects_non_self() {
 fn on_withdraw_done_rejects_non_self() {
     let mut v = funded();
     at("owner.testnet", T0);
-    let _ = v.on_withdraw_done();
+    let _ = v.on_withdraw_done(1);
 }
 
 #[test]
@@ -1075,4 +1075,21 @@ fn events_follow_nep297() {
     assert_eq!(json["standard"], "yield_vault");
     assert_eq!(json["version"], "1.0.0");
     assert_eq!(json["data"][0]["amount"], "5");
+}
+
+#[test]
+fn late_callback_of_force_released_swap_cannot_touch_new_swap() {
+    let mut v = funded();
+    run(&mut v, proposal(100)); // id 1
+    let mut c = ctx("owner.testnet", T0 + STALE_LOCK_NS);
+    c.attached_deposit(NearToken::from_yoctonear(1));
+    testing_env!(c.build());
+    v.force_release_lock();
+    run_at(&mut v, proposal(200), T0 + STALE_LOCK_NS); // id 2
+    cb_ctx(PromiseResult::Failed, T0 + STALE_LOCK_NS);
+    let r = v.on_deposit(1, Err(PromiseError::Failed));
+    assert!(matches!(r, PromiseOrValue::Value(U128(0))));
+    assert!(v.get_state().swap_in_flight);
+    assert_eq!(v.in_flight.as_ref().unwrap().id, 2);
+    assert_eq!(bal(&v, &wrap()), 9_800);
 }
