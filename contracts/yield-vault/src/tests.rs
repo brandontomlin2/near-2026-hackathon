@@ -911,11 +911,104 @@ fn pause_requires_one_yocto() {
     v.pause();
 }
 
+/// Function calls created so far: (receiver, method, args, deposit).
+fn created_calls() -> Vec<(String, String, Value, u128)> {
+    use near_sdk::mock::MockAction;
+    let mut out = Vec::new();
+    for r in near_sdk::test_utils::get_created_receipts() {
+        for a in r.actions {
+            if let MockAction::FunctionCallWeight {
+                method_name,
+                args,
+                attached_deposit,
+                ..
+            } = a
+            {
+                out.push((
+                    r.receiver_id.to_string(),
+                    String::from_utf8(method_name).unwrap(),
+                    serde_json::from_slice(&args).unwrap_or(Value::Null),
+                    attached_deposit.as_yoctonear(),
+                ));
+            }
+        }
+    }
+    out
+}
+
 #[test]
 fn register_on_ref_requires_deposit_and_forwards_it() {
     let mut v = funded();
     let mut c = ctx("owner.testnet", T0);
     c.attached_deposit(NearToken::from_millinear(10));
+    testing_env!(c.build());
+    let _ = v.register_on_ref();
+    let calls = created_calls();
+    let sd = calls
+        .iter()
+        .find(|c| c.1 == "storage_deposit")
+        .expect("storage_deposit call");
+    assert_eq!(sd.0, "ref-finance-101.testnet");
+    assert_eq!(sd.3, NearToken::from_millinear(10).as_yoctonear());
+    // Full deposit stays on Ref (covers per-token storage); no refund to the vault.
+    assert_eq!(sd.2["registration_only"], Value::Bool(false));
+    assert_eq!(sd.2["account_id"], "vault.testnet");
+    assert!(calls.iter().any(|c| c.1 == "on_register"), "callback attached");
+}
+
+#[test]
+fn on_register_failure_forwards_deposit_to_owner() {
+    let mut v = funded();
+    cb_ctx(PromiseResult::Failed, T0);
+    v.on_register(U128(10));
+    let logs = get_logs().join("\n");
+    assert!(logs.contains("\"event\":\"register_failed\""));
+    let transfers: Vec<_> = near_sdk::test_utils::get_created_receipts()
+        .into_iter()
+        .filter(|r| {
+            r.actions
+                .iter()
+                .any(|a| matches!(a, near_sdk::mock::MockAction::Transfer { deposit, .. } if deposit.as_yoctonear() == 10))
+        })
+        .collect();
+    assert_eq!(transfers.len(), 1);
+    assert_eq!(transfers[0].receiver_id, acct("owner.testnet"));
+}
+
+#[test]
+fn on_register_success_keeps_deposit_on_ref_and_sends_nothing() {
+    let mut v = funded();
+    cb_ctx(ok_result(&serde_json::json!({ "total": "10", "available": "0" })), T0);
+    v.on_register(U128(10));
+    assert!(get_logs().join("\n").contains("\"event\":\"registered_on_ref\""));
+    assert!(near_sdk::test_utils::get_created_receipts().is_empty());
+}
+
+#[test]
+#[should_panic(expected = "Method is private")]
+fn on_register_rejects_non_self() {
+    let mut v = funded();
+    testing_env_with_promise_results(ctx("mallory.testnet", T0).build(), PromiseResult::Failed);
+    v.on_register(U128(10));
+}
+
+#[test]
+#[should_panic(expected = "ERR_INSUFFICIENT_GAS")]
+fn register_on_ref_rejects_low_gas() {
+    let mut v = funded();
+    let mut c = ctx("owner.testnet", T0);
+    c.attached_deposit(NearToken::from_millinear(10));
+    c.prepaid_gas(Gas::from_tgas(59));
+    testing_env!(c.build());
+    let _ = v.register_on_ref();
+}
+
+#[test]
+fn register_on_ref_fits_in_exactly_min_gas_in_unit_vm() {
+    let mut v = funded();
+    let mut c = ctx("owner.testnet", T0);
+    c.attached_deposit(NearToken::from_millinear(10));
+    c.prepaid_gas(MIN_REGISTER_GAS);
     testing_env!(c.build());
     let _ = v.register_on_ref();
 }

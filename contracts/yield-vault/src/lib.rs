@@ -64,6 +64,10 @@ pub const GAS_FT_TRANSFER: Gas = Gas::from_tgas(30);
 pub const MIN_WITHDRAW_GAS: Gas = Gas::from_tgas(80);
 /// Gas for `ref.storage_deposit`.
 pub const GAS_STORAGE_DEPOSIT: Gas = Gas::from_tgas(30);
+/// `on_register` body (may create one transfer).
+pub const GAS_CB_REGISTER: Gas = Gas::from_tgas(10);
+/// Minimum prepaid gas for `register_on_ref`: storage_deposit (30) + on_register (10) + fees + margin.
+pub const MIN_REGISTER_GAS: Gas = Gas::from_tgas(60);
 /// NEP-141 view `ft_balance_of`.
 pub const GAS_FT_VIEW: Gas = Gas::from_tgas(10);
 /// `on_force_release_*` bodies.
@@ -954,6 +958,16 @@ impl YieldVault {
     }
 
     /// Owner pays Ref storage for the vault's internal Ref account.
+    ///
+    /// `registration_only: false`: the whole deposit stays on Ref as the vault's
+    /// storage balance, so it also pays the per-token storage Ref needs the
+    /// first time a new token lands in the account (the first swap into a new
+    /// token_out). Nothing is refunded to the vault on success, so no NEAR gets
+    /// stuck here. Attach the account minimum plus per-token storage for every
+    /// token in `allowed_pools` (see Ref's `storage_balance_bounds`). If the
+    /// storage is short anyway, the swap fails on Ref and `on_swap` strands
+    /// token_in, which `recover_from_ref` can pull back after a top-up.
+    /// If `storage_deposit` fails, `on_register` forwards the deposit to the owner.
     #[payable]
     pub fn register_on_ref(&mut self) -> Promise {
         self.assert_owner();
@@ -962,15 +976,45 @@ impl YieldVault {
             !deposit.is_zero(),
             "ERR_DEPOSIT_REQUIRED: attach NEAR for Ref storage"
         );
-        Promise::new(self.ref_exchange_id.clone()).function_call(
-            "storage_deposit".to_string(),
-            json_bytes(json!({
-                "account_id": env::current_account_id(),
-                "registration_only": true,
-            })),
-            deposit,
-            GAS_STORAGE_DEPOSIT,
-        )
+        require!(
+            env::prepaid_gas() >= MIN_REGISTER_GAS,
+            "ERR_INSUFFICIENT_GAS: attach at least 60 TGas"
+        );
+        Promise::new(self.ref_exchange_id.clone())
+            .function_call(
+                "storage_deposit".to_string(),
+                json_bytes(json!({
+                    "account_id": env::current_account_id(),
+                    "registration_only": false,
+                })),
+                deposit,
+                GAS_STORAGE_DEPOSIT,
+            )
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(GAS_CB_REGISTER)
+                    .on_register(U128(deposit.as_yoctonear())),
+            )
+    }
+
+    /// After `storage_deposit`: on failure the protocol refunds the deposit to
+    /// the vault, so forward that amount to the owner. Best effort: if the
+    /// refund has not landed yet and the vault cannot cover it, the transfer
+    /// fails and the NEAR stays on the vault account (see Known risks).
+    #[private]
+    pub fn on_register(&mut self, deposit: U128) {
+        Self::assert_self();
+        if env::promise_result_checked(0, 4096).is_ok() {
+            emit("registered_on_ref", json!({ "deposit": deposit.0.to_string() }));
+            return;
+        }
+        emit(
+            "register_failed",
+            json!({ "deposit": deposit.0.to_string(), "refund_to": self.owner_id }),
+        );
+        Promise::new(self.owner_id.clone())
+            .transfer(NearToken::from_yoctonear(deposit.0))
+            .detach();
     }
 
     /// Pulls stranded funds from the vault's Ref account back into the vault.
