@@ -40,6 +40,7 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === "--out") {
       const value = argv[i + 1];
+      if (value === undefined) throw new Error("--out needs a value");
       if (!value || value.startsWith("-")) throw new Error(`--out needs a directory, got ${JSON.stringify(value)}`);
       opts.out = value;
       i++;

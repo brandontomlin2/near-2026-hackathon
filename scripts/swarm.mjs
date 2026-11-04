@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MAX_ROUNDS, runSwarm, verifyRounds } from "../src/swarm/runner.mjs";
 import { createInferenceClient, parseMode } from "../src/inference/client.mjs";
-import { DEFAULT_LOOP_EVERY, runMemoryLoop } from "../src/memory/loop.mjs";
+import { DEFAULT_LOOP_EVERY, assertEveryWithinRounds, runMemoryLoop } from "../src/memory/loop.mjs";
 import { parseSummaryEvery } from "../src/memory/summarizer.mjs";
 import { AGENTS } from "../src/traits/agents.mjs";
 import { assertSafeOutDir, clearOwnedFiles } from "../src/util/outdir.mjs";
@@ -30,6 +30,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     const value = argv[i + 1];
+    if (value === undefined && ["--rounds", "--seed", "--every", "--out"].includes(flag)) throw new Error(`${flag} needs a value`);
     if (flag === "--rounds" || flag === "--seed" || flag === "--every") {
       // A seed may be 0 (same rule as scripts/demo.mjs); rounds and every must be at least 1.
       const pattern = flag === "--seed" ? /^(0|[1-9][0-9]*)$/ : /^[1-9][0-9]*$/;
@@ -48,6 +49,8 @@ function parseArgs(argv) {
       throw new Error(`unknown argument ${JSON.stringify(flag)}`);
     }
   }
+  // Only an explicit --every is checked: the default cadence still writes a sheet at the final round.
+  if (opts.every !== undefined) assertEveryWithinRounds(opts.every, opts.rounds);
   return opts;
 }
 

@@ -10,6 +10,7 @@ import { MAX_ROUNDS } from "../src/swarm/runner.mjs";
 import { DEMO_DEFAULTS, runDemo } from "../src/demo/pipeline.mjs";
 import { memoryDiffLine } from "../src/demo/memory-diff.mjs";
 import { plural } from "../src/util/plural.mjs";
+import { assertEveryWithinRounds } from "../src/memory/loop.mjs";
 
 const USAGE = `Usage: node scripts/demo.mjs [--rounds N] [--seed N] [--every N] [--style NAME] [--out DIR]
   --rounds N  swarm rounds (default ${DEMO_DEFAULTS.rounds})
@@ -25,6 +26,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     const value = argv[i + 1];
+    if (value === undefined && ["--rounds", "--seed", "--every", "--style", "--out"].includes(flag)) throw new Error(`${flag} needs a value`);
     if (flag === "--rounds" || flag === "--seed" || flag === "--every") {
       // A seed may be 0; rounds and every must be at least 1.
       const pattern = flag === "--seed" ? /^(0|[1-9][0-9]*)$/ : /^[1-9][0-9]*$/;
@@ -49,9 +51,7 @@ function parseArgs(argv) {
     }
   }
   // --help wins over every other flag, so "--rounds 2 --help" prints usage, not an error.
-  if (!opts.help && opts.every > opts.rounds) {
-    throw new Error(`--every (${opts.every}) must not exceed --rounds (${opts.rounds}), or no character sheet is written`);
-  }
+  if (!opts.help) assertEveryWithinRounds(opts.every, opts.rounds);
   return opts;
 }
 

@@ -62,6 +62,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     const value = argv[i + 1];
+    if (value === undefined && (flag === "--style" || flag === "--out")) throw new Error(`${flag} needs a value`);
     if (flag === "--style") {
       if (!value || value.startsWith("-")) throw new Error(`--style needs a name, got ${JSON.stringify(value)}`);
       if (value !== "all") getStyle(value); // throws "unknown style" with the valid names
