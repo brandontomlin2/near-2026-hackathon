@@ -1,5 +1,7 @@
 # yield-vault
 
+What it is: a near-sdk Rust smart contract that holds NEP-141 token balances for one agent and swaps them on Rhea (Ref Finance) through cross-contract promises (`ft_transfer_call` to deposit, `swap`, `withdraw`), with callbacks that read Ref's `get_deposit` before crediting or rolling back.
+
 A per-personality-NFT trading vault. Each personality NFT (aloof, chaotic, social, skeptic) is an AI agent running a strategy off chain. The agent acts only through approved **runner** accounts, and this contract enforces hard limits on chain regardless of what the strategy proposes. Approved swaps run on the Rhea (Ref Finance) testnet exchange `ref-finance-101.testnet` with the deposit -> swap -> withdraw pattern. wNEAR is `wrap.testnet`.
 
 **Status: NOT deployed.** A testnet deploy needs the human's explicit yes. Tested with unit tests only (`cargo test`, 168 tests). See "Known risks".
