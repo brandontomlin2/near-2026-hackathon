@@ -2,7 +2,7 @@
 
 A per-personality-NFT trading vault. Each personality NFT (aloof, chaotic, social, skeptic) is an AI agent running a strategy off chain. The agent acts only through approved **runner** accounts, and this contract enforces hard limits on chain regardless of what the strategy proposes. Approved swaps run on the Rhea (Ref Finance) testnet exchange `ref-finance-101.testnet` with the deposit -> swap -> withdraw pattern. wNEAR is `wrap.testnet`.
 
-**Status: NOT deployed.** A testnet deploy needs the human's explicit yes. Tested with unit tests only (`cargo test`, 126 tests). See "Known risks".
+**Status: NOT deployed.** A testnet deploy needs the human's explicit yes. Tested with unit tests only (`cargo test`, 136 tests). See "Known risks".
 
 ## Interface
 
@@ -32,8 +32,8 @@ A token with no `limits` entry cannot be sold (`ERR_NO_LIMIT`). `spent_today` is
 | `revoke_all_runners()` | owner | 1 | kill switch: clears runners and pauses |
 | `update_config(config)` | owner | 1 | validated; rejected while a swap is in flight (`ERR_SWAP_IN_FLIGHT`) |
 | `register_on_ref() -> Promise` | owner | payable (NEAR for Ref storage) | `storage_deposit` on Ref |
-| `recover_from_ref(token_id, amount) -> Promise` | owner | 1 | pulls stranded funds back from Ref; rejected while a swap is in flight (`ERR_SWAP_IN_FLIGHT`) |
-| `force_release_lock()` | owner | 1 | only if a swap has been in flight >= 10 min; moves the debited amount to `stranded_on_ref` |
+| `recover_from_ref(token_id, amount) -> Promise` | owner | 1 | pulls stranded funds back from Ref; rejected while a swap or another recovery is in flight (`ERR_SWAP_IN_FLIGHT`). Holds a recovery lock until its `get_deposit` reconcile has run; while it is held, `execute_swap` and `update_config` are refused with `ERR_SWAP_IN_FLIGHT` (`get_state().recovery_in_flight` is `true`) |
+| `force_release_lock()` | owner | 1 | only if a swap or recovery has been in flight >= 10 min; a swap's debited amount, or a recovery's amount, goes (back) to `stranded_on_ref`. Late callbacks of a released swap or recovery are ignored (ids from one counter) |
 | `get_config()`, `get_state()`, `get_balance(token_id)` | anyone | | views |
 | `check_proposal(proposal, runner_id) -> CheckResult` | anyone | | same rules as `execute_swap` except the gas check, no side effects |
 | `on_deposit`, `on_deposit_reconciled`, `on_swap`, `on_withdraw_done`, `on_withdraw_reconciled`, `on_owner_withdraw`, `on_recover`, `on_recover_reconciled` | self only | | private callbacks |
@@ -113,7 +113,7 @@ A failed promise result is not trusted as proof of what happened. The vault asks
 
 Balance is credited after a withdraw only once `get_deposit` shows the funds left Ref. This covers Ref's `withdraw`, which can re-credit its internal balance and still return success when the token transfer fails.
 
-The owner recovers stranded funds with `recover_from_ref(token_id, amount)`, only while no swap is in flight. The stranded record is reduced up front. A failed withdraw restores it. A withdraw that succeeds but is not confirmed by `get_deposit` strands it again (`withdraw_not_reconciled` or `withdraw_unverified`) instead of crediting. Success credits the balance and emits `recovered`.
+The owner recovers stranded funds with `recover_from_ref(token_id, amount)`, only while no swap or other recovery is in flight, and no swap can start until the recovery's reconcile has run. The stranded record is reduced up front. A failed withdraw restores it. A withdraw that succeeds but is not confirmed by `get_deposit` strands it again (`withdraw_not_reconciled` or `withdraw_unverified`) instead of crediting. Success credits the balance and emits `recovered`.
 
 Other limitation: there is no on-chain market price. Slippage is bounded only by the owner-set per-pool floor and the runner's `min_amount_out`.
 
@@ -125,7 +125,7 @@ NEP-297, `standard: "yield_vault"`, `version: "1.0.0"`: `deposit`, `withdraw`, `
 
 ```
 cd contracts/yield-vault
-cargo test                                          # 126 unit tests
+cargo test                                          # 136 unit tests
 cargo clippy --all-targets
 cargo build --target wasm32-unknown-unknown --release
 ```
@@ -142,9 +142,9 @@ Fixed after the audit:
 - High, only `min_amount_out > 0` as price protection: per-pool, per-direction `min_rate` floor (`ERR_PRICE_FLOOR`), compared in 256 bits.
 - Medium, `new` had no caller check: requires predecessor == contract account (`ERR_PRIVATE_INIT`).
 - Medium, no escape from a stuck `in_flight` lock: `started_at` plus owner `force_release_lock` after 10 minutes, with swap ids so late callbacks cannot touch a newer swap.
-- Medium, `recover_from_ref` during a swap: rejected with `ERR_SWAP_IN_FLIGHT`. `update_config` is rejected the same way.
+- Medium, `recover_from_ref` during a swap: rejected with `ERR_SWAP_IN_FLIGHT`. `update_config` is rejected the same way. A follow-up review found the reverse case (a swap or second recovery starting while a recovery's reconcile was still pending, so the two reconciles misread each other's Ref balance); a recovery now holds its own lock until its reconcile runs.
 - Low, dead `_reserved` storage map: removed.
-- The audit found zero tests; there are now 126 unit tests. No sandbox or testnet test exists.
+- The audit found zero tests; there are now 136 unit tests. No sandbox or testnet test exists.
 
 Open (not fixed):
 
@@ -157,7 +157,7 @@ Open (not fixed):
 - `strategy` is validated but not used by any on-chain rule. Config size (pools, limits, runners) is unbounded; only the owner can set it.
 - Pause and revoke do not cancel a swap already in flight. The only way out of a stuck swap is `force_release_lock` after 10 minutes.
 - Runners are accounts, not keys, and are trusted for timing and for the exact price at or above the floor. The floor is static and owner-set; a stale floor can be too loose or too tight.
-- The reconciliation baseline (`stranded + amount`) assumes the vault's Ref balance of that token only holds funds the vault tracks. Funds sent to the vault's Ref account by other means can make a deposit or withdraw look unreconciled and strand it. The owner can then use `recover_from_ref`.
+- The reconciliation baseline (`stranded + amount`) assumes the vault's Ref balance of that token only holds funds the vault tracks. Funds sent to the vault's Ref account by other means can make a deposit or withdraw look unreconciled and strand it. The owner can then use `recover_from_ref`. The reverse also holds and is worse: a `stranded` entry larger than what is really on Ref (from `force_release_lock` or a `deposit_unverified` strand when the tokens never left the vault) raises the baseline, so a later withdraw that Ref silently re-credited can look like it left Ref and be credited while the tokens are still on Ref (an internal double count, not a third-party theft). The fix is to snapshot Ref's `get_deposit` before each hop and compare against that instead of the ledger; it is not done.
 - Gas constants are static and have not been tested against real Ref testnet costs (the audit asked for a gas test on testnet).
 - The off-chain JS and Rust rule order and the JS side of the rules are outside this contract and are covered elsewhere in the repository, not here.
 

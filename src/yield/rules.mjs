@@ -23,6 +23,9 @@ export const HARD_RULE_ORDER = Object.freeze([
   "ERR_INSUFFICIENT_BALANCE",
 ]);
 
+/** The contract's STRATEGIES. */
+export const VAULT_STRATEGIES = Object.freeze(["aloof", "chaotic", "social", "skeptic"]);
+
 const DAY_SECONDS = 86400;
 
 /** day = floor(unix_seconds / 86400) */
@@ -36,12 +39,18 @@ export function spentOn(state, token, today) {
 }
 
 /**
- * Config v2 validation, mirroring the contract: nonzero rates, unique limit tokens,
+ * Config v2 validation, mirroring the contract's validate_config: strategy is one of the
+ * four, nonzero rates, token_a != token_b, unique pools, runners and limit tokens,
  * max_trade > 0 and max_trade <= daily_cap. Returns a list of problems (empty = valid).
  */
 export function validateVaultConfig(config) {
   const problems = [];
+  if (!VAULT_STRATEGIES.includes(config.strategy)) problems.push(`strategy must be one of ${VAULT_STRATEGIES.join(", ")}`);
+  const poolIds = new Set();
   for (const p of config.allowed_pools ?? []) {
+    if (poolIds.has(p.pool_id)) problems.push(`duplicate pool ${p.pool_id}`);
+    poolIds.add(p.pool_id);
+    if (p.token_a === p.token_b) problems.push(`pool ${p.pool_id} token_a must differ from token_b`);
     for (const key of ["min_rate_a_to_b", "min_rate_b_to_a"]) {
       const r = p[key];
       if (!r || BigInt(r.num) === 0n || BigInt(r.den) === 0n) problems.push(`pool ${p.pool_id} ${key} must have nonzero num and den`);
@@ -54,6 +63,8 @@ export function validateVaultConfig(config) {
     if (BigInt(l.max_trade) === 0n) problems.push(`${l.token_id} max_trade is zero`);
     if (BigInt(l.max_trade) > BigInt(l.daily_cap)) problems.push(`${l.token_id} max_trade exceeds daily_cap`);
   }
+  const runners = config.runners ?? [];
+  if (new Set(runners).size !== runners.length) problems.push("duplicate runner");
   return problems;
 }
 

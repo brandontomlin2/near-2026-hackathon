@@ -136,3 +136,12 @@ test("validateVaultConfig accepts the default configs and flags bad limits and r
   assert.ok(problems.some((m) => m.includes("max_trade is zero")));
   assert.ok(problems.some((m) => m.includes("exceeds daily_cap")));
 });
+
+test("validateVaultConfig mirrors the contract's strategy, pool and runner checks", () => {
+  const good = defaultVaultConfig("skeptic", { fixture });
+  const pool = good.allowed_pools[0];
+  assert.ok(validateVaultConfig({ ...good, strategy: "yolo" }).some((m) => m.startsWith("strategy must be one of")));
+  assert.ok(validateVaultConfig({ ...good, allowed_pools: [pool, pool] }).some((m) => m.includes(`duplicate pool ${pool.pool_id}`)));
+  assert.ok(validateVaultConfig({ ...good, allowed_pools: [{ ...pool, token_b: pool.token_a }] }).some((m) => m.includes("token_a must differ")));
+  assert.ok(validateVaultConfig({ ...good, runners: ["r.testnet", "r.testnet"] }).includes("duplicate runner"));
+});
