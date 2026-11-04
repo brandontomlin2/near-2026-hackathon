@@ -11,6 +11,7 @@
 // memory and question. Live NEAR AI Cloud with MOCK_INFERENCE=0, which needs
 // NEAR_AI_API_KEY and NEAR_AI_MODEL like npm run infer. Nothing is signed or sent.
 
+import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -71,6 +72,10 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
   }
   const agent = AGENTS.find((a) => a.id === opts.agentId);
   const memoryDir = join(opts.out, "memory");
+  if (existsSync(opts.out) && !statSync(opts.out).isDirectory()) {
+    console.error(`ask: --out ${opts.out} is a file, not a directory; pass the npm run demo output directory (see --help)`);
+    return 1;
+  }
 
   // Clients first, so a live run without a key fails before anything is read or written.
   let answerClient;

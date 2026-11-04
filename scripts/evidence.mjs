@@ -20,6 +20,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runMemoryLoop } from "../src/memory/loop.mjs";
+import { pathProblem } from "../src/util/path-problem.mjs";
 import { runSwarm } from "../src/swarm/runner.mjs";
 import { validateTestnetAccountId } from "./testnet-deploy.mjs";
 
@@ -325,7 +326,7 @@ export async function main(env = process.env, { fetchImpl = globalThis.fetch, cw
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
     fs.writeFileSync(outFile, `${JSON.stringify(evidence, null, 2)}\n`);
   } catch (err) {
-    throw new Error(`cannot write ${outFile}: ${err.message}`);
+    throw new Error(`cannot write ${outFile}: ${pathProblem(err, "EVIDENCE_OUT") ?? err.message}`);
   }
   const failed = evidence.views.filter((v) => v.error);
   console.log(`wrote ${outFile} (${evidence.mock ? "mock" : evidence.network})`);
