@@ -182,7 +182,7 @@ Status, plainly: the contract is unit-tested only and NOT deployed; there is no 
 4. Run `NEAR_NETWORK=mainnet npm run yield`. See `yield: refused: NEAR_NETWORK=mainnet. This tool only ever targets testnet.` and exit 1. A vault or runner id ending in `.near` is refused the same way.
 5. Run `npm run yield -- --send --i-approve --agent skeptic` without `NEAR_NETWORK`. See `yield: --send needs NEAR_NETWORK=testnet set explicitly. Nothing was sent.` and exit 1. Sending also needs `YIELD_VAULT_ACCOUNT_ID` and `YIELD_RUNNER_ACCOUNT_ID` set to named `.testnet` accounts and `near` on PATH; no vault is deployed, so do not expect a real send to succeed.
 6. Run `cd contracts/yield-vault && cargo test`. See `test result: ok. 136 passed; 0 failed`, including `max_trade_is_per_token`, `price_floor_refuses_below_and_accepts_exactly_at_floor`, `deposit_failed_but_tokens_landed_on_ref_is_stranded_not_rolled_back`, `recover_from_ref_refused_while_swap_in_flight` and `execute_swap_panics_while_recovery_in_flight`. The first run compiles near-sdk and takes a few minutes.
-7. Run `node --test src/yield/*.test.mjs scripts/yield.test.mjs`. See `# pass 43` and `# fail 0`: the send gate, the mainnet refusal, the dry-run CLI, the per-agent ledger and the off-chain rules.
+7. Run `node --test src/yield/*.test.mjs scripts/yield.test.mjs`. See `# pass 44` and `# fail 0`: the send gate, the mainnet refusal, the dry-run CLI, the per-agent ledger and the off-chain rules.
 
 Known risks (from an independent review of the contract; the High findings are fixed, some Medium and lower ones are open): see "Known risks" in [`contracts/yield-vault/README.md`](contracts/yield-vault/README.md#known-risks). A deploy, a vault funding and any `--send` need the owner's explicit approval.
 
