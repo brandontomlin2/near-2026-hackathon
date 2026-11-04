@@ -2456,12 +2456,17 @@ fn stale_sync_callback_after_a_swap_started_is_a_noop() {
 }
 
 #[test]
-fn stale_sync_callback_after_a_deposit_landed_is_a_noop() {
+fn deposit_is_refunded_while_a_sync_read_is_pending() {
     let mut v = funded();
     let id = start_sync(&mut v, wrap());
-    deposit(&mut v, wrap(), 500); // ft_on_transfer credits 500 while the read is pending
-    sync_cb(&mut v, id, wrap(), Ok(U128(10_500)));
-    assert_eq!(bal(&v, &wrap()), 10_500, "the deposit must not be credited twice");
+    testing_env!(ctx(wrap().as_str(), T0).build());
+    let r = v.ft_on_transfer(acct("owner.testnet"), U128(500), String::new());
+    assert!(matches!(r, PromiseOrValue::Value(U128(500))), "refunded in full");
+    assert_eq!(bal(&v, &wrap()), 10_000);
+    sync_cb(&mut v, id, wrap(), Ok(U128(10_000)));
+    assert_eq!(bal(&v, &wrap()), 10_000);
+    deposit(&mut v, wrap(), 500); // accepted again once the sync resolved
+    assert_eq!(bal(&v, &wrap()), 10_500);
 }
 
 #[test]

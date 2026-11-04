@@ -43,10 +43,11 @@ A token with no `limits` entry cannot be sold (`ERR_NO_LIMIT`). `spent_today` is
 | `register_on_ref() -> Promise` | owner | payable (NEAR for Ref storage) | needs >= 60 TGas. `storage_deposit { registration_only: false }` on Ref, so the whole deposit stays as the vault's Ref storage balance; `on_register` forwards the deposit to the owner if it fails. See "Ref storage" |
 | `recover_from_ref(token_id, amount) -> Promise` | owner | 1 | needs >= 150 TGas. Pulls stranded funds back from Ref; rejected while a swap or another recovery is in flight (`ERR_SWAP_IN_FLIGHT`). Reads Ref's deposit before and after the withdraw and credits only the measured drop. Holds a recovery lock until its last reconcile has run; while it is held, `execute_swap` and `update_config` are refused with `ERR_SWAP_IN_FLIGHT` (`get_state().recovery_in_flight` is `true`) |
 | `force_release_lock() -> Promise` | owner | 1 | needs >= 100 TGas. Only if a swap or recovery has been in flight >= 10 min. Reads where the held amount really is (see "Force release") and then credits, rolls back or strands it. Late callbacks of a released swap or recovery are ignored (ids from one counter) |
+| `sync_balance(token_id) -> Promise` | owner | 1 | needs >= 50 TGas. Reads the vault's own `ft_balance_of` and `on_sync_balance` credits `max(0, ft_balance - tracked)`: recovers an `ft_transfer` donation or funds that `abort_release` / an unverified strand wrongly marked as on Ref. Refused with `ERR_SYNC_BUSY` while a swap, recovery, release or owner withdrawal is in flight. Every call has an id; any swap, recovery, release or withdraw start clears it, so a stale callback is a no-op (it also re-checks the vault is idle). Deposits are refunded while a read is pending. Do not send a deposit and call `sync_balance` close together: a deposit whose `ft_on_transfer` has not run when the read happens would be credited twice. Emits `balance_synced` (or `sync_failed`) |
 | `abort_release()` | owner | 1 | Only if a force release has been pending >= 10 min. Clears it and strands the held amount as unverified. Escape if the reconcile callback can never succeed |
 | `get_config()`, `get_state()`, `get_balance(token_id)` | anyone | | views |
 | `check_proposal(proposal, runner_id) -> CheckResult` | anyone | | same rules as `execute_swap` except the gas check, no side effects |
-| `on_deposit`, `on_deposit_reconciled`, `on_swap`, `on_withdraw_done`, `on_withdraw_reconciled`, `on_owner_withdraw`, `on_recover_pre`, `on_recover`, `on_recover_reconciled`, `on_force_release_swap`, `on_force_release_recovery`, `on_register` | self only | | private callbacks |
+| `on_deposit`, `on_deposit_reconciled`, `on_swap`, `on_withdraw_done`, `on_withdraw_reconciled`, `on_owner_withdraw`, `on_recover_pre`, `on_recover`, `on_recover_reconciled`, `on_force_release_swap`, `on_force_release_recovery`, `on_register`, `on_sync_balance` | self only | | private callbacks |
 
 Consistency rule: every owner method that moves value or changes permissions requires exactly 1 yoctoNEAR (`assert_one_yocto`) after the owner check, except `register_on_ref`, which needs a real deposit. Non-owners get `ERR_NOT_OWNER` first.
 
@@ -71,7 +72,7 @@ Consistency rule: every owner method that moves value or changes permissions req
 
 After the rules, `execute_swap` (not `check_proposal`) also requires prepaid gas >= 270 TGas (`ERR_INSUFFICIENT_GAS`).
 
-Other codes: `ERR_NOT_OWNER`, `ERR_PRIVATE_INIT` (`new` called by anyone but the contract account), `ERR_BAD_CONFIG` (strategy not one of the four, a limit with `max_trade == 0`, `daily_cap < max_trade`, duplicate limit token, rate `num` or `den` equal to 0, `token_a == token_b`, duplicate pool, duplicate runner), `ERR_RUNNER_EXISTS`, `ERR_RUNNER_NOT_FOUND`, `ERR_DEPOSIT_REQUIRED`, `ERR_INSUFFICIENT_STRANDED`, `ERR_NO_SWAP_IN_FLIGHT`, `ERR_LOCK_NOT_STALE`, `ERR_PRIVATE_CALLBACK`, `ERR_OVERFLOW`. `ERR_ZERO_AMOUNT` and `ERR_INSUFFICIENT_BALANCE` are also raised by `withdraw` and `recover_from_ref` (zero amount) and by the balance debit. Rejections panic, so no log survives; they show up as failed transactions. `check_proposal` returns the same code in `reason`.
+Other codes: `ERR_NOT_OWNER`, `ERR_PRIVATE_INIT` (`new` called by anyone but the contract account), `ERR_BAD_CONFIG` (strategy not one of the four, a limit with `max_trade == 0`, `daily_cap < max_trade`, duplicate limit token, rate `num` or `den` equal to 0, `token_a == token_b`, duplicate pool, duplicate runner), `ERR_RUNNER_EXISTS`, `ERR_RUNNER_NOT_FOUND`, `ERR_DEPOSIT_REQUIRED`, `ERR_INSUFFICIENT_STRANDED`, `ERR_NO_SWAP_IN_FLIGHT`, `ERR_LOCK_NOT_STALE`, `ERR_PRIVATE_CALLBACK`, `ERR_OVERFLOW`, `ERR_NO_RELEASE` (`abort_release` with no force release pending), `ERR_RELEASE_NOT_STALE` (`abort_release` before 10 minutes), `ERR_RELEASE_PENDING` (`withdraw` while a release reconciles), `ERR_SYNC_BUSY` (`sync_balance` while the vault is moving tokens), `ERR_INSUFFICIENT_GAS`. `ERR_ZERO_AMOUNT` and `ERR_INSUFFICIENT_BALANCE` are also raised by `withdraw` and `recover_from_ref` (zero amount) and by the balance debit. Rejections panic, so no log survives; they show up as failed transactions. `check_proposal` returns the same code in `reason`.
 
 The day is `block_timestamp / 86_400 s` (UTC). The per-token counters reset on the first swap of a new day; `get_state` shows an empty `spent_today` once the stored day is stale.
 
@@ -107,6 +108,8 @@ The unit tests check that `execute_swap`, `withdraw`, `recover_from_ref`, `force
 
 ## Ref storage
 
+Funding the vault account: the vault account itself needs NEAR for its contract storage (about 1 NEAR per 100 KB of wasm plus state; check the built wasm size) and, through `register_on_ref`, the Ref storage deposit (read Ref's `storage_balance_bounds` first). Gas for swaps is paid by the caller, not the vault. As a starting point, fund at least 5 NEAR on testnet; this number is a rough estimate, not measured, and no vault is deployed.
+
 The owner must call `register_on_ref` once before the first swap. It calls Ref's `storage_deposit` with `registration_only: false`, so the whole attached deposit becomes the vault's storage balance on Ref. On success nothing is refunded to the vault, so no NEAR gets stuck on the vault account. That balance also pays for the storage Ref needs each time a new token first lands in the vault's Ref account: the first deposit of a token_in and the first swap into a new token_out. Attach enough for the account plus every token in `allowed_pools`; read Ref's `storage_balance_bounds` and `storage_balance_of(vault)` first (these amounts are not checked here). Calling `register_on_ref` again tops up the balance.
 
 If the storage runs short anyway (expected from Ref's interface, not tested against Ref):
@@ -129,6 +132,8 @@ If `storage_deposit` itself fails, the protocol refunds the deposit to the vault
 | on Ref (alone or also in the vault) | strand on Ref (`lock_force_released`; `..._ambiguous` if both) | strand on Ref | restore to stranded |
 | neither, all reads ok | the swap ran: strand Ref's untracked token_out (`deposit - stranded`) (`lock_force_released_swapped`) | strand unverified | restore to stranded (`..._unverified`) |
 | a read failed | strand on Ref if the Ref read shows it, else strand unverified (`lock_force_released_unverified`); never roll back | same; never credit | restore to stranded; never credit |
+
+Amounts that are only maybe on Ref (a failed read, or `abort_release`) go to a separate `unverified_on_ref` record (`get_state()`), not `stranded`. Only `stranded` is the baseline for the reconcile checks, so a phantom record cannot make a failed withdraw look successful. `recover_from_ref` takes verified strands first, then unverified ones. `sync_balance` recovers tokens an unverified record wrongly marks as on Ref.
 
 Each branch books the amount in at most one place, so a force release never counts the same funds twice. While the reconcile is pending (`get_state().release_in_flight`), the lock stays held, the stuck operation's own callbacks are no-ops, owner `withdraw` is refused (`ERR_RELEASE_PENDING`) and owner deposits are refunded. That keeps the balances being compared from moving. If the reconcile callback never runs, call `force_release_lock` again; the newer call replaces the older one. The release callbacks read their results as raw bytes: a read that fails or returns a payload that is not a `U128` counts as a failed read (strand unverified), it does not panic. If the callback still cannot run (for example `GAS_CB_RELEASE` is too small), the owner calls `abort_release` (1 yocto) once 10 minutes have passed since `force_release_lock`. It clears the release and strands the held amount as unverified (`lock_force_released_unverified`, event `force_release_aborted`), so withdrawals and deposits work again. A late callback of an aborted release is a no-op.
 
@@ -160,7 +165,7 @@ Other limitation: there is no on-chain market price. Slippage is bounded only by
 
 ## Events
 
-NEP-297, `standard: "yield_vault"`, `version: "1.0.0"`: `deposit`, `withdraw`, `withdraw_failed`, `swap_proposed`, `swap_executed`, `swap_failed`, `stranded`, `recovered`, `recover_refused`, `force_release_started`, `registered_on_ref`, `register_failed`, `paused`, `unpaused`, `runner_added`, `runner_revoked`, `config_updated`.
+NEP-297, `standard: "yield_vault"`, `version: "1.0.0"`: `deposit`, `withdraw`, `withdraw_failed`, `swap_proposed`, `swap_executed`, `swap_failed`, `stranded`, `recovered`, `recover_refused`, `force_release_started`, `force_release_aborted`, `balance_synced`, `sync_failed`, `registered_on_ref`, `register_failed`, `paused`, `unpaused`, `runner_added`, `runner_revoked`, `config_updated`.
 
 ## Develop
 
@@ -185,7 +190,7 @@ Fixed after the audit:
 - Medium, no escape from a stuck `in_flight` lock: `started_at` plus owner `force_release_lock` after 10 minutes, with swap ids so late callbacks cannot touch a newer swap.
 - Medium, `recover_from_ref` during a swap: rejected with `ERR_SWAP_IN_FLIGHT`. `update_config` is rejected the same way. A follow-up review found the reverse case (a swap or second recovery starting while a recovery's reconcile was still pending, so the two reconciles misread each other's Ref balance); a recovery now holds its own lock until its reconcile runs.
 - Low, dead `_reserved` storage map: removed.
-- The audit found zero tests; there are now 176 unit tests. No sandbox or testnet test exists.
+- The audit found zero tests; there are now 201 unit tests. No sandbox or testnet test exists.
 
 Fixed after a second review (`/tmp/yrev26-report.md`):
 

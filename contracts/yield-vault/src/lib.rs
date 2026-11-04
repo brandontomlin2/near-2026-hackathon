@@ -456,12 +456,10 @@ impl YieldVault {
             .allowed_pools
             .iter()
             .any(|p| p.token_a == token || p.token_b == token);
-        if sender_id != self.owner_id || !known || amount.0 == 0 || self.release.is_some() {
+        if sender_id != self.owner_id || !known || amount.0 == 0 || self.release.is_some() || self.sync_id != 0 {
             return PromiseOrValue::Value(amount);
         }
         self.credit(&token, amount.0);
-        // A deposit may be inside a pending sync read: drop it so it cannot double-credit.
-        self.sync_id = 0;
         emit(
             "deposit",
             json!({ "token_id": token, "amount": amount.0.to_string(), "sender_id": sender_id }),
