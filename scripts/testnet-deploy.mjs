@@ -256,6 +256,8 @@ export function parseArgs(argv) {
     if (!value || value.startsWith("-")) throw new UsageError(`${flag} needs a value, got ${JSON.stringify(value)}`);
     return value;
   };
+  // --help wins over any other mistake on the line (same as scripts/anchor.mjs).
+  if (argv.some((a) => a === "-h" || a === "--help")) return { ...opts, help: true };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     switch (arg) {
