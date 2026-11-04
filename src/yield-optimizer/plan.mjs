@@ -79,25 +79,28 @@ function spotEdgeBps(snap, pool, i) {
 /**
  * Clips a wanted amount to what the vault's limits allow today:
  * max_trade, daily_cap minus spent_today (same UTC day), and the balance.
- * Returns { amount, clipped_by: [...] }. With no limit for token_in nothing is
- * clipped: the contract refuses that token anyway (ERR_NO_LIMIT).
+ * Returns { amount, clipped_by: [...], blocked_by }. A limit with nothing left
+ * (e.g. today's daily_cap fully spent) does not clip to 0: it sets `blocked_by`
+ * and leaves the amount as clipped so far, so check_rules reports that limit's
+ * own error (ERR_DAILY_CAP, ERR_INSUFFICIENT_BALANCE). With no limit for
+ * token_in nothing is clipped: the contract refuses that token (ERR_NO_LIMIT).
  */
 export function clipToLimits(snap, tokenIn, wanted) {
   const { config, state } = snap.vault;
   const limit = config.limits.find((l) => l.token_id === tokenIn);
-  if (!limit) return { amount: wanted, clipped_by: [] };
+  if (!limit) return { amount: wanted, clipped_by: [], blocked_by: null };
   const spent = spentOn(state, dayOf(snap.now_ns), tokenIn);
   const capLeft = limit.daily_cap > spent ? limit.daily_cap - spent : 0n;
   const bal = state.balances.get(tokenIn) ?? 0n;
   let amount = wanted;
   const clipped_by = [];
   for (const [name, cap] of [["max_trade", limit.max_trade], ["daily_cap", capLeft], ["balance", bal]]) {
-    if (amount > cap) {
-      amount = cap;
-      clipped_by.push(name);
-    }
+    if (amount <= cap) continue;
+    if (cap === 0n) return { amount, clipped_by, blocked_by: name };
+    amount = cap;
+    clipped_by.push(name);
   }
-  return { amount, clipped_by };
+  return { amount, clipped_by, blocked_by: null };
 }
 
 function proposalJson(p) {
@@ -117,9 +120,7 @@ function evaluatePool(snap, pool, opts) {
   const token_out = pool.token_account_ids[1 - i];
   const balance = snap.vault.state.balances.get(token_in) ?? 0n;
   const wanted = (balance * BigInt(opts.position_pct)) / 100n;
-  const { amount, clipped_by } = clipToLimits(snap, token_in, wanted);
-  // Clipped to nothing: check the wanted size so the reason is the rule that bound it.
-  const amount_in = amount > 0n ? amount : wanted;
+  const { amount: amount_in, clipped_by, blocked_by } = clipToLimits(snap, token_in, wanted);
   const expected_out = quoteOut(amount_in, pool.reserves[i], pool.reserves[1 - i], pool.total_fee);
   const min_amount_out = (expected_out * BigInt(10_000 - opts.slippage_bps)) / 10_000n;
   const proposal = { pool_id: pool.pool_id, token_in, token_out, amount_in, min_amount_out };
@@ -131,7 +132,7 @@ function evaluatePool(snap, pool, opts) {
   if (!check.ok) status = "refused";
   else if (!(worst >= opts.min_edge_bps)) status = "below_min_edge";
   else status = "ok";
-  return { proposal, wanted, clipped_by, expected_out, edge_bps: edge, worst_edge_bps: worst, check, status };
+  return { proposal, wanted, clipped_by, blocked_by, expected_out, edge_bps: edge, worst_edge_bps: worst, check, status };
 }
 
 /** Portfolio value at reference prices, over every token the vault holds that has a price. */
@@ -200,6 +201,7 @@ export function buildPlan(snap, opts = {}) {
       proposal: proposalJson(c.proposal),
       wanted_amount_in: c.wanted.toString(),
       clipped_by: c.clipped_by,
+      blocked_by: c.blocked_by,
       expected_amount_out: c.expected_out.toString(),
       edge_bps: Number.isFinite(c.edge_bps) ? Number(c.edge_bps.toFixed(2)) : null,
       worst_case_edge_bps: Number.isFinite(c.worst_edge_bps) ? Number(c.worst_edge_bps.toFixed(2)) : null,
@@ -240,7 +242,10 @@ export function renderPlan(snap, plan) {
   if (plan.candidates.length === 0) lines.push("  (none: the snapshot has no pools)");
   for (const c of plan.candidates) {
     const p = c.proposal;
-    const clip = c.clipped_by.length ? ` (clipped from ${fmt(p.token_in, c.wanted)} by ${c.clipped_by.join(", ")})` : "";
+    const notes = [];
+    if (c.clipped_by.length) notes.push(`clipped from ${fmt(p.token_in, c.wanted)} by ${c.clipped_by.join(", ")}`);
+    if (c.blocked_by) notes.push(`nothing left under ${c.blocked_by}`);
+    const clip = notes.length ? ` (${notes.join("; ")})` : "";
     const edge = Number.isFinite(c.edge_bps)
       ? `${signedBps(c.edge_bps)} (worst ${signedBps(c.worst_edge_bps)})`
       : "n/a";

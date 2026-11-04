@@ -16,6 +16,8 @@ import { U128_MAX, validateConfig } from "./rules.mjs";
 /** The snapshot is missing, unreadable or malformed. */
 export class SnapshotError extends Error {}
 
+const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/;
+
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 
 function need(cond, msg) {
@@ -129,7 +131,7 @@ function parsePool(p, i, tokens) {
   const ids = arr(p.token_account_ids, `${w}.token_account_ids`);
   const amounts = arr(p.amounts, `${w}.amounts`);
   need(ids.length === 2 && amounts.length === 2, `${w} must have exactly 2 tokens and 2 amounts`);
-  ids.forEach((t, j) => need(typeof t === "string" && t in tokens, `${w}.token_account_ids[${j}] has no entry in tokens`));
+  ids.forEach((t, j) => need(typeof t === "string" && Object.hasOwn(tokens, t), `${w}.token_account_ids[${j}] has no entry in tokens`));
   need(ids[0] !== ids[1], `${w} lists the same token twice`);
   const reserves = amounts.map((a, j) => u128(a, `${w}.amounts[${j}]`));
   need(reserves[0] > 0n && reserves[1] > 0n, `${w} has an empty reserve`);
@@ -141,10 +143,14 @@ function parsePool(p, i, tokens) {
 export function parseSnapshot(raw) {
   need(isObj(raw), "snapshot must be a JSON object");
   const takenAt = str(raw.taken_at, "taken_at");
+  // An explicit Z or offset is required: Date.parse reads a bare time as local
+  // time, which would make the UTC day (and so the daily cap) depend on the machine.
+  need(ISO_UTC.test(takenAt), "taken_at must be an ISO-8601 time with Z or an offset, e.g. 2026-11-04T12:00:00Z");
   const ms = Date.parse(takenAt);
   need(Number.isFinite(ms) && ms >= 0, "taken_at must be an ISO-8601 UTC time");
   need(isObj(raw.tokens), "tokens must be an object keyed by token account id");
-  const tokens = {};
+  // No prototype: a token id like "toString" or "__proto__" is just a key.
+  const tokens = Object.create(null);
   for (const [id, t] of Object.entries(raw.tokens)) tokens[id] = parseToken(id, t);
   const pools = arr(raw.pools, "pools").map((p, i) => parsePool(p, i, tokens));
   need(new Set(pools.map((p) => p.pool_id)).size === pools.length, "pools lists a pool_id twice");
