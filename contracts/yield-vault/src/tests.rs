@@ -1352,6 +1352,39 @@ fn force_release_with_failed_reads_strands_unverified() {
 }
 
 #[test]
+fn force_release_vault_read_ok_but_ref_read_failed_does_not_roll_back() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    let id = force_release(&mut v);
+    release_cb();
+    v.on_force_release_swap(id, Ok(U128(10_000)), Err(PromiseError::Failed), Ok(U128(0)));
+    assert_eq!(bal(&v, &wrap()), 9_900, "no rollback on a partial picture");
+    assert_eq!(stranded(&v, &wrap()), 100);
+    assert!(get_logs().join("\n").contains("lock_force_released_unverified"));
+}
+
+#[test]
+fn force_release_token_out_read_failed_does_not_roll_back() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    let id = force_release(&mut v);
+    release_cb();
+    v.on_force_release_swap(id, Ok(U128(10_000)), Ok(U128(0)), Err(PromiseError::Failed));
+    assert_eq!(bal(&v, &wrap()), 9_900);
+    assert_eq!(stranded(&v, &wrap()), 100);
+}
+
+#[test]
+fn force_release_recovery_ref_read_failed_does_not_credit() {
+    let mut v = recovering();
+    let rid = force_release(&mut v);
+    release_cb();
+    v.on_force_release_recovery(rid, Ok(U128(300)), Err(PromiseError::Failed));
+    assert_eq!(bal(&v, &rft()), 0);
+    assert_eq!(stranded(&v, &rft()), 500);
+}
+
+#[test]
 fn force_release_token_out_already_in_vault_completes_swap() {
     // on_withdraw_done never ran but Ref's withdraw delivered 390 rft.
     let mut v = funded();

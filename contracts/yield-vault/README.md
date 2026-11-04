@@ -2,7 +2,7 @@
 
 A per-personality-NFT trading vault. Each personality NFT (aloof, chaotic, social, skeptic) is an AI agent running a strategy off chain. The agent acts only through approved **runner** accounts, and this contract enforces hard limits on chain regardless of what the strategy proposes. Approved swaps run on the Rhea (Ref Finance) testnet exchange `ref-finance-101.testnet` with the deposit -> swap -> withdraw pattern. wNEAR is `wrap.testnet`.
 
-**Status: NOT deployed.** A testnet deploy needs the human's explicit yes. Tested with unit tests only (`cargo test`, 165 tests). See "Known risks".
+**Status: NOT deployed.** A testnet deploy needs the human's explicit yes. Tested with unit tests only (`cargo test`, 168 tests). See "Known risks".
 
 **Not measured, not tested against Ref:**
 - Every gas figure here, including the 270 TGas `execute_swap` minimum, is arithmetic over the static constants in `src/lib.rs`. None was measured on a sandbox, testnet or mainnet. The unit-test VM charges receipt fees, and tests check that each entry point fits in exactly its minimum there. That catches a minimum too small to pay for its own promises. It says nothing about what Ref's `ft_on_transfer`, `swap`, `withdraw` or `get_deposit` really cost.
@@ -125,13 +125,13 @@ If `storage_deposit` itself fails, the protocol refunds the deposit to the vault
 | in the vault only | roll back the debit and day spend (`lock_force_released_in_vault`) | credit token_out, count the swap (`swap_executed`, `via: force_release`) | credit (`recovered`, `via: force_release`) |
 | on Ref (alone or also in the vault) | strand on Ref (`lock_force_released`; `..._ambiguous` if both) | strand on Ref | restore to stranded |
 | neither, all reads ok | the swap ran: strand Ref's untracked token_out (`deposit - stranded`) (`lock_force_released_swapped`) | strand unverified | restore to stranded (`..._unverified`) |
-| a read failed | strand unverified (`lock_force_released_unverified`) | strand unverified | restore to stranded (`..._unverified`) |
+| a read failed | strand on Ref if the Ref read shows it, else strand unverified (`lock_force_released_unverified`); never roll back | same; never credit | restore to stranded; never credit |
 
 Each branch books the amount in at most one place, so a force release never counts the same funds twice. While the reconcile is pending (`get_state().release_in_flight`), the lock stays held, the stuck operation's own callbacks are no-ops, owner `withdraw` is refused (`ERR_RELEASE_PENDING`) and owner deposits are refunded. That keeps the balances being compared from moving. If the reconcile callback never runs, call `force_release_lock` again; the newer call replaces the older one.
 
 ## Failure handling
 
-All callbacks use `#[callback_result]` (or `promise_result_checked`) and never panic on a failed step. Every failure of a swap releases the lock and emits `swap_failed`. Each swap carries an id passed to its callbacks, so a late callback of a force-released swap is a no-op.
+All callbacks use `#[callback_result]` (or `promise_result_checked`) and do not panic on a failed promise (a successful result whose payload does not parse still panics the callback). Every failure of a swap releases the lock and emits `swap_failed`. Each swap carries an id passed to its callbacks, so a late callback of a force-released swap is a no-op.
 
 A failed promise result is not trusted as proof of what happened. The vault asks Ref for `get_deposit(vault, token)` and compares it with a baseline of `stranded[token] + amount`.
 
@@ -163,7 +163,7 @@ NEP-297, `standard: "yield_vault"`, `version: "1.0.0"`: `deposit`, `withdraw`, `
 
 ```
 cd contracts/yield-vault
-cargo test                                          # 165 unit tests
+cargo test                                          # 168 unit tests
 cargo clippy --all-targets
 cargo build --target wasm32-unknown-unknown --release
 ```
@@ -182,7 +182,7 @@ Fixed after the audit:
 - Medium, no escape from a stuck `in_flight` lock: `started_at` plus owner `force_release_lock` after 10 minutes, with swap ids so late callbacks cannot touch a newer swap.
 - Medium, `recover_from_ref` during a swap: rejected with `ERR_SWAP_IN_FLIGHT`. `update_config` is rejected the same way. A follow-up review found the reverse case (a swap or second recovery starting while a recovery's reconcile was still pending, so the two reconciles misread each other's Ref balance); a recovery now holds its own lock until its reconcile runs.
 - Low, dead `_reserved` storage map: removed.
-- The audit found zero tests; there are now 165 unit tests. No sandbox or testnet test exists.
+- The audit found zero tests; there are now 168 unit tests. No sandbox or testnet test exists.
 
 Fixed after a second review (`/tmp/yrev26-report.md`):
 
@@ -197,7 +197,9 @@ Open (not fixed):
 
 - The vault is not tied to the NFT. `nft_contract_id` and `token_id` are stored and never checked. The owner is the account set at `new` and there is no ownership transfer, so if the NFT is sold the old owner keeps the funds.
 - `register_on_ref` failure forwarding is best effort (see "Ref storage"); NEAR that ends up on the vault account cannot be withdrawn. The Ref storage balance itself cannot be withdrawn either (no `storage_withdraw` method).
-- `force_release_lock` compares FT and Ref balances read in separate receipts. A transfer in transit at that moment can skew a read. Examples: a third party's `ft_transfer_call` that `ft_on_transfer` will refund, or an owner `withdraw` sent just before the release whose `ft_transfer` has not run yet. While a release is pending, new withdrawals are refused and new deposits are refunded, but transfers already in transit are not covered. Such a skew can make "in the vault" true when the amount is really gone, so the vault credits a balance that has no tokens behind it. A later withdraw of that balance fails and `on_owner_withdraw` restores it. No one else's funds are taken. Avoid owner transfers in the minutes around a force release. The "neither" branch also strands Ref's whole untracked token_out excess, which can include unrelated dust.
+- `force_release_lock` compares FT and Ref balances read in separate receipts. A transfer in transit at that moment can skew a read. Examples: a third party's `ft_transfer_call` that `ft_on_transfer` will refund, or an owner `withdraw` sent just before the release whose `ft_transfer` has not run yet. While a release is pending, new withdrawals are refused and new deposits are refunded, but transfers already in transit are not covered. Such a skew can make "in the vault" true when the amount is really gone, so the vault credits a balance that has no tokens behind it. A later withdraw of that balance fails and `on_owner_withdraw` restores it. No one else's funds are taken. Avoid owner transfers in the minutes around a force release. The "neither" branch also strands Ref's whole untracked token_out excess, which can include unrelated dust. The "ambiguous" branch (both reads show the amount) records it on Ref. If the real tokens are the ones in the vault, the vault copy goes untracked and the Ref record is a phantom. Recovery's before/after check keeps that phantom from ever being credited.
+- A pending force release is cleared only by its callback. If that callback panics every time, the lock and the `withdraw` refusal stay forever. Two ways this can happen: a read returns a success payload that does not parse as `U128`, or the unmeasured 20 TGas `GAS_CB_RELEASE` is too small. Retrying `force_release_lock` hits the same failure. No abort or upgrade path exists.
+- The nested callbacks' static gas (`on_deposit` 170 TGas, `on_swap` 100 TGas, `on_recover_pre` 100 TGas) is never exercised against the gas they attach onward. Only each entry point's outer minimum is checked in the unit-test VM.
 - If `ref.swap` returns an error that is really a timeout or out-of-gas, the swap may have executed. The vault strands the full `amount_in` as token_in without asking Ref, so token_out could sit on Ref untracked. Only the deposit and withdraw steps are reconciled, not the swap step.
 - Tokens sent with a plain `ft_transfer` (not `ft_transfer_call`) are not recorded and cannot be recovered. There is no sweep method. Unknown-token deposits through `ft_on_transfer` are refunded in full.
 - `check_proposal` (view) cannot show `ERR_INSUFFICIENT_GAS`, so it can return ok for a call that fails on gas. The sender must attach at least 270 TGas.

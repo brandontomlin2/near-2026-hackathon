@@ -881,7 +881,9 @@ impl YieldVault {
         };
         let (token, amount) = fl.held();
         let held_out = fl.amount_out > 0;
-        let in_vault = self.vault_holds(&token, amount, &vault_ft);
+        // Roll back or credit only on a complete picture: every read succeeded.
+        let all_ok = vault_ft.is_ok() && ref_held.is_ok() && ref_out.is_ok();
+        let in_vault = all_ok && self.vault_holds(&token, amount, &vault_ft);
         let on_ref = self.ref_holds(&token, amount, &ref_held);
         if in_vault && !on_ref {
             if held_out {
@@ -915,7 +917,7 @@ impl YieldVault {
             self.fail(&fl, why);
             return;
         }
-        if !held_out && ref_out.is_ok() && vault_ft.is_ok() && ref_held.is_ok() {
+        if !held_out && all_ok {
             let d = ref_out.map(|d| d.0).unwrap_or(0);
             let extra = d.saturating_sub(self.stranded_of(&fl.token_out));
             if extra > 0 {
@@ -945,7 +947,8 @@ impl YieldVault {
         let Some(r) = self.recovery.take() else {
             return;
         };
-        let in_vault = self.vault_holds(&r.token_id, r.amount, &vault_ft);
+        let in_vault =
+            ref_held.is_ok() && self.vault_holds(&r.token_id, r.amount, &vault_ft);
         let on_ref = self.ref_holds(&r.token_id, r.amount, &ref_held);
         if in_vault && !on_ref {
             self.credit(&r.token_id, r.amount);
