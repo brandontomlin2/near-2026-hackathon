@@ -262,7 +262,7 @@ test("missing question, missing agent id, unknown flag and --out without a value
     [[], "ask: an agent id is required (see --help)\n"],
     [["--bogus", "chaotic", "hi"], 'ask: unknown argument "--bogus" (see --help)\n'],
     [["-x", "chaotic", "hi"], 'ask: unknown argument "-x" (see --help)\n'],
-    [["chaotic", "hi", "--out"], "ask: --out needs a directory, got undefined (see --help)\n"],
+    [["chaotic", "hi", "--out"], "ask: --out needs a directory, got no value (see --help)\n"],
     [["--out"], null],
     [["--out", "--", "chaotic", "hi"], 'ask: --out needs a directory, got "--" (see --help)\n'],
   ];
