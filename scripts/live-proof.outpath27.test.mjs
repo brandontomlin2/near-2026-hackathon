@@ -21,7 +21,7 @@ test("live-proof: --out under a file is one plain line, exit 1", () => {
     assert.equal(r.status, 1);
     assert.equal(r.stderr.trim().split("\n").length, 1, r.stderr);
     assert.doesNotMatch(r.stderr, /EEXIST|ENOTDIR|EISDIR/);
-    assert.match(r.stderr, /is a file, not a directory/);
+    assert.match(r.stderr, /a file is in the way/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

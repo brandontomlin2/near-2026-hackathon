@@ -17,7 +17,7 @@ test("screenshot: --out under a file is one plain line, exit 1 (no browser is la
     assert.equal(errs.length, 1);
     assert.equal(errs[0].split("\n").length, 1, errs[0]);
     assert.doesNotMatch(errs[0], /EEXIST|ENOTDIR|EISDIR/);
-    assert.match(errs[0], /is a file, not a directory/);
+    assert.match(errs[0], /a file is in the way/);
     assert.match(errs[0], /--help/);
   } finally {
     rmSync(dir, { recursive: true, force: true });

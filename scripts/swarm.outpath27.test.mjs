@@ -19,7 +19,7 @@ function assertOneLine(r) {
   const lines = r.stderr.trim().split("\n");
   assert.equal(lines.length, 1, r.stderr);
   assert.doesNotMatch(r.stderr, /EEXIST|ENOTDIR|EISDIR|\n\s+at /);
-  assert.match(r.stderr, /is a file, not a directory/);
+  assert.match(r.stderr, /a file is in the way/);
   assert.match(r.stderr, /--help/);
 }
 

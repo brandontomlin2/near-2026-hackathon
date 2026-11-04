@@ -10,8 +10,8 @@ export function pathProblem(error, flag) {
   const code = error?.code;
   const where = error?.path ?? "a part of the path";
   if (code === "EEXIST" || code === "ENOTDIR") {
-    return `${where} is a file, not a directory, so ${flag} cannot go there; pass a path that is not inside or on a file (see --help)`;
+    return `a file is in the way of ${where}, which must be a directory; pass another ${flag} path (--help shows usage)`;
   }
-  if (code === "EISDIR") return `${where} is a directory, so ${flag} cannot be written there; pass a file path (see --help)`;
+  if (code === "EISDIR") return `${where} is a directory; ${flag} needs a file path (--help shows usage)`;
   return null;
 }

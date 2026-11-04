@@ -20,7 +20,7 @@ test("evidence: EVIDENCE_OUT under a file is one plain line, exit 1", () => {
     const lines = r.stderr.trim().split("\n");
     assert.equal(lines.length, 1, r.stderr);
     assert.doesNotMatch(r.stderr, /EEXIST|ENOTDIR|EISDIR/);
-    assert.match(r.stderr, /is a file, not a directory/);
+    assert.match(r.stderr, /a file is in the way/);
     assert.match(r.stderr, /EVIDENCE_OUT/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
