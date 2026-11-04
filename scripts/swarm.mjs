@@ -16,6 +16,7 @@ import { DEFAULT_LOOP_EVERY, runMemoryLoop } from "../src/memory/loop.mjs";
 import { parseSummaryEvery } from "../src/memory/summarizer.mjs";
 import { AGENTS } from "../src/traits/agents.mjs";
 import { assertSafeOutDir, clearOwnedFiles } from "../src/util/outdir.mjs";
+import { pathProblem } from "../src/util/path-problem.mjs";
 
 const USAGE = `Usage: node scripts/swarm.mjs [--rounds N] [--seed N] [--every N] [--out DIR]
   --rounds N  swarm rounds, 1 to ${MAX_ROUNDS} (default 5)
@@ -101,7 +102,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     }
     await writeFile(join(opts.out, "memory-loop.json"), `${JSON.stringify(memory, null, 2)}\n`);
   } catch (error) {
-    console.error(`swarm: cannot write to ${JSON.stringify(opts.out)}: ${error.message}`);
+    console.error(`swarm: cannot write to ${JSON.stringify(opts.out)}: ${pathProblem(error, "--out") ?? error.message}`);
     return 1;
   }
   log(result.transcript.trimEnd());
