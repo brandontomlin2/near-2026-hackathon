@@ -25,7 +25,8 @@ const LABELS = Object.freeze({
 
 function clean(text) {
   const flat = replaceUnsafeChars(text).replace(/\s+/g, " ").trim();
-  return flat.length > MAX_VALUE_CHARS ? `${flat.slice(0, MAX_VALUE_CHARS - 3).trimEnd()}...` : flat;
+  const chars = Array.from(flat); // code points, so clipping never splits a surrogate pair
+  return chars.length > MAX_VALUE_CHARS ? `${chars.slice(0, MAX_VALUE_CHARS - 3).join("").trimEnd()}...` : flat;
 }
 
 /**
