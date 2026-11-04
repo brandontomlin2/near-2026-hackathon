@@ -13,6 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runDemo } from "../src/demo/pipeline.mjs";
+import { pathProblem } from "../src/util/path-problem.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const ASSET_DIR = path.join(ROOT, "docs", "img");
@@ -122,7 +123,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       writeAssets(await generateAssets(), opts.dir);
     } catch (e) {
       // An unwritable --out is a runtime failure: one line, no stack trace, exit 1.
-      console.error(`readme-asset: cannot write ${opts.dir}: ${e.message}`);
+      console.error(`readme-asset: cannot write ${opts.dir}: ${pathProblem(e, "--out") ?? e.message}`);
       process.exitCode = 1;
     }
   }

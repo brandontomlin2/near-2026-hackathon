@@ -1,0 +1,22 @@
+# captured 2026-11-04T05:26:33Z via https://rpc.testnet.near.org view calls (no tx)
+public_key domain_id=0: {"block_height": 276151864, "value": "secp256k1:4NfTiv3UsGahebgTaHyD9vF8KYKMBnfd6kh94mK6xv8fGBiJB8TBtFMP5WWXz6B89Ac1fbpzPwAvoyQebemHFwx3"}
+public_key domain_id=1: {"block_height": 276151869, "value": "ed25519:6vSEtQxrQj6txUMh33WC4ERyCWmNMRTdufDWAaDY3Un2"}
+derived_public_key predecessor=yield-agent.testnet path=yield-vault-1 domain_id=1: {"block_height": 276151874, "value": "ed25519:4FLkw3i5QV11843yboCvBJ4jdSg3ijyLUxzhN47RRdDM"}
+derived_public_key predecessor=shade-agent.testnet path=vault domain_id=1: {"block_height": 276151879, "value": "ed25519:7V9KiQxMVzzYQ9gEi8qZZNxnzGCiB52LP1aRSvEjZJpy"}
+derived_public_key predecessor=alice.testnet path=ed25519-1 domain_id=1: {"block_height": 276151885, "value": "ed25519:FrVhMhww95UzBDUiJRnzkFE3hKNcfCHz3LM1uAryjttn"}
+config: {"block_height": 276151890, "value": {"key_event_timeout_blocks": 150, "tee_upgrade_deadline_duration_seconds": 604800, "apply_contract_update_tera_gas": 50, "sign_call_gas_attachment_requirement_tera_gas": 15, "ckd_call_gas_attachment_requirement_tera_gas": 15, "return_signature_and_clean_state_on_success_call_tera_gas": 7, "return_ck_and_clean_state_on_success_call_tera_gas": 7, "fail_on_timeout_tera_gas": 2, "fail_attestation_submission_tera_gas": 2, "clean_tee_status_tera_gas": 10, "clean_invalid_attestations_tera_gas": 15, "cleanup_orphaned_node_migrations_tera_gas": 7, "remove_non_participant_update_votes_tera_gas": 5, "clean_foreign_chain_data_tera_gas": 8, "remove_non_participant_tee_verifier_votes_tera_gas": 5, "verifier_tera_gas": 200, "resolve_verification_tera_gas": 60, "launcher_hash_unused_ttl_seconds": 1814400, "attestation_storage_fee_millinear": 20}}
+
+# Reproduction (documentation only; these calls were NOT re-run when this section was written).
+# Every line above is the result of one JSON-RPC `query` / `call_function` on https://rpc.testnet.near.org:
+#   {"jsonrpc":"2.0","id":"x","method":"query","params":{"request_type":"call_function","finality":"final","account_id":"v1.signer-prod.testnet","method_name":"<METHOD>","args_base64":"<base64 of the JSON args below>"}}
+# The result bytes are a JSON array of char codes; decode them as UTF-8 to get the "value" shown above.
+# (block_height above is the block each call was served at; the "final" head moves, so heights will differ on replay.)
+#
+# line 2  method_name=public_key         args={"domain_id":0}
+# line 3  method_name=public_key         args={"domain_id":1}
+# line 4  method_name=derived_public_key args={"path":"yield-vault-1","predecessor":"yield-agent.testnet","domain_id":1}
+# line 5  method_name=derived_public_key args={"path":"vault","predecessor":"shade-agent.testnet","domain_id":1}
+# line 6  method_name=derived_public_key args={"path":"ed25519-1","predecessor":"alice.testnet","domain_id":1}
+# line 7  method_name=config             args={}
+# contract for all: v1.signer-prod.testnet. Arg key names follow the MPC contract view ABI as recalled when the capture was made;
+# confirm against the contract before relying on them (the capture script itself was not kept).

@@ -99,7 +99,7 @@ test("README step 3 quotes what npm run ask really prints, and npm run demo rese
     assert.ok(!hostile[3].stdout.includes("+ Public enemy #1:"), "the fourth ask does not change the enemy line");
     assert.ok(hostile[4].stdout.includes("\n  + Public enemy #1: Owner (5 fights).\n"), hostile[4].stdout);
     assert.ok(hostile[5].stdout.includes("\n  + Public enemy #1: Owner (6 fights).\n"), hostile[5].stdout);
-    assert.ok(step3.includes("six times: the fifth diff makes the Owner public enemy #1 (`+ Public enemy #1: Owner (5 fights).`"));
+    assert.ok(step3.includes("six times: the fifth of the six runs makes the Owner public enemy #1 (`+ Public enemy #1: Owner (5 fights).`"));
     assert.ok(step3.includes("the sixth only raises the count, so after six runs the line reads `Public enemy #1: Owner (6 fights).`"));
     const enemy = await ask("who is your enemy?");
     const answer = enemy.stdout.split("\n")[0];
@@ -507,5 +507,5 @@ test("README swarm steps read out/swarm before the seed 2 run overwrites it, and
   assert.ok(!readmeText.includes("deploy, mint and anchor are dry runs"));
   assert.ok(readmeText.includes("about 1 to 2 minutes measured"));
   assert.ok(!readmeText.includes("about 20 to 30 seconds"));
-  assert.ok(readmeText.includes("the fifth diff makes the Owner public enemy #1") && readmeText.includes("the sixth only raises the count"));
+  assert.ok(readmeText.includes("the fifth of the six runs makes the Owner public enemy #1") && readmeText.includes("the sixth only raises the count"));
 });

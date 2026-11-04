@@ -11,6 +11,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { plural } from "../src/util/plural.mjs";
+import { pathProblem } from "../src/util/path-problem.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const DEFAULT_OUT = join(ROOT, "out", "page.png");
@@ -104,7 +105,7 @@ export function run({ candidates = BROWSER_CANDIDATES, exists = existsSync, out 
       mkdirSync(dirname(out), { recursive: true });
     } catch (e) {
       // An unwritable --out is a runtime failure: one line, no stack trace, exit 1.
-      err(`screenshot: cannot write ${out}: ${e.message}`);
+      err(`screenshot: cannot write ${out}: ${pathProblem(e, "--out") ?? e.message}`);
       return 1;
     }
     const shot = spawnSync(browser, [
