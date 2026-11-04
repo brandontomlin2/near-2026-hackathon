@@ -18,7 +18,7 @@ import { assertSafeOutDir, describeWriteFailure } from "../src/util/outdir.mjs";
 function assertWritableDir(dir) {
   let probe = resolve(dir);
   while (!existsSync(probe)) probe = dirname(probe);
-  if (!statSync(probe).isDirectory()) throw Object.assign(new Error(`ENOTDIR: not a directory, ${probe}`), { code: "ENOTDIR" });
+  if (!statSync(probe).isDirectory()) throw new Error(`cannot create ${dir}: ${probe} is not a directory`);
   accessSync(probe, constants.W_OK);
 }
 
@@ -62,7 +62,6 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     const value = argv[i + 1];
-    if (value === undefined && (flag === "--style" || flag === "--out")) throw new Error(`${flag} needs a value`);
     if (flag === "--style") {
       if (!value || value.startsWith("-")) throw new Error(`--style needs a name, got ${JSON.stringify(value)}`);
       if (value !== "all") getStyle(value); // throws "unknown style" with the valid names

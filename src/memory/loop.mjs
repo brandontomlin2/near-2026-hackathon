@@ -63,11 +63,6 @@ export function diffSheets(previous, next) {
   };
 }
 
-/** Throw if an explicit --every exceeds --rounds. Shared by npm run demo and npm run swarm. */
-export function assertEveryWithinRounds(every, rounds) {
-  if (every > rounds) throw new Error(`--every (${every}) must not exceed --rounds (${rounds}), or no character sheet is written`);
-}
-
 /**
  * Rounds that get a sheet: every `every`-th round, plus the final round so the
  * last sheet always covers the whole run and links to the final round hash.

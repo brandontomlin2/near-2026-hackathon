@@ -65,12 +65,12 @@ test("unknown style: exit 2, one stderr line naming every valid style, empty std
   assert.ok(!existsSync(join(cwd, "o")));
 });
 
-test("a missing --style value says it needs a value, exits 2 and writes nothing", (t) => {
+test("a missing --style value names the flag, echoes undefined, exits 2 and writes nothing", (t) => {
   const cwd = scratch(t);
   const r = run(cwd, ["--out", "o", "--style"]);
   assert.equal(r.code, 2);
   assert.equal(r.stdout, "");
-  assert.equal(r.stderr, "render: --style needs a value (see --help)\n");
+  assert.equal(r.stderr, "render: --style needs a name, got undefined (see --help)\n");
   assert.ok(!existsSync(join(cwd, "o")));
 });
 

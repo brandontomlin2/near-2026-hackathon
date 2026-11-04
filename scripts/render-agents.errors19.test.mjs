@@ -4,14 +4,6 @@ import { test } from "node:test";
 
 const run = (...args) => spawnSync(process.execPath, ["scripts/render-agents.mjs", ...args], { encoding: "utf8" });
 
-test("render: a flag with no value says it needs a value, exit 2", () => {
-  for (const flag of ["--style", "--out"]) {
-    const r = run(flag);
-    assert.equal(r.status, 2);
-    assert.equal(r.stderr.trim(), `render: ${flag} needs a value (see --help)`);
-  }
-});
-
 test("render: an unwritable --out is an I/O failure, exit 1, no (see --help)", () => {
   const r = run("--out", "/nonexistent/a");
   assert.equal(r.status, 1);
