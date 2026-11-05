@@ -10,7 +10,7 @@
 // The summary call goes through src/inference/client.mjs, so mock mode (the
 // default) stays deterministic and needs no keys.
 
-import { mkdir, readFile, rename, writeFile, appendFile, truncate } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile, appendFile, truncate, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
 import { hashSheet } from "../anchor/hash.mjs";
@@ -341,8 +341,18 @@ export function createMemoryStore(root) {
       await mkdir(dir, { recursive: true });
       const target = join(dir, "sheet.json");
       const temp = `${target}.tmp`;
-      await writeFile(temp, `${JSON.stringify(record, null, 2)}\n`, "utf8");
-      await rename(temp, target);
+      try {
+        await writeFile(temp, `${JSON.stringify(record, null, 2)}\n`, "utf8");
+        await rename(temp, target);
+      } catch (err) {
+        // Do not leave the temp file behind; the original error is the one that matters.
+        try {
+          await unlink(temp);
+        } catch {
+          // nothing to remove, or not removable
+        }
+        throw err;
+      }
     },
   };
 }
