@@ -20,14 +20,13 @@ import { AGENTS } from "../src/traits/agents.mjs";
 import { assertSafeOutDir } from "../src/util/outdir.mjs";
 import { AGENT_IDS, runRound } from "../src/yield/debate.mjs";
 import { createLedger, formatScoreboard, formatUsd } from "../src/yield/ledger.mjs";
-import { yieldMockResponder } from "../src/yield/mock.mjs";
+import { MOCK_EPOCH_MS, yieldMockResponder } from "../src/yield/mock.mjs";
 import { loadPoolFixture } from "../src/yield/pools.mjs";
 import { dayOf, validateVaultConfig } from "../src/yield/rules.mjs";
 import { RefusalError, assertNotMainnet, assertSendAllowed, buildExecuteSwapArgv, formatCommand } from "../src/yield/send.mjs";
 import { PLACEHOLDER_RUNNER, PLACEHOLDER_VAULT, defaultVaultConfig, strategyFor } from "../src/yield/strategies.mjs";
 
 const MAX_ROUNDS = 50;
-const MOCK_EPOCH_MS = Date.UTC(2026, 10, 3);
 /** A --vault-state snapshot older than this is refused: the chain is the authority, the file is only a cache. */
 export const MAX_VAULT_STATE_AGE_MS = 10 * 60 * 1000;
 const MAX_CLOCK_SKEW_MS = 60 * 1000;
@@ -311,7 +310,7 @@ function renderAgent(d, round, sending) {
     const p = d.proposal;
     lines.push(`  proposal: pool ${p.pool_id} ${p.token_in} -> ${p.token_out}, amount_in ${p.amount_in}, min_amount_out ${p.min_amount_out}`);
     lines.push(`  why: ${p.rationale}`);
-    lines.push(`  vault rules (off chain): ${d.hard.ok ? "OK" : `${d.hard.code}: ${d.hard.reason}`}`);
+    lines.push(`  vault rules (off chain): ${d.hard.ok ? "OK" : d.hard.reason}`);
     lines.push(`  strategy checks: ${d.soft.ok ? "OK" : d.soft.violations.map((v) => `${v.code}: ${v.reason}`).join("; ")}`);
   }
   if (d.veto) lines.push(`  VETOED by ${d.veto.by}: ${d.veto.reason}`);

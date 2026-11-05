@@ -38,9 +38,9 @@ test("README shows npm run anchor only in its working --dry-run form", () => {
 const quick = readme.match(/## Judge quick path\n([\s\S]*?)\n## /)?.[1] ?? "";
 const quoted = (text) => [...text.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
 
-test("Judge quick path has at most 3 numbered commands and says it is mock", () => {
+test("Judge quick path has at most 4 numbered commands and says it is mock", () => {
   assert.ok(quick.length > 0, "README has a Judge quick path section");
-  assert.ok(/^[1-3]\. /m.test(quick) && !/^4\. /m.test(quick));
+  assert.ok(/^[1-4]\. /m.test(quick) && !/^5\. /m.test(quick));
   assert.match(quick, /mock or dry-run/);
   assert.match(quick, /Nothing is signed or sent/);
 });

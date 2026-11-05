@@ -92,6 +92,9 @@ export function yieldMockResponder(request) {
   return JSON.stringify(propose(facts, fixture));
 }
 
+/** The fixed clock of every mock run (2026-11-03 00:00 UTC), so the mock output is the same bytes every time. */
+export const MOCK_EPOCH_MS = Date.UTC(2026, 10, 3);
+
 /** A mock inference client wired to the yield responder. */
 export function createYieldMockClient() {
   return createMockClient({ model: "mock-yield", responder: yieldMockResponder });

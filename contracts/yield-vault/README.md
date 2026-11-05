@@ -4,7 +4,7 @@ What it is: a near-sdk Rust smart contract that holds NEP-141 token balances for
 
 A per-personality-NFT trading vault. Each personality NFT (aloof, chaotic, social, skeptic) is an AI agent running a strategy off chain. The agent acts only through approved **runner** accounts, and this contract enforces hard limits on chain regardless of what the strategy proposes. Approved swaps run on the Rhea (Ref Finance) testnet exchange `ref-finance-101.testnet` with the deposit -> swap -> withdraw pattern. wNEAR is `wrap.testnet`.
 
-**Status: NOT deployed.** A testnet deploy needs the human's explicit yes. Tested with unit tests only (`cargo test`, 244 tests). See "Known risks".
+**Status: NOT deployed.** A testnet deploy needs the human's explicit yes. Tested with unit tests only (`cargo test`, 245 tests). See "Known risks".
 
 **Not measured, not tested against Ref:**
 - Every gas figure here, including the 280 TGas `execute_swap` minimum, is arithmetic over the static constants in `src/lib.rs`. None was measured on a sandbox, testnet or mainnet. The unit-test VM charges receipt fees, and tests check that each entry point fits in exactly its minimum there. That catches a minimum too small to pay for its own promises. It says nothing about what Ref's `ft_on_transfer`, `swap`, `withdraw` or `get_deposit` really cost.
@@ -177,7 +177,7 @@ NEP-297, `standard: "yield_vault"`, `version: "1.0.0"`: `deposit`, `withdraw`, `
 
 ```
 cd contracts/yield-vault
-cargo test                                          # 244 unit tests
+cargo test                                          # 245 unit tests
 cargo clippy --all-targets
 cargo build --target wasm32-unknown-unknown --release
 ```
@@ -196,7 +196,7 @@ Fixed after the audit:
 - Medium, no escape from a stuck `in_flight` lock: `started_at` plus owner `force_release_lock` after 10 minutes, with swap ids so late callbacks cannot touch a newer swap.
 - Medium, `recover_from_ref` during a swap: rejected with `ERR_SWAP_IN_FLIGHT`. `update_config` is rejected the same way. A follow-up review found the reverse case (a swap or second recovery starting while a recovery's reconcile was still pending, so the two reconciles misread each other's Ref balance); a recovery now holds its own lock until its reconcile runs.
 - Low, dead `_reserved` storage map: removed.
-- The audit found zero tests; there are now 244 unit tests. No sandbox or testnet test exists.
+- The audit found zero tests; there are now 245 unit tests. No sandbox or testnet test exists.
 
 Fixed after a second review (`/tmp/yrev26-report.md`):
 

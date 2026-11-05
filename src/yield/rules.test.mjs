@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { floorMinOut, loadPoolFixture } from "./pools.mjs";
-import { HARD_RULE_ORDER, checkProposal, dayOf, validateVaultConfig } from "./rules.mjs";
+import { HARD_RULE_ORDER, U128_MAX, checkProposal, dayOf, spentOn, validateVaultConfig } from "./rules.mjs";
 import { NUSDC, NUSDT, RFT, WNEAR, PLACEHOLDER_RUNNER, defaultVaultConfig } from "./strategies.mjs";
 
 const fixture = loadPoolFixture();
@@ -28,7 +28,7 @@ function stableProposal(amount, overrides = {}) {
 const check = (p, state = freshState(), nowMs = NOW) => checkProposal(p, config, state, RUNNER, nowMs);
 
 test("a valid proposal at the price floor passes", () => {
-  assert.deepEqual(check(stableProposal(5000)), { ok: true, code: null, reason: "ok" });
+  assert.deepEqual(check(stableProposal(5000)), { ok: true, code: null, reason: "" });
 });
 
 test("a proposal one unit below the pool's price floor is ERR_PRICE_FLOOR", () => {
@@ -121,27 +121,96 @@ test("hard rules are checked in the documented order", () => {
   assert.ok(HARD_RULE_ORDER.indexOf("ERR_NO_LIMIT") < HARD_RULE_ORDER.indexOf("ERR_MAX_TRADE"));
 });
 
-test("validateVaultConfig accepts the default configs and flags bad limits and rates", () => {
+test("reasons are the contract's exact ERR_CODE: detail strings", () => {
+  const p = stableProposal(5000);
+  assert.equal(checkProposal(p, config, freshState(), "bob.testnet", NOW).reason, "ERR_NOT_RUNNER: bob.testnet is not an approved runner");
+  assert.equal(check(p, { ...freshState(), paused: true }).reason, "ERR_PAUSED: vault is paused");
+  assert.equal(check(p, { ...freshState(), in_flight: true }).reason, "ERR_SWAP_IN_FLIGHT: another swap is in flight");
+  assert.equal(check({ ...p, pool_id: 99 }).reason, "ERR_POOL_NOT_ALLOWED: pool 99");
+  assert.equal(check({ ...p, amount_in: "0" }).reason, "ERR_ZERO_AMOUNT: amount_in must be > 0");
+  const max = BigInt(limit(NUSDT).max_trade);
+  assert.equal(check(stableProposal(max + 1n)).reason, `ERR_MAX_TRADE: ${max + 1n} exceeds max_trade ${max}`);
+});
+
+test("a Ref recovery in flight blocks the swap, after the paused and swap-in-flight checks", () => {
+  const p = stableProposal(5000);
+  const r = check(p, { ...freshState(), recovery_in_flight: true });
+  assert.deepEqual(r, { ok: false, code: "ERR_SWAP_IN_FLIGHT", reason: "ERR_SWAP_IN_FLIGHT: a Ref recovery is in flight" });
+  assert.equal(check(p, { ...freshState(), recovery_in_flight: true, in_flight: true }).reason, "ERR_SWAP_IN_FLIGHT: another swap is in flight");
+  assert.equal(check(p, { ...freshState(), recovery_in_flight: true, paused: true }).code, "ERR_PAUSED");
+});
+
+test("a daily total that overflows u128 is ERR_DAILY_CAP (checked_add)", () => {
+  const huge = { ...config, limits: config.limits.map((l) => (l.token_id === NUSDT ? { ...l, daily_cap: U128_MAX.toString() } : l)) };
+  const state = freshState();
+  state.spent = { day: dayOf(NOW), amounts: { [NUSDT]: U128_MAX.toString() } };
+  const r = checkProposal(stableProposal(5000), huge, state, RUNNER, NOW);
+  assert.equal(r.code, "ERR_DAILY_CAP");
+  assert.equal(r.reason, `ERR_DAILY_CAP: spent ${U128_MAX} + 5000 exceeds daily_cap ${U128_MAX}`);
+});
+
+test("rules accept BigInt amounts and rates as well as decimal strings", () => {
+  const big = {
+    ...config,
+    allowed_pools: config.allowed_pools.map((q) => ({ ...q, min_rate_a_to_b: { num: BigInt(q.min_rate_a_to_b.num), den: BigInt(q.min_rate_a_to_b.den) }, min_rate_b_to_a: { num: BigInt(q.min_rate_b_to_a.num), den: BigInt(q.min_rate_b_to_a.den) } })),
+    limits: config.limits.map((l) => ({ ...l, max_trade: BigInt(l.max_trade), daily_cap: BigInt(l.daily_cap) })),
+  };
+  const p = stableProposal(5000);
+  const state = { ...freshState(), balances: { [NUSDT]: 1_000_000_000n } };
+  assert.equal(checkProposal({ ...p, amount_in: 5000n, min_amount_out: BigInt(p.min_amount_out) }, big, state, RUNNER, NOW).ok, true);
+});
+
+test("spentOn counts only the stored day and only the named token", () => {
+  const state = { spent: { day: 5, amounts: { a: "7" } } };
+  assert.equal(spentOn(state, "a", 5), 7n);
+  assert.equal(spentOn(state, "b", 5), 0n);
+  assert.equal(spentOn(state, "a", 6), 0n);
+  assert.equal(spentOn({}, "a", 5), 0n);
+});
+
+test("dayOf is the UTC day: ms -> the contract's ns / NS_PER_DAY", () => {
+  assert.equal(dayOf(0), 0);
+  assert.equal(dayOf(86_400_000 - 1), 0);
+  assert.equal(dayOf(86_400_000), 1);
+  assert.equal(dayOf(Date.UTC(2026, 10, 4, 12)), 20761);
+});
+
+const cfg = () => structuredClone(defaultVaultConfig("skeptic", { fixture }));
+
+test("validateVaultConfig accepts the default configs", () => {
   for (const id of ["aloof", "chaotic", "social", "skeptic"]) assert.deepEqual(validateVaultConfig(defaultVaultConfig(id, { fixture })), []);
+});
+
+test("validateVaultConfig returns the contract's ERR_BAD_CONFIG messages", () => {
   const bad = {
-    allowed_pools: [{ pool_id: 1, min_rate_a_to_b: { num: "0", den: "1" }, min_rate_b_to_a: { num: "1", den: "1" } }],
+    strategy: "yolo",
+    allowed_pools: [{ pool_id: 1, token_a: "a", token_b: "a", min_rate_a_to_b: { num: "0", den: "1" }, min_rate_b_to_a: { num: "1", den: "0" } }],
     limits: [
       { token_id: NUSDT, max_trade: "10", daily_cap: "5" },
       { token_id: NUSDT, max_trade: "0", daily_cap: "5" },
     ],
+    runners: ["r.testnet", "r.testnet"],
   };
-  const problems = validateVaultConfig(bad);
-  assert.ok(problems.some((m) => m.includes("min_rate_a_to_b")));
-  assert.ok(problems.some((m) => m.includes("duplicate limit")));
-  assert.ok(problems.some((m) => m.includes("max_trade is zero")));
-  assert.ok(problems.some((m) => m.includes("exceeds daily_cap")));
+  assert.deepEqual(validateVaultConfig(bad), [
+    "ERR_BAD_CONFIG: strategy must be aloof, chaotic, social or skeptic",
+    "ERR_BAD_CONFIG: daily_cap must be >= max_trade",
+    "ERR_BAD_CONFIG: max_trade must be > 0",
+    "ERR_BAD_CONFIG: duplicate limit token",
+    "ERR_BAD_CONFIG: rate num and den must be > 0",
+    "ERR_BAD_CONFIG: rate num and den must be > 0",
+    "ERR_BAD_CONFIG: token_a must differ from token_b",
+    "ERR_BAD_CONFIG: duplicate runner",
+  ]);
 });
 
-test("validateVaultConfig mirrors the contract's strategy, pool and runner checks", () => {
-  const good = defaultVaultConfig("skeptic", { fixture });
-  const pool = good.allowed_pools[0];
-  assert.ok(validateVaultConfig({ ...good, strategy: "yolo" }).some((m) => m.startsWith("strategy must be one of")));
-  assert.ok(validateVaultConfig({ ...good, allowed_pools: [pool, pool] }).some((m) => m.includes(`duplicate pool ${pool.pool_id}`)));
-  assert.ok(validateVaultConfig({ ...good, allowed_pools: [{ ...pool, token_b: pool.token_a }] }).some((m) => m.includes("token_a must differ")));
-  assert.ok(validateVaultConfig({ ...good, runners: ["r.testnet", "r.testnet"] }).includes("duplicate runner"));
+test("validateVaultConfig: daily_cap equal to max_trade is fine; duplicate pool and zero den are not", () => {
+  const c = cfg();
+  c.limits[0].daily_cap = c.limits[0].max_trade;
+  assert.deepEqual(validateVaultConfig(c), []);
+  const d = cfg();
+  d.allowed_pools.push({ ...d.allowed_pools[0] });
+  assert.deepEqual(validateVaultConfig(d), ["ERR_BAD_CONFIG: duplicate pool"]);
+  const z = cfg();
+  z.allowed_pools[0].min_rate_b_to_a = { num: "1", den: "0" };
+  assert.deepEqual(validateVaultConfig(z), ["ERR_BAD_CONFIG: rate num and den must be > 0"]);
 });
