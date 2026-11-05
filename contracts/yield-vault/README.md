@@ -6,6 +6,8 @@ A per-personality-NFT trading vault. Each personality NFT (aloof, chaotic, socia
 
 **Status: NOT deployed.** A testnet deploy needs the human's explicit yes. Tested with unit tests only (`cargo test`, 219 tests). See "Known risks".
 
+Live testnet runbook (every step, cost, failure handling, verification table): [../../docs/yield-vault-live-runbook.md](../../docs/yield-vault-live-runbook.md).
+
 **Not measured, not tested against Ref:**
 - Every gas figure here, including the 280 TGas `execute_swap` minimum, is arithmetic over the static constants in `src/lib.rs`. None was measured on a sandbox, testnet or mainnet. The unit-test VM charges receipt fees, and tests check that each entry point fits in exactly its minimum there. That catches a minimum too small to pay for its own promises. It says nothing about what Ref's `ft_on_transfer`, `swap`, `withdraw` or `get_deposit` really cost.
 - The Ref method names and argument shapes (`ft_transfer_call` with `msg: ""`, `swap { actions, referral_id }`, `withdraw { token_id, amount, unregister, skip_unwrap_near }`, `get_deposit { account_id, token_id }`, `storage_deposit { account_id, registration_only }`) were written from Ref's public interface and have never run against a real Ref contract. The unit tests feed hand-built promise results to the callbacks. They cannot catch a wrong method name, a wrong argument or a wrong return shape.
