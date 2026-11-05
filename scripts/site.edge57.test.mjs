@@ -86,6 +86,12 @@ describe("site CLI: directory handling", () => {
     assert.deepEqual(fs.readdirSync(absCwd), []);
   });
 
+  it("a trailing slash gives a normal ready line with no doubled slash", () => {
+    const last = absRun.out.trimEnd().split("\n").at(-1);
+    assert.ok(last.startsWith(`Site ready: ${abs}/index.html `), last);
+    assert.doesNotMatch(last, /\/\/index\.html/);
+  });
+
   it("the printed Site ready path is the real index.html", () => {
     const m = absRun.out.match(/^Site ready: (.+?\/index\.html) \(/m);
     assert.ok(m, absRun.out);
