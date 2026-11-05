@@ -66,7 +66,7 @@ const style = { ...real, render(t, o) { const svg = real.render(t, ${opts}); ret
 runStyleContract(style);
 `,
     );
-    return spawnSync(process.execPath, ["--test", `--test-name-pattern=${namePattern}`, file], {
+    return spawnSync(process.execPath, ["--test", "--test-reporter=tap", `--test-name-pattern=${namePattern}`, file], {
       encoding: "utf8",
       timeout: 60000,
       // Inside `node --test` this variable makes a child report to the parent runner instead of exiting non-zero.
