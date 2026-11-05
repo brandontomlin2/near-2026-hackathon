@@ -41,6 +41,8 @@ print WARN lines and record SKIP. Planned npm scripts are:
   anchor       dry-run round-hash determinism check (always mock, never signs)
   yield:demo:check  runs the yield demo with a timeout; PASS only if plan.json is a dry run
                (signed false, sent false, 4 calls planned, 0 signed) with 4 matching rule rejections
+  yield:shade:check  runs yield:shade:dry-run under a guard (no near CLI, network or subprocess call);
+               PASS only if it is a testnet dry run (signed false, sent false) and refused flags exit 1
 
 The mock evidence stage passes only for placeholder entries marked mock.
 A missing planned script prints SKIP (not built yet) and does not fail.
@@ -100,7 +102,7 @@ print_summary() {
   # each one has a row, so a lost results file can never look like a clean pass.
   local expected_stages=(
     "fresh clone" "workflows" "symlinks" "secret files" "npm install" "tests"
-    "secret scan" "deploy nft" "mint" "swarm" "demo" "round hash" "yield" "yield demo" "vault tests"
+    "secret scan" "deploy nft" "mint" "swarm" "demo" "round hash" "yield" "yield demo" "yield shade" "vault tests"
     "evidence"
   )
   local status stage detail seen=$'\n' missing=""
@@ -685,6 +687,8 @@ planned "round hash" "anchor" mock --dry-run --check
 planned "yield" "yield" mock
 # Yield demo: runs npm run yield:demo with a timeout and checks plan.json (dry run, 4 calls, 4 rule rejections).
 planned "yield demo" "yield:demo:check" mock
+# Yield shade: runs the Shade dry run under a no-near-CLI, no-network, no-subprocess guard and checks it never signs or sends.
+planned "yield shade" "yield:shade:check" mock
 
 # Yield vault contract unit tests. The build cache is the source checkout's
 # gitignored target/ so a fresh clone does not recompile near-sdk every run.
