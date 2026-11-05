@@ -295,3 +295,114 @@ test("L3: --send does not write simulated P&L into the ledger", async () => {
     rmSync(out, { recursive: true, force: true });
   }
 });
+
+// --- raw get_state() as the Rust contract serializes it: [token, amount] pairs, U128 strings ---
+
+const TODAY = Math.floor(NOW_MS / 86_400_000);
+
+/** The documented get_state() JSON (contracts/yield-vault VaultState), funded like the demo state. */
+function rawState(over = {}) {
+  return {
+    owner_id: "owner.x.testnet",
+    nft_contract_id: "nft.x.testnet",
+    token_id: "1",
+    ref_exchange_id: "ref-finance-101.testnet",
+    paused: false,
+    swap_in_flight: false,
+    recovery_in_flight: false,
+    release_in_flight: false,
+    day: TODAY,
+    spent_today: [],
+    balances: Object.entries(initialState().balances),
+    stranded_on_ref: [],
+    unverified_on_ref: [],
+    swaps_executed: 0,
+    ...over,
+  };
+}
+const sendRaw = (state) => run([...SEND, "--vault-state", vaultStateFile({ state })], TESTNET_ENV, { hasNear: () => true });
+
+test("raw get_state(): a funded proposal within limits is accepted and one swap is sent", async () => {
+  const r = await sendRaw(rawState());
+  assert.equal(r.code, 0, r.stderr);
+  assert.ok(r.calls.length >= 1, "pairs-shaped balances must fund the proposal");
+  assert.ok(r.calls.every((c) => c.args.includes("execute_swap")));
+});
+
+test("raw get_state(): spent_today already at the daily cap rejects with ERR_DAILY_CAP", async () => {
+  const config = defaultVaultConfig("skeptic", { runner: "runner.x.testnet" });
+  const spent_today = config.limits.map((l) => [l.token_id, l.daily_cap]);
+  const r = await run([...SEND, "--json", "--vault-state", vaultStateFile({ state: rawState({ spent_today }) })], TESTNET_ENV, { hasNear: () => true });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.calls, []);
+  assert.match(r.stdout, /ERR_DAILY_CAP/);
+});
+
+test("raw get_state(): swap, recovery or release in flight each reject with ERR_SWAP_IN_FLIGHT", async () => {
+  for (const flag of ["swap_in_flight", "recovery_in_flight", "release_in_flight"]) {
+    const r = await run([...SEND, "--json", "--vault-state", vaultStateFile({ state: rawState({ [flag]: true }) })], TESTNET_ENV, { hasNear: () => true });
+    assert.equal(r.code, 0, `${flag}: ${r.stderr}`);
+    assert.deepEqual(r.calls, [], flag);
+    assert.match(r.stdout, /ERR_SWAP_IN_FLIGHT/, flag);
+  }
+});
+
+test("raw get_state(): paused rejects", async () => {
+  const r = await sendRaw(rawState({ paused: true }));
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.calls, []);
+});
+
+test("raw get_state(): an empty or short balances list rejects with ERR_INSUFFICIENT_BALANCE", async () => {
+  for (const balances of [[], Object.entries(initialState().balances).map(([t]) => [t, "1"])]) {
+    const r = await run([...SEND, "--json", "--vault-state", vaultStateFile({ state: rawState({ balances }) })], TESTNET_ENV, { hasNear: () => true });
+    assert.equal(r.code, 0, r.stderr);
+    assert.deepEqual(r.calls, []);
+    assert.match(r.stdout, /ERR_INSUFFICIENT_BALANCE/);
+  }
+});
+
+test("raw get_state(): spent_today from a previous day does not count", async () => {
+  const config = defaultVaultConfig("skeptic", { runner: "runner.x.testnet" });
+  const spent_today = config.limits.map((l) => [l.token_id, l.daily_cap]);
+  const r = await sendRaw(rawState({ day: TODAY - 1, spent_today }));
+  assert.equal(r.code, 0, r.stderr);
+  assert.ok(r.calls.length >= 1, "yesterday's spend must not block today's swap");
+});
+
+test("raw get_state(): a day in the future is refused", async () => {
+  const r = await sendRaw(rawState({ day: TODAY + 1 }));
+  assert.equal(r.code, 1);
+  assert.deepEqual(r.calls, []);
+});
+
+test("raw get_state(): malformed pairs, amounts, flags or duplicates are refused and nothing is sent", async () => {
+  const [tok] = Object.keys(initialState().balances);
+  const bad = [
+    { balances: [[tok]] },
+    { balances: [[tok, "1", "2"]] },
+    { balances: [[tok, 5]] },
+    { balances: [[tok, "-1"]] },
+    { balances: [[tok, "1.5"]] },
+    { balances: [[tok, "0x10"]] },
+    { balances: [[tok, "01"]] },
+    { balances: [[tok, "340282366920938463463374607431768211456"]] },
+    { balances: [["", "1"]] },
+    { balances: [[tok, "1"], [tok, "2"]] },
+    { balances: { [tok]: "1" } },
+    { spent_today: [[tok, "x"]] },
+    { spent_today: "none" },
+    { swap_in_flight: undefined },
+    { recovery_in_flight: "false" },
+    { release_in_flight: undefined },
+    { paused: undefined },
+    { day: "5" },
+    { day: -1 },
+  ];
+  for (const o of bad) {
+    const r = await sendRaw(rawState(o));
+    assert.equal(r.code, 1, JSON.stringify(o));
+    assert.match(r.stderr, /--vault-state state/, JSON.stringify(o));
+    assert.deepEqual(r.calls, [], JSON.stringify(o));
+  }
+});

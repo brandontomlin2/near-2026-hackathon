@@ -39,7 +39,7 @@ const USAGE = `Usage: node scripts/yield.mjs [--agent ID] [--rounds N] [--json] 
   --json        print one JSON document instead of text
   --out DIR     where the track record goes: DIR/yield/ledger.json (default out; rewritten each run)
   --vault-state FILE  JSON {"config": <get_config()>, "state": <get_state()>} of the target vault
-                (state: paused, in_flight, spent {day, amounts}, balances), plus "fetched_at" (ISO time) and
+                (state: the raw get_state() JSON; balances and spent_today are [token, amount] pairs), plus "fetched_at" (ISO time) and
                 "block_height" of the view calls. Required with --send: proposals are checked against
                 it, never against the built-in demo config. Refused if older than 10 minutes. It is
                 only a cache: the chain is the authority and re-checks every rule on execute_swap.
@@ -88,6 +88,52 @@ function parseArgs(argv) {
   return o;
 }
 
+const U128_MAX = (1n << 128n) - 1n;
+const RAW_STATE_KEYS = ["swap_in_flight", "recovery_in_flight", "release_in_flight", "spent_today", "day"];
+
+/** [token, amount] pairs as the contract serializes Vec<(AccountId, U128)> -> { token: decimal string }. */
+function pairsToRecord(pairs, name) {
+  if (!Array.isArray(pairs)) throw new Error(`--vault-state state.${name} must be an array of [token, amount] pairs`);
+  const out = {};
+  for (const pair of pairs) {
+    if (!Array.isArray(pair) || pair.length !== 2) throw new Error(`--vault-state state.${name} has a malformed pair; each must be [token, amount]`);
+    const [token, amount] = pair;
+    if (typeof token !== "string" || token === "") throw new Error(`--vault-state state.${name} has a pair without a token id`);
+    if (typeof amount !== "string" || !/^(0|[1-9][0-9]*)$/.test(amount) || BigInt(amount) > U128_MAX) {
+      throw new Error(`--vault-state state.${name} amount for ${token} must be a decimal U128 string`);
+    }
+    if (Object.hasOwn(out, token)) throw new Error(`--vault-state state.${name} lists ${token} twice`);
+    out[token] = amount;
+  }
+  return out;
+}
+
+/**
+ * Convert the contract's get_state() JSON (VaultState: balances and spent_today as [token, amount]
+ * pairs, day, and the swap/recovery/release_in_flight booleans) into the mirror that checkProposal
+ * reads ({ paused, in_flight, spent: { day, amounts }, balances: { token: amount } }).
+ * Any of the three locks blocks swaps, as on chain. A state already in the mirror shape (no raw
+ * fields, balances an object) is passed through unchanged. Throws on a malformed raw state.
+ */
+export function normalizeContractState(state, nowMs) {
+  const isRaw = Array.isArray(state.balances) || RAW_STATE_KEYS.some((k) => Object.hasOwn(state, k));
+  if (!isRaw) return state;
+  for (const k of ["paused", "swap_in_flight", "recovery_in_flight", "release_in_flight"]) {
+    if (typeof state[k] !== "boolean") throw new Error(`--vault-state state.${k} must be a boolean`);
+  }
+  if (!Number.isSafeInteger(state.day) || state.day < 0) throw new Error("--vault-state state.day must be a non-negative integer");
+  const balances = pairsToRecord(state.balances, "balances");
+  const amounts = pairsToRecord(state.spent_today, "spent_today");
+  if (state.day > dayOf(nowMs)) throw new Error("--vault-state state.day is in the future");
+  return {
+    paused: state.paused,
+    in_flight: state.swap_in_flight || state.recovery_in_flight || state.release_in_flight,
+    // spentOn() ignores amounts whose day is not today, matching the contract's rollover.
+    spent: { day: state.day, amounts },
+    balances,
+  };
+}
+
 /** Read the target vault's real config and state; throws an Error with a clear message. */
 function loadVaultState(file, nowMs) {
   let doc;
@@ -109,7 +155,7 @@ function loadVaultState(file, nowMs) {
     throw new Error(`--vault-state is stale (fetched_at older than ${MAX_VAULT_STATE_AGE_MS / 60000} minutes); re-fetch get_config and get_state`);
   }
   if (Number.isInteger(state.spent?.day) && state.spent.day > dayOf(nowMs)) throw new Error("--vault-state spent.day is in the future");
-  return { config, state };
+  return { config, state: normalizeContractState(state, nowMs) };
 }
 
 function defaultSpawner(bin, args) {
