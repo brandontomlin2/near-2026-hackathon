@@ -1,7 +1,7 @@
 {
   "_source": "hand-built test scenario, not fetched from any network",
   "_note": "Hand-built, not fetched, test-only. Every id is in the *.fixture.testnet namespace and every price is invented. Pool 17 is deliberately priced about 2% above the mock reference so the planner has an edge to find; this is NOT the yield:demo market (that is src/yield/fixtures/ref-testnet-pools.json). Same shape as that file plus a vault section and a clock.",
-  "exchange": "ref-finance-101.testnet",
+  "exchange": "exchange.fixture.testnet",
   "taken_at": "2026-11-04T12:00:00Z",
   "tokens": {
     "wnear.fixture.testnet": { "decimals": 24, "stable": false, "mock_usd_price": "3.10" },
