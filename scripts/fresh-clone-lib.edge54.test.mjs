@@ -407,3 +407,16 @@ describe("regression: near cli lint must see near inside subshells and backticks
     for (const c of ["echo '(nearly)'", "(echo hi)", "echo $(date)"]) assert.equal(sh(c), null, c);
   });
 });
+
+describe("regression: a backtick line with backticks in its info string is not a fence", () => {
+  test("a ```inline``` line before a marked block does not swallow the block", T, () => {
+    const blocks = extractBlocks("```inline```\n<!-- judge:run -->\n```sh\necho real\n```\n");
+    assert.equal(blocks.length, 1);
+    assert.equal(blocks[0].code, "echo real");
+    assert.equal(blocks[0].line, 3);
+  });
+  test("tilde fences may still carry backticks in the info string", T, () => {
+    const [b] = extractBlocks("<!-- judge:run -->\n~~~sh `x`\necho a\n~~~\n");
+    assert.equal(b.code, "echo a");
+  });
+});

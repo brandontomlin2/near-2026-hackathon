@@ -14,7 +14,7 @@ import { pathToFileURL } from "node:url";
 
 const RUN_RE = /^<!--\s*judge:run\s*-->\s*$/;
 const EXPECT_RE = /^<!--\s*judge:expect\s+(.*?)\s*-->\s*$/;
-const FENCE_RE = /^(`{3,}|~{3,})\s*([\w+-]*)[^\n]*$/;
+const FENCE_RE = /^(`{3,}(?=[^`]*$)|~{3,})\s*([\w+-]*)[^\n]*$/;
 const SHELL_LANGS = new Set(["", "sh", "bash", "shell", "console", "zsh"]);
 
 // Blocks marked runnable must work offline with no keys. This is a lint that
