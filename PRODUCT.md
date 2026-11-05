@@ -100,10 +100,6 @@ that log into a short character sheet: who I am, relationships,
 grudges/allies, running beliefs, and reputation notes, under about 200
 words. On wake, the agent reads its character sheet plus the last K events.
 It never reads the full log. The sheet hash can be anchored to the token.
-Status today: `npm run ask` answers from the agent's latest sheet, but in
-`npm run swarm` and `npm run demo` each turn's prompt holds only the agent's
-traits and the last K channel events; the sheets are written from the
-finished channel afterwards, so the swarm does not yet read a sheet on wake.
 
 ```mermaid
 flowchart TD
