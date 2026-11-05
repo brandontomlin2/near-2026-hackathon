@@ -3739,3 +3739,76 @@ fn rule_vectors_match_check_proposal() {
         assert_eq!(got.ok, expect.is_empty(), "vector: {name}");
     }
 }
+
+// ---- reference-derived floor on an off-peg stable pool
+//
+// Pool 1 is nusdt (6 decimals) / nusdc (2 decimals), both $1. The owner sets
+// floors at 99% of the REFERENCE price (not the pool): 1 base nusdt = 1e-4
+// base nusdc, 1 base nusdc = 1e4 base nusdt (src/yield/fixtures). The pool
+// snapshot is off peg: reserves nusdt 237316 : nusdc 44411 base units.
+
+const OFF_PEG_NUSDT: u128 = 237_316;
+const OFF_PEG_NUSDC: u128 = 44_411;
+
+/// Constant-product quote with a 30 bps fee, all u128 integer math.
+fn off_peg_quote(amount_in: u128, reserve_in: u128, reserve_out: u128) -> u128 {
+    let in_after_fee = amount_in * 9_970;
+    in_after_fee * reserve_out / (reserve_in * 10_000 + in_after_fee)
+}
+
+fn off_peg_vault() -> YieldVault {
+    let mut c = config();
+    c.allowed_pools[1].min_rate_a_to_b = rate(99, 1_000_000);
+    c.allowed_pools[1].min_rate_b_to_a = rate(9_900, 1);
+    c.limits.push(limit(usdc(), 1_000_000, 2_000_000));
+    c.limits[2] = limit(usdt(), 1_000_000, 2_000_000);
+    let mut v = new_vault_with(c);
+    deposit(&mut v, usdt(), 100_000);
+    deposit(&mut v, usdc(), 100_000);
+    v
+}
+
+#[test]
+fn off_peg_pool_losing_direction_refused_by_reference_derived_floor() {
+    let v = off_peg_vault();
+    // 50 base nusdc (0.50 USD) into the off-peg pool fills only this much nusdt.
+    let pool_fill = off_peg_quote(50, OFF_PEG_NUSDC, OFF_PEG_NUSDT);
+    assert_eq!(pool_fill, 266, "30 bps constant-product fill");
+    let p = |out: u128| SwapProposal {
+        pool_id: 1,
+        token_in: usdc(),
+        token_out: usdt(),
+        amount_in: U128(50),
+        min_amount_out: U128(out),
+    };
+    // Reference says 50 nusdc = 500000 nusdt; floor is 99% = 495000.
+    let r = v.check_proposal(p(pool_fill), runner());
+    assert!(!r.ok && r.reason.starts_with("ERR_PRICE_FLOOR"), "{}", r.reason);
+    let r = v.check_proposal(p(494_999), runner());
+    assert!(!r.ok && r.reason.starts_with("ERR_PRICE_FLOOR"), "{}", r.reason);
+    // Exactly at the floor passes every rule: the floor alone refused above.
+    let r = v.check_proposal(p(495_000), runner());
+    assert!(r.ok, "{}", r.reason);
+}
+
+#[test]
+fn off_peg_pool_favorable_direction_passes_contract_rules_peg_check_is_off_chain() {
+    let v = off_peg_vault();
+    // 5000 base nusdt (0.005 USD) buys far more nusdc than the reference
+    // allows (reference: 0.5 base nusdc). The pool's own quote is the ask.
+    let pool_quote = off_peg_quote(5_000, OFF_PEG_NUSDT, OFF_PEG_NUSDC);
+    assert_eq!(pool_quote, 913, "30 bps constant-product fill");
+    let p = SwapProposal {
+        pool_id: 1,
+        token_in: usdt(),
+        token_out: usdc(),
+        amount_in: U128(5_000),
+        min_amount_out: U128(pool_quote),
+    };
+    // The contract has no peg check: it enforces only the configured floor
+    // (a lower bound, 5000 * 99/1e6 = 0.495 -> 1). A suspiciously good rate
+    // passes here; flagging it (SOFT_OFF_REFERENCE in src/yield/rules.mjs
+    // checkStrategy) happens off chain only.
+    let r = v.check_proposal(p, runner());
+    assert!(r.ok, "{}", r.reason);
+}
