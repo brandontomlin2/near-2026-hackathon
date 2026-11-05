@@ -6,6 +6,7 @@
 - Every step that changes chain state needs Brandon's explicit yes, one step or batch at a time. Do not run a block of steps on a single yes unless he said so.
 - Testnet only. Mainnet is refused by the tooling and must not be used.
 - This runbook was produced and dry-run checked: `node scripts/yield-live.mjs dry-run` validates the plan against `contracts/yield-vault/src/lib.rs`. It has never been executed. Every command below is copied from that tool's output for `config/yield-vault.live.example.json`, with its placeholders. `scripts/yield-live-runbook.test.mjs` fails if the two drift.
+- A later alternative to the keychain-signed runner in step 19 is a Shade Agent runner: `npm run yield:shade:dry-run` prints its payloads offline, and the owner's go/no-go checklist is [docs/yield-shade-go-nogo.md](yield-shade-go-nogo.md). Nothing in either is done, and each signing step there needs the owner's explicit yes.
 - Anything marked UNCONFIRMED was not verified from a first-party source or a live call; the "Verification table" and "Known gaps" say what to check.
 
 ## Cost and time
