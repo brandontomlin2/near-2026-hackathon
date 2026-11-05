@@ -403,7 +403,12 @@ function cmdChanged(positionals, flags) {
 
 function readEventLines(file) {
   if (!fs.existsSync(file)) return [];
-  const raw = fs.readFileSync(file, "utf8");
+  let raw;
+  try {
+    raw = fs.readFileSync(file, "utf8");
+  } catch (err) {
+    fail(`cannot read board/events.jsonl (${err.code || err.message})`);
+  }
   if (raw.trim() === "") return [];
   return raw.split("\n").filter((line) => line.trim() !== "");
 }
