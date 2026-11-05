@@ -154,7 +154,7 @@ test("--out under a file fails with one line and no partial output, for every st
     assert.equal(r.code, 2, `${args.join(" ")}: ${r.stderr}`);
     assert.equal(r.stdout, "");
     assert.ok(oneLine(r.stderr), r.stderr);
-    assert.match(r.stderr, /^render: cannot create afile\/deeper: .* is not a directory \(see --help\)\n$/);
+    assert.match(r.stderr, /^render: cannot create afile\/deeper(\/styles\/[a-z]+)?: .*afile is not a directory \(see --help\)\n$/);
   }
   assert.deepEqual(readdirSync(cwd), ["afile"]);
   assert.equal(readFileSync(join(cwd, "afile"), "utf8"), "keep");
