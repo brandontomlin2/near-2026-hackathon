@@ -39,8 +39,12 @@ pub const STRATEGIES: [&str; 4] = ["aloof", "chaotic", "social", "skeptic"];
 pub const GAS_FT_TRANSFER_CALL: Gas = Gas::from_tgas(70);
 /// `ref.swap`.
 pub const GAS_REF_SWAP: Gas = Gas::from_tgas(50);
-/// `ref.withdraw` (includes its inner ft_transfer and callback).
-pub const GAS_REF_WITHDRAW: Gas = Gas::from_tgas(40);
+/// `ref.withdraw` (includes its inner ft_transfer and callback). Ref attaches
+/// 20 TGas to its inner `ft_transfer` and 20 to its post-withdraw callback, so
+/// 40 left nothing for Ref's own body: measured in the local sandbox, it failed
+/// with "Exceeded the prepaid gas". At 60 a Ref body could burn only ~15 TGas
+/// (sandbox/tests/headroom.rs); 80 leaves ~35 (see sandbox/README.md).
+pub const GAS_REF_WITHDRAW: Gas = Gas::from_tgas(80);
 /// `on_recover` / `on_owner_withdraw` bodies.
 pub const GAS_CB_FINAL: Gas = Gas::from_tgas(15);
 /// Ref view `get_deposit`.
@@ -49,13 +53,14 @@ pub const GAS_REF_VIEW: Gas = Gas::from_tgas(10);
 pub const GAS_CB_RECONCILE: Gas = Gas::from_tgas(15);
 /// `on_recover`: own body (~10) + `get_deposit` (10) + reconcile (15) + margin.
 pub const GAS_CB_WITHDRAW_DONE: Gas = Gas::from_tgas(40);
-/// `on_withdraw_pre`: own body (~10) + withdraw (40) + `get_deposit` (10) + reconcile (15) + margin.
-pub const GAS_CB_WITHDRAW_PRE: Gas = Gas::from_tgas(80);
-/// `on_swap`: own body (~10) + `get_deposit` (10) + `on_withdraw_pre` (80) + margin.
-pub const GAS_CB_SWAP: Gas = Gas::from_tgas(110);
-/// `on_deposit`: own body (~10) + swap (50) + `on_swap` (110) + margin.
-pub const GAS_CB_DEPOSIT: Gas = Gas::from_tgas(180);
-/// Minimum prepaid gas for `execute_swap` (70 + 180 + own body + margin). Max tx gas is 300.
+/// `on_withdraw_pre`: own body (~10, measured ~3) + withdraw (80) + `get_deposit` (10) + reconcile (15).
+pub const GAS_CB_WITHDRAW_PRE: Gas = Gas::from_tgas(115);
+/// `on_swap`: own body (~10, measured ~2.5) + `get_deposit` (10) + `on_withdraw_pre` (115).
+pub const GAS_CB_SWAP: Gas = Gas::from_tgas(135);
+/// `on_deposit`: own body (measured ~2.5, 5 allowed) + swap (50) + `on_swap` (135).
+/// Capped by `MIN_EXECUTE_GAS`: 195 does not fit in 280 in the unit-test VM.
+pub const GAS_CB_DEPOSIT: Gas = Gas::from_tgas(190);
+/// Minimum prepaid gas for `execute_swap` (70 + 190 + own body ~3 measured + margin). Max tx gas is 300.
 pub const MIN_EXECUTE_GAS: Gas = Gas::from_tgas(280);
 /// Consecutive swaps that end stranded before the vault pauses itself.
 pub const MAX_CONSECUTIVE_STRANDS: u32 = 3;
@@ -70,10 +75,10 @@ pub const GAS_FT_TRANSFER: Gas = Gas::from_tgas(30);
 pub const MIN_WITHDRAW_GAS: Gas = Gas::from_tgas(80);
 /// Gas for `ref.storage_deposit`.
 pub const GAS_STORAGE_DEPOSIT: Gas = Gas::from_tgas(30);
-/// `on_recover_pre`: own body (~10) + Ref withdraw (40) + `on_recover` (40) + margin.
-pub const GAS_CB_RECOVER_PRE: Gas = Gas::from_tgas(100);
-/// Minimum prepaid gas for `recover_from_ref`: `get_deposit` (10) + `on_recover_pre` (100) + body + fees + margin.
-pub const MIN_RECOVER_GAS: Gas = Gas::from_tgas(150);
+/// `on_recover_pre`: own body (~10) + Ref withdraw (80) + `on_recover` (40).
+pub const GAS_CB_RECOVER_PRE: Gas = Gas::from_tgas(130);
+/// Minimum prepaid gas for `recover_from_ref`: `get_deposit` (10) + `on_recover_pre` (130) + body + fees + margin.
+pub const MIN_RECOVER_GAS: Gas = Gas::from_tgas(170);
 /// `on_register` body (may create one transfer).
 pub const GAS_CB_REGISTER: Gas = Gas::from_tgas(10);
 /// Minimum prepaid gas for `register_on_ref`: storage_deposit (30) + on_register (10) + fees + margin.
@@ -613,10 +618,15 @@ impl YieldVault {
 
     /// Hop 1 callback: checks how much Ref accepted, then swaps.
     #[private]
-    pub fn on_deposit(
+    pub fn on_deposit(&mut self, swap_id: u64) -> PromiseOrValue<U128> {
+        self.handle_deposit(swap_id, read_u128(0))
+    }
+
+    /// Body of `on_deposit`, taking the already-decoded (lenient) result.
+    fn handle_deposit(
         &mut self,
         swap_id: u64,
-        #[callback_result] used: Result<U128, PromiseError>,
+        used: Result<U128, PromiseError>,
     ) -> PromiseOrValue<U128> {
         Self::assert_self();
         let Some(mut fl) = self.current(swap_id) else {
@@ -673,10 +683,15 @@ impl YieldVault {
     /// stranded as verified. Anything in between is ambiguous (the stranded
     /// record may overstate Ref) and is stranded as unverified: never credited.
     #[private]
-    pub fn on_deposit_reconciled(
+    pub fn on_deposit_reconciled(&mut self, swap_id: u64) -> U128 {
+        self.handle_deposit_reconciled(swap_id, read_u128(0))
+    }
+
+    /// Body of `on_deposit_reconciled`, taking the already-decoded (lenient) result.
+    fn handle_deposit_reconciled(
         &mut self,
         swap_id: u64,
-        #[callback_result] deposit: Result<U128, PromiseError>,
+        deposit: Result<U128, PromiseError>,
     ) -> U128 {
         Self::assert_self();
         let Some(fl) = self.current(swap_id) else {
@@ -702,10 +717,15 @@ impl YieldVault {
 
     /// Hop 2 callback: reads `amount_out`, then withdraws it from Ref.
     #[private]
-    pub fn on_swap(
+    pub fn on_swap(&mut self, swap_id: u64) -> PromiseOrValue<U128> {
+        self.handle_swap(swap_id, read_u128(0))
+    }
+
+    /// Body of `on_swap`, taking the already-decoded (lenient) result.
+    fn handle_swap(
         &mut self,
         swap_id: u64,
-        #[callback_result] out: Result<U128, PromiseError>,
+        out: Result<U128, PromiseError>,
     ) -> PromiseOrValue<U128> {
         Self::assert_self();
         let Some(mut fl) = self.current(swap_id) else {
@@ -742,10 +762,15 @@ impl YieldVault {
     /// re-credits and returns normally when its token transfer fails, and a
     /// failed `withdraw` leaves the deposit unchanged; the re-read catches both.
     #[private]
-    pub fn on_withdraw_pre(
+    pub fn on_withdraw_pre(&mut self, swap_id: u64) -> PromiseOrValue<U128> {
+        self.handle_withdraw_pre(swap_id, read_u128(0))
+    }
+
+    /// Body of `on_withdraw_pre`, taking the already-decoded (lenient) result.
+    fn handle_withdraw_pre(
         &mut self,
         swap_id: u64,
-        #[callback_result] pre: Result<U128, PromiseError>,
+        pre: Result<U128, PromiseError>,
     ) -> PromiseOrValue<U128> {
         Self::assert_self();
         let Some(mut fl) = self.current(swap_id) else {
@@ -793,10 +818,15 @@ impl YieldVault {
     /// the pre-withdraw snapshot (a per-operation delta, independent of the
     /// `stranded` records).
     #[private]
-    pub fn on_withdraw_reconciled(
+    pub fn on_withdraw_reconciled(&mut self, swap_id: u64) -> U128 {
+        self.handle_withdraw_reconciled(swap_id, read_u128(0))
+    }
+
+    /// Body of `on_withdraw_reconciled`, taking the already-decoded (lenient) result.
+    fn handle_withdraw_reconciled(
         &mut self,
         swap_id: u64,
-        #[callback_result] deposit: Result<U128, PromiseError>,
+        deposit: Result<U128, PromiseError>,
     ) -> U128 {
         Self::assert_self();
         let Some(fl) = self.current(swap_id) else {
@@ -1053,11 +1083,16 @@ impl YieldVault {
     /// Credits `max(0, ft_balance - tracked)`. A no-op unless this is still the
     /// latest `sync_balance` and the vault is still idle.
     #[private]
-    pub fn on_sync_balance(
+    pub fn on_sync_balance(&mut self, sync_id: u64, token_id: AccountId) {
+        self.handle_sync_balance(sync_id, token_id, read_u128(0))
+    }
+
+    /// Body of `on_sync_balance`, taking the already-decoded (lenient) result.
+    fn handle_sync_balance(
         &mut self,
         sync_id: u64,
         token_id: AccountId,
-        #[callback_result] ft: Result<U128, PromiseError>,
+        ft: Result<U128, PromiseError>,
     ) {
         Self::assert_self();
         if self.sync_id != sync_id || !self.sync_idle() {
@@ -1349,7 +1384,7 @@ impl YieldVault {
         require!(amount.0 > 0, "ERR_ZERO_AMOUNT: amount must be > 0");
         require!(
             env::prepaid_gas() >= MIN_RECOVER_GAS,
-            "ERR_INSUFFICIENT_GAS: attach at least 150 TGas"
+            "ERR_INSUFFICIENT_GAS: attach at least 170 TGas"
         );
         let verified = self.stranded_of(&token_id);
         let unv_have = self.unverified.get(&token_id).copied().unwrap_or(0);
@@ -1383,10 +1418,15 @@ impl YieldVault {
     /// reconcile can credit exactly what left Ref. Refuses (restoring the
     /// stranded record) if Ref does not hold `amount` or the read failed.
     #[private]
-    pub fn on_recover_pre(
+    pub fn on_recover_pre(&mut self, recovery_id: u64) -> PromiseOrValue<U128> {
+        self.handle_recover_pre(recovery_id, read_u128(0))
+    }
+
+    /// Body of `on_recover_pre`, taking the already-decoded (lenient) result.
+    fn handle_recover_pre(
         &mut self,
         recovery_id: u64,
-        #[callback_result] pre: Result<U128, PromiseError>,
+        pre: Result<U128, PromiseError>,
     ) -> PromiseOrValue<U128> {
         Self::assert_self();
         let Some(mut r) = self.current_recovery(recovery_id) else {
@@ -1458,10 +1498,15 @@ impl YieldVault {
     /// every other vault operation off Ref meanwhile), then releases the lock.
     /// A stranded record larger than what Ref holds cannot fake a success.
     #[private]
-    pub fn on_recover_reconciled(
+    pub fn on_recover_reconciled(&mut self, recovery_id: u64) -> U128 {
+        self.handle_recover_reconciled(recovery_id, read_u128(0))
+    }
+
+    /// Body of `on_recover_reconciled`, taking the already-decoded (lenient) result.
+    fn handle_recover_reconciled(
         &mut self,
         recovery_id: u64,
-        #[callback_result] deposit: Result<U128, PromiseError>,
+        deposit: Result<U128, PromiseError>,
     ) -> U128 {
         Self::assert_self();
         let Some(r) = self.current_recovery(recovery_id) else {

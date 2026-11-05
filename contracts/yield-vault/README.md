@@ -4,13 +4,13 @@ What it is: a near-sdk Rust smart contract that holds NEP-141 token balances for
 
 A per-personality-NFT trading vault. Each personality NFT (aloof, chaotic, social, skeptic) is an AI agent running a strategy off chain. The agent acts only through approved **runner** accounts, and this contract enforces hard limits on chain regardless of what the strategy proposes. Approved swaps run on the Rhea (Ref Finance) testnet exchange `ref-finance-101.testnet` with the deposit -> swap -> withdraw pattern. wNEAR is `wrap.testnet`.
 
-**Status: NOT deployed.** A testnet deploy needs the human's explicit yes. Tested with unit tests only (`cargo test`, 245 tests). See "Known risks".
+**Status: NOT deployed.** A testnet deploy needs the human's explicit yes. Tested with unit tests (`cargo test`, PENDING_CARGO tests) and 14 integration tests in a throwaway local sandbox against a mock Ref and mock NEP-141 tokens (`sandbox/`, see "Sandbox measurements"). See "Known risks".
 
 Live testnet runbook (every step, cost, failure handling, verification table): [../../docs/yield-vault-live-runbook.md](../../docs/yield-vault-live-runbook.md).
 
-**Not measured, not tested against Ref:**
-- Every gas figure here, including the 280 TGas `execute_swap` minimum, is arithmetic over the static constants in `src/lib.rs`. None was measured on a sandbox, testnet or mainnet. The unit-test VM charges receipt fees, and tests check that each entry point fits in exactly its minimum there. That catches a minimum too small to pay for its own promises. It says nothing about what Ref's `ft_on_transfer`, `swap`, `withdraw` or `get_deposit` really cost.
-- The Ref method names and argument shapes (`ft_transfer_call` with `msg: ""`, `swap { actions, referral_id }`, `withdraw { token_id, amount, unregister, skip_unwrap_near }`, `get_deposit { account_id, token_id }`, `storage_deposit { account_id, registration_only }`) were written from Ref's public interface and have never run against a real Ref contract. The unit tests feed hand-built promise results to the callbacks. They cannot catch a wrong method name, a wrong argument or a wrong return shape.
+**Measured in a local sandbox, not against real Ref:**
+- The gas figures in `src/lib.rs` are now checked against gas measured in a local near-workspaces sandbox (a throwaway chain on this machine; no testnet, no mainnet, no real keys). The vault wasm runs the full swap, recovery, owner withdraw, sync and register chains against a mock Ref exchange and mock NEP-141 tokens, each at exactly its documented minimum prepaid gas. `force_release_lock` was measured at its minimum in an earlier sandbox run (see "Sandbox measurements") and is now covered by unit tests only. `withdraw_ref_storage` has not run in the sandbox. See "Sandbox measurements".
+- What the sandbox cannot tell: what real Ref's `ft_on_transfer`, `swap`, `withdraw` and `get_deposit` bodies cost. The mock uses Ref's method names and JSON argument shapes (`ft_transfer_call` with `msg: ""`, `swap { actions, referral_id }`, `withdraw { token_id, amount, unregister, skip_unwrap_near }`, `get_deposit { account_id, token_id }`, `storage_deposit`, `storage_withdraw`) and Ref's inner withdraw gas (20 TGas `ft_transfer` + 20 TGas callback). Those were taken from a public fork of Ref's source, because the canonical `ref-finance/ref-contracts` repository is no longer public. The mock bodies are much lighter than Ref's, so the sandbox measures how much heavier each Ref hop may be before the chain fails (headroom), not Ref's real cost.
 
 ## Interface
 
@@ -43,7 +43,7 @@ A token with no `limits` entry cannot be sold (`ERR_NO_LIMIT`). `spent_today` is
 | `revoke_all_runners()` | owner | 1 | kill switch: clears runners and pauses |
 | `update_config(config)` | owner | 1 | validated; rejected while a swap is in flight (`ERR_SWAP_IN_FLIGHT`) |
 | `register_on_ref() -> Promise` | owner | payable (NEAR for Ref storage) | needs >= 60 TGas. `storage_deposit { registration_only: false }` on Ref, so the whole deposit stays as the vault's Ref storage balance; `on_register` forwards the deposit to the owner if it fails. See "Ref storage" |
-| `recover_from_ref(token_id, amount) -> Promise` | owner | 1 | needs >= 150 TGas. Pulls stranded funds back from Ref; rejected while a swap or another recovery is in flight (`ERR_SWAP_IN_FLIGHT`). Reads Ref's deposit before and after the withdraw and credits only the measured drop. Holds a recovery lock until its last reconcile has run; while it is held, `execute_swap` and `update_config` are refused with `ERR_SWAP_IN_FLIGHT` (`get_state().recovery_in_flight` is `true`) |
+| `recover_from_ref(token_id, amount) -> Promise` | owner | 1 | needs >= 170 TGas. Pulls stranded funds back from Ref; rejected while a swap or another recovery is in flight (`ERR_SWAP_IN_FLIGHT`). Reads Ref's deposit before and after the withdraw and credits only the measured drop. Holds a recovery lock until its last reconcile has run; while it is held, `execute_swap` and `update_config` are refused with `ERR_SWAP_IN_FLIGHT` (`get_state().recovery_in_flight` is `true`) |
 | `force_release_lock() -> Promise` | owner | 1 | needs >= 100 TGas. Only if a swap or recovery has been in flight >= 10 min. Reads where the held amount really is (see "Force release") and then credits, rolls back or strands it. Late callbacks of a released swap or recovery are ignored (ids from one counter) |
 | `sync_balance(token_id) -> Promise` | owner | 1 | needs >= 50 TGas. Reads the vault's own `ft_balance_of` and `on_sync_balance` makes the tracked balance equal it: credits `ft_balance - tracked` when higher (recovers an `ft_transfer` donation or funds that `abort_release` / an unverified strand wrongly marked as on Ref), debits `tracked - ft_balance` when lower (heals a phantom credit; an idle vault sends no tokens out, so a lower balance can only be a phantom). Refused with `ERR_SYNC_BUSY` while a swap, recovery, release or owner withdrawal is in flight. Every call has an id; any swap, recovery, release or withdraw start clears it, so a stale callback is a no-op (it also re-checks the vault is idle). Deposits are refunded while a read is pending. Any `ft_on_transfer` call (any sender, any token) that arrives while a read is pending invalidates it (`sync_invalidated`; its callback is then a no-op), because a refundable `ft_transfer_call` may have been visible to the read as a transient credit; call `sync_balance` again. Emits `balance_synced` (with `credited` and `debited`), `sync_invalidated` or `sync_failed` |
 | `abort_release()` | owner | 1 | Only if a force release has been pending >= 10 min. Clears it and strands the held amount as unverified. Escape if the reconcile callback can never succeed |
@@ -84,19 +84,19 @@ Limits are in each token's own base units and are never summed across tokens. Th
 
 ## Promise chain and gas
 
-This is a plan, not a measurement. The numbers are the static constants in `src/lib.rs`, added up by hand. They have not been profiled against Ref on any network (see "Not measured" at the top). If a real Ref hop costs more than its constant, the chain stops mid-way and the only way out is `force_release_lock` after 10 minutes.
+The numbers are the static constants in `src/lib.rs`. They were checked in the local sandbox against a mock Ref (see "Sandbox measurements"), not against real Ref. If a real Ref hop costs more than its constant, the chain stops mid-way; the sandbox shows the vault then ends consistent (lock released, funds stranded or credited, never lost).
 
 ```
 execute_swap  (>= 280 TGas prepaid; debits balance + spent_today, sets lock)
  -> token_in.ft_transfer_call(ref, amount_in, "")   70 TGas, 1 yocto   (deposit into the vault's Ref account)
- -> on_deposit                                     180 TGas  (own ~10, then:)
+ -> on_deposit                                     190 TGas  (own ~2.5 measured, then:)
      -> ref.swap({actions:[{pool_id,token_in,token_out,amount_in,min_amount_out}], referral_id:null})
                                                     50 TGas, 1 yocto
-     -> on_swap                                    110 TGas  (own ~10, then:)
+     -> on_swap                                    135 TGas  (own ~2.5 measured, then:)
          -> ref.get_deposit(vault, token_out)       10 TGas, view    (pre-withdraw snapshot)
-         -> on_withdraw_pre                         80 TGas  (own ~10, records the snapshot, then:)
+         -> on_withdraw_pre                        115 TGas  (own ~3 measured, records the snapshot, then:)
              -> ref.withdraw({token_id: token_out, amount: amount_out, unregister:null, skip_unwrap_near:true})
-                                                    40 TGas, 1 yocto
+                                                    80 TGas, 1 yocto (Ref attaches 20 + 20 inside)
              -> ref.get_deposit(vault, token_out)   10 TGas, view    (runs even if withdraw failed)
              -> on_withdraw_reconciled              15 TGas  (credits balance[token_out] only if the deposit fell by amount_out from the snapshot; releases lock, emits swap_executed)
 ```
@@ -104,12 +104,54 @@ execute_swap  (>= 280 TGas prepaid; debits balance + spent_today, sets lock)
 Reconciliation branches:
 
 - `on_deposit` with a failed `ft_transfer_call` result: `ref.get_deposit(vault, token_in)` (10 TGas) -> `on_deposit_reconciled` (15 TGas).
-- `recover_from_ref` (>= 150 TGas): `ref.get_deposit` (10 TGas) -> `on_recover_pre` (100 TGas) -> `ref.withdraw` (40 TGas) -> `on_recover` (40 TGas) -> `ref.get_deposit` (10 TGas) -> `on_recover_reconciled` (15 TGas).
+- `recover_from_ref` (>= 170 TGas): `ref.get_deposit` (10 TGas) -> `on_recover_pre` (130 TGas) -> `ref.withdraw` (80 TGas) -> `on_recover` (40 TGas) -> `ref.get_deposit` (10 TGas) -> `on_recover_reconciled` (15 TGas).
 - Owner `withdraw` (>= 80 TGas): `ft_transfer` (30 TGas) -> `on_owner_withdraw` (15 TGas).
 - `force_release_lock` (>= 100 TGas): `token.ft_balance_of(vault)` + `ref.get_deposit(vault, held token)` (+ `ref.get_deposit(vault, token_out)` for a swap), 10 TGas each, joined -> `on_force_release_swap` / `on_force_release_recovery` (20 TGas).
 - `register_on_ref` (>= 60 TGas): `ref.storage_deposit` (30 TGas) -> `on_register` (10 TGas).
 
-The unit tests check that `execute_swap`, `withdraw`, `recover_from_ref`, `force_release_lock` and `register_on_ref` each fit in exactly their minimum in the unit-test VM, which charges receipt fees. The first `withdraw` (60 TGas) and `force_release_lock` (70 TGas) minimums did not fit there and were raised. That is a lower bound, not a measurement.
+The unit tests check that `execute_swap`, `withdraw`, `recover_from_ref`, `force_release_lock` and `register_on_ref` each fit in exactly their minimum in the unit-test VM, which charges receipt fees. The first `withdraw` (60 TGas) and `force_release_lock` (70 TGas) minimums did not fit there and were raised. That is a lower bound; the sandbox measurements below are the real check.
+
+## Sandbox measurements
+
+Integration tests live in a separate crate, `sandbox/`, so the fast `cargo test` above (and `scripts/verify.sh`) does not build them. They deploy the vault wasm, a mock Ref exchange (`sandbox/mocks/mock-ref`) and mock NEP-141 tokens (`sandbox/mocks/mock-ft`) into a local near-workspaces sandbox. The sandbox binary is downloaded by near-workspaces on first run; all accounts and keys are generated for the throwaway chain.
+
+```
+cd contracts/yield-vault/sandbox
+gtimeout 1800 cargo test -- --nocapture --test-threads=1   # 14 tests, about 12 minutes (headroom.rs is most of it)
+```
+
+Each test prints a per-receipt gas table (from the sandbox RPC `EXPERIMENTAL_tx_status`); the `lib.rs` constants are parsed from the source, so tables cannot drift from the code. Full tables are in `sandbox/README.md`.
+
+Gas burnt, Ref inner withdraw gas 20 + 20 (TGas; subtree = the receipt plus everything it triggers):
+
+| Step | lib.rs constant | Measured subtree |
+| --- | --- | --- |
+| `execute_swap` (whole chain, 14 receipts) | `MIN_EXECUTE_GAS` 280 | 30.8 |
+| `ft_transfer_call` to Ref | `GAS_FT_TRANSFER_CALL` 70 | 5.9 |
+| `on_deposit` | `GAS_CB_DEPOSIT` 190 | 22.0 |
+| `ref.swap` | `GAS_REF_SWAP` 50 | 1.8 (mock) |
+| `on_swap` | `GAS_CB_SWAP` 135 | 17.5 |
+| `ref.get_deposit` | `GAS_REF_VIEW` 10 | 1.8 (mock) |
+| `on_withdraw_pre` | `GAS_CB_WITHDRAW_PRE` 115 | 13.0 |
+| `ref.withdraw` | `GAS_REF_WITHDRAW` 80 | 6.1 (mock body) |
+| `on_withdraw_reconciled` | `GAS_CB_RECONCILE` 15 | 2.1 |
+| `recover_from_ref` (whole chain) | `MIN_RECOVER_GAS` 170 | 19.6 |
+| `on_recover_pre` | `GAS_CB_RECOVER_PRE` 130 | 15.2 |
+| `on_recover` | `GAS_CB_WITHDRAW_DONE` 40 | 6.5 |
+| owner `withdraw` | `MIN_WITHDRAW_GAS` 80 | 6.3 |
+| `sync_balance` | `MIN_SYNC_GAS` 50 | 6.2 |
+| `register_on_ref` | `MIN_REGISTER_GAS` 60 | 6.4 |
+| `force_release_lock` | `MIN_FORCE_RELEASE_GAS` 100 | 10.8 (earlier run; no sandbox flow sticks a lock now) |
+
+The vault's own callback bodies burn 1.8 to 2.9 TGas each. Callbacks often receive more than their constant, because near-sdk hands unused gas to them.
+
+Headroom (`sandbox/tests/headroom.rs`): a mock knob makes one Ref hop burn extra gas, stepping up until the chain fails, at exactly 280 / 170 TGas. The chain still completes when a Ref hop burns this much extra on top of the mock body: `ft_on_transfer` +35, `swap` +45, each `get_deposit` +9, `withdraw` +35 (on top of Ref's inner 20 + 20), the post-withdraw callback +55. At the first failing step the tests assert the vault stays consistent: lock released, wallet plus Ref deposit equal to credited plus stranded plus unverified, nothing lost or double counted.
+
+What the sandbox changed: `GAS_REF_WITHDRAW` was 40. With Ref's inner 20 + 20 that left nothing for Ref's own body, and every `ref.withdraw` failed with "Exceeded the prepaid gas", so no swap or recovery could finish (funds were stranded, not lost). It is now 80, and the chain above it was rebudgeted: `on_withdraw_pre` 80 -> 115, `on_swap` 110 -> 135, `on_deposit` 180 -> 190, `on_recover_pre` 100 -> 130, `recover_from_ref` minimum 150 -> 170. `execute_swap` stays at 280.
+
+Failure paths run end to end (`sandbox/tests/refunds.rs`, `failure_paths.rs`, `happy_path.rs`), each matching the "Failure handling" table: Ref refunds the whole deposit (rolled back), `ref.swap` panics (token_in stranded, then `recover_from_ref`), token_out's `ft_transfer` fails inside Ref's withdraw (Ref re-credits, vault strands, then recovers), token_in's `ft_transfer_call` fails (reconciled rollback), owner `withdraw`'s `ft_transfer` fails (re-credited), deposits from non-owners or of non-allowed tokens (refunded in full), and malformed `get_deposit` replies (before and after the withdraw: the chain ends cleanly, the lock is released, the amount is stranded or unverified, never credited; then `recover_from_ref` or `sync_balance` books it). `force_release_lock` is covered by the unit tests only: with malformed replies handled, no sandbox flow at the documented minimum gas leaves the lock stuck any more.
+
+Still only a mock: Ref's real body costs, pool math, token whitelist, storage byte sizes and wNEAR unwrap. The method names, argument shapes and the 20 + 20 inner gas come from a public fork, not from deployed Ref. A testnet run against `ref-finance-101.testnet` would close that, and needs the owner's explicit approval.
 
 ## Ref storage
 
@@ -144,7 +186,7 @@ Each branch books the amount in at most one place, so a force release never coun
 
 ## Failure handling
 
-The swap, deposit, withdraw and recover callbacks use `#[callback_result]` (or `promise_result_checked`) and do not panic on a failed promise. A successful result whose payload does not parse as `U128` still panics those callbacks (and `ERR_OVERFLOW` can panic any of them). The two force-release callbacks are the exception: they read raw results and treat an unparseable payload as a failed read, because a panic there would hold the release lock (see `abort_release`). Every failure of a swap releases the lock and emits `swap_failed`. Each swap carries an id passed to its callbacks, so a late callback of a force-released swap is a no-op.
+Every callback that reads a `U128` from Ref or a token (`on_deposit`, `on_deposit_reconciled`, `on_swap`, `on_withdraw_pre`, `on_withdraw_reconciled`, `on_recover_pre`, `on_recover_reconciled`, `on_sync_balance`, and the two force-release callbacks) reads the raw promise result and treats a reply that is not a valid `U128` (wrong JSON type, not JSON, empty, negative, over 4096 bytes) exactly like a failed promise: the same strand, strand-unverified or rollback-only-if-provable branch runs, nothing is credited, and the lock is released. A malformed reply therefore cannot hold the lock. `on_recover`, `on_register` and `on_owner_withdraw` only look at success or failure. `ERR_OVERFLOW` can still panic a callback (a balance that would exceed `u128`). Every failure of a swap releases the lock and emits `swap_failed`. Each swap carries an id passed to its callbacks, so a late callback of a force-released swap is a no-op.
 
 A failed promise result is not trusted as proof of what happened. The vault asks Ref for `get_deposit(vault, token)`. A credit or rollback needs a per-operation proof, never the absolute `stranded` record (which can overstate Ref, for example after a `swap_failed` strand whose swap really ran).
 
@@ -179,7 +221,8 @@ NEP-297, `standard: "yield_vault"`, `version: "1.0.0"`: `deposit`, `withdraw`, `
 
 ```
 cd contracts/yield-vault
-cargo test                                          # 245 unit tests
+cargo test                                          # PENDING_CARGO unit tests
+(cd sandbox && cargo test -- --test-threads=1)      # 14 local sandbox tests, see "Sandbox measurements"
 cargo clippy --all-targets
 cargo build --target wasm32-unknown-unknown --release
 ```
@@ -198,7 +241,7 @@ Fixed after the audit:
 - Medium, no escape from a stuck `in_flight` lock: `started_at` plus owner `force_release_lock` after 10 minutes, with swap ids so late callbacks cannot touch a newer swap.
 - Medium, `recover_from_ref` during a swap: rejected with `ERR_SWAP_IN_FLIGHT`. `update_config` is rejected the same way. A follow-up review found the reverse case (a swap or second recovery starting while a recovery's reconcile was still pending, so the two reconciles misread each other's Ref balance); a recovery now holds its own lock until its reconcile runs.
 - Low, dead `_reserved` storage map: removed.
-- The audit found zero tests; there are now 245 unit tests. No sandbox or testnet test exists.
+- The audit found zero tests; there are now PENDING_CARGO unit tests and 14 local sandbox tests against a mock Ref. No testnet test exists.
 
 Fixed after a second review (`/tmp/yrev26-report.md`):
 
@@ -227,14 +270,14 @@ Open (not fixed). Severity is the impact on funds if the item happens, not its l
 - Low, the `d < amount_in` rollback in `on_deposit_reconciled` assumes a failed `ft_transfer_call` that landed nowhere. If the tokens did reach Ref's FT account, Ref's `ft_on_transfer` failed (for example the vault is not registered) and the token's resolve step also ran out of gas, nothing refunds them, Ref's deposit stays below `amount_in`, and the vault rolls back and credits a balance with no tokens behind it. A double failure; a phantom internal balance, not theft. Withdrawing or swapping the phantom portion fails safely, and the next quiet `sync_balance` debits it (`debited`). Not fixed in the deposit path: the reviewer's fix (an extra `ft_balance_of` read there) adds a cross-contract hop and changes the gas plan, which waits for the measured gas run.
 - Low (liveness), anyone can grief `sync_balance` by calling `ft_on_transfer` (directly or through any token) while a read is pending; the sync is then invalidated and the owner calls it again. No funds are affected.
 - Low (liveness), a pending force release is normally cleared by its callback, which parses its reads leniently and so does not panic on a malformed payload. If it still fails every time (for example the unmeasured 20 TGas `GAS_CB_RELEASE` is too small), `withdraw` stays refused until the owner calls `abort_release` 10 minutes after the release started. The abort strands the held amount as unverified; it is not credited or rolled back.
-- Medium, deploy blocker, not fixable in code: the nested callbacks' static gas (`on_deposit` 180 TGas, `on_swap` 110 TGas, `on_withdraw_pre` 80 TGas, `on_recover_pre` 100 TGas) is never exercised against the gas they attach onward. Only each entry point's outer minimum is checked in the unit-test VM. Too little gas stops a chain mid-way; funds then need `force_release_lock` and `recover_from_ref`. Closing this needs a sandbox or testnet run against Ref, which needs the owner's explicit approval.
+- Low (was Medium), nested callback gas: now exercised end to end in the local sandbox (see "Sandbox measurements"). That run found `GAS_REF_WITHDRAW` 40 too small and it was raised. What remains is the cost of real Ref bodies, which the sandbox replaces with a mock. The headroom tests bound how much heavier each Ref hop may be. Too little gas stops a chain mid-way; funds then need `force_release_lock` and `recover_from_ref`.
 - Low, if `ref.swap`'s promise fails, the vault strands the full `amount_in` as token_in on Ref without asking Ref. NEAR reverts a failed receipt's state, so if Ref's `swap` is a single receipt (it updates Ref's internal deposits only; this has not been checked against Ref's source) a failed swap did not execute and the record is correct. If it did execute, token_out would sit on Ref with no record. Since the M2 fix no reconcile credits on the strength of that record.
 - Info, tokens sent with a plain `ft_transfer` (not `ft_transfer_call`) are not recorded at arrival; the owner recovers them with `sync_balance(token_id)`, which works for any token. Unknown-token deposits through `ft_on_transfer` are refunded in full.
 - Info, `check_proposal` (view) cannot show `ERR_INSUFFICIENT_GAS`, so it can return ok for a call that fails on gas. The sender must attach at least 280 TGas.
 - Info, `strategy` is validated but not used by any on-chain rule. Config size (pools, limits, runners) is unbounded; only the owner can set it.
 - Low, pause and revoke do not cancel a swap already in flight. The only way out of a stuck swap is `force_release_lock` after 10 minutes.
 - Low, runners are accounts, not keys, and are trusted for timing and for the exact price at or above the floor. The floor is static and owner-set; a stale floor can be too loose or too tight. Loss per trade is bounded by `max_trade`, the floor and `daily_cap`.
-- High, deploy blocker, not fixable in code: gas constants are static and have not been measured against real Ref costs on any network (the audit asked for a gas test on testnet). The Ref method names and argument shapes (`ft_transfer_call` msg, `swap`, `withdraw`, `get_deposit`, `storage_deposit`, `storage_withdraw`) have never run against a real Ref contract (see "Not measured" at the top). A wrong `withdraw` shape would leave deposited funds on Ref, because `recover_from_ref` uses the same call. Do not deploy or fund the vault until a sandbox or testnet run against Ref has passed; that run needs the owner's explicit approval.
+- High, deploy blocker, not fixable in code: gas constants are measured in a local sandbox against a mock Ref, not against real Ref costs on any network (the audit asked for a gas test on testnet). The Ref method names and argument shapes (`ft_transfer_call` msg, `swap`, `withdraw`, `get_deposit`, `storage_deposit`, `storage_withdraw`) run against a mock built from a public fork of Ref's source, never against a real Ref contract (see the top of this file). A wrong `withdraw` shape would leave deposited funds on Ref, because `recover_from_ref` uses the same call. Do not deploy or fund the vault until a sandbox or testnet run against Ref has passed; that run needs the owner's explicit approval.
 - Low, `daily_cap` is per UTC calendar day, so up to 2x `daily_cap` can be spent within minutes around 00:00 UTC.
 - Info, the off-chain JS and Rust rule order and the JS side of the rules are outside this contract and are covered elsewhere in the repository, not here.
 
