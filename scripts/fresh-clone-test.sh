@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AI-screener check: fresh clone, npm ci, run README blocks marked <!-- judge:run -->.
+# AI-screener check: fresh clone, npm ci, the README judge path, README blocks marked <!-- judge:run -->.
 # Offline, no keys, no chain writes. Never reads .env or key files.
 set -uo pipefail
 unset CDPATH
@@ -9,7 +9,9 @@ usage() {
 Usage: bash scripts/fresh-clone-test.sh [--allow-empty] [REPO_PATH]
 
 Clones REPO_PATH (default: the repo containing this script) via file:// into a
-temp dir, runs npm ci, then runs every README.md fenced shell block that is
+temp dir, runs npm ci, walks the offline README judge path (demo, ask, anchors,
+attest:check, swarm, render; scripts/fresh-clone-judge-path.mjs, SKIP when the
+clone has no scripts/demo.mjs), then runs every README.md fenced shell block that is
 preceded by <!-- judge:run -->. Blocks may also be preceded by
 <!-- judge:expect TEXT --> lines; the combined output must contain TEXT.
 Blocks without the run marker are skipped. Prints a PASS/FAIL table and exits
@@ -83,6 +85,17 @@ elif npm ci --no-audit --no-fund; then
   row PASS "npm ci" ok
 else
   row FAIL "npm ci" failed
+fi
+
+echo "==> judge path"
+if [[ ! -f scripts/demo.mjs ]]; then
+  row SKIP "judge path" "no scripts/demo.mjs"
+else
+  rows_before=$(wc -l < "$pre")
+  if ! node "$script_dir/fresh-clone-judge-path.mjs" --cwd "$work/repo" --rows "$pre" \
+    && [[ "$(wc -l < "$pre")" -eq "$rows_before" ]]; then
+    row FAIL "judge path" "helper failed without writing rows"
+  fi
 fi
 
 finish

@@ -12,7 +12,7 @@
 import { AGENTS } from "../traits/agents.mjs";
 import { prepareAnchor, submitAnchor } from "../anchor/anchor.mjs";
 import { createMockClient } from "../inference/client.mjs";
-import { makeEvent, shouldSummarize, summarize } from "./summarizer.mjs";
+import { MemoryError, makeEvent, shouldSummarize, summarize } from "./summarizer.mjs";
 import { sheetResponder } from "./sheet-responder.mjs";
 
 /**
@@ -28,9 +28,9 @@ export function tokenLogs(events, agents = AGENTS) {
   const authorById = new Map(events.map((e) => [e.id, e.agentId]));
   for (const e of events) {
     const from = nameOf.get(e.agentId) ?? e.agentId;
-    logs[e.agentId]?.push(makeEvent({ round: e.round, kind: e.kind, from, text: e.text }));
+    if (Object.hasOwn(logs, e.agentId)) logs[e.agentId].push(makeEvent({ round: e.round, kind: e.kind, from, text: e.text }));
     const target = e.replyTo === null ? undefined : authorById.get(e.replyTo);
-    if (target && target !== e.agentId && logs[target]) {
+    if (target && target !== e.agentId && Object.hasOwn(logs, target)) {
       logs[target].push(makeEvent({ round: e.round, kind: "mention", from, text: e.text }));
     }
   }
@@ -68,6 +68,9 @@ export function diffSheets(previous, next) {
  * last sheet always covers the whole run and links to the final round hash.
  */
 export function sheetRounds(rounds, every) {
+  if (rounds > Number.MAX_SAFE_INTEGER) {
+    throw new MemoryError("rounds must be a safe integer", { code: "bad_config" });
+  }
   const out = [];
   for (let r = 1; r <= rounds; r++) if (shouldSummarize(r, every) || r === rounds) out.push(r);
   return out;
@@ -84,6 +87,9 @@ export function sheetRounds(rounds, every) {
  * deterministic. Pass a live inference client for model-written sheets.
  */
 export async function runMemoryLoop({ swarm, agents = AGENTS, client = createMockClient({ responder: sheetResponder }), contractId = "mock-contract.testnet", every = DEFAULT_LOOP_EVERY }) {
+  if (!Number.isSafeInteger(swarm.rounds) || swarm.rounds < 1 || swarm.roundHashes?.length !== swarm.rounds) {
+    throw new MemoryError("swarm.rounds must be a positive integer with exactly one round hash per round", { code: "bad_config" });
+  }
   const finalRoundHash = swarm.roundHashes.at(-1);
   const logs = tokenLogs(swarm.events, agents);
   const tokens = [];

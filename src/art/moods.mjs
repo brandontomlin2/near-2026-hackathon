@@ -15,8 +15,18 @@ export const DEFAULT_MOOD = "neutral";
  */
 export function assertMood(mood) {
   if (mood === undefined) return DEFAULT_MOOD;
-  if (!MOODS.includes(/** @type {string} */ (mood))) throw new Error(`unknown mood: ${String(mood)}`);
+  if (!MOODS.includes(/** @type {string} */ (mood))) throw new Error(`unknown mood: ${moodLabel(mood)}`);
   return /** @type {any} */ (mood);
+}
+
+// String(x) throws for null-prototype objects, hostile toString/Symbol.toPrimitive
+// and revoked proxies; fall back to the type name so the Error stays an Error.
+function moodLabel(mood) {
+  try {
+    return String(mood);
+  } catch {
+    return typeof mood;
+  }
 }
 
 // Ordered rules: the first match wins, so the priority is hype-emoji > shade >

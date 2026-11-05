@@ -48,4 +48,5 @@ The vault calls the Rhea (Ref Finance) testnet exchange contract `ref-finance-10
 
 ## Other notes
 
+- Mock and testnet status: the demo is mock or dry-run only. Nothing is deployed to testnet or mainnet, nothing is signed or sent, and NEAR Intents (mainnet-only) is not used.
 - Not covered by the MIT license in `LICENSE`: the third-party libraries above and the installed agent skills keep their own licenses.

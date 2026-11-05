@@ -19,7 +19,11 @@ const TWEAK_PREFIX = 'near-mpc-recovery v0.1.0 epsilon derivation:';
 const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 export function base58Encode(bytes) {
   let n = 0n;
-  for (const b of bytes) n = (n << 8n) | BigInt(b);
+  let i = 0;
+  for (const b of bytes) {
+    if (!Number.isInteger(b) || b < 0 || b > 255) throw new RangeError(`base58Encode: byte at index ${i} is not an integer 0..255: ${String(b)}`);
+    n = (n << 8n) | BigInt(b); i++;
+  }
   let out = '';
   while (n > 0n) { out = B58[Number(n % 58n)] + out; n /= 58n; }
   for (const b of bytes) { if (b !== 0) break; out = '1' + out; }
@@ -49,6 +53,7 @@ export const formatEd25519PublicKey = (bytes) => `ed25519:${base58Encode(bytes)}
 
 // ---------- tweak (kdf.rs) ----------
 export function deriveTweak(predecessorId, path) {
+  if (typeof predecessorId !== 'string' || typeof path !== 'string') throw new Error('predecessorId and path must be strings');
   return new Uint8Array(createHash('sha3-256').update(`${TWEAK_PREFIX}${predecessorId},${path}`).digest());
 }
 
@@ -127,7 +132,10 @@ class Writer {
   u64(n) { return this.uint(n, 8); }
   u128(n) { return this.uint(n, 16); }
   vec(b) { return this.u32(b.length).bytes(b); }
-  string(s) { return this.vec(new TextEncoder().encode(s)); }
+  string(s) {
+    if (typeof s !== 'string') throw new Error(`expected a string, got ${typeof s}`);
+    return this.vec(new TextEncoder().encode(s));
+  }
   publicKey(s) { return this.u8(0).bytes(parseEd25519PublicKey(s)); }
   done() { return Buffer.concat(this.parts); }
 }
@@ -142,6 +150,9 @@ function writeAction(w, a) {
       w.u8(5).publicKey(a.publicKey).u64(0); // access key nonce
       if (a.permission === 'FullAccess') { w.u8(1); return; }
       const p = a.permission;
+      if (p === null || typeof p !== 'object' || typeof p.receiverId !== 'string' || !Array.isArray(p.methodNames)) {
+        throw new Error(`unknown AddKey permission: ${JSON.stringify(p, (_, v) => (typeof v === 'bigint' ? `${v}n` : v))}`);
+      }
       w.u8(0);
       if (p.allowance == null) w.u8(0); else w.u8(1).u128(p.allowance);
       w.string(p.receiverId).u32(p.methodNames.length);
@@ -168,7 +179,8 @@ export const sha256 = (bytes) => new Uint8Array(createHash('sha256').update(byte
  * NEAR verifies an ed25519 signature over sha256(borsh(tx)), so that hash is the Eddsa payload.
  */
 export function buildSignRequest({ path, txHash }) {
-  if (txHash.length !== 32) throw new Error('txHash must be 32 bytes');
+  if (typeof path !== 'string') throw new Error('path must be a string');
+  if (!(txHash instanceof Uint8Array) || txHash.length !== 32) throw new Error('txHash must be 32 bytes');
   return { request: { path, payload_v2: { Eddsa: Buffer.from(txHash).toString('hex') }, domain_id: ED25519_DOMAIN_ID } };
 }
 

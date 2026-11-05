@@ -165,6 +165,9 @@ function pickMood(moods, wanted, fallbacks) {
   return "neutral";
 }
 
+// A style may lack a mood the caller lists; its neutral face stands in.
+const faceOf = (ctx, id, mood) => ctx.faces[id][mood] ?? ctx.faces[id].neutral;
+
 const safeId = (id) => String(id).replace(/[^A-Za-z0-9_-]/g, "_");
 
 // --- formats ---------------------------------------------------------------
@@ -225,7 +228,7 @@ function buildCaptions(ctx) {
     const top = fitText(topText, { width: SIZE - 2 * MARGIN, maxLines: 2, maxSize: 84, minSize: 40, maxHeight: 190 });
     const bottom = fitText(bottomText, { width: SIZE - 2 * MARGIN, maxLines: 3, maxSize: 72, minSize: 34, maxHeight: 210 });
     const label = `${cleanText(names[target])} meme: ${top.lines.join(" ")} / ${bottom.lines.join(" ")}`;
-    const body = `${nest(ctx.faces[target][mood], 0, 0, SIZE)}
+    const body = `${nest(faceOf(ctx, target, mood), 0, 0, SIZE)}
 ${impactBlock(top, { y: MARGIN + top.size })}
 ${impactBlock(bottom, { y: SIZE - MARGIN - 6 - FOOTER_SPACE, grow: "up" })}`;
     out.push({
@@ -336,9 +339,10 @@ export function rivalryLine(args) {
 
 /** Like rivalryLine, but also returns whether the picked template is an "I did not start it" line. */
 export function rivalryPick({ id, seed = 0, enemy, fights, used = new Set() }) {
-  const own = RIVALRY_LINES[id] ?? RIVALRY_LINES.default;
+  const own = Object.hasOwn(RIVALRY_LINES, id) ? RIVALRY_LINES[id] : RIVALRY_LINES.default;
   const pool = own === RIVALRY_LINES.default ? [...own] : [...own, ...RIVALRY_LINES.default];
-  const fill = (t) => t.replaceAll("{enemy}", enemy).replaceAll("{n}", String(fights));
+  // Function replacers: a `$&` or `$'` in an enemy name must stay literal.
+  const fill = (t) => t.replaceAll("{enemy}", () => enemy).replaceAll("{n}", () => String(fights));
   const start = fnv1a(`${seed}\u0000${id}`) % own.length;
   let template = pool[start];
   let line = fill(template);
@@ -422,10 +426,10 @@ ${plainBlock(rival, { x: SIZE / 2, y: SIZE - STRIP + (STRIP - 22 - rival.lines.l
     // The enemy's tile sits above the main face's eyes, on the right.
     const enemyBox = enemyId
       ? `<rect x="${SIZE - 240}" y="236" width="210" height="210" rx="20" fill="#fff" stroke="#fff" stroke-width="6"/>
-${nest(ctx.faces[enemyId][enemyMood], SIZE - 240, 236, 210)}`
+${nest(faceOf(ctx, enemyId, enemyMood), SIZE - 240, 236, 210)}`
       : "";
     const label = `${name} meme: ${top.lines.join(" ")} / ${bottomText} / ${rivalry}`;
-    const body = `${nest(ctx.faces[id][mood], 0, 0, SIZE)}
+    const body = `${nest(faceOf(ctx, id, mood), 0, 0, SIZE)}
 ${enemyBox}
 ${impactBlock(top, { y: MARGIN + top.size })}
 ${impactBlock(bottom, { y: SIZE - STRIP - 14, grow: "up" })}
@@ -455,7 +459,7 @@ const FORMATS = [buildCaptions, buildVillains];
  */
 export function buildMemes({ events, sheets = {}, names, moods, faces, seed = 0 }) {
   const ids = Object.keys(names);
-  const usable = ids.filter((id) => faces?.[id]);
+  const usable = ids.filter((id) => typeof faces?.[id]?.neutral === "string");
   const ctx = {
     events: events.map((e) => ({ ...e, text: cleanText(e.text) })),
     sheets, names, moods: moods?.length ? moods : ["neutral"], faces, ids: usable, seed,

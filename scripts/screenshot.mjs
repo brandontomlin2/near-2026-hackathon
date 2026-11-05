@@ -5,7 +5,7 @@
 // docs/img/page.png instead (maintainers; the bytes depend on the local browser
 // and fonts). An existing --out that is not a PNG is left alone unless --force.
 // No browser: exit 2.
-import { existsSync, mkdtempSync, mkdirSync, openSync, readSync, closeSync, rmSync, statSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, mkdirSync, openSync, readSync, closeSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -41,6 +41,13 @@ function isPng(file) {
  * missing, a PNG, or --force was given. Runs before the demo or the browser.
  */
 function refusalFor(out, force) {
+  let link = false;
+  try {
+    link = lstatSync(out).isSymbolicLink();
+  } catch {
+    // absent (or unreadable parent): the existsSync check below decides
+  }
+  if (link) return `--out ${out} is a symbolic link; refusing to write through it`;
   if (!existsSync(out)) return null;
   if (statSync(out).isDirectory()) return `--out ${out} is a directory; give a file path`;
   if (force) return null;

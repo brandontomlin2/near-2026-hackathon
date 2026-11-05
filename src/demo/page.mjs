@@ -56,7 +56,11 @@ const YOCTO_PER_NEAR = 10n ** 24n;
 
 /** "10000000000000000000000" -> "0.01 NEAR", "1" -> "1 yoctoNEAR". */
 export function formatDeposit(yocto) {
+  if (typeof yocto === "string" && yocto.trim() === "") {
+    throw new SyntaxError(`invalid deposit: ${JSON.stringify(yocto)}`);
+  }
   const y = BigInt(yocto);
+  if (y < 0n) throw new RangeError(`deposit must not be negative: ${y}`);
   if (y < 10n ** 18n) return `${y} yoctoNEAR`;
   const whole = y / YOCTO_PER_NEAR;
   const frac = (y % YOCTO_PER_NEAR).toString().padStart(24, "0").replace(/0+$/, "");
@@ -156,6 +160,13 @@ function channel(manifest, events, moods) {
  */
 export function renderDemoPage(manifest, { events, anchors })
  {
+  // A missing scalar would print as the word "undefined" on the page.
+  const need = (obj, keys, what) => {
+    for (const k of keys) if (obj?.[k] == null) throw new TypeError(`${what}.${k} is missing`);
+  };
+  need(manifest, ["rounds", "seed", "every", "finalRoundHash"], "manifest");
+  need(anchors, ["contractId"], "anchors");
+  for (const a of manifest.agents) need(a, ["name", "personality", "memoryDepth"], "manifest.agents[]");
   const moods = manifest.moods ?? ["neutral"];
   const shares = (manifest.shares ?? []).map((x) => {
     const agent = manifest.agents.find((a) => a.id === x.agentId);

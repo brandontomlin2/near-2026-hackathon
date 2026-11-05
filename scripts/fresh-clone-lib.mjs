@@ -14,7 +14,7 @@ import { pathToFileURL } from "node:url";
 
 const RUN_RE = /^<!--\s*judge:run\s*-->\s*$/;
 const EXPECT_RE = /^<!--\s*judge:expect\s+(.*?)\s*-->\s*$/;
-const FENCE_RE = /^(`{3,}|~{3,})\s*([\w+-]*)[^\n]*$/;
+const FENCE_RE = /^(`{3,}(?=[^`]*$)|~{3,})\s*([\w+-]*)[^\n]*$/;
 const SHELL_LANGS = new Set(["", "sh", "bash", "shell", "console", "zsh"]);
 
 // Blocks marked runnable must work offline with no keys. This is a lint that
@@ -24,10 +24,10 @@ const UNSAFE = [
   [/(^|[^\w-])(curl|wget)\s/, "network download"],
   [/--live\b/, "live mode"],
   [/NEAR_NETWORK=(?!testnet\b)\S+/, "non-testnet network"],
-  [/(^|[;&|\s])near\s/, "near cli (signs transactions)"],
+  [/(^|[;&|\s(`])near\s/, "near cli (signs transactions)"],
   [/\bcargo\s+near\b/, "cargo near"],
   [/\bgit\s+push\b/, "git push"],
-  [/(^|[\s<>"'=/])\.env(\.\w+)?(\s|$|["'])/, "reads .env"],
+  [/(^|[\s<>"'=/])\.env(\.\w+)?(\s|$|["';&|)<>])/, "reads .env"],
   [/\.near-credentials|\.pem\b|\.key\b|id_rsa/, "reads key files"],
   [/\bnpm\s+(publish|login)\b/, "npm publish/login"],
 ];
@@ -199,6 +199,10 @@ function main(argv) {
     console.error("usage: fresh-clone-lib.mjs run --readme <file> --cwd <dir> [--pre <tsv>] [--allow-empty] [--timeout-ms <n>]");
     return 2;
   }
+  if (opts.pre && fs.existsSync(opts.pre) && fs.statSync(opts.pre).isDirectory()) {
+    console.error(`--pre must be a file, but is a directory: ${opts.pre}`);
+    return 2;
+  }
   const rows = readPre(opts.pre);
   let blocks = [];
   try {
@@ -222,7 +226,7 @@ function main(argv) {
     else if (!commandsOf(block.code).length) rows.push({ status: "FAIL", step, detail: "empty block" });
     else {
       const r = runBlock(block, opts.cwd, opts.timeoutMs);
-      rows.push({ status: r.status, step, detail: `${label.slice(0, 50)}: ${r.detail}` });
+      rows.push({ status: r.status, step, detail: `${Array.from(label).slice(0, 50).join("")}: ${r.detail}` });
     }
   }
   const { text, failed } = formatTable(rows);

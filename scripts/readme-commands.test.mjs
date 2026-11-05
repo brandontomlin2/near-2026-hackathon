@@ -68,6 +68,28 @@ test("Judge quick path: npm run demo prints the lines it quotes and writes the p
   }
 });
 
+test("README demo counts: seed 1 writes the files and cards Try-it step 1 names, seed 2 prints the counts the meme paragraph quotes", () => {
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const tryIt = readme.split("## Try it (judge path)\n")[1].split(/\n## /)[0];
+  const step1 = tryIt.split(/^2\. /m)[0];
+  const files = Number(step1.match(/the (\d+) files written under `out\/`/)[1]);
+  const share = Number(step1.match(/(\d+) share cards/)[1]);
+  const memes = Number(step1.match(/(\d+) meme cards/)[1]);
+  const seed2 = readme.match(/seed 2 prints `(\d+) meme cards` and `Files written \((\d+)\)`/);
+  assert.ok(seed2, "README quotes the seed 2 counts");
+  for (const [args, wantFiles, wantMemes] of [[[], files, memes], [["--seed", "2"], Number(seed2[2]), Number(seed2[1])]]) {
+    const out = mkdtempSync(join(tmpdir(), "democounts-"));
+    try {
+      const run = spawnSync(process.execPath, ["scripts/demo.mjs", ...args, "--out", out], { cwd: root, encoding: "utf8" });
+      assert.equal(run.status, 0, run.stderr);
+      assert.ok(run.stdout.includes(`Files written (${wantFiles})`), `${args.join(" ") || "seed 1"}: Files written (${wantFiles})`);
+      assert.match(run.stdout, new RegExp(`\\[3/5\\] art: .*, ${share} share cards, ${wantMemes} meme cards\\n`));
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  }
+});
+
 test("Judge quick path: the verify.sh lines it quotes are ones verify.sh prints", () => {
   // Not run here: verify.sh itself runs this test suite.
   const verify = readFileSync(new URL("./verify.sh", import.meta.url), "utf8");
