@@ -347,3 +347,23 @@ describe("terminal safety of what the CLI itself prints", () => {
       assert.equal([...r.stdout.trimEnd()].every((c) => c === "\u{1F600}"), true);
     }));
 });
+
+// Regression: the mode line printed NEAR_AI_MODEL to stderr verbatim, so a model name with
+// an escape sequence or newline could drive the terminal (clear it, retitle it) or forge
+// a second stderr line, while every other provider-controlled string is cleaned.
+describe("regression: mode line sanitizes NEAR_AI_MODEL", () => {
+  test("mock mode: control characters in NEAR_AI_MODEL do not reach stderr raw, and the line stays one line", T, () => {
+    const r = run(["--json", "hi"], { NEAR_AI_MODEL: "evil\u001b[2J\u001b]0;pwn\u0007\nforged: line‮" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.doesNotMatch(r.stderr, UNSAFE);
+    assert.equal(r.stderr.trimEnd().split("\n").length, 1, `forged extra line: ${JSON.stringify(r.stderr)}`);
+    assert.match(r.stderr, /^mode: mock model: evil/);
+    assert.doesNotMatch(r.stdout, UNSAFE);
+  });
+
+  test("mock mode: a 10 KiB NEAR_AI_MODEL is truncated in the mode line", T, () => {
+    const r = run(["hi"], { NEAR_AI_MODEL: "m".repeat(10 * 1024) });
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(Buffer.byteLength(r.stderr) < 1024, `${Buffer.byteLength(r.stderr)} bytes of stderr`);
+  });
+});
