@@ -1,7 +1,8 @@
 // Shared README extraction for the yield:demo tests. No dependencies.
 //
 // README format this relies on (see "Offline demo: `npm run yield:demo`" under
-// "## Yield Optimizer"): numbered steps (one line, or a line plus indented "   - " sub-bullets that numberedSteps folds into it). In a step, the first
+// "## Yield Optimizer"): numbered steps, each one line or one line plus indented
+// "   - " sub-bullets that numberedSteps folds into it. In a step, the first
 // backtick span is the command (or, for "Open", the file); every backtick span
 // after the word "See" is a quoted output line. In the "Judge quick path" the
 // quoted spans are every span after the first. Quotes are compared trimmed.
