@@ -34,3 +34,18 @@ describe("transfer intro caveat", () => {
     assert.match(p, /not read from a chain/);
   });
 });
+
+describe("mint metadata label", () => {
+  const html = render(withTamper());
+  const label = html.match(/<h3>Mint metadata<\/h3>\s*<p class="mut">([\s\S]*?)<\/p>/)[1];
+
+  it("calls it a preview and points at npm run mint for the exact call", () => {
+    assert.match(label, /^A preview of the NEP-177 <code>TokenMetadata<\/code> fields/);
+    assert.match(label, /<code>npm run mint<\/code> prints the exact mint call \(dry run\)/);
+    assert.match(label, /<code>media<\/code> and <code>media_hash<\/code>/);
+  });
+
+  it("no longer claims these are what each token would mint with", () => {
+    assert.ok(!html.includes("each token would mint with"));
+  });
+});
