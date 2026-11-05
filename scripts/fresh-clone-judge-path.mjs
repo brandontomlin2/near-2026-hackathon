@@ -68,6 +68,8 @@ function spawnCheck(command, cwd, timeoutMs, extraEnv) {
     if (!k.startsWith("NEAR_")) env[k] = v; // README output assumes no NEAR_* configuration
   }
   env.HOME = home;
+  // Checks assume the default summary cadence (3); a caller's SUMMARY_EVERY_N_ROUNDS would give false FAILs.
+  delete env.SUMMARY_EVERY_N_ROUNDS;
   const res = spawnSync("bash", ["-c", `exec 2>&1\n${command}`], {
     cwd,
     env,

@@ -66,6 +66,24 @@ describe("fresh-clone-judge-path", () => {
     assert.match(rows[1].detail, /check error/);
   });
 
+  it("drops a caller's SUMMARY_EVERY_N_ROUNDS=1 so children use the default cadence", () => {
+    const prev = process.env.SUMMARY_EVERY_N_ROUNDS;
+    process.env.SUMMARY_EVERY_N_ROUNDS = "1";
+    try {
+      const [row] = runChecks({
+        cwd: dir,
+        readme: "",
+        log: () => {},
+        env: { SUMMARY_EVERY_N_ROUNDS: "1" },
+        checks: [{ step: "t:every", command: 'echo "every=${SUMMARY_EVERY_N_ROUNDS-unset}"', expects: ["every=unset"], readme: [] }],
+      });
+      assert.equal(row.status, "PASS", row.detail);
+    } finally {
+      if (prev === undefined) delete process.env.SUMMARY_EVERY_N_ROUNDS;
+      else process.env.SUMMARY_EVERY_N_ROUNDS = prev;
+    }
+  });
+
   it("times out a hung command", () => {
     const [row] = runChecks({ cwd: dir, readme: "", log: () => {}, timeoutMs: 300, checks: [{ step: "t:hang", command: "sleep 5" }] });
     assert.equal(row.status, "FAIL");
