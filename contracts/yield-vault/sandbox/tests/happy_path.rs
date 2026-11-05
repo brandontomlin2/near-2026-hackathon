@@ -104,7 +104,7 @@ async fn happy_path_full_lifecycle() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Ref's swap panics: token_in is stranded on Ref, then recovered with recover_from_ref.
+/// Ref's swap panics and the refund withdraw cannot land: token_in is stranded on Ref, then recovered with recover_from_ref.
 #[tokio::test]
 async fn failed_swap_strands_then_recover_from_ref() -> anyhow::Result<()> {
     let sb = Sb::new().await?;
@@ -114,15 +114,12 @@ async fn failed_swap_strands_then_recover_from_ref() -> anyhow::Result<()> {
     sb.owner.call(sb.tin.id(), "ft_transfer_call")
         .args_json(json!({"receiver_id": sb.vault.id(), "amount": DEPOSIT.to_string(), "msg": ""}))
         .deposit(YOCTO).gas(tgas(100)).transact().await?.into_result()?;
-    sb.admin.call(sb.rf.id(), "set_swap_panic").args_json(json!({"v": true})).transact().await?.into_result()?;
-
-    let r = sb.runner.call(sb.vault.id(), "execute_swap")
-        .args_json(json!({"proposal": {
-            "pool_id": POOL, "token_in": sb.tin.id(), "token_out": sb.tout.id(),
-            "amount_in": AMOUNT_IN.to_string(), "min_amount_out": MIN_OUT.to_string()}}))
-        .gas(g("MIN_EXECUTE_GAS")).transact().await?;
-    // ref.swap fails by design; the vault's own callbacks must all succeed.
-    report_expecting(&sb, "execute_swap, ref.swap panics (strand path)", &r, sb.runner.id(), &["ref.swap"]).await?;
+    // ref.swap panics; the refund withdraw's tin.ft_transfer fails too, so the refund cannot
+    // be verified and token_in is stranded (the plain swap-panic case now self-heals: refunds.rs).
+    let r = sb.strand_token_in(AMOUNT_IN, MIN_OUT).await?;
+    // ref.swap and tin.ft_transfer fail by design; the vault's own callbacks must all succeed.
+    report_expecting(&sb, "execute_swap, ref.swap panics + refund ft_transfer fails (strand path)", &r, sb.runner.id(), &["ref.swap", "tin.ft_transfer"]).await?;
+    assert!(r.logs().iter().any(|l| l.contains("refund_not_reconciled")), "{:?}", r.logs());
     let s = sb.state().await?;
     assert_eq!(s["swap_in_flight"], false);
     assert_eq!(s["swaps_executed"], 0);
@@ -130,7 +127,6 @@ async fn failed_swap_strands_then_recover_from_ref() -> anyhow::Result<()> {
     assert_eq!(sb.vault_balance(&sb.tin).await?, DEPOSIT - AMOUNT_IN);
     assert_eq!(sb.ref_deposit(sb.vault.id(), &sb.tin).await?, AMOUNT_IN);
 
-    sb.admin.call(sb.rf.id(), "set_swap_panic").args_json(json!({"v": false})).transact().await?.into_result()?;
     let r = sb.owner.call(sb.vault.id(), "recover_from_ref")
         .args_json(json!({"token_id": sb.tin.id(), "amount": AMOUNT_IN.to_string()}))
         .deposit(YOCTO).gas(g("MIN_RECOVER_GAS")).transact().await?;

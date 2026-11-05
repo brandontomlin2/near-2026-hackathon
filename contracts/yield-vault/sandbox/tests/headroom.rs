@@ -97,17 +97,17 @@ async fn swap_trial(sb: &Sb, c: &std::collections::BTreeMap<String, u64>) -> any
     Ok(Trial { complete: failed.is_empty() && after == before + 1, failed })
 }
 
-/// Strands AMOUNT_IN of token_in on Ref (swap panics), then recovers it with MIN_RECOVER_GAS.
+/// Strands AMOUNT_IN of token_in on Ref (swap panics and the refund withdraw's ft_transfer fails), then recovers it with MIN_RECOVER_GAS.
 async fn recover_trial(sb: &Sb, c: &std::collections::BTreeMap<String, u64>, method: &str, extra: u64) -> anyhow::Result<Trial> {
     sb.set_ref_burn(method, 0).await?;
-    sb.admin.call(sb.rf.id(), "set_swap_panic").args_json(json!({"v": true})).transact().await?.into_result()?;
-    let _strand = sb.runner.call(sb.vault.id(), "execute_swap")
-        .args_json(sb.swap_args(AMOUNT_IN, MIN_OUT)).gas(tgas(c["MIN_EXECUTE_GAS"])).transact().await?;
-    sb.admin.call(sb.rf.id(), "set_swap_panic").args_json(json!({"v": false})).transact().await?.into_result()?;
+    // Each trial strands on purpose (`refund_not_reconciled`), and a recovery does not reset the
+    // auto-pause count, so the 3rd trial would otherwise find the vault paused. `unpause` resets it.
+    sb.owner.call(sb.vault.id(), "unpause").deposit(YOCTO).transact().await?.into_result()?;
+    let _strand = sb.strand_token_in(AMOUNT_IN, MIN_OUT).await?;
     let st = sb.state().await?;
     assert_eq!(pair_amount(&st["stranded_on_ref"], sb.tin.id().as_str()) % AMOUNT_IN, 0);
     let stranded_before = pair_amount(&st["stranded_on_ref"], sb.tin.id().as_str());
-    assert!(stranded_before >= AMOUNT_IN, "setup: nothing stranded");
+    assert!(stranded_before >= AMOUNT_IN, "setup: nothing stranded (extra {extra}): state {st} failures {:?}", _strand.receipt_failures());
     sb.set_ref_burn(method, extra).await?;
     let r = sb.owner.call(sb.vault.id(), "recover_from_ref")
         .args_json(json!({"token_id": sb.tin.id(), "amount": AMOUNT_IN.to_string()}))

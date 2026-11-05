@@ -50,13 +50,9 @@ async fn ref_withdraw_gas_covers_ref_20_20_at_documented_minimums() -> anyhow::R
     assert_eq!(sb.ref_deposit(sb.vault.id(), &sb.tout).await?, 0);
 
     // recover_from_ref at MIN_RECOVER_GAS: strand token_out on Ref via a panicking get_deposit
-    // would be indirect; instead strand token_in with a panicking swap, then recover.
-    sb.admin.call(sb.rf.id(), "set_swap_panic").args_json(json!({"v": true})).transact().await?.into_result()?;
-    let r = sb.runner.call(sb.vault.id(), "execute_swap")
-        .args_json(sb.swap_args(AMOUNT_IN, MIN_OUT))
-        .gas(tgas(c["MIN_EXECUTE_GAS"])).transact().await?;
-    report_expecting(&sb, "execute_swap, ref.swap panics (strand)", &r, sb.runner.id(), &["ref.swap"]).await?;
-    sb.admin.call(sb.rf.id(), "set_swap_panic").args_json(json!({"v": false})).transact().await?.into_result()?;
+    // would be indirect; instead strand token_in (swap panics, refund withdraw's transfer fails), then recover.
+    let r = sb.strand_token_in(AMOUNT_IN, MIN_OUT).await?;
+    report_expecting(&sb, "execute_swap, ref.swap panics + refund ft_transfer fails (strand)", &r, sb.runner.id(), &["ref.swap", "tin.ft_transfer"]).await?;
     assert_eq!(pair_amount(&sb.state().await?["stranded_on_ref"], sb.tin.id().as_str()), AMOUNT_IN);
     let tin_before = sb.vault_balance(&sb.tin).await?;
     let r = sb.owner.call(sb.vault.id(), "recover_from_ref")
