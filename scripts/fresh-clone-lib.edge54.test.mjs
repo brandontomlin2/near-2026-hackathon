@@ -384,3 +384,15 @@ describe("CLI edge cases", () => {
     assert.match(r.stdout, /PASS\s+README:7\s/);
   });
 });
+
+// Regression tests for fixes in fresh-clone-lib.mjs (edge54).
+describe("regression: .env read lint must see .env followed by a shell operator", () => {
+  test(".env followed by ; | & ) < > is refused", T, () => {
+    for (const c of ["cat .env;", "cat .env|grep X", "cat .env&", "echo $(cat .env)", "(cat .env)", "cat .env>out", "cat <.env", "cat .env.local;", "cat .env\n"]) {
+      assert.match(sh(c) ?? "", /\.env/, JSON.stringify(c));
+    }
+  });
+  test("look-alikes stay allowed", T, () => {
+    for (const c of ["cat .envrc;", "echo .environment|cat", "cat foo.env;"]) assert.equal(sh(c), null, c);
+  });
+});

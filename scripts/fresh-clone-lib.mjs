@@ -27,7 +27,7 @@ const UNSAFE = [
   [/(^|[;&|\s])near\s/, "near cli (signs transactions)"],
   [/\bcargo\s+near\b/, "cargo near"],
   [/\bgit\s+push\b/, "git push"],
-  [/(^|[\s<>"'=/])\.env(\.\w+)?(\s|$|["'])/, "reads .env"],
+  [/(^|[\s<>"'=/])\.env(\.\w+)?(\s|$|["';&|)<>])/, "reads .env"],
   [/\.near-credentials|\.pem\b|\.key\b|id_rsa/, "reads key files"],
   [/\bnpm\s+(publish|login)\b/, "npm publish/login"],
 ];
