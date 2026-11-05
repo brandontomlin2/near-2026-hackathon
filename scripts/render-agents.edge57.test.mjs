@@ -131,11 +131,13 @@ test("a repeated --style a --style b renders only the last one", (t) => {
   assert.deepEqual(readdirSync(join(cwd, "o", "styles")), ["sticker"]);
 });
 
-test("repeated --out with an I/O failure: the message names the last --out, not the first", (t) => {
+// A non-directory --out is reported as a bad argument (exit 2, "see --help"), as
+// pinned by scripts/cli-behaviour.test.mjs; these cases extend that to repeats and nesting.
+test("repeated --out under a file: the message names the last --out, not the first", (t) => {
   const cwd = scratch(t);
   writeFileSync(join(cwd, "blocker"), "x");
   const r = run(cwd, ["--out", "good", "--out", "blocker/sub"]);
-  assert.equal(r.code, 1, r.stderr);
+  assert.equal(r.code, 2, r.stderr);
   assert.ok(oneLine(r.stderr), r.stderr);
   assert.ok(r.stderr.includes("blocker"), r.stderr);
   assert.ok(!existsSync(join(cwd, "good")), "the earlier --out is not created");
@@ -144,41 +146,28 @@ test("repeated --out with an I/O failure: the message names the last --out, not 
   assert.equal(readdirSync(join(cwd, "good")).length, AGENTS.length);
 });
 
-test("--out pointing at an existing file is an I/O failure (exit 1), not a usage error, and the file is untouched", (t) => {
-  const cwd = scratch(t);
-  writeFileSync(join(cwd, "afile"), "keep");
-  const r = run(cwd, ["--out", "afile"]);
-  assert.equal(r.code, 1, r.stderr);
-  assert.equal(r.stdout, "");
-  assert.ok(oneLine(r.stderr), r.stderr);
-  assert.match(r.stderr, /^render: cannot write afile: /);
-  assert.doesNotMatch(r.stderr, /see --help/);
-  assert.equal(readFileSync(join(cwd, "afile"), "utf8"), "keep");
-  assert.deepEqual(readdirSync(cwd), ["afile"]);
-});
-
-test("--out under a file is an I/O failure (exit 1) with no partial output, for every style mode", (t) => {
+test("--out under a file fails with one line and no partial output, for every style mode", (t) => {
   const cwd = scratch(t);
   writeFileSync(join(cwd, "afile"), "keep");
   for (const args of [[], ["--style", "sticker"], ["--style", "all"]]) {
     const r = run(cwd, [...args, "--out", "afile/deeper"]);
-    assert.equal(r.code, 1, `${args.join(" ")}: ${r.stderr}`);
+    assert.equal(r.code, 2, `${args.join(" ")}: ${r.stderr}`);
     assert.equal(r.stdout, "");
     assert.ok(oneLine(r.stderr), r.stderr);
-    assert.doesNotMatch(r.stderr, /see --help/);
+    assert.match(r.stderr, /^render: cannot create afile\/deeper: .* is not a directory \(see --help\)\n$/);
   }
   assert.deepEqual(readdirSync(cwd), ["afile"]);
   assert.equal(readFileSync(join(cwd, "afile"), "utf8"), "keep");
 });
 
-test("a file where out/styles should be: no partial output, exit 1", (t) => {
+test("a file where out/styles should be: no partial output, exit 2", (t) => {
   const cwd = scratch(t);
   const out = join(cwd, "o");
   assert.equal(run(cwd, ["--out", "o"]).code, 0);
   const before = walk(out);
   writeFileSync(join(out, "styles"), "blocker");
   const r = run(cwd, ["--style", "sticker", "--out", "o"]);
-  assert.equal(r.code, 1, r.stderr);
+  assert.equal(r.code, 2, r.stderr);
   assert.deepEqual(walk(out), [...before, "styles"].sort());
   assert.equal(readFileSync(join(out, "styles"), "utf8"), "blocker");
 });
