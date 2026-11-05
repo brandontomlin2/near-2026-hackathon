@@ -210,6 +210,25 @@ export async function summarize({ client, tokenId, name, round, log, previous = 
   };
 }
 
+const isCount = (v) => Number.isSafeInteger(v) && v >= 0;
+
+const SHEET_FIELD_CHECKS = [
+  ["tokenId", (v, tokenId) => typeof v === "string" && v === tokenId, "expected the token id being read"],
+  ["round", isCount, "expected a non-negative integer"],
+  ["sheet", (v) => typeof v === "string" && v.length > 0, "expected a non-empty string"],
+  ["sheetHash", (v) => typeof v === "string" && /^[0-9a-f]{64}$/.test(v), "expected 64 lowercase hex characters"],
+  ["throughIndex", isCount, "expected a non-negative integer"],
+];
+
+/** Throw bad_sheet on the first field of a sheet record that callers cannot rely on. */
+function checkSheetRecord(value, tokenId, file) {
+  for (const [field, ok, reason] of SHEET_FIELD_CHECKS) {
+    if (ok(value[field], tokenId)) continue;
+    const got = value[field] === undefined ? "missing" : (JSON.stringify(value[field]) ?? String(value[field])).slice(0, 40);
+    throw new MemoryError(`the sheet file ${file} has a bad ${field}: ${reason} (got ${got})`, { code: "bad_sheet" });
+  }
+}
+
 /**
  * File-backed store, one directory per token id:
  *   <root>/<tokenId>/log.jsonl   append-only, one event per line
@@ -312,6 +331,7 @@ export function createMemoryStore(root) {
         const kind = value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
         throw new MemoryError(`the sheet file ${file} is not a sheet record (got ${kind})`, { code: "bad_sheet" });
       }
+      checkSheetRecord(value, tokenId, file);
       return value;
     },
 

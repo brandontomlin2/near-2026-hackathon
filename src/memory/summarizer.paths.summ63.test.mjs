@@ -50,7 +50,7 @@ test("maybeSummarize with a throughIndex past the log is bad_state naming the fi
   const store = createMemoryStore(root);
   const file = store.sheetFile("aloof");
   await store.appendEvent("aloof", { round: 1, kind: "post", from: "Aloof", text: "one" });
-  const body = JSON.stringify({ tokenId: "aloof", round: 1, sheet: "x", sheetHash: "y", throughIndex: 99 });
+  const body = JSON.stringify({ tokenId: "aloof", round: 1, sheet: "x", sheetHash: "a".repeat(64), throughIndex: 99 });
   await writeFile(file, body);
   await assert.rejects(
     maybeSummarize({ client: createMockClient(), store, tokenId: "aloof", name: "Aloof", round: 5, every: 5 }),
