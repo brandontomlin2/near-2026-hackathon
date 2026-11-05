@@ -15,12 +15,11 @@ import {
   buildSignRequest, serializeTransaction, sha256,
 } from "../../../spikes/shade/chainsig.mjs";
 import { VAULT_PROPOSAL_KEYS, vaultArgs } from "../proposal.mjs";
+import { EXECUTE_SWAP_GAS, TGAS } from "../gas.mjs";
 import { METHOD, RefusalError, assertNotMainnet } from "../send.mjs";
 
 export { RefusalError };
-
-export const TGAS = 1_000_000_000_000n;
-export const EXECUTE_SWAP_GAS = 300n * TGAS; // matches send.mjs GAS; vault needs >= 280 Tgas (MIN_EXECUTE_GAS)
+export { EXECUTE_SWAP_GAS, TGAS }; // 280 Tgas = vault MIN_EXECUTE_GAS (see ../gas.mjs)
 export const OWNER_CALL_DEPOSIT = 1n; // 1 yocto: owner_one_yocto on #[payable] owner methods
 // UNMEASURED CHOICE: 2x the 15 Tgas minimum for the MPC `sign` call. Not benchmarked on testnet.
 export const MPC_SIGN_GAS = 30n * TGAS;
@@ -30,7 +29,7 @@ export const AGENT_REQUEST_SIGNATURE_GAS = 100n * TGAS;
 // "defines how much NEAR the key can spend on gas fees", is charged at the buy price, is credited back when the gas
 // refund arrives (so the key needs more allowance than the final tx cost), and once used up the key cannot sign.
 // Adding NEAR to the account does not help and an existing key's allowance cannot be changed (DeleteKey + AddKey).
-// Each swap prepays 300 Tgas at the buy price: about 0.03 NEAR at the 0.0001 NEAR/Tgas minimum gas price (that price
+// Each swap prepays 280 Tgas at the buy price: about 0.028 NEAR at the 0.0001 NEAR/Tgas minimum gas price (that price
 // is an ASSUMPTION, not read from chain). Burnt fees accumulate; refunds credit back. 1 NEAR is headroom for a
 // testnet run. The value is a CHOICE, not measured.
 export const EXECUTOR_KEY_ALLOWANCE_YOCTO = 1_000_000_000_000_000_000_000_000n;

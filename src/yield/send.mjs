@@ -2,11 +2,12 @@
 // behind --send and --i-approve). The spawner is injectable and the tests never run near-cli-rs.
 
 import { isValidAccountId } from "../anchor/anchor.mjs";
+import { EXECUTE_SWAP_GAS_CLI } from "./gas.mjs";
 import { vaultArgs } from "./proposal.mjs";
 
 export const NETWORK = "testnet";
 export const METHOD = "execute_swap";
-export const GAS = "300.0 Tgas";
+export const GAS = EXECUTE_SWAP_GAS_CLI;
 export const DEPOSIT = "0 NEAR";
 
 export class RefusalError extends Error {

@@ -7,6 +7,7 @@
 import { readFileSync } from "node:fs";
 
 import { isValidAccountId } from "../anchor/anchor.mjs";
+import { EXECUTE_SWAP_GAS, EXECUTE_SWAP_TGAS } from "./gas.mjs";
 import { vaultArgs } from "./proposal.mjs";
 import { checkProposal, validateVaultConfig } from "./rules.mjs";
 import { RefusalError, assertNotMainnet, buildExecuteSwapArgv, formatCommand } from "./send.mjs";
@@ -271,7 +272,7 @@ export function nearCliFor(step, { network = NETWORK, owner_id: owner } = {}) {
   }
   if (kinds === "FunctionCall") {
     const f = actions[0];
-    if (f.method_name === "execute_swap" && f.gas === "300000000000000" && f.deposit_yocto === "0") {
+    if (f.method_name === "execute_swap" && f.gas === String(EXECUTE_SWAP_GAS) && f.deposit_yocto === "0") {
       return formatCommand(buildExecuteSwapArgv({ vault: step.receiver_id, runner: step.signer_id, proposal: f.args.proposal }));
     }
     return formatCommand([
@@ -351,7 +352,7 @@ export function buildLivePlan(config) {
   step("deposit-into-vault", "fund", `deposit ${config.deposit.amount} of ${config.deposit.token_id} into the vault`, owner, config.deposit.token_id, [call("ft_transfer_call", { receiver_id: vault, amount: config.deposit.amount, msg: "" }, 100, 1n)], "vault ft_on_transfer accepts the owner's deposit (token is in an allowed pool): deposit event, nothing refunded");
   step("view-balance", "check", "read the vault's tracked balance", null, vault, [viewCall("get_balance", { token_id: config.deposit.token_id })], `== ${config.deposit.amount}`);
   step("check-proposal", "check", "run the swap rules without side effects", null, vault, [viewCall("check_proposal", { proposal, runner_id: runner })], "ok == true");
-  step("execute-swap", "swap", `runner swaps ${proposal.amount_in} ${proposal.token_in} -> ${proposal.token_out} on pool ${proposal.pool_id}`, runner, vault, [call("execute_swap", { proposal }, 300)], "swap_executed event; balance of token_out >= min_amount_out");
+  step("execute-swap", "swap", `runner swaps ${proposal.amount_in} ${proposal.token_in} -> ${proposal.token_out} on pool ${proposal.pool_id}`, runner, vault, [call("execute_swap", { proposal }, EXECUTE_SWAP_TGAS)], "swap_executed event; balance of token_out >= min_amount_out");
   step("view-state", "check", "read the vault state after the swap", null, vault, [viewCall("get_state")], "no swap in flight, swaps_executed == 1, nothing stranded");
   step("ref-deposit-out", "check", "read what is left on Ref for token_out", null, ref, [viewCall("get_deposit", { account_id: vault, token_id: proposal.token_out })], "0 (the chain withdrew it back to the vault)");
   const outBal = step("view-balance", "check", "read the vault's token_out balance", null, vault, [viewCall("get_balance", { token_id: proposal.token_out })], `>= ${proposal.min_amount_out}`);

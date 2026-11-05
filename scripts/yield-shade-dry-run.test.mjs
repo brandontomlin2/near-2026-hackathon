@@ -55,10 +55,10 @@ describe("yield:shade:dry-run --json", () => {
     assert.equal(plan.signed, false);
     assert.equal(plan.sent, false);
   });
-  it("mpc sign targets the testnet signer with the tx hash; execute_swap has 300 Tgas and 0 deposit", () => {
+  it("mpc sign targets the testnet signer with the tx hash; execute_swap has 280 Tgas and 0 deposit", () => {
     assert.equal(plan.mpc.mpcSign.receiverId, "v1.signer-prod.testnet");
     assert.equal(plan.mpc.mpcSign.args.request.payload_v2.Eddsa, plan.execute_swap.txHashHex);
-    assert.equal(plan.execute_swap.actions[0].gas, "300000000000000");
+    assert.equal(plan.execute_swap.actions[0].gas, "280000000000000");
     assert.equal(plan.execute_swap.actions[0].deposit, "0");
   });
   it("the proposal is the first rule-checked yield:demo call, with its source recorded", () => {

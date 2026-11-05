@@ -133,7 +133,7 @@ describe("borsh sanity", () => {
     assert.equal(str(), "execute_swap");
     const args = JSON.parse(take(u32()).toString("utf8"));
     assert.deepEqual(args, { proposal: SAMPLE_PROPOSAL });
-    assert.equal(u64(), 300000000000000n);
+    assert.equal(u64(), 280000000000000n);
     assert.equal(u128(), 0n);
     assert.equal(off, buf.length, "reader consumed exactly all bytes");
   });

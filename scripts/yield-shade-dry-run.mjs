@@ -9,6 +9,7 @@
 
 import { fileURLToPath } from "node:url";
 
+import { EXECUTE_SWAP_TGAS } from "../src/yield/gas.mjs";
 import { RefusalError, assertNotMainnet } from "../src/yield/send.mjs";
 import { runDemo } from "../src/yield/demo.mjs";
 import { buildShadePlan, renderShadePlan } from "../src/yield/shade/plan.mjs";
@@ -101,7 +102,7 @@ export function renderHuman(plan) {
     row("receiver", tx.receiverId),
     row("method", act.methodName),
     row("args", j(act.args)),
-    row("gas", `${act.gas} (300 Tgas)`),
+    row("gas", `${act.gas} (${EXECUTE_SWAP_TGAS} Tgas)`),
     row("deposit", act.deposit),
     row("nonce", `${tx.nonce} (${tx.nonceNote})`),
     row("tx hash (hex)", tx.txHashHex),

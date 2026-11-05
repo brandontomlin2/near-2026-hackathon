@@ -72,11 +72,11 @@ test("plan: deploy and init are one transaction signed by the vault", () => {
   assert.match(s.near_cli, /^near contract deploy \S+ use-file \S+yield_vault\.wasm with-init-call new json-args '/);
 });
 
-test("plan: execute_swap is signed by the runner with 300 TGas and no deposit", () => {
+test("plan: execute_swap is signed by the runner with 280 TGas and no deposit", () => {
   const plan = buildLivePlan(example());
   const s = stepOf(plan, "execute-swap");
   assert.equal(s.signer_id, plan.runner_id);
-  assert.equal(s.actions[0].gas, String(300n * TGAS));
+  assert.equal(s.actions[0].gas, String(280n * TGAS));
   assert.equal(s.actions[0].deposit_yocto, "0");
   assert.match(s.near_cli, /sign-as runner\.\S+ network-config testnet sign-with-keychain send$/);
 });
