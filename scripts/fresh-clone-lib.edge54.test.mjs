@@ -396,3 +396,14 @@ describe("regression: .env read lint must see .env followed by a shell operator"
     for (const c of ["cat .envrc;", "echo .environment|cat", "cat foo.env;"]) assert.equal(sh(c), null, c);
   });
 });
+
+describe("regression: near cli lint must see near inside subshells and backticks", () => {
+  test("$(near ...), (near ...) and `near ...` are refused", T, () => {
+    for (const c of ["$(near view a b)", "(near call a b)", "x=`near call a b`", "echo $( near send a b 1)"]) {
+      assert.match(sh(c) ?? "", /near cli/, c);
+    }
+  });
+  test("look-alikes stay allowed", T, () => {
+    for (const c of ["echo '(nearly)'", "(echo hi)", "echo $(date)"]) assert.equal(sh(c), null, c);
+  });
+});

@@ -24,7 +24,7 @@ const UNSAFE = [
   [/(^|[^\w-])(curl|wget)\s/, "network download"],
   [/--live\b/, "live mode"],
   [/NEAR_NETWORK=(?!testnet\b)\S+/, "non-testnet network"],
-  [/(^|[;&|\s])near\s/, "near cli (signs transactions)"],
+  [/(^|[;&|\s(`])near\s/, "near cli (signs transactions)"],
   [/\bcargo\s+near\b/, "cargo near"],
   [/\bgit\s+push\b/, "git push"],
   [/(^|[\s<>"'=/])\.env(\.\w+)?(\s|$|["';&|)<>])/, "reads .env"],
