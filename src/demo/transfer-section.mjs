@@ -32,7 +32,7 @@ export function transferSection(manifest) {
   const x = t.tamper;
   // alice and bob are constants in every mode: simulated accounts, never linked.
   return `<h2>Transfer: memory travels with the NFT</h2>
-<p class="mut">Simulated transfer between mock placeholder accounts (nothing sent, never linked): <code>${esc(t.from)}</code> sends every token to <code>${esc(t.to)}</code>. The new owner takes each sheet, hashes it with the official sheet hash function and compares it with the hash anchored under the token id.</p>
+<p class="mut">Simulated transfer between mock placeholder accounts (nothing sent, never linked): <code>${esc(t.from)}</code> sends every token to <code>${esc(t.to)}</code>. The new owner takes each sheet, hashes it with the official sheet hash function and compares it with the hash anchored under the token id. Here the anchored hash is the dry-run value from <code>anchors.json</code>, not read from a chain, so a match shows the hashing is consistent${x ? "; the tampered sheet below shows what a rewrite looks like" : ""}.</p>
 <table><tr><th>Token</th><th>Anchored hash</th><th>Re-hashed by ${esc(t.to)}</th><th>Result</th></tr>
 ${rows}</table>
 ${x ? `<h3>Tampered sheet</h3>
