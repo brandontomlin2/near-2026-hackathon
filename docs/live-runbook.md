@@ -128,7 +128,7 @@ It makes read-only RPC views only. It prints `wrote <absolute path>/out/evidence
 NEAR_NETWORK=testnet NEAR_CONTRACT_ACCOUNT_ID=<contract>.testnet EVIDENCE_TX_FILE="$PWD/out/live-proof/txs.json" bash scripts/verify.sh --live
 ```
 
-`EVIDENCE_TX_FILE` must be an absolute path, because the script runs in a fresh clone of the committed `HEAD` in a temp directory (`out/` is gitignored, so the tx file is read from your checkout through that path). Expect the 13-row `STATUS / STAGE / DETAIL` table and `result: PASS`. The `deploy nft` and `mint` rows run as dry runs. This step does not check the chain: it fails unless every transaction in `out/evidence.json` has a valid hash, there is at least one, and at least one RPC view returned a result.
+`EVIDENCE_TX_FILE` must be an absolute path, because the script runs in a fresh clone of the committed `HEAD` in a temp directory (`out/` is gitignored, so the tx file is read from your checkout through that path). Expect the 16-row `STATUS / STAGE / DETAIL` table and `result: PASS`. The `deploy nft` and `mint` rows run as dry runs. This step does not check the chain: it fails unless every transaction in `out/evidence.json` has a valid hash, there is at least one, and at least one RPC view returned a result.
 
 ## 3. If something fails
 
