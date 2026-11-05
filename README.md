@@ -254,7 +254,7 @@ Status, plainly: the contract is unit-tested only and NOT deployed; there is no 
 6. Run `cd contracts/yield-vault && cargo test`. See `test result: ok. 254 passed; 0 failed`, including `max_trade_is_per_token`, `price_floor_refuses_below_and_accepts_exactly_at_floor`, `deposit_failed_but_tokens_landed_on_ref_is_stranded_not_rolled_back`, `recover_from_ref_refused_while_swap_in_flight`, `execute_swap_panics_while_recovery_in_flight`, `force_release_tokens_never_left_vault_rolls_back_not_strands`, `force_release_tokens_on_ref_strands_not_credits` and `phantom_stranded_record_cannot_make_failed_withdraw_look_successful`. The first run compiles near-sdk and takes a few minutes.
 7. Run `node --test src/yield/*.test.mjs scripts/yield.test.mjs src/yield-optimizer/*.test.mjs scripts/yield-optimizer.test.mjs scripts/yield-demo.test.mjs`. See `# pass 301` and `# fail 0`: the send gate, the mainnet refusal, the dry-run CLI, the per-agent ledger, the off-chain rules and their parity with the contract's vectors, the planner and the demo.
 
-Known risks (from an independent review of the contract; the High findings are fixed, some Medium and lower ones are open): see "Known risks" in [`contracts/yield-vault/README.md`](contracts/yield-vault/README.md#known-risks). A deploy, a vault funding and any `--send` need the owner's explicit approval.
+Known risks (from reviews of the contract by AI review agents, not a professional or independent audit; the reports are not in this repository; the High findings are fixed, some Medium and lower ones are open): see "Known risks" in [`contracts/yield-vault/README.md`](contracts/yield-vault/README.md#known-risks). A deploy, a vault funding and any `--send` need the owner's explicit approval.
 
 ## Validate locally
 
