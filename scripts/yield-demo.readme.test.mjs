@@ -127,7 +127,7 @@ test("README planner table: every expected line is printed by that command", () 
 test("README names the shared snapshot, the optimizer hold and one 280 TGas figure that the real output shows", () => {
   const out = runDemo("npm run yield:demo");
   const calls = runDemo("npm run yield:demo -- --calls");
-  assert.match(out, /snapshot: one committed Ref testnet snapshot at block 276143441/);
+  assert.match(out, /snapshot: one committed Ref testnet snapshot at block 276332963/);
   assert.match(out, /^yield-optimizer {2}HOLD: no pool passes every gate/m);
   // The real snapshot plans no call; the hand-built scenario plans one, with the one shared gas figure.
   assert.equal(calls, "no calls planned (DRY RUN: nothing signed, nothing sent)\n");

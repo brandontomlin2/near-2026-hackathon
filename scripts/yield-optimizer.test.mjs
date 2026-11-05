@@ -58,7 +58,7 @@ describe("main", () => {
     // The honest result on the thin real Ref pools: nothing passes the reference guard and the vault rules.
     assert.equal(j.decision, "hold");
     assert.equal(j.vault_id, PLACEHOLDER_VAULT);
-    assert.equal(j.snapshot.block_height, 276143441);
+    assert.equal(j.snapshot.block_height, 276332963);
     assert.match(human, /Decision: HOLD - no pool passes every gate/);
   });
 

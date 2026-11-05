@@ -61,7 +61,7 @@ describe("yield:demo default run", () => {
     assert.match(r.stdout, /^ {2}reference: quote \+18590000 bps vs mock_usd_price reference \(limit 100 bps, stable pair: OFF REFERENCE\)$/m);
     assert.match(r.stdout, /^ {2}reference: no reference price \(rft has none\): the floor is a spot sanity floor$/m);
     // One market, one story: the planner is on the same Ref snapshot and says why it holds.
-    assert.match(lines[1], /^snapshot: one committed Ref testnet snapshot at block 276143441, not fetched, shared by the four agents and the optimizer \(vault vault\.yield-demo\.testnet\)$/);
+    assert.match(lines[1], /^snapshot: one committed Ref testnet snapshot at block 276332963, not fetched, shared by the four agents and the optimizer \(vault vault\.yield-demo\.testnet\)$/);
     assert.doesNotMatch(summary, /Rhea|fixture\.testnet|snapshots:/);
     assert.match(summary, /^yield-optimizer +HOLD: no pool passes every gate +- +hold$/m);
     assert.match(summary, /^ {2}optimizer HOLD, 6 pools checked, none usable:$/m);
@@ -132,7 +132,7 @@ describe("yield:demo default run", () => {
     assert.equal(plan.snapshot.fetched, false);
     assert.equal(plan.snapshot.shared_by_agents_and_planner, true);
     assert.equal(plan.snapshot.file, "src/yield/fixtures/ref-testnet-pools.json");
-    assert.equal(plan.snapshot.block_height, 276143441);
+    assert.equal(plan.snapshot.block_height, 276332963);
     assert.equal(plan.planner_vault.vault_id, plan.personality_agents.vault_id);
     assert.equal(plan.planner_vault.runner_id, plan.personality_agents.runner_id);
     assert.equal(plan.planner_vault.same_as_agents, true);

@@ -76,7 +76,7 @@ export function strategyFor(agentId) {
 // scaled with the fixture's token decimals.
 // Pool 0 (wrap/rft) holds ~1496 wNEAR / ~141,674 rft (about 95 rft per wNEAR), so 10 wNEAR
 // trades cost ~0.7% impact plus the 40 bps fee. The stable-pool sizes (nusdt/nusdc) stay tiny
-// on purpose: pool 1's whole nusdt reserve is 0.237 nusdt at block 276143441, so any larger
+// on purpose: pool 1's whole nusdt reserve is 0.237 nusdt at block 276332963, so any larger
 // nusdt trade would drain it.
 const CONFIG_TABLE = {
   aloof: { pools: [1], limits: { [NUSDT]: ["0.01", "0.03"], [NUSDC]: ["1", "3"] } },

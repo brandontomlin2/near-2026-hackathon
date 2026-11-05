@@ -435,7 +435,7 @@ describe("the default snapshot: the shared Ref market and the demo vault", () =>
     assert.equal(plan.json.vault_id, PLACEHOLDER_VAULT);
     assert.equal(plan.json.runner_id, PLACEHOLDER_RUNNER);
     assert.equal(plan.json.snapshot.now_ms, MOCK_EPOCH_MS);
-    assert.equal(plan.json.snapshot.block_height, 276143441);
+    assert.equal(plan.json.snapshot.block_height, 276332963);
     assert.equal(plan.json.snapshot.taken_at, null);
     assert.match(plan.json.snapshot.source, /ref-finance-101\.testnet/);
     assert.match(plan.json.snapshot.reference_prices, /mock reference price, not an oracle/);
