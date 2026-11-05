@@ -407,3 +407,22 @@ test("tokenLogs hands back frozen events, so a caller cannot rewrite a log line 
   assert.throws(() => { line.text = "changed"; }, TypeError);
   assert.equal(SAMPLE_EVENTS[0].text, "I keep to myself.");
 });
+
+test("regression: events authored by or replying to prototype-named ids are skipped like any outside author", async () => {
+  const events = JSON.parse(JSON.stringify([
+    ev(1, 1, "__proto__", "post", null, "proto post"),
+    ev(2, 1, "constructor", "post", null, "ctor post"),
+    ev(3, 1, "toString", "reply", 1, "reply to proto"),
+    ev(4, 1, "aloof", "reply", 2, "aloof replies to ctor"),
+    ev(5, 1, "hasOwnProperty", "reply", 4, "reply to aloof"),
+  ]));
+  const agents = [AGENTS.find((a) => a.id === "aloof")];
+  const logs = tokenLogs(events, agents);
+  assert.deepEqual(Object.keys(logs), ["aloof"]);
+  assert.deepEqual(logs.aloof.map((e) => [e.kind, e.from, e.text]), [
+    ["reply", agents[0].name, "aloof replies to ctor"],
+    ["mention", "hasOwnProperty", "reply to aloof"],
+  ]);
+  const result = await runMemoryLoop({ swarm: makeSwarm(1, events), agents, client: recorder() });
+  assert.equal(result.tokens.length, 1);
+});

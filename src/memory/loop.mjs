@@ -28,9 +28,9 @@ export function tokenLogs(events, agents = AGENTS) {
   const authorById = new Map(events.map((e) => [e.id, e.agentId]));
   for (const e of events) {
     const from = nameOf.get(e.agentId) ?? e.agentId;
-    logs[e.agentId]?.push(makeEvent({ round: e.round, kind: e.kind, from, text: e.text }));
+    if (Object.hasOwn(logs, e.agentId)) logs[e.agentId].push(makeEvent({ round: e.round, kind: e.kind, from, text: e.text }));
     const target = e.replyTo === null ? undefined : authorById.get(e.replyTo);
-    if (target && target !== e.agentId && logs[target]) {
+    if (target && target !== e.agentId && Object.hasOwn(logs, target)) {
       logs[target].push(makeEvent({ round: e.round, kind: "mention", from, text: e.text }));
     }
   }
