@@ -76,7 +76,7 @@ export function renderShareCard(card) {
   const agentName = cleanText(card.agentName);
   const text = clipText(cleanText(card.text));
   const mood = cleanText(card.mood);
-  const round = cleanText(String(card.round));
+  const round = cleanText(card.round);
   const { faceSvg } = card;
   const lines = wrapText(text);
   const textBlock = lines.length * LINE_H;
