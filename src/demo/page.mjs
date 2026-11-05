@@ -156,6 +156,13 @@ function channel(manifest, events, moods) {
  */
 export function renderDemoPage(manifest, { events, anchors })
  {
+  // A missing scalar would print as the word "undefined" on the page.
+  const need = (obj, keys, what) => {
+    for (const k of keys) if (obj?.[k] == null) throw new TypeError(`${what}.${k} is missing`);
+  };
+  need(manifest, ["rounds", "seed", "every", "finalRoundHash"], "manifest");
+  need(anchors, ["contractId"], "anchors");
+  for (const a of manifest.agents) need(a, ["name", "personality", "memoryDepth"], "manifest.agents[]");
   const moods = manifest.moods ?? ["neutral"];
   const shares = (manifest.shares ?? []).map((x) => {
     const agent = manifest.agents.find((a) => a.id === x.agentId);
