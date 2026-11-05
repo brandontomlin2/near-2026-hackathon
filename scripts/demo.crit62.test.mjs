@@ -53,3 +53,18 @@ describe("first-screen banner", () => {
     assert.ok(!r.stdout.includes("Personality NFT:"));
   });
 });
+
+describe("portable hash-check hint", () => {
+  it("names both shasum and sha256sum on the Check the hash line", () => {
+    const line = result.stdout.split("\n").find((l) => l.includes("Check the hash:"));
+    assert.ok(line, "Check the hash line is printed");
+    assert.ok(line.includes("shasum -a 256"));
+    assert.ok(line.includes("sha256sum"));
+  });
+
+  it("the printed pipeline (sha256 of the sheet plus the newline node -p adds) equals the recorded sheetHash", () => {
+    const file = JSON.parse(fs.readFileSync(path.join(out, "memory/aloof/sheet.json"), "utf8"));
+    const printed = createHash("sha256").update(`${file.sheet}\n`).digest("hex");
+    assert.equal(printed, file.sheetHash);
+  });
+});

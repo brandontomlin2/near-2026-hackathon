@@ -110,7 +110,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     }
     log(`  3. Open ${at("transcript.txt")}. See the swarm conversation, round by round, with replies marked.`);
     log(`  4. Open ${at("memory/aloof/sheet.json")}. See Aloof's latest character sheet and its sha256 hash.`);
-    log(`     Check the hash: node -p 'require("${requirePath(at("memory/aloof/sheet.json"))}").sheet' | shasum -a 256`);
+    log(`     Check the hash: node -p 'require("${requirePath(at("memory/aloof/sheet.json"))}").sheet' | shasum -a 256 (no shasum? use sha256sum)`);
     log(`  5. Open ${at("anchors.json")}. See ${sheetCount} anchor_sheet calls for testnet, each "dry-run" with a null transaction hash; Aloof's last sheet_hash is the hash from step 4.`);
     log(`  6. Run the same command again. See the same final round hash (same --rounds, --seed, --every and --style): ${run.finalRoundHash}.`);
     log("");
