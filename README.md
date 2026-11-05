@@ -19,6 +19,7 @@ Everything here is mock or dry-run. Nothing is signed or sent, no key or account
 1. `npm install && npm run demo` prints, among other lines, `[1/5] swarm: 6 rounds, 24 events, verify: ok`, `[4/5] anchor (dry run): 8 calls prepared, 0 signed`, `Done. Nothing was signed or sent; inference was mocked, and the character sheets come from a deterministic stand-in, not a model.`, and last `Open the page: open out/index.html  (file:///…/out/index.html)`.
 2. `open out/index.html` (or open the file in any browser) shows the headline `Your NFT remembers who you are` over the four agents.
 3. `bash scripts/verify.sh` (about 30 seconds to 2 minutes) ends with a `STATUS / STAGE / DETAIL` table with no `FAIL` row, then `result: PASS`. It includes the row `PASS      demo            npm run demo (mock)`.
+4. `npm run yield:demo` runs the Yield Optimizer vault demo offline (mock inference, committed snapshots, placeholder account ids) and prints `YIELD DEMO - DRY RUN - mock inference, offline - nothing signed, nothing sent` and `4 unsigned execute_swap calls planned, 0 signed, 0 sent`.
 
 The numbered steps in the next section go deeper.
 
@@ -83,7 +84,7 @@ Nothing in this repository is deployed or live on testnet. The contract is unit-
 
 ## Work in progress: Yield Optimizer
 
-A fifth personality, the Yield Optimizer, is in progress: a vault with on-chain rules, a Shade Agent that acts within them, and NEAR chain signatures so the agent never holds a private key. So far only a spike exists: `spikes/shade/` computes the chain-signature key offline (matched against live testnet view calls) and prints the planned sign request and transaction. It is dry-run only, signs and sends nothing, and is not part of the demo or of the tracks claimed above. Run `node spikes/shade/dry-run.mjs` to see the plan. Design note: [`docs/spikes/shade-agent.md`](docs/spikes/shade-agent.md).
+A fifth personality, the Yield Optimizer, is partly built, all of it offline and undeployed: a vault contract with on-chain rules and a planner that proposes swaps checked against those rules, shown by `npm run yield:demo` (see [Yield Optimizer](#yield-optimizer)). The Shade Agent part is still only a spike: `spikes/shade/` computes the NEAR chain-signature key offline (matched against live testnet view calls) and prints the planned sign request and transaction, so that an agent would never hold a private key. It is dry-run only, signs and sends nothing, and is not part of the demo or of the tracks claimed above. Run `node spikes/shade/dry-run.mjs` to see the plan. Design note: [`docs/spikes/shade-agent.md`](docs/spikes/shade-agent.md).
 
 ## Repository layout
 
@@ -93,7 +94,8 @@ A fifth personality, the Yield Optimizer, is in progress: a vault with on-chain 
 | `src/inference/client.mjs` | Inference client: mock by default, live mode calls NEAR AI Cloud. |
 | `src/swarm/runner.mjs` | The swarm: four trait-driven agents on one channel. |
 | `scripts/demo.mjs`, `src/demo/` | `npm run demo`, the offline end-to-end demo. |
-| `contracts/yield-vault/`, `scripts/yield.mjs`, `src/yield/` | Yield Optimizer: per-agent trading vault contract (not deployed) and the `npm run yield` dry-run CLI. |
+| `contracts/yield-vault/`, `scripts/yield.mjs`, `src/yield/` | Yield Optimizer: per-agent trading vault contract (not deployed) and the `npm run yield` dry-run CLI. `src/yield/rules.mjs` is the one JavaScript copy of the vault rules. |
+| `scripts/yield-demo.mjs`, `scripts/yield-optimizer.mjs`, `src/yield-optimizer/` | `npm run yield:demo`, the offline vault demo, and the yield-optimizer planner with its committed Rhea snapshot. |
 | `scripts/testnet-deploy.mjs` | `npm run deploy:nft` and `npm run mint`, dry run unless `--send --i-approve`. |
 | `scripts/verify.sh` | Local judge screen, replaces GitHub Actions. |
 | `spikes/shade/` | Dry-run spike for chain signatures (see [Work in progress](#work-in-progress-yield-optimizer)). Not part of the demo. |
@@ -188,6 +190,29 @@ Run the JavaScript tests with `npm test`. It prints one line per test, then a su
 
 ## Yield Optimizer
 
+### Offline demo: `npm run yield:demo`
+
+One command, no keys, no network, no Rust. What is mock, plainly: inference is a deterministic stand-in, not a model; the pool snapshots are committed fixtures (`src/yield/fixtures/ref-testnet-pools.json`, `src/yield-optimizer/fixtures/rhea-testnet-snapshot.json`), not fetched; the vault and runner ids it prints are placeholders; nothing is deployed, signed or sent. Four personality agents and the yield-optimizer planner each propose a swap, and every proposal is checked against the vault rules in `src/yield/rules.mjs`, the one JavaScript copy of the contract's `check_rules`, which the Rust contract and the JavaScript are both tested against with the shared vectors in `contracts/yield-vault/tests/rule-vectors.json`. Steps 1 to 3 quote lines it really prints; a test (`scripts/yield-demo.readme.test.mjs`) fails if they drift.
+
+1. Run `npm run yield:demo`. See `YIELD DEMO - DRY RUN - mock inference, offline - nothing signed, nothing sent`, `yield-optimizer  pool 17: 200 wNEAR -> min 624.46312 USDC    OK           execute`, `optimizer candidate pool 23: 150 DAI -> min 151.987252 USDC: REFUSED ERR_NO_LIMIT: no limit for dai.fixture.testnet`, `optimizer candidate pool 99: 200 wNEAR -> min 643.526557 USDC: REFUSED ERR_POOL_NOT_ALLOWED: pool 99`, `4 unsigned execute_swap calls planned, 0 signed, 0 sent` and `wrote out/yield-demo/plan.json`. Exit 0.
+2. Run `npm run yield:demo -- --calls`. See only the unsigned calls: `method: execute_swap`, `signed: false`, `sent: false` and `args: {"proposal":{"pool_id":1,"token_in":"nusdt.ft-fin.testnet","token_out":"nusdc.ft-fin.testnet","amount_in":"500","min_amount_out":"93"}}`.
+3. Open `out/yield-demo/plan.json`. See `"dry_run": true`, `"signed": false` and `"sent": false`.
+
+<!-- judge:run -->
+<!-- judge:expect YIELD DEMO - DRY RUN - mock inference, offline - nothing signed, nothing sent -->
+<!-- judge:expect 4 unsigned execute_swap calls planned, 0 signed, 0 sent -->
+<!-- judge:expect REFUSED ERR_POOL_NOT_ALLOWED: pool 99 -->
+<!-- judge:expect method: execute_swap -->
+<!-- judge:expect signed: false -->
+<!-- judge:expect "dry_run": true -->
+```sh
+npm run yield:demo
+npm run yield:demo -- --calls
+grep -E '"(dry_run|signed|sent)": ' out/yield-demo/plan.json
+```
+
+### The vault contract, the `npm run yield` CLI and tests
+
 What the contract is, plainly: `contracts/yield-vault/` is a near-sdk Rust smart contract that holds NEP-141 token balances for one agent and swaps them on Rhea (Ref Finance) through cross-contract promises (`ft_transfer_call` to deposit, `swap`, `withdraw`), with callbacks that read Ref's `get_deposit` before crediting or rolling back. It is unit-tested only and not deployed (see "Status, plainly" below).
 
 Each of the four agents can run its own trading vault. The agent proposes one swap on a Rhea (Ref Finance) testnet pool, the other agents debate it (Skeptic can veto, Social follows a consensus), the proposal is checked off chain against the vault's hard rules, and only then is an `execute_swap` call built. The vault contract (`contracts/yield-vault/`, details in its [README](contracts/yield-vault/README.md)) enforces the same rules on chain: an owner-set pool allowlist, a per-token `max_trade` and `daily_cap`, a per-pool price floor on `min_amount_out`, a runner allowlist, pause and revoke-all, one swap in flight at a time, and Ref balance checks before it credits or rolls back a swap.
@@ -199,8 +224,8 @@ Status, plainly: the contract is unit-tested only and NOT deployed; there is no 
 3. Run `npm run yield -- --send`. See `yield: --send needs --i-approve (explicit human approval). Nothing was sent.` and exit 2.
 4. Run `NEAR_NETWORK=mainnet npm run yield`. See `yield: refused: NEAR_NETWORK=mainnet. This tool only ever targets testnet.` and exit 1. A vault or runner id ending in `.near` is refused the same way.
 5. Run `npm run yield -- --send --i-approve --agent skeptic` without `NEAR_NETWORK`. See `yield: --send needs NEAR_NETWORK=testnet set explicitly. Nothing was sent.` and exit 1. Sending also needs `YIELD_VAULT_ACCOUNT_ID` and `YIELD_RUNNER_ACCOUNT_ID` set to named `.testnet` accounts and `near` on PATH, plus `--vault-state FILE` holding the target vault's `{"config": get_config(), "state": get_state()}` as JSON: proposals are checked against that, never against the built-in demo config, and `--send` without it exits 1 with `yield: --send needs --vault-state FILE ...` and sends nothing. No vault is deployed, so do not expect a real send to succeed.
-6. Run `cd contracts/yield-vault && cargo test`. See `test result: ok. 219 passed; 0 failed`, including `max_trade_is_per_token`, `price_floor_refuses_below_and_accepts_exactly_at_floor`, `deposit_failed_but_tokens_landed_on_ref_is_stranded_not_rolled_back`, `recover_from_ref_refused_while_swap_in_flight`, `execute_swap_panics_while_recovery_in_flight`, `force_release_tokens_never_left_vault_rolls_back_not_strands`, `force_release_tokens_on_ref_strands_not_credits` and `phantom_stranded_record_cannot_make_failed_withdraw_look_successful`. The first run compiles near-sdk and takes a few minutes.
-7. Run `node --test src/yield/*.test.mjs scripts/yield.test.mjs`. See `# pass 59` and `# fail 0`: the send gate, the mainnet refusal, the dry-run CLI, the per-agent ledger and the off-chain rules.
+6. Run `cd contracts/yield-vault && cargo test`. See `test result: ok. 220 passed; 0 failed`, including `max_trade_is_per_token`, `price_floor_refuses_below_and_accepts_exactly_at_floor`, `deposit_failed_but_tokens_landed_on_ref_is_stranded_not_rolled_back`, `recover_from_ref_refused_while_swap_in_flight`, `execute_swap_panics_while_recovery_in_flight`, `force_release_tokens_never_left_vault_rolls_back_not_strands`, `force_release_tokens_on_ref_strands_not_credits` and `phantom_stranded_record_cannot_make_failed_withdraw_look_successful`. The first run compiles near-sdk and takes a few minutes.
+7. Run `node --test src/yield/*.test.mjs scripts/yield.test.mjs src/yield-optimizer/*.test.mjs scripts/yield-optimizer.test.mjs scripts/yield-demo.test.mjs`. See `# pass 206` and `# fail 0`: the send gate, the mainnet refusal, the dry-run CLI, the per-agent ledger, the off-chain rules and their parity with the contract's vectors, the planner and the demo.
 
 Known risks (from an independent review of the contract; the High findings are fixed, some Medium and lower ones are open): see "Known risks" in [`contracts/yield-vault/README.md`](contracts/yield-vault/README.md#known-risks). A deploy, a vault funding and any `--send` need the owner's explicit approval.
 
