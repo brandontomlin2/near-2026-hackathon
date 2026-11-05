@@ -587,10 +587,15 @@ impl YieldVault {
 
     /// Hop 1 callback: checks how much Ref accepted, then swaps.
     #[private]
-    pub fn on_deposit(
+    pub fn on_deposit(&mut self, swap_id: u64) -> PromiseOrValue<U128> {
+        self.handle_deposit(swap_id, read_u128(0))
+    }
+
+    /// Body of `on_deposit`, taking the already-decoded (lenient) result.
+    fn handle_deposit(
         &mut self,
         swap_id: u64,
-        #[callback_result] used: Result<U128, PromiseError>,
+        used: Result<U128, PromiseError>,
     ) -> PromiseOrValue<U128> {
         Self::assert_self();
         let Some(mut fl) = self.current(swap_id) else {
@@ -647,10 +652,15 @@ impl YieldVault {
     /// stranded as verified. Anything in between is ambiguous (the stranded
     /// record may overstate Ref) and is stranded as unverified: never credited.
     #[private]
-    pub fn on_deposit_reconciled(
+    pub fn on_deposit_reconciled(&mut self, swap_id: u64) -> U128 {
+        self.handle_deposit_reconciled(swap_id, read_u128(0))
+    }
+
+    /// Body of `on_deposit_reconciled`, taking the already-decoded (lenient) result.
+    fn handle_deposit_reconciled(
         &mut self,
         swap_id: u64,
-        #[callback_result] deposit: Result<U128, PromiseError>,
+        deposit: Result<U128, PromiseError>,
     ) -> U128 {
         Self::assert_self();
         let Some(fl) = self.current(swap_id) else {
@@ -676,10 +686,15 @@ impl YieldVault {
 
     /// Hop 2 callback: reads `amount_out`, then withdraws it from Ref.
     #[private]
-    pub fn on_swap(
+    pub fn on_swap(&mut self, swap_id: u64) -> PromiseOrValue<U128> {
+        self.handle_swap(swap_id, read_u128(0))
+    }
+
+    /// Body of `on_swap`, taking the already-decoded (lenient) result.
+    fn handle_swap(
         &mut self,
         swap_id: u64,
-        #[callback_result] out: Result<U128, PromiseError>,
+        out: Result<U128, PromiseError>,
     ) -> PromiseOrValue<U128> {
         Self::assert_self();
         let Some(mut fl) = self.current(swap_id) else {
@@ -716,10 +731,15 @@ impl YieldVault {
     /// re-credits and returns normally when its token transfer fails, and a
     /// failed `withdraw` leaves the deposit unchanged; the re-read catches both.
     #[private]
-    pub fn on_withdraw_pre(
+    pub fn on_withdraw_pre(&mut self, swap_id: u64) -> PromiseOrValue<U128> {
+        self.handle_withdraw_pre(swap_id, read_u128(0))
+    }
+
+    /// Body of `on_withdraw_pre`, taking the already-decoded (lenient) result.
+    fn handle_withdraw_pre(
         &mut self,
         swap_id: u64,
-        #[callback_result] pre: Result<U128, PromiseError>,
+        pre: Result<U128, PromiseError>,
     ) -> PromiseOrValue<U128> {
         Self::assert_self();
         let Some(mut fl) = self.current(swap_id) else {
@@ -767,10 +787,15 @@ impl YieldVault {
     /// the pre-withdraw snapshot (a per-operation delta, independent of the
     /// `stranded` records).
     #[private]
-    pub fn on_withdraw_reconciled(
+    pub fn on_withdraw_reconciled(&mut self, swap_id: u64) -> U128 {
+        self.handle_withdraw_reconciled(swap_id, read_u128(0))
+    }
+
+    /// Body of `on_withdraw_reconciled`, taking the already-decoded (lenient) result.
+    fn handle_withdraw_reconciled(
         &mut self,
         swap_id: u64,
-        #[callback_result] deposit: Result<U128, PromiseError>,
+        deposit: Result<U128, PromiseError>,
     ) -> U128 {
         Self::assert_self();
         let Some(fl) = self.current(swap_id) else {
@@ -1024,11 +1049,16 @@ impl YieldVault {
     /// Credits `max(0, ft_balance - tracked)`. A no-op unless this is still the
     /// latest `sync_balance` and the vault is still idle.
     #[private]
-    pub fn on_sync_balance(
+    pub fn on_sync_balance(&mut self, sync_id: u64, token_id: AccountId) {
+        self.handle_sync_balance(sync_id, token_id, read_u128(0))
+    }
+
+    /// Body of `on_sync_balance`, taking the already-decoded (lenient) result.
+    fn handle_sync_balance(
         &mut self,
         sync_id: u64,
         token_id: AccountId,
-        #[callback_result] ft: Result<U128, PromiseError>,
+        ft: Result<U128, PromiseError>,
     ) {
         Self::assert_self();
         if self.sync_id != sync_id || !self.sync_idle() {
@@ -1318,10 +1348,15 @@ impl YieldVault {
     /// reconcile can credit exactly what left Ref. Refuses (restoring the
     /// stranded record) if Ref does not hold `amount` or the read failed.
     #[private]
-    pub fn on_recover_pre(
+    pub fn on_recover_pre(&mut self, recovery_id: u64) -> PromiseOrValue<U128> {
+        self.handle_recover_pre(recovery_id, read_u128(0))
+    }
+
+    /// Body of `on_recover_pre`, taking the already-decoded (lenient) result.
+    fn handle_recover_pre(
         &mut self,
         recovery_id: u64,
-        #[callback_result] pre: Result<U128, PromiseError>,
+        pre: Result<U128, PromiseError>,
     ) -> PromiseOrValue<U128> {
         Self::assert_self();
         let Some(mut r) = self.current_recovery(recovery_id) else {
@@ -1393,10 +1428,15 @@ impl YieldVault {
     /// every other vault operation off Ref meanwhile), then releases the lock.
     /// A stranded record larger than what Ref holds cannot fake a success.
     #[private]
-    pub fn on_recover_reconciled(
+    pub fn on_recover_reconciled(&mut self, recovery_id: u64) -> U128 {
+        self.handle_recover_reconciled(recovery_id, read_u128(0))
+    }
+
+    /// Body of `on_recover_reconciled`, taking the already-decoded (lenient) result.
+    fn handle_recover_reconciled(
         &mut self,
         recovery_id: u64,
-        #[callback_result] deposit: Result<U128, PromiseError>,
+        deposit: Result<U128, PromiseError>,
     ) -> U128 {
         Self::assert_self();
         let Some(r) = self.current_recovery(recovery_id) else {
