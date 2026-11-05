@@ -1961,6 +1961,34 @@ fn withdraw_reconcile_baseline_includes_already_stranded() {
     assert_eq!(stranded(&v, &rft()), 440);
 }
 
+// M2: a stranded record that overstates what Ref holds (for example 1_000 rft
+// recorded by a `swap_failed` strand whose swap really ran) must not turn a
+// silently re-credited withdraw into a credit. The reconcile must compare
+// Ref's deposit against this operation's own before-snapshot, not against
+// the absolute `stranded` record.
+#[test]
+fn m2_phantom_stranded_does_not_fake_withdraw_credit() {
+    let mut v = swap_at_withdraw_cb();
+    v.stranded.insert(rft(), 1_000);
+    // Ref re-credited the withdraw: its rft deposit is still the 390 swapped in.
+    cb_ctx(ok_result(&U128(390)), T0);
+    assert_eq!(v.on_withdraw_reconciled(1, Ok(U128(390))).0, 0);
+    assert_eq!(bal(&v, &rft()), 0, "no credit while the tokens sit on Ref");
+    assert_eq!(v.get_state().swaps_executed, 0);
+    assert!(!v.get_state().swap_in_flight);
+}
+
+#[test]
+fn m2_phantom_stranded_does_not_fake_deposit_rollback() {
+    let mut v = swap_at_deposit_cb();
+    v.stranded.insert(wrap(), 1_000);
+    // The 400 wrap did land on Ref (deposit 400), but 400 < 1_000 + 400.
+    cb_ctx(ok_result(&U128(400)), T0);
+    v.on_deposit_reconciled(1, Ok(U128(400)));
+    assert_eq!(bal(&v, &wrap()), 9_600, "no rollback credit while the tokens sit on Ref");
+    assert!(!v.get_state().swap_in_flight);
+}
+
 #[test]
 fn withdraw_ok_and_get_deposit_errors_is_stranded_unverified() {
     let mut v = swap_at_withdraw_cb();
