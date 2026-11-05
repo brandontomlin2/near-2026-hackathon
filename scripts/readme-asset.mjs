@@ -50,7 +50,8 @@ export function assertAssetsWritable(dir, force) {
       throw new Error(`cannot inspect ${file}: ${e.message}`);
     }
     if (st.isSymbolicLink()) throw new Error(`${file} is a symbolic link; refusing to write through it`);
-    if (st.isDirectory()) throw new Error(`${file} is a directory; remove it or pick another --out`);
+    // Without --force the content check below already refuses a directory.
+    if (force && st.isDirectory()) throw new Error(`${file} is a directory; remove it or pick another --out`);
   }
   if (force) return;
   for (const [name, pattern] of Object.entries(OWN_ASSET)) {
