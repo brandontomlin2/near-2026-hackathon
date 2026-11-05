@@ -4,7 +4,7 @@
 // price floor min_amount_out * den >= amount_in * num is computed in BigInt (no overflow).
 // Strategy soft checks (agent policy, not enforced on chain) are reported separately.
 
-import { isStablePool, poolById, quoteOut, slippageBps } from "./pools.mjs";
+import { isStablePool, maxReferenceDeviationBps, poolById, quoteOut, referenceDeviationBps, slippageBps } from "./pools.mjs";
 import { limitFor, strategyFor } from "./strategies.mjs";
 
 /** Hard rule error codes in the order the vault checks them. */
@@ -127,7 +127,14 @@ export function checkProposal(proposal, config, state, runnerId, nowMs) {
 
 /**
  * Strategy-level soft checks. Not enforced by the vault: they say whether the proposal
- * respects the agent's own policy. Every violation is reported, in a fixed order.
+ * respects the agent's own policy. Every violation is reported, in a fixed order:
+ * SOFT_UNKNOWN_POOL (alone), SOFT_NOT_STABLE, SOFT_TOKEN_NOT_ALLOWED, SOFT_TOO_LARGE,
+ * SOFT_OFF_CONSENSUS / SOFT_TOO_LARGE (consensus size), SOFT_OFF_REFERENCE, then
+ * SOFT_NO_LIQUIDITY or SOFT_SLIPPAGE.
+ * SOFT_OFF_REFERENCE applies to every agent: the pool's quote is more than the pair's bound
+ * (STABLE_PEG_BPS / MAX_REF_DEVIATION_BPS) from the mock_usd_price reference. SOFT_SLIPPAGE stays
+ * the tolerance against the live quote; the two together (quote near reference, min_out near
+ * quote) plus the on-chain reference-derived floor bound the price against the reference.
  * @returns {{ ok: boolean, violations: { code: string, reason: string }[] }}
  */
 export function checkStrategy(proposal, agentId, config, fixture, { consensus = null } = {}) {
@@ -152,6 +159,14 @@ export function checkStrategy(proposal, agentId, config, fixture, { consensus = 
     const same = consensus.pool_id === proposal.pool_id && consensus.token_in === proposal.token_in && consensus.token_out === proposal.token_out;
     if (!same) add("SOFT_OFF_CONSENSUS", `${agentId} follows the swarm; the consensus is pool ${consensus.pool_id} ${consensus.token_in} -> ${consensus.token_out}`);
     else if (BigInt(proposal.amount_in) > BigInt(consensus.amount_in)) add("SOFT_TOO_LARGE", `amount_in ${proposal.amount_in} is above the consensus size ${consensus.amount_in}`);
+  }
+  const maxDev = maxReferenceDeviationBps(pool, fixture);
+  if (maxDev !== null && BigInt(proposal.amount_in) > 0n && quoteOut(pool, proposal.token_in, proposal.amount_in) > 0n) {
+    const dev = referenceDeviationBps(pool, proposal.token_in, proposal.amount_in, fixture);
+    if (dev !== null && Math.abs(dev) > maxDev) {
+      const kind = isStablePool(pool, fixture) ? "a stable pair" : "a priced pair";
+      add("SOFT_OFF_REFERENCE", `pool ${pool.pool_id} quote is ${dev > 0 ? "+" : ""}${dev} bps off the reference price (limit ${maxDev} bps for ${kind})`);
+    }
   }
   if (quoteOut(pool, proposal.token_in, proposal.amount_in) === 0n) {
     add("SOFT_NO_LIQUIDITY", "the pool snapshot gives no output for this input");

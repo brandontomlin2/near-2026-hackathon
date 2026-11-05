@@ -32,11 +32,13 @@ test("a valid proposal at the price floor passes", () => {
 });
 
 test("a proposal one unit below the pool's price floor is ERR_PRICE_FLOOR", () => {
-  const p = stableProposal(5000);
-  const r = check({ ...p, min_amount_out: (BigInt(p.min_amount_out) - 1n).toString() });
+  // nusdc -> nusdt: the reference floor is 0.99 * 10000 = 9900 base nusdt per base nusdc,
+  // so 50 base nusdc needs min_out >= 495000 (a nusdt -> nusdc floor this tiny would round to 0).
+  const p = { pool_id: 1, token_in: NUSDC, token_out: NUSDT, amount_in: "50", min_amount_out: "495000" };
+  assert.equal(check(p).ok, true);
+  const r = check({ ...p, min_amount_out: "494999" });
   assert.equal(r.ok, false);
   assert.equal(r.code, "ERR_PRICE_FLOOR");
-  assert.equal(check({ ...p, min_amount_out: (BigInt(p.min_amount_out) - 1n).toString() }).code, "ERR_PRICE_FLOOR");
 });
 
 test("the price floor uses the rate for the trade direction", () => {

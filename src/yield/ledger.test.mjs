@@ -54,9 +54,11 @@ test("an agent that executed has trades >= 1 and a vetoed agent has vetoes >= 1,
 });
 
 test("trades move the simulated vault state: spent counter and balances", async () => {
-  const { ledger, records } = await playRounds(1);
-  const x = records[0].executions[0];
-  assert.ok(x, "expected an execution in round 1");
+  // Round 1 executes nothing any more (stable agents refuse the off-peg pool 1, chaotic is vetoed);
+  // chaotic's modest round-2 trade on pool 0 is the first execution.
+  const { ledger, records } = await playRounds(2);
+  const x = records.flatMap((r) => r.executions)[0];
+  assert.ok(x, "expected an execution in rounds 1-2");
   const st = ledger.states[x.agent];
   assert.equal(st.spent.amounts[x.proposal.token_in], x.proposal.amount_in);
   assert.ok(BigInt(st.balances[x.proposal.token_out]) > 0n);

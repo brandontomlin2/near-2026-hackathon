@@ -4,6 +4,7 @@
 
 import { AGENTS, agentById } from "../traits/agents.mjs";
 import { PROPOSAL_KEYS } from "./proposal.mjs";
+import { maxReferenceDeviationBps, spotDeviationBps } from "./pools.mjs";
 import { strategyFor } from "./strategies.mjs";
 
 const PROPOSAL_SHAPE = `{"pool_id": <integer>, "token_in": "<account id>", "token_out": "<account id>", "amount_in": "<decimal integer string>", "min_amount_out": "<decimal integer string>", "rationale": "<one short sentence>"}`;
@@ -13,6 +14,7 @@ const RULES = `Hard vault rules (enforced on chain; a proposal that breaks one i
 - amount_in and min_amount_out must be greater than 0.
 - limits are per token_in, in that token's own base units: a token without an entry in limits cannot be sold; amount_in must not exceed that entry's max_trade, and spent_today[token_in] plus amount_in must not exceed its daily_cap.
 - each pool has a price floor per direction (min_rate_a_to_b, min_rate_b_to_a as num/den): min_amount_out * den must be at least amount_in * num.
+- reference prices: a pool whose quote is more than max_ref_deviation_bps from its reference price (see ref_deviation_bps) is refused; do not trade it.
 - min_amount_out is your slippage floor: quote times (10000 - slippage_bps) / 10000.`;
 
 const FORMAT = `Reply with strict JSON only: exactly one JSON object, no code fence, no text before or after, exactly the keys ${PROPOSAL_KEYS.join(", ")}. Amounts are decimal integer strings without leading zeros.`;
@@ -43,6 +45,9 @@ export function poolFacts(config, fixture) {
       min_rate_b_to_a: ap.min_rate_b_to_a,
       fee_bps: p?.total_fee ?? 0,
       stable: Boolean(p && fixture.tokens[p.token_a]?.stable && fixture.tokens[p.token_b]?.stable),
+      // spot price vs the mock_usd_price reference, signed bps, per direction selling that token (null = no reference)
+      ref_deviation_bps: p ? { [p.token_a]: spotDeviationBps(p, p.token_a, fixture), [p.token_b]: spotDeviationBps(p, p.token_b, fixture) } : null,
+      max_ref_deviation_bps: p ? maxReferenceDeviationBps(p, fixture) : null,
     };
   });
 }
