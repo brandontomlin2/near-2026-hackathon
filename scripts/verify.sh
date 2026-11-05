@@ -661,6 +661,8 @@ fi
 
 secret_scan
 
+# No --json here: the dry run must keep the wasm-built gate, so `verify.sh --live`
+# FAILs when the contract wasm has not been built (npm run build:contract).
 planned "deploy nft" "deploy:nft" live
 planned "mint" "mint" auto
 rounds="${SWARM_ROUNDS:-5}"
