@@ -76,6 +76,8 @@ const CASES = [
   ["calls.json length mismatch", (p, c) => { c.calls.push({ ...CALL }); }, /calls length/],
   ["calls.json call signed", (p, c) => { c.calls = [{ ...CALL, signed: true }]; }, /calls\[0\]\.signed/],
   ["calls.json call sent", (p, c) => { c.calls = [{ ...CALL }, { ...CALL }, { ...CALL, sent: true }]; }, /calls\[2\]\.sent/],
+  ["no personality agent on pool 1", (p) => { p.agents[0].proposal = { pool_id: 0 }; p.agents[3].proposal = { pool_id: 0 }; }, /at least one personality agent proposing on pool 1/],
+  ["the planner swaps on the committed snapshot", (p) => { p.agents[4].decision = "swap"; }, /planner decision must be hold on the committed snapshot \(got "swap"\)/],
   ["rule_rejections 3", (p) => { p.rule_rejections = 3; }, /rule_rejections/],
   ["scenario matches_contract false", (p) => { p.rule_scenarios.scenarios[1].matches_contract = false; }, /daily_cap.*matches_contract/],
   ["scenario outcome accepted", (p) => { p.rule_scenarios.scenarios[0].outcome = "accepted"; }, /max_trade.*outcome/],

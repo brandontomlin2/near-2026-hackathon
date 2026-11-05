@@ -23,6 +23,8 @@ import { EXECUTE_SWAP_GAS_CLI } from "../src/yield/gas.mjs";
 export const EXPECTED_MODE = "mock";
 export const EXPECTED_AGENTS = 5;
 export const EXPECTED_CALLS = 0;
+/** On the committed snapshot the optimizer holds; with 0 calls this keeps the check from passing on an unrelated break. */
+export const EXPECTED_PLANNER_DECISION = "hold";
 export const PLANNER_STATUSES = ["ok", "off_reference", "below_min_edge", "no_reference_price", "refused"];
 export const EXPECTED_SIGNED = 0;
 export const EXPECTED_SENT = 0;
@@ -69,6 +71,10 @@ export function checkYieldDemo(plan, calls) {
   });
 
   // Pool 1 (nusdt/nusdc "stable") is far off its $1 peg: no personality agent may execute a pool 1 swap.
+  const pool1 = (agents ?? []).filter((a) => isObject(a) && a.kind === "personality" && isObject(a.proposal) && a.proposal.pool_id === 1);
+  expect(pool1.length > 0, "plan.json must have at least one personality agent proposing on pool 1 (the off-reference refusal is what the demo shows)");
+  const plannerRow = (agents ?? []).find((a) => isObject(a) && a.kind === "planner");
+  expect(!plannerRow || plannerRow.decision === EXPECTED_PLANNER_DECISION, `plan.json planner decision must be ${EXPECTED_PLANNER_DECISION} on the committed snapshot (got ${JSON.stringify(plannerRow?.decision)})`);
   (agents ?? []).forEach((agent, i) => {
     if (!isObject(agent) || agent.kind !== "personality" || !isObject(agent.proposal) || agent.proposal.pool_id !== 1) return;
     const text = JSON.stringify([agent.rule_check, agent.strategy_check]);

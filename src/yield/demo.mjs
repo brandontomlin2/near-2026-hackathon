@@ -194,6 +194,7 @@ function plannerRow(snapshot, plan) {
       pair: `${snapshot.tokens[cd.proposal.token_in].symbol} -> ${snapshot.tokens[cd.proposal.token_out].symbol}`,
       status: cd.status,
       ref_deviation_bps: j.candidates[i].ref_deviation_bps,
+      edge_bps: j.candidates[i].edge_bps,
       verdict: verdictText(cd, snapshot, j.params.max_ref_deviation_bps),
       rule_check: { ok: cd.check.ok, code: cd.check.ok ? null : cd.check.reason.split(":")[0], reason: cd.check.reason },
     })),
@@ -270,6 +271,13 @@ function snapshotLine(doc) {
   return `snapshot: one committed Ref testnet snapshot at block ${s.block_height}, not fetched, shared by the four agents and the optimizer (vault ${doc.planner_vault.vault_id})`;
 }
 
+/** The measure that put a candidate off reference: the spot deviation when it is over its limit, else the quote edge. */
+export function offReferenceMeasure(c, params) {
+  const signed = (x) => `${x >= 0 ? "+" : ""}${Math.round(x)}`;
+  if (Number.isFinite(c.ref_deviation_bps) && Math.abs(c.ref_deviation_bps) > params.max_ref_deviation_bps) return `spot ${signed(c.ref_deviation_bps)} bps`;
+  return `quote ${signed(c.edge_bps)} bps above the reference`;
+}
+
 /** Summary lines explaining every planner candidate that was not chosen, grouped by why (a chosen swap is already in the table). */
 function plannerNotes(a) {
   const groups = new Map();
@@ -287,7 +295,7 @@ function plannerNotes(a) {
       below_min_edge: `below the ${a.params.min_edge_bps} bps min edge`,
       ok: "passes but a better pool won",
     }[key] ?? key.replace("refused ", "refused by the vault rules, ");
-    const items = cs.length === 1 && key.startsWith("refused") ? [`pool ${cs[0].pool_id}: ${cs[0].rule_check.reason}`] : cs.map((c) => (c.status === "off_reference" ? `pool ${c.pool_id} ${c.pair} spot ${c.ref_deviation_bps >= 0 ? "+" : ""}${Math.round(c.ref_deviation_bps)} bps` : `pool ${c.pool_id} ${c.pair}`));
+    const items = cs.length === 1 && key.startsWith("refused") ? [`pool ${cs[0].pool_id}: ${cs[0].rule_check.reason}`] : cs.map((c) => (c.status === "off_reference" ? `pool ${c.pool_id} ${c.pair} ${offReferenceMeasure(c, a.params)}` : `pool ${c.pool_id} ${c.pair}`));
     lines.push(`    ${what}: ${key.startsWith("refused") && cs.length > 1 ? `pools ${cs.map((c) => c.pool_id).join(", ")}` : items.join("; ")}`);
   }
   return lines;
