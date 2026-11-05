@@ -82,6 +82,12 @@ export function validateVaultConfig(config) {
  * @property {Record<string, string | bigint>} [balances] vault balance per token
  */
 
+/** True for a canonical decimal u128 string (no sign, space, prefix, leading zero) or a BigInt in range. */
+function isU128Amount(v) {
+  if (typeof v === "bigint") return v >= 0n && v <= U128_MAX;
+  return typeof v === "string" && /^(0|[1-9][0-9]*)$/.test(v) && BigInt(v) <= U128_MAX;
+}
+
 /**
  * Hard rules: the one JavaScript copy of the contract's check_rules (lib.rs), same checks in
  * the same order with the contract's exact `ERR_CODE: detail` strings, so a proposal that
@@ -91,6 +97,13 @@ export function validateVaultConfig(config) {
  */
 export function checkProposal(proposal, config, state, runnerId, nowMs) {
   const fail = (code, detail) => ({ ok: false, code, reason: `${code}: ${detail}` });
+  // The contract parses amounts as near-sdk U128 (canonical decimal string of a u128) before
+  // check_rules runs, so non-canonical input is rejected first. Mirror that at the very top;
+  // it never fires for input the contract can deserialize, so no existing vector's result moves.
+  // BigInt in [0, U128_MAX] is accepted (in-process callers); numbers and other types are not.
+  for (const field of ["amount_in", "min_amount_out"]) {
+    if (!isU128Amount(proposal?.[field])) return fail("ERR_BAD_AMOUNT", `${field} must be a canonical decimal u128 string`);
+  }
   if (!config.runners.includes(runnerId)) return fail("ERR_NOT_RUNNER", `${runnerId} is not an approved runner`);
   if (state.paused) return fail("ERR_PAUSED", "vault is paused");
   if (state.in_flight) return fail("ERR_SWAP_IN_FLIGHT", "another swap is in flight");
