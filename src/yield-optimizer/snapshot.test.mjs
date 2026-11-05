@@ -43,6 +43,15 @@ describe("parseSnapshot", () => {
     }
   });
 
+  it("rejects a mock_usd_price that overflows to Infinity", () =>
+    rejects((r) => (r.tokens["wnear.fixture.testnet"].mock_usd_price = "9".repeat(400)), /mock_usd_price must be a finite number > 0/));
+  it("rejects control characters in ids and symbols (they would reach the terminal)", () => {
+    rejects((r) => (r.vault.vault_id = "vault.testnet\n\u001b[2Jfake"), /vault_id must not contain control characters/);
+    rejects((r) => (r.tokens["wnear.fixture.testnet"].symbol = "w\u001b[31m"), /symbol must not contain control characters/);
+    rejects((r) => {
+      r.tokens["evil\nid.testnet"] = { decimals: 6, mock_usd_price: "1.00" };
+    }, /token id with control characters/);
+  });
   it("rejects missing pools", () => rejects((r) => delete r.pools, /pools must be an array/));
   it("rejects an empty reserve", () => rejects((r) => (r.pools[0].reserve_b = "0"), /empty reserve/));
   it("rejects a non-SIMPLE_POOL", () => rejects((r) => (r.pools[0].pool_kind = "STABLE_SWAP"), /SIMPLE_POOL/));

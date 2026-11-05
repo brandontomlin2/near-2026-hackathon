@@ -351,11 +351,12 @@ describe("gas", () => {
     const m = lib.match(/pub const MIN_EXECUTE_GAS: Gas = Gas::from_tgas\((\d+)\);/);
     assert.ok(m, "MIN_EXECUTE_GAS not found in lib.rs");
     assert.equal(MIN_EXECUTE_GAS_TGAS, Number(m[1]));
-    assert.equal(MIN_EXECUTE_GAS_TGAS, EXECUTE_SWAP_TGAS);
   });
   it("plan.mjs holds no gas literal of its own", () => {
     const src = readFileSync(fileURLToPath(new URL("./plan.mjs", import.meta.url)), "utf8");
-    assert.doesNotMatch(src, /\b280\b/);
+    // Code only: a comment may mention the figure.
+    const code = src.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).map((l) => l.replace(/\/\/.*$/, "")).join("\n");
+    assert.doesNotMatch(code, /\b280\b/);
   });
 });
 

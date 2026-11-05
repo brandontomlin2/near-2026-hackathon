@@ -34,8 +34,12 @@ function need(cond, msg) {
   if (!cond) throw new SnapshotError(msg);
 }
 
+// Control characters (newlines, ANSI escapes) in a --snapshot file would reach the terminal through the plan text.
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+
 function str(v, where) {
   need(typeof v === "string" && v.length > 0, `${where} must be a non-empty string`);
+  need(!CONTROL.test(v), `${where} must not contain control characters`);
   return v;
 }
 
@@ -128,6 +132,7 @@ function parseState(s) {
 export const symbolOf = (id) => id.split(".")[0];
 
 function parseToken(id, t) {
+  need(!CONTROL.test(id), `tokens has a token id with control characters: ${JSON.stringify(id)}`);
   const w = `tokens["${id}"]`;
   need(isObj(t), `${w} must be an object`);
   need(Number.isInteger(t.decimals) && t.decimals >= 0 && t.decimals <= 38, `${w}.decimals must be an integer 0..38`);
@@ -136,7 +141,7 @@ function parseToken(id, t) {
   if (t.mock_usd_price !== undefined && t.mock_usd_price !== null) {
     need(typeof t.mock_usd_price === "string" && /^\d+(\.\d+)?$/.test(t.mock_usd_price), `${w}.mock_usd_price must be a decimal string or null`);
     ref_price = Number(t.mock_usd_price);
-    need(ref_price > 0, `${w}.mock_usd_price must be > 0`);
+    need(Number.isFinite(ref_price) && ref_price > 0, `${w}.mock_usd_price must be a finite number > 0`);
   }
   const symbol = t.symbol === undefined ? symbolOf(id) : str(t.symbol, `${w}.symbol`);
   return { symbol, decimals: t.decimals, ref_price };

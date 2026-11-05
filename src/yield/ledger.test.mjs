@@ -6,10 +6,10 @@ import { join } from "node:path";
 
 import { createInferenceClient } from "../inference/client.mjs";
 import { AGENT_IDS, runRound } from "./debate.mjs";
-import { createLedger, formatScoreboard, formatUsd, ledgerPath, mockFill } from "./ledger.mjs";
+import { createLedger, formatScoreboard, formatUsd, initialState, ledgerPath, mockFill } from "./ledger.mjs";
 import { yieldMockResponder } from "./mock.mjs";
 import { loadPoolFixture } from "./pools.mjs";
-import { defaultVaultConfig } from "./strategies.mjs";
+import { defaultVaultConfig, plannerVaultConfig } from "./strategies.mjs";
 
 const fixture = loadPoolFixture();
 const RUNNER = "runner.yield-demo.testnet";
@@ -136,4 +136,17 @@ test("mockFill values both sides at reference prices when the pool spot ratio di
   // 500 nUSDC base = 5.00 USD = 5000000 micro-USD in, 2636 nUSDT base = 2636 micro-USD out: about -4997364.
   const loss = BigInt(buy.pnl_micro_usd);
   assert.ok(loss >= -4997366n && loss <= -4997362n, `buying 2636 nUSDT base with 500 nUSDC base is about -4997364 micro-USD, got ${loss}`);
+});
+
+test("initialState funds 1000 whole tokens of each kind (nusdc has 2 decimals) and covers every daily_cap", () => {
+  const bal = initialState().balances;
+  for (const [token, amount] of Object.entries(bal)) {
+    assert.equal(BigInt(amount), 1000n * 10n ** BigInt(fixture.tokens[token].decimals) * (token === "rft.tokenfactory.testnet" ? 10n : 1n), token);
+  }
+  const configs = [...AGENT_IDS.map((id) => defaultVaultConfig(id, { runner: RUNNER })), plannerVaultConfig({ runner: RUNNER })];
+  for (const c of configs) {
+    for (const l of c.limits) {
+      assert.ok(BigInt(l.daily_cap) <= BigInt(bal[l.token_id] ?? "0"), `${c.strategy} ${l.token_id}: daily_cap ${l.daily_cap} above starting balance ${bal[l.token_id]}`);
+    }
+  }
 });
