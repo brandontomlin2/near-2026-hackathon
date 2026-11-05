@@ -23,10 +23,12 @@ function explorerLine(t) {
  * @param {{ transfer?: object }} manifest
  * @returns {string} HTML, or "" when the manifest has no transfer
  */
-export function transferSection({ transfer: t } = {}) {
+export function transferSection(manifest) {
+  const t = manifest?.transfer;
   if (!t) return "";
-  const rows = t.tokens.map((k) => `<tr><td>${esc(k.tokenId)}</td><td class="hash">${esc(k.anchoredHash)}</td><td class="hash">${esc(k.recomputedHash)}</td><td>${verdict(k.match)}</td></tr>`).join("\n");
-  const meta = t.tokens.map((k) => `<details><summary>${esc(k.tokenId)}</summary><pre>${esc(JSON.stringify(k.nftMetadata, null, 2))}</pre></details>`).join("\n");
+  const tokens = t.tokens ?? [];
+  const rows = tokens.map((k) => `<tr><td>${esc(k.tokenId)}</td><td class="hash">${esc(k.anchoredHash)}</td><td class="hash">${esc(k.recomputedHash)}</td><td>${verdict(k.match)}</td></tr>`).join("\n");
+  const meta = tokens.map((k) => `<details><summary>${esc(k.tokenId)}</summary><pre>${esc(JSON.stringify(k.nftMetadata, null, 2))}</pre></details>`).join("\n");
   const x = t.tamper;
   // alice and bob are constants in every mode: simulated accounts, never linked.
   return `<h2>Transfer: memory travels with the NFT</h2>
