@@ -207,3 +207,18 @@ test("sha256Hex rejects boxed strings and byte arrays, and hashes the empty stri
   }
   assert.equal(sha256Hex(""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
 });
+
+test("regression: cyclic objects and arrays are refused with a coded bad_json, not a stack overflow", () => {
+  const obj = {};
+  obj.self = obj;
+  const arr = [];
+  arr.push([arr]);
+  for (const cyclic of [obj, arr, { deep: { deeper: obj } }]) {
+    assert.throws(() => canonicalJson(cyclic), (err) => err instanceof HashError && err.code === "bad_json");
+  }
+});
+
+test("regression: a shared (non-cyclic) sub-object referenced twice still hashes", () => {
+  const shared = { b: 1 };
+  assert.equal(canonicalJson({ x: shared, y: [shared, shared] }), '{"x":{"b":1},"y":[{"b":1},{"b":1}]}');
+});

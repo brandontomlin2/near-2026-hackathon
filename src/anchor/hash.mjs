@@ -25,7 +25,7 @@ export class HashError extends Error {
  * @param {unknown} value
  * @returns {string}
  */
-export function canonicalJson(value) {
+export function canonicalJson(value, path = new Set()) {
   if (value === null) return "null";
   switch (typeof value) {
     case "string":
@@ -37,18 +37,26 @@ export function canonicalJson(value) {
       }
       return JSON.stringify(value);
     case "object": {
+      if (path.has(value)) {
+        throw new HashError("canonicalJson: cyclic value", { code: "bad_json" });
+      }
+      path.add(value);
+      let out;
       if (Array.isArray(value)) {
-        return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
+        out = `[${value.map((item) => canonicalJson(item, path)).join(",")}]`;
+      } else {
+        const proto = Object.getPrototypeOf(value);
+        if (proto !== Object.prototype && proto !== null) {
+          throw new HashError("canonicalJson: only plain objects and arrays can be hashed", {
+            code: "bad_json",
+          });
+        }
+        const keys = Object.keys(value).sort();
+        const parts = keys.map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key], path)}`);
+        out = `{${parts.join(",")}}`;
       }
-      const proto = Object.getPrototypeOf(value);
-      if (proto !== Object.prototype && proto !== null) {
-        throw new HashError("canonicalJson: only plain objects and arrays can be hashed", {
-          code: "bad_json",
-        });
-      }
-      const keys = Object.keys(value).sort();
-      const parts = keys.map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`);
-      return `{${parts.join(",")}}`;
+      path.delete(value);
+      return out;
     }
     default:
       throw new HashError(`canonicalJson: unsupported type ${typeof value}`, {
