@@ -225,7 +225,7 @@ NEP-297, `standard: "yield_vault"`, `version: "1.0.0"`: `deposit`, `withdraw`, `
 
 ```
 cd contracts/yield-vault
-cargo test                                          # 257 unit tests
+cargo test                                          # 259 unit tests
 (cd sandbox && cargo test -- --test-threads=1)      # 14 local sandbox tests, see "Sandbox measurements"
 cargo clippy --all-targets
 cargo build --target wasm32-unknown-unknown --release
@@ -245,7 +245,7 @@ Fixed after the first AI review:
 - Medium, no escape from a stuck `in_flight` lock: `started_at` plus owner `force_release_lock` after 10 minutes, with swap ids so late callbacks cannot touch a newer swap.
 - Medium, `recover_from_ref` during a swap: rejected with `ERR_SWAP_IN_FLIGHT`. `update_config` is rejected the same way. A follow-up review found the reverse case (a swap or second recovery starting while a recovery's reconcile was still pending, so the two reconciles misread each other's Ref balance); a recovery now holds its own lock until its reconcile runs.
 - Low, dead `_reserved` storage map: removed.
-- The first AI review found zero tests; there are now 257 unit tests and 14 local sandbox tests against a mock Ref. No testnet test exists.
+- The first AI review found zero tests; there are now 259 unit tests and 14 local sandbox tests against a mock Ref. No testnet test exists.
 
 Fixed after a second AI review (report not in the repository):
 
