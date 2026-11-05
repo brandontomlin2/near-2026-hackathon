@@ -1,4 +1,6 @@
-//! Failure and escape-hatch paths: the Ref withdraw gas finding, and force_release_lock.
+//! Failure paths: the Ref withdraw gas finding and malformed Ref replies (handled as failed
+//! reads, so no sandbox flow can leave the lock stuck any more; `force_release_lock` is covered
+//! by the unit tests only).
 //! Run: `cargo test --test failure_paths -- --nocapture`
 mod common;
 use common::*;
@@ -69,58 +71,12 @@ async fn ref_withdraw_gas_covers_ref_20_20_at_documented_minimums() -> anyhow::R
     Ok(())
 }
 
-async fn stale(sb: &Sb) -> anyhow::Result<()> {
-    // 10 minutes of sandbox time (each block is ~0.3 s of timestamp, so 2500 blocks > 600 s). fast_forward advances the block height and the block
-    // timestamps; the vault's own ERR_LOCK_NOT_STALE check is the real arbiter below.
-    sb.worker.fast_forward(2_500).await?;
-    Ok(())
-}
-
-/// The swap completed on Ref and the tokens reached the vault, but the last callback
-/// (`on_withdraw_reconciled`) panicked decoding a garbage `get_deposit` reply, so the lock
-/// is held. `force_release_lock` finds the tokens in the vault and credits them.
+/// A garbage `get_deposit` reply (valid JSON, not a U128) to `on_withdraw_pre` used to panic
+/// the callback inside near-sdk's typed decoding and leave the lock held until
+/// `force_release_lock`. It is now a failed read: the chain ends cleanly, the lock is released,
+/// token_out is stranded on Ref (recorded, never credited), and `recover_from_ref` pulls it back.
 #[tokio::test]
-async fn force_release_credits_swap_whose_last_callback_died() -> anyhow::Result<()> {
-    let sb = Sb::new().await?;
-    sb.register_and_deposit(DEPOSIT).await?;
-    let c = lib_gas_constants();
-    sb.admin.call(sb.rf.id(), "set_garbage_get_deposit_call").args_json(json!({"n": 2})).transact().await?.into_result()?;
-
-    let r = sb.runner.call(sb.vault.id(), "execute_swap")
-        .args_json(sb.swap_args(AMOUNT_IN, MIN_OUT))
-        .gas(tgas(c["MIN_EXECUTE_GAS"])).transact().await?;
-    report_expecting(&sb, "execute_swap, 2nd get_deposit garbage (lock stuck)", &r, sb.runner.id(), &["vault.on_withdraw_reconciled"]).await?;
-    let s = sb.state().await?;
-    assert_eq!(s["swap_in_flight"], true, "lock must be stuck");
-    assert_eq!(sb.vault_balance(&sb.tout).await?, 0, "not credited yet");
-    assert_eq!(sb.ft_balance(&sb.tout, sb.vault.id()).await?, AMOUNT_OUT, "tokens did arrive");
-    sb.admin.call(sb.rf.id(), "set_garbage_get_deposit_call").args_json(json!({"n": 0})).transact().await?.into_result()?;
-
-    // Too early: refused.
-    let early = sb.owner.call(sb.vault.id(), "force_release_lock")
-        .deposit(YOCTO).gas(tgas(c["MIN_FORCE_RELEASE_GAS"])).transact().await?;
-    assert!(early.is_failure());
-    assert!(format!("{:?}", early.failures()).contains("ERR_LOCK_NOT_STALE"), "{:?}", early.failures());
-
-    stale(&sb).await?;
-    let r = sb.owner.call(sb.vault.id(), "force_release_lock")
-        .deposit(YOCTO).gas(tgas(c["MIN_FORCE_RELEASE_GAS"])).transact().await?;
-    report(&sb, "force_release_lock @ MIN_FORCE_RELEASE_GAS (credit branch)", &r, sb.owner.id()).await?;
-    let s = sb.state().await?;
-    assert_eq!(s["swap_in_flight"], false);
-    assert_eq!(s["release_in_flight"], false);
-    assert_eq!(s["swaps_executed"], 1);
-    assert_eq!(sb.vault_balance(&sb.tout).await?, AMOUNT_OUT);
-    assert_eq!(sb.vault_balance(&sb.tin).await?, DEPOSIT - AMOUNT_IN);
-    assert!(s["stranded_on_ref"].as_array().unwrap().is_empty());
-    assert!(r.logs().iter().any(|l| l.contains("swap_executed") && l.contains("force_release")));
-    Ok(())
-}
-
-/// The swap ran on Ref but `on_withdraw_pre` died on a garbage reply before the withdraw:
-/// token_out sits on Ref. `force_release_lock` strands it, `recover_from_ref` pulls it back.
-#[tokio::test]
-async fn force_release_strands_swap_stuck_before_withdraw_then_recover() -> anyhow::Result<()> {
+async fn garbage_reply_before_withdraw_ends_chain_and_strands_then_recover() -> anyhow::Result<()> {
     let sb = Sb::new().await?;
     sb.register_and_deposit(DEPOSIT).await?;
     let c = lib_gas_constants();
@@ -129,28 +85,59 @@ async fn force_release_strands_swap_stuck_before_withdraw_then_recover() -> anyh
     let r = sb.runner.call(sb.vault.id(), "execute_swap")
         .args_json(sb.swap_args(AMOUNT_IN, MIN_OUT))
         .gas(tgas(c["MIN_EXECUTE_GAS"])).transact().await?;
-    report_expecting(&sb, "execute_swap, 1st get_deposit garbage (lock stuck)", &r, sb.runner.id(), &["vault.on_withdraw_pre"]).await?;
-    assert_eq!(sb.state().await?["swap_in_flight"], true);
-    assert_eq!(sb.ref_deposit(sb.vault.id(), &sb.tout).await?, AMOUNT_OUT);
-    sb.admin.call(sb.rf.id(), "set_garbage_get_deposit_call").args_json(json!({"n": 0})).transact().await?.into_result()?;
-
-    stale(&sb).await?;
-    let r = sb.owner.call(sb.vault.id(), "force_release_lock")
-        .deposit(YOCTO).gas(tgas(c["MIN_FORCE_RELEASE_GAS"])).transact().await?;
-    report(&sb, "force_release_lock @ MIN_FORCE_RELEASE_GAS (strand branch)", &r, sb.owner.id()).await?;
+    // No receipt may fail: the callback handles the bad reply instead of panicking.
+    report(&sb, "execute_swap, 1st get_deposit garbage (clean end, strand)", &r, sb.runner.id()).await?;
     let s = sb.state().await?;
-    assert_eq!(s["swap_in_flight"], false);
+    assert_eq!(s["swap_in_flight"], false, "lock released without force_release_lock");
     assert_eq!(s["swaps_executed"], 0);
     assert_eq!(pair_amount(&s["stranded_on_ref"], sb.tout.id().as_str()), AMOUNT_OUT);
-    assert_eq!(sb.vault_balance(&sb.tout).await?, 0);
+    assert_eq!(pair_amount(&s["unverified_on_ref"], sb.tout.id().as_str()), 0);
+    assert_eq!(sb.vault_balance(&sb.tout).await?, 0, "never credited");
+    assert_eq!(sb.vault_balance(&sb.tin).await?, DEPOSIT - AMOUNT_IN);
+    assert_eq!(sb.ref_deposit(sb.vault.id(), &sb.tout).await?, AMOUNT_OUT);
+    assert!(r.logs().iter().any(|l| l.contains("withdraw_pre_unverified")));
+    sb.admin.call(sb.rf.id(), "set_garbage_get_deposit_call").args_json(json!({"n": 0})).transact().await?.into_result()?;
 
     let r = sb.owner.call(sb.vault.id(), "recover_from_ref")
         .args_json(json!({"token_id": sb.tout.id(), "amount": AMOUNT_OUT.to_string()}))
         .deposit(YOCTO).gas(tgas(c["MIN_RECOVER_GAS"])).transact().await?;
-    report(&sb, "recover_from_ref @ MIN_RECOVER_GAS (after force release)", &r, sb.owner.id()).await?;
+    report(&sb, "recover_from_ref @ MIN_RECOVER_GAS (after garbage-reply strand)", &r, sb.owner.id()).await?;
     assert_eq!(sb.vault_balance(&sb.tout).await?, AMOUNT_OUT);
     assert_eq!(sb.ft_balance(&sb.tout, sb.vault.id()).await?, AMOUNT_OUT);
     assert_eq!(sb.ref_deposit(sb.vault.id(), &sb.tout).await?, 0);
     assert!(sb.state().await?["stranded_on_ref"].as_array().unwrap().is_empty());
+    Ok(())
+}
+
+/// A garbage reply to the post-withdraw read (`on_withdraw_reconciled`): the withdraw really
+/// delivered the tokens to the vault, but the read that would prove it is unusable. The chain
+/// ends cleanly with the amount recorded as unverified and NOT credited; the lock is free.
+/// The tokens sit in the vault's FT balance, and the owner books them with `sync_balance`.
+#[tokio::test]
+async fn garbage_reply_after_withdraw_ends_chain_unverified_then_sync() -> anyhow::Result<()> {
+    let sb = Sb::new().await?;
+    sb.register_and_deposit(DEPOSIT).await?;
+    let c = lib_gas_constants();
+    sb.admin.call(sb.rf.id(), "set_garbage_get_deposit_call").args_json(json!({"n": 2})).transact().await?.into_result()?;
+
+    let r = sb.runner.call(sb.vault.id(), "execute_swap")
+        .args_json(sb.swap_args(AMOUNT_IN, MIN_OUT))
+        .gas(tgas(c["MIN_EXECUTE_GAS"])).transact().await?;
+    report(&sb, "execute_swap, 2nd get_deposit garbage (clean end, unverified)", &r, sb.runner.id()).await?;
+    let s = sb.state().await?;
+    assert_eq!(s["swap_in_flight"], false, "lock released without force_release_lock");
+    assert_eq!(s["swaps_executed"], 0, "a swap is never counted on an unverified read");
+    assert_eq!(pair_amount(&s["unverified_on_ref"], sb.tout.id().as_str()), AMOUNT_OUT);
+    assert!(s["stranded_on_ref"].as_array().unwrap().is_empty());
+    assert_eq!(sb.vault_balance(&sb.tout).await?, 0, "not credited on a malformed read");
+    assert_eq!(sb.ft_balance(&sb.tout, sb.vault.id()).await?, AMOUNT_OUT, "tokens did arrive");
+    assert!(r.logs().iter().any(|l| l.contains("withdraw_unverified")));
+    sb.admin.call(sb.rf.id(), "set_garbage_get_deposit_call").args_json(json!({"n": 0})).transact().await?.into_result()?;
+
+    let r = sb.owner.call(sb.vault.id(), "sync_balance")
+        .args_json(json!({"token_id": sb.tout.id()}))
+        .deposit(YOCTO).gas(tgas(c["MIN_SYNC_GAS"])).transact().await?;
+    report(&sb, "sync_balance @ MIN_SYNC_GAS (books the unverified-but-arrived tokens)", &r, sb.owner.id()).await?;
+    assert_eq!(sb.vault_balance(&sb.tout).await?, AMOUNT_OUT);
     Ok(())
 }

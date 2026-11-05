@@ -67,7 +67,7 @@ recover_from_ref @ MIN_RECOVER_GAS (170), total burnt 19.95 TGas:
     8         vault.on_recover_reconciled     15.00    60.05    1.77    2.00     13.00
 
 Other entry points (own constant vs subtree): register_on_ref 60 / 6.36, sync_balance 50 / 6.16,
-withdraw 80 / 6.29, force_release_lock 100 / 10.79. Regenerate with
+withdraw 80 / 6.29, force_release_lock 100 / 10.79 (measured earlier, when a garbage `get_deposit` reply still stuck the lock; no sandbox test reaches it now, since malformed replies are handled as failed reads, and `force_release_lock` is covered by the unit tests only). Regenerate with
 `gtimeout 1800 cargo test --test happy_path -- --nocapture --test-threads=1`.
 
 ## Headroom: how much heavier than the mock can each Ref hop be?
