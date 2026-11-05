@@ -405,8 +405,8 @@ export function judgePathChecks() {
       step: "caveats:attest unreadable",
       command: "npm run attest:check -- --unreadable-quote",
       code: 2,
-      expects: ["intel_quote is 2 bytes"],
-      readme: ["`-- --unreadable-quote`", "2-byte hex quote"],
+      expects: ["intel_quote is 2 bytes", "CONSISTENT, NOT VERIFIED, BINDING UNREAD"],
+      readme: ["`-- --unreadable-quote`", "2-byte hex quote", "CONSISTENT, NOT VERIFIED, BINDING UNREAD"],
     },
     {
       step: "caveats:anchor dry-run",
