@@ -26,6 +26,8 @@ function explorerLine(t) {
 export function transferSection(manifest) {
   const t = manifest?.transfer;
   if (!t) return "";
+  // A missing object would otherwise surface as a raw "Cannot read properties of undefined".
+  for (const k of ["explorer", "teeInference"]) if (t[k] == null) throw new TypeError(`transferSection: manifest.transfer.${k} is missing`);
   const tokens = t.tokens ?? [];
   const rows = tokens.map((k) => `<tr><td>${esc(k.tokenId)}</td><td class="hash">${esc(k.anchoredHash)}</td><td class="hash">${esc(k.recomputedHash)}</td><td>${verdict(k.match)}</td></tr>`).join("\n");
   const meta = tokens.map((k) => `<details><summary>${esc(k.tokenId)}</summary><pre>${esc(JSON.stringify(k.nftMetadata, null, 2))}</pre></details>`).join("\n");
