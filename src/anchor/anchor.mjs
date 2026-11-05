@@ -62,7 +62,8 @@ function checkToken(tokenId) {
  * @param {string} params.network Must be "testnet".
  * @param {string} [params.gas]
  */
-export function prepareAnchor({ contractId, tokenId, sheet, sheetHash, currentAnchor, network, gas } = {}) {
+export function prepareAnchor(params) {
+  const { contractId, tokenId, sheet, sheetHash, currentAnchor, network, gas } = params ?? {};
   checkContract(contractId);
   if (network !== "testnet") {
     throw new AnchorError(`network ${JSON.stringify(network)} refused: testnet only`, {
