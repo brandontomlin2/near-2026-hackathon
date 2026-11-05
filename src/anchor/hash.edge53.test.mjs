@@ -218,6 +218,13 @@ test("regression: cyclic objects and arrays are refused with a coded bad_json, n
   }
 });
 
+test("regression: a sparse array is refused with bad_json instead of rendering invalid JSON", () => {
+  for (const sparse of [[1, , 3], new Array(2), { a: [, 1] }]) {
+    assert.throws(() => canonicalJson(sparse), (err) => err instanceof HashError && err.code === "bad_json");
+  }
+  assert.equal(canonicalJson([1, null, 3]), "[1,null,3]");
+});
+
 test("regression: a shared (non-cyclic) sub-object referenced twice still hashes", () => {
   const shared = { b: 1 };
   assert.equal(canonicalJson({ x: shared, y: [shared, shared] }), '{"x":{"b":1},"y":[{"b":1},{"b":1}]}');

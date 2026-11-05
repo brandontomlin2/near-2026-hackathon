@@ -43,7 +43,9 @@ export function canonicalJson(value, path = new Set()) {
       path.add(value);
       let out;
       if (Array.isArray(value)) {
-        out = `[${value.map((item) => canonicalJson(item, path)).join(",")}]`;
+        // Array.from visits holes as undefined, so a sparse array throws bad_json
+        // instead of rendering "[1,,3]" (map skips holes).
+        out = `[${Array.from(value, (item) => canonicalJson(item, path)).join(",")}]`;
       } else {
         const proto = Object.getPrototypeOf(value);
         if (proto !== Object.prototype && proto !== null) {
