@@ -92,10 +92,10 @@ const CORRUPTIONS = [
   { name: "truncated JSON", write: (good) => good.subarray(0, Math.floor(good.length / 2)), code: "bad_sheet" },
   { name: "non-JSON garbage", write: () => Buffer.from("\u0000\u0001\u0002 not a sheet at all <<<>>>", "utf8"), code: "bad_sheet" },
   { name: "an empty file", write: () => Buffer.alloc(0), code: "bad_sheet" },
-  { name: "valid JSON of the wrong shape: an array", write: () => Buffer.from("[1, 2, 3]"), code: "bad_state" },
-  { name: "valid JSON of the wrong shape: an empty object", write: () => Buffer.from("{}"), code: "bad_state" },
-  { name: "valid JSON of the wrong shape: a number", write: () => Buffer.from("42"), code: "bad_state" },
-  { name: "valid JSON of the wrong shape: throughIndex missing", write: () => Buffer.from('{"sheet":"Hi."}'), code: "bad_state" },
+  { name: "valid JSON of the wrong shape: an array", write: () => Buffer.from("[1, 2, 3]"), code: "bad_sheet" },
+  { name: "valid JSON of the wrong shape: an empty object", write: () => Buffer.from("{}"), code: "bad_sheet" },
+  { name: "valid JSON of the wrong shape: a number", write: () => Buffer.from("42"), code: "bad_sheet" },
+  { name: "valid JSON of the wrong shape: throughIndex missing", write: () => Buffer.from('{"sheet":"Hi."}'), code: "bad_sheet" },
 ];
 
 /** Set up: two good rounds, then damage the victim's sheet. Returns what is needed to assert. */
