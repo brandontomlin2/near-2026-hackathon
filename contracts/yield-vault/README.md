@@ -26,7 +26,8 @@ CheckResult   { ok: bool, reason: String }   // reason = "ERR_CODE: detail" when
 VaultState    { owner_id, nft_contract_id, token_id, ref_exchange_id, paused, swap_in_flight,
                 recovery_in_flight, release_in_flight, day,
                 spent_today: [(AccountId, U128)], balances: [(AccountId, U128)],
-                stranded_on_ref: [(AccountId, U128)], swaps_executed: u64 }
+                stranded_on_ref: [(AccountId, U128)],
+                unverified_on_ref: [(AccountId, U128)], swaps_executed: u64 }
 ```
 
 A token with no `limits` entry cannot be sold (`ERR_NO_LIMIT`). `spent_today` is tracked per token. Each pool carries an owner-set price floor per direction.
@@ -229,9 +230,9 @@ cargo build --target wasm32-unknown-unknown --release
 
 ## Known risks
 
-Source: an independent audit of the earlier version (`/Users/brandont/.claude-loop/logs/review-vault-audit20.md`). Later follow-up reviews were done by AI agents, not by a professional auditor.
+Source: reviews of the contract by AI review agents (Claude Code sessions), first of an earlier version and then of later revisions. No professional or independent auditor has reviewed this contract. The review reports were working notes on the developer's machine and are not in this repository; the findings and fixes they led to are summarized below.
 
-Fixed after the audit:
+Fixed after the first AI review:
 
 - High, phantom balance after Ref `withdraw` (swap and recovery): credit only after Ref `get_deposit` shows the funds left Ref; otherwise strand (`withdraw_not_reconciled`, `withdraw_unverified`).
 - High, failed `ft_transfer_call` treated as "nothing reached Ref": the vault queries `get_deposit` and rolls back only if Ref's deposit is below the deposited amount; otherwise it strands (`deposit_landed_on_ref`, `deposit_unverified`).
@@ -241,9 +242,9 @@ Fixed after the audit:
 - Medium, no escape from a stuck `in_flight` lock: `started_at` plus owner `force_release_lock` after 10 minutes, with swap ids so late callbacks cannot touch a newer swap.
 - Medium, `recover_from_ref` during a swap: rejected with `ERR_SWAP_IN_FLIGHT`. `update_config` is rejected the same way. A follow-up review found the reverse case (a swap or second recovery starting while a recovery's reconcile was still pending, so the two reconciles misread each other's Ref balance); a recovery now holds its own lock until its reconcile runs.
 - Low, dead `_reserved` storage map: removed.
-- The audit found zero tests; there are now 254 unit tests and 14 local sandbox tests against a mock Ref. No testnet test exists.
+- The first AI review found zero tests; there are now 254 unit tests and 14 local sandbox tests against a mock Ref. No testnet test exists.
 
-Fixed after a second review (`/tmp/yrev26-report.md`):
+Fixed after a second AI review (report not in the repository):
 
 - Medium, `force_release_lock` always stranded the debited amount, even when the lock stuck before any token left the vault. The tokens stayed in the vault's FT balance, untracked and unwithdrawable. It now reads the vault's FT balance and Ref's deposits and books the amount where it really is (see "Force release"). Tests cover both the "never left the vault" and the "on Ref" cases.
 - Medium, `withdraw` had no prepaid gas check: now >= 80 TGas, checked before the debit.
@@ -252,7 +253,7 @@ Fixed after a second review (`/tmp/yrev26-report.md`):
 - Low, the UTC daily-cap boundary: documented under the rules (up to 2x `daily_cap` around midnight).
 - The deferred phantom-stranded case for recoveries (a `stranded` entry larger than what is on Ref making a later withdraw look successful): `recover_from_ref` now reads Ref's deposit before and after and credits only the measured drop.
 
-Fixed after a third review (`/tmp/secyv-review.md`, M2):
+Fixed after a third AI review (report not in the repository; its finding M2 is the first item):
 
 - Medium, the swap-path reconcile compared Ref's deposit with the absolute `stranded[token] + amount`. A `stranded` record larger than what Ref really holds (for example a `swap_failed` strand whose swap actually ran) let a silently re-credited swap withdraw look successful, so token_out was credited while still on Ref; it also let a landed deposit look rolled back. Now `on_swap` snapshots Ref's token_out deposit before the withdraw (`on_withdraw_pre`) and `on_withdraw_reconciled` credits only if the deposit fell by `amount_out` from that snapshot. A failed deposit is rolled back only if Ref's deposit is below `amount_in`; an ambiguous one is stranded unverified, never credited. The extra hop raised `execute_swap`'s minimum from 270 to 280 TGas (still under the 300 TGas limit). Tests: `m2_phantom_stranded_does_not_fake_withdraw_credit`, `m2_phantom_stranded_does_not_fake_deposit_rollback` (both failed before the fix), plus snapshot, partial-drop and pre-read-failure cases.
 
@@ -277,7 +278,7 @@ Open (not fixed). Severity is the impact on funds if the item happens, not its l
 - Info, `strategy` is validated but not used by any on-chain rule. Config size (pools, limits, runners) is unbounded; only the owner can set it.
 - Low, pause and revoke do not cancel a swap already in flight. The only way out of a stuck swap is `force_release_lock` after 10 minutes.
 - Low, runners are accounts, not keys, and are trusted for timing and for the exact price at or above the floor. The floor is static and owner-set; a stale floor can be too loose or too tight. Loss per trade is bounded by `max_trade`, the floor and `daily_cap`.
-- High, deploy blocker, not fixable in code: gas constants are measured in a local sandbox against a mock Ref, not against real Ref costs on any network (the audit asked for a gas test on testnet). The Ref method names and argument shapes (`ft_transfer_call` msg, `swap`, `withdraw`, `get_deposit`, `storage_deposit`, `storage_withdraw`) run against a mock built from a public fork of Ref's source, never against a real Ref contract (see the top of this file). A wrong `withdraw` shape would leave deposited funds on Ref, because `recover_from_ref` uses the same call. Do not deploy or fund the vault until a sandbox or testnet run against Ref has passed; that run needs the owner's explicit approval.
+- High, deploy blocker, not fixable in code: gas constants are measured in a local sandbox against a mock Ref, not against real Ref costs on any network (the first AI review asked for a gas test on testnet). The Ref method names and argument shapes (`ft_transfer_call` msg, `swap`, `withdraw`, `get_deposit`, `storage_deposit`, `storage_withdraw`) run against a mock built from a public fork of Ref's source, never against a real Ref contract (see the top of this file). A wrong `withdraw` shape would leave deposited funds on Ref, because `recover_from_ref` uses the same call. Do not deploy or fund the vault until a sandbox or testnet run against Ref has passed; that run needs the owner's explicit approval.
 - Low, `daily_cap` is per UTC calendar day, so up to 2x `daily_cap` can be spent within minutes around 00:00 UTC.
 - Info, the off-chain JS and Rust rule order and the JS side of the rules are outside this contract and are covered elsewhere in the repository, not here.
 
