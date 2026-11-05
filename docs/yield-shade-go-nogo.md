@@ -4,6 +4,16 @@ This document performs nothing. Nothing in it has been done: no account is creat
 
 Background and sources: [`yield-shade-agent-plan.md`](yield-shade-agent-plan.md). Option table and time boxes: [plan section 9](yield-shade-agent-plan.md#9-gono-go-for-brandon). Step numbers below (plan step N) refer to [plan section 7](yield-shade-agent-plan.md#7-minimal-steps-to-go-live-on-testnet). Risks: plan section 8. Costs: plan section 6. All times UTC.
 
+## Status at a glance
+
+| | |
+| --- | --- |
+| Decision | not decided (Brandon decides by 2026-11-06) |
+| Recommendation | Partial (not a decision) |
+| Yes-gated steps done | 0 of 10. All 10 are NOT DONE and unchecked, see [Steps that need an explicit yes](#steps-that-need-an-explicit-yes) |
+| Live Shade evidence | none: no transaction id, no signature, no deployed account or contract |
+| What exists today | offline dry-run evidence only, runnable without anyone's yes, see [What runs today without a yes](#what-runs-today-without-a-yes-offline) |
+
 ## Decision
 
 | | |
@@ -15,14 +25,20 @@ Background and sources: [`yield-shade-agent-plan.md`](yield-shade-agent-plan.md)
 | Hard fallback to No-go | 2026-11-11 23:59 at the latest (earlier if checkpoint 1 is missed) |
 | My decision | [ ] Go   [ ] Partial   [ ] No-go   (not decided) |
 
-## Already done offline (no yes needed)
+## What runs today without a yes (offline)
 
-These sign, send and deploy nothing and make no network call.
+A judge or anyone with a fresh clone can run these now. They sign, send and deploy nothing, need no keys or accounts, and make no network call. Each command is run from the repository root after `npm install`; the quoted lines are what it really prints (a test, `scripts/yield-shade.readme.test.mjs`, fails if they drift).
 
-- `npm run yield:shade:dry-run` prints the payloads and ends with `dry_run: true, signed: false, sent: false`. `-- --json` prints the same as JSON; `-- --sign` is refused with exit 1.
-- `npm run yield:shade:check` asserts `dry_run` is true, `signed` is false, `sent` is false, and that the dry run makes no `near` CLI, network or subprocess call.
-- Offline tests (plan section 10): `gtimeout 900 node --test src/yield/shade/*.test.mjs spikes/shade/*.test.mjs`, and `node --test scripts/yield-shade.readme.test.mjs` for the README quotes.
-- The derived key matches the live testnet view calls in `spikes/shade/evidence/testnet-mpc-views.txt` (captured 2026-11-04, read-only).
+1. Run `npm run yield:shade:dry-run`. See `SHADE AGENT RUNNER PLAN - DRY RUN - offline, nothing signed, nothing sent` and `dry_run: true, signed: false, sent: false`. Exit 0.
+2. Run `npm run yield:shade:dry-run -- --json`. See `"dry_run": true,`, `"signed": false,` and `"sent": false,`. Exit 0.
+3. Run `npm run yield:shade:dry-run -- --sign`. See `yield:shade:dry-run: refused: --sign is not allowed. Dry run only; nothing is signed, sent or sent to mainnet.` Exit 1.
+4. Run `npm run yield:shade:check`. See `yield shade: dry_run true, signed false, sent false, network testnet; no near CLI, network or subprocess call; 5 refused flags and NEAR_NETWORK=mainnet exit 1`. Exit 0.
+
+Also offline:
+
+- Tests (plan section 10): `gtimeout 900 node --test src/yield/shade/*.test.mjs spikes/shade/*.test.mjs`, and `gtimeout 900 node --test scripts/yield-shade.readme.test.mjs` for the README and checklist quotes.
+- `bash scripts/verify.sh` runs `npm run yield:shade:check` as its `yield shade` stage.
+- The derivation code reproduces the keys returned by live read-only testnet view calls on `v1.signer-prod.testnet`, captured 2026-11-04 in `spikes/shade/evidence/testnet-mpc-views.txt` (for example `yield-agent.testnet` with path `yield-vault-1`). The dry run's own derived key belongs to the invented placeholder `shade-agent.yield-demo.testnet`; it is computed by the same code and was not queried on chain.
 
 ## Steps that need an explicit yes
 
@@ -56,7 +72,8 @@ If the decision is No-go, or a checkpoint is missed, what ships is the dry-run e
 
 - `npm run yield:shade:dry-run` (and `-- --json`) shows the derived executor key, `add_runner`, `AddKey`, the unsigned `execute_swap` transaction, the MPC `sign` request and the revocation calls, with `dry_run: true, signed: false, sent: false`.
 - `npm run yield:shade:check` and `gtimeout 900 node --test src/yield/shade/*.test.mjs spikes/shade/*.test.mjs` prove it is offline.
-- The derived key is checked against live read-only testnet views (`spikes/shade/evidence/testnet-mpc-views.txt`).
+- The derivation code is checked against live read-only testnet view calls (`spikes/shade/evidence/testnet-mpc-views.txt`); the dry run's own derived key is for an invented placeholder account and was not queried on chain.
+- Nothing else: no account, deployment, signature, `AddKey`, `execute_swap` or transaction id exists for the Shade Agent part. All 10 yes-gated steps stay NOT DONE.
 
 README wording change needed for No-go (describe only, not applied): none for the claims, since the README already states the Shade Agent part is a dry run and a plan that signs and sends nothing. Optionally add one sentence to the "Work in progress: Yield Optimizer" paragraph and the "Shade Agent dry run" subsection saying the go/no-go outcome was No-go on the decision date, that no live signature, `AddKey` or `execute_swap` was made, and that the only Shade evidence is the dry run and the read-only derivation check. The README must not describe the executor key as live.
 

@@ -274,6 +274,8 @@ The first command plans over the real committed snapshot and plans one swap on p
 
 ### Shade Agent dry run: `npm run yield:shade:dry-run`
 
+Go/no-go status: not decided (the owner decides by 2026-11-06; the plan recommends Partial). 0 of 10 yes-gated steps are done; all 10 are NOT DONE in [the checklist](docs/yield-shade-go-nogo.md#status-at-a-glance). No Shade account, deployment, signature or transaction id exists. What exists is the offline dry run below, which anyone can run without a yes.
+
 Offline, no network, no keys: it prints the payloads a Shade Agent runner would build for one vault swap (derived executor key, `add_runner`, `AddKey`, the unsigned `execute_swap` transaction, the MPC `sign` request, revocation). Accounts in it are invented placeholders; nothing is signed, sent or deployed, and it is not part of the claimed tracks. Plan: [`docs/yield-shade-agent-plan.md`](docs/yield-shade-agent-plan.md). Owner go/no-go checklist, with every step that needs an explicit yes marked not done: [`docs/yield-shade-go-nogo.md`](docs/yield-shade-go-nogo.md). Steps 1 to 4 quote what they really print; a test (`scripts/yield-shade.readme.test.mjs`) fails if they drift.
 
 1. Run `npm run yield:shade:dry-run`. See `SHADE AGENT RUNNER PLAN - DRY RUN - offline, nothing signed, nothing sent`, `method              execute_swap` and `dry_run: true, signed: false, sent: false`. Exit 0.
