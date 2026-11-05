@@ -215,7 +215,7 @@ Auto-pause: a runner picks `min_amount_out`, so a value Ref cannot fill makes ev
 
 The owner recovers stranded funds with `recover_from_ref(token_id, amount)`, only while no swap or other recovery is in flight, and no swap can start until the recovery's reconcile has run. The stranded record is reduced up front. `on_recover_pre` reads Ref's deposit first. If Ref holds less than `amount`, or the read fails, the recovery stops and the record is restored (`recover_refused`). A failed withdraw restores it too. After a withdraw that reports success, the vault credits only if Ref's deposit fell by at least `amount` since the first read. Otherwise it strands the amount again (`withdraw_not_reconciled` or `withdraw_unverified`). The recovery lock keeps every other vault operation off Ref meanwhile, so the drop can only come from this withdraw. Success credits the balance and emits `recovered`.
 
-Other limitation: there is no on-chain market price. Slippage is bounded only by the owner-set per-pool floor and the runner's `min_amount_out`.
+Other limitation: there is no on-chain market price. Slippage is bounded only by the owner-set per-pool floor and the runner's `min_amount_out`. There is no on-chain peg or reference-price check either: an off-peg pool is refused on chain only in the direction where the pool pays less than the configured floor (the example config sets the floor at 99% of the reference price), and the favorable direction passes the contract's rules. Refusing an off-peg pool outright is the runner's off-chain strategy check (`SOFT_OFF_REFERENCE` in `src/yield/rules.mjs`).
 
 ## Events
 

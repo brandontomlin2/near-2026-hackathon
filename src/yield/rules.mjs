@@ -149,7 +149,10 @@ export function checkProposal(proposal, config, state, runnerId, nowMs) {
  * SOFT_OFF_REFERENCE applies to every agent: the pool's quote is more than the pair's bound
  * (STABLE_PEG_BPS / MAX_REF_DEVIATION_BPS) from the mock_usd_price reference. SOFT_SLIPPAGE stays
  * the tolerance against the live quote; the two together (quote near reference, min_out near
- * quote) plus the on-chain reference-derived floor bound the price against the reference.
+ * quote) bound the price against the reference off chain. On chain the vault enforces only the
+ * owner-configured per-pool floor, a lower bound on min_amount_out: it has no peg or reference
+ * check, so it refuses an off-peg pool's losing direction only if the owner set that floor from
+ * the reference price, and it accepts the favorable direction (only SOFT_OFF_REFERENCE refuses it).
  * @returns {{ ok: boolean, violations: { code: string, reason: string }[] }}
  */
 export function checkStrategy(proposal, agentId, config, fixture, { consensus = null } = {}) {
@@ -192,7 +195,10 @@ export function checkStrategy(proposal, agentId, config, fixture, { consensus = 
   return { ok: violations.length === 0, violations };
 }
 
-/** Both layers for one proposal. `sendable` needs the hard rules only. */
+/**
+ * Both layers for one proposal. `sendable` needs both: the hard rules (what the vault enforces
+ * on chain) and the strategy soft checks (off chain only, the vault never sees them).
+ */
 export function evaluateProposal(proposal, agentId, config, state, runnerId, nowMs, fixture, ctx = {}) {
   const hard = checkProposal(proposal, config, state, runnerId, nowMs);
   const soft = checkStrategy(proposal, agentId, config, fixture, ctx);
