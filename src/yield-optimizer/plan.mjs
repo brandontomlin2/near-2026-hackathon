@@ -1,7 +1,7 @@
 // Yield Optimizer: the fifth personality. DRY RUN ONLY.
 //
 // Reads a snapshot (snapshot.mjs), finds the pool whose price beats the
-// reference price by the most, sizes a trade, clips it to the vault's limits,
+// reference price by the most (up to max_edge_bps: a bigger gap is distrusted, not chased), sizes a trade, clips it to the vault's limits,
 // runs the vault's own check_rules mirror (src/yield/rules.mjs) as the final gate, and
 // returns a plan: hold, or one `execute_swap` call with its exact args.
 // It never signs, never sends, never reads keys and never uses the network.
@@ -24,6 +24,19 @@ export const DEFAULTS = Object.freeze({
    * worst fill the vault would accept still beats holding by this much.
    */
   min_edge_bps: 25,
+  /**
+   * Largest edge over the reference price the planner will believe, measured
+   * on the quote (expected output, before slippage). 1000 bps = 10%. The
+   * reference price is the only oracle here, so an edge this big is far more
+   * likely junk liquidity, a depeg, a manipulated pool or a stale reference
+   * than a real opportunity: the planner distrusts the quote and will not
+   * trade it (status `off_reference`). Real venue-to-venue spreads on liquid
+   * pairs are tens of bps; the fixture's best pool is ~430 bps. The quote edge
+   * is used, not the edge at min_amount_out, because the quote is the pool's
+   * actual claim; the slippage haircut would let a pool sit up to
+   * slippage_bps further off reference than the limit says.
+   */
+  max_edge_bps: 1000,
   /** Share of the token_in balance the agent wants to move in one trade, before clipping. */
   position_pct: 50,
 });
@@ -118,7 +131,8 @@ function proposalJson(p) {
   };
 }
 
-const STATUS_RANK = { ok: 2, below_min_edge: 1, refused: 0 };
+// off_reference outranks below_min_edge so a pool whose selling side is junk reports that, not its (thin) other side.
+const STATUS_RANK = { ok: 3, off_reference: 2, below_min_edge: 1, refused: 0 };
 
 /**
  * One candidate per market pool. Both directions are sized, clipped and checked
@@ -148,10 +162,14 @@ function evaluateDirection(snap, pool, opts, i) {
   // The worst case the vault would accept: the trade fills at exactly min_amount_out.
   const worst = edgeBps(snap, token_in, amount_in, token_out, min_amount_out);
   let status;
+  let note;
   if (!check.ok) status = "refused";
-  else if (!(worst >= opts.min_edge_bps)) status = "below_min_edge";
+  else if (edge > opts.max_edge_bps) {
+    status = "off_reference";
+    note = `quote is ${edge.toFixed(1)} bps above the reference price, over the ${opts.max_edge_bps} bps limit: the quote is distrusted (junk liquidity, depeg, manipulated pool or stale reference), not traded`;
+  } else if (!(worst >= opts.min_edge_bps)) status = "below_min_edge";
   else status = "ok";
-  return { proposal, wanted, clipped_by, blocked_by, expected_out, edge_bps: edge, worst_edge_bps: worst, check, status };
+  return { proposal, wanted, clipped_by, blocked_by, expected_out, edge_bps: edge, worst_edge_bps: worst, check, status, note };
 }
 
 /** Portfolio value at reference prices, over every token the vault holds that has a price. */
@@ -190,6 +208,7 @@ export function buildPlan(snap, opts = {}) {
   if (chosen) reason = `best edge that passes every vault rule: pool ${chosen.proposal.pool_id}`;
   else if (candidates.length === 0) reason = "snapshot has no pools";
   else if (candidates.some((c) => c.status === "below_min_edge")) reason = `no allowed trade beats the reference price by ${o.min_edge_bps} bps at min_amount_out`;
+  else if (candidates.some((c) => c.status === "off_reference")) reason = `no trade: every allowed quote is more than ${o.max_edge_bps} bps off the reference price, so the quotes are distrusted (junk liquidity, depeg, manipulated pool or stale reference)`;
   else reason = "every candidate is refused by the vault rules";
   const json = {
     dry_run: true,
@@ -201,7 +220,7 @@ export function buildPlan(snap, opts = {}) {
     vault_id: snap.vault_id,
     runner_id: snap.runner_id,
     utc_day: dayOf(rulesView(snap).nowMs),
-    params: { slippage_bps: o.slippage_bps, min_edge_bps: o.min_edge_bps, position_pct: o.position_pct },
+    params: { slippage_bps: o.slippage_bps, min_edge_bps: o.min_edge_bps, max_edge_bps: o.max_edge_bps, position_pct: o.position_pct },
     decision: chosen ? "swap" : "hold",
     reason,
     // The call a runner would make. Field names match lib.rs `execute_swap(proposal: SwapProposal)`.
@@ -225,6 +244,7 @@ export function buildPlan(snap, opts = {}) {
       edge_bps: Number.isFinite(c.edge_bps) ? Number(c.edge_bps.toFixed(2)) : null,
       worst_case_edge_bps: Number.isFinite(c.worst_edge_bps) ? Number(c.worst_edge_bps.toFixed(2)) : null,
       status: c.status,
+      ...(c.note ? { note: c.note } : {}),
       check: c.check,
     })),
     simulated_pnl_vs_hold: {
@@ -269,7 +289,7 @@ export function renderPlan(snap, plan) {
       ? `${signedBps(c.edge_bps)} (worst ${signedBps(c.worst_edge_bps)})`
       : "n/a";
     const verdict =
-      c.status === "ok" ? "OK" : c.status === "below_min_edge" ? "SKIP below min edge" : `REFUSED ${c.check.reason}`;
+      c.status === "ok" ? "OK" : c.status === "below_min_edge" ? "SKIP below min edge" : c.status === "off_reference" ? `SKIP off reference (${c.note})` : `REFUSED ${c.check.reason}`;
     lines.push(`  pool ${p.pool_id} ${sym(p.token_in)} -> ${sym(p.token_out)}: ${fmt(p.token_in, p.amount_in)}${clip}, edge ${edge}: ${verdict}`);
   }
   if (plan.chosen) {
