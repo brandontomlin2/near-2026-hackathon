@@ -41,7 +41,7 @@ ${x ? `<h3>Tampered sheet</h3>
 <table><tr><th>Anchored hash</th><th>Re-hashed</th><th>Result</th></tr>
 <tr><td class="hash">${esc(x.anchoredHash)}</td><td class="hash">${esc(x.recomputedHash)}</td><td>${verdict(x.match)}</td></tr></table>` : ""}
 <h3>Mint metadata</h3>
-<p class="mut">A preview of the NEP-177 <code>TokenMetadata</code> fields for each token; <code>npm run mint</code> prints the exact mint call (dry run), which also includes <code>media</code> and <code>media_hash</code>.</p>
+<p class="mut">A preview of the NEP-177 <code>TokenMetadata</code> fields for each token; <code>npm run mint</code> prints the exact mint call (dry run), whose title, description and extra are its own and which also includes <code>media</code> and <code>media_hash</code>.</p>
 ${meta}
 <h3>On testnet</h3>
 ${explorerLine(t)}

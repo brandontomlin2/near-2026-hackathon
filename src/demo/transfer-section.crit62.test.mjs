@@ -45,6 +45,10 @@ describe("mint metadata label", () => {
     assert.match(label, /<code>media<\/code> and <code>media_hash<\/code>/);
   });
 
+  it("says the real mint call uses its own title, description and extra", () => {
+    assert.match(label, /title, description and extra are its own/);
+  });
+
   it("no longer claims these are what each token would mint with", () => {
     assert.ok(!html.includes("each token would mint with"));
   });
