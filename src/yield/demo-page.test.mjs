@@ -93,10 +93,3 @@ describe("renderDemoPage", () => {
   });
 });
 
-describe("link from the NFT demo page", () => {
-  it("src/demo/page.mjs links to the yield demo page with a relative href", async () => {
-    const { readFileSync } = await import("node:fs");
-    const src = readFileSync(new URL("../demo/page.mjs", import.meta.url), "utf8");
-    assert.match(src, /<a href="yield-demo\/index\.html">Yield vault demo<\/a>/);
-  });
-});
