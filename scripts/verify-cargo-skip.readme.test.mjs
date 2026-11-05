@@ -88,3 +88,18 @@ test("Judge quick path step 3 quotes the real no-cargo and no-gitleaks lines and
   assert.match(step3, /Rust tests did not run/);
   assert.match(quick, /no Rust is needed for steps 1, 2 and 4/, "the intro does not say step 3 needs no Rust");
 });
+
+test("the README refund caveat points at a vault README paragraph that exists and names the mock-only limit", () => {
+  const vault = fs.readFileSync(path.join(root, "contracts/yield-vault/README.md"), "utf8");
+  const para = vault.split("\n").find((l) => l.startsWith("Refund trust model:"));
+  assert.ok(para, "vault README has the Refund trust model paragraph");
+  assert.match(para, /does not independently check/);
+  assert.match(para, /only against the mock Ref/);
+  assert.match(para, /have not run on testnet/);
+  const bullet = readme.split("\n").find((l) => l.includes("`swap_refunded`") && l.includes("Refund trust model"));
+  assert.ok(bullet, "the root README refund bullet links the trust model");
+  assert.match(bullet, /not testnet/);
+  assert.match(bullet, /`revoke_runner` \(next item\) is the remedy/);
+  const next = readme.split("\n")[readme.split("\n").indexOf(bullet) + 1];
+  assert.match(next, /`revoke_runner`/, "the next item really is the revoke_runner one");
+});
