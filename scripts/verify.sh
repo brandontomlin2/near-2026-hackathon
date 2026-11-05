@@ -43,6 +43,8 @@ print WARN lines and record SKIP. Planned npm scripts are:
                (signed false, sent false, 4 calls planned, 0 signed) with 4 matching rule rejections
   yield:shade:check  runs yield:shade:dry-run under a guard (no near CLI, network or subprocess call);
                PASS only if it is a testnet dry run (signed false, sent false) and refused flags exit 1
+  yield:live:check  runs yield:live:dry-run under a guard (no near CLI, network or subprocess call);
+               PASS only if it is an unsigned testnet plan and signing flags and NEAR_NETWORK=mainnet exit 2
 
 The mock evidence stage passes only for placeholder entries marked mock.
 A missing planned script prints SKIP (not built yet) and does not fail.
@@ -102,7 +104,7 @@ print_summary() {
   # each one has a row, so a lost results file can never look like a clean pass.
   local expected_stages=(
     "fresh clone" "workflows" "symlinks" "secret files" "npm install" "tests"
-    "secret scan" "deploy nft" "mint" "swarm" "demo" "round hash" "yield" "yield demo" "yield shade" "vault tests"
+    "secret scan" "deploy nft" "mint" "swarm" "demo" "round hash" "yield" "yield demo" "yield shade" "yield live" "vault tests"
     "evidence"
   )
   local status stage detail seen=$'\n' missing=""
@@ -689,6 +691,8 @@ planned "yield" "yield" mock
 planned "yield demo" "yield:demo:check" mock
 # Yield shade: runs the Shade dry run under a no-near-CLI, no-network, no-subprocess guard and checks it never signs or sends.
 planned "yield shade" "yield:shade:check" mock
+# Yield live: runs the unsigned testnet live-path planner (dry-run) under the same guard and checks it never signs or sends.
+planned "yield live" "yield:live:check" mock
 
 # Yield vault contract unit tests. The build cache is the source checkout's
 # gitignored target/ so a fresh clone does not recompile near-sdk every run.
