@@ -100,6 +100,18 @@ test('docs do not claim the vault follows or belongs to the NFT', () => {
   }
 });
 
+test('docs say the peg/reference check is off chain and the contract enforces only the configured floor', () => {
+  for (const rel of [VAULT_README, 'README.md', 'src/yield/rules.mjs']) {
+    const text = read(rel);
+    // The vault has no reference price; a floor is "reference-derived" only because the owner set it so.
+    assert.doesNotMatch(text, /on-chain reference-derived floor|contract (enforces|checks) the (peg|reference)/i, rel);
+  }
+  for (const rel of [VAULT_README, 'README.md']) {
+    assert.match(read(rel), /no (on-chain )?peg or reference-price check/i, rel);
+  }
+  assert.match(read('README.md'), /only the runner's SOFT_OFF_REFERENCE check refuses that/);
+});
+
 test('vault README says nft_contract_id/token_id are not checked and recovery keeps spent_today', () => {
   const text = read(VAULT_README);
   assert.match(text, /nft_contract_id[^.]*(not|never) (checked|enforced)/is);

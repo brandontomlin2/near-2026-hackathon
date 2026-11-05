@@ -2,7 +2,7 @@
   "_source": "Ref/Rhea testnet exchange ref-finance-101.testnet, view get_pools {from_index:0,limit:300}, via https://test.rpc.fastnear.com (query/call_function, finality final).",
   "_block_height": 276143441,
   "_block_hash": "8uFVJpEaF5Bwf1caRZSq7TDWgadPA7XYbQdASRAPUgAj",
-  "_note": "Decoded snapshot of selected pools. Testnet liquidity is thin and some reserves are junk (pool 1, nusdt/nusdc, both stable at a $1 reference, has reserves 237316 : 44411 base units, i.e. 0.237 USDT vs 444.11 USDC: about 99.9% off the peg on this snapshot, so the off-chain peg check refuses it and the reference-derived vault floor refuses the losing direction on chain); used only for constant-product quotes and mock fills. Amounts are base units (decimal strings). total_fee is in bps (of 10000).",
+  "_note": "Decoded snapshot of selected pools. Testnet liquidity is thin and some reserves are junk (pool 1, nusdt/nusdc, both stable at a $1 reference, has reserves 237316 : 44411 base units, i.e. 0.237 USDT vs 444.11 USDC: about 99.9% off the peg on this snapshot, so the off-chain peg check (SOFT_OFF_REFERENCE) refuses it; on chain the vault has no peg check and only its owner-set floor, which the example config derives from the reference, refuses the losing direction); used only for constant-product quotes and mock fills. Amounts are base units (decimal strings). total_fee is in bps (of 10000).",
   "exchange": "ref-finance-101.testnet",
   "tokens": {
     "wrap.testnet": {
