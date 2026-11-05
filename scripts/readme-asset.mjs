@@ -71,14 +71,15 @@ export function parseArgs(argv) {
   let dir = null;
   let docs = false;
   let force = false;
+  // --help wins over any other flag, valid or not.
+  if (argv.includes("--help") || argv.includes("-h")) return { help: true };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--help" || a === "-h") return { help: true };
-    else if (a === "--update-docs") docs = true;
+    if (a === "--update-docs") docs = true;
     else if (a === "--force") force = true;
     else if (a === "--out") {
       const v = argv[i + 1];
-      if (v === undefined || v.startsWith("-")) throw new Error("--out needs a directory");
+      if (v === undefined || v === "" || v.startsWith("-")) throw new Error("--out needs a directory");
       dir = path.resolve(v);
       i++;
     } else throw new Error(`unknown argument ${a}`);
