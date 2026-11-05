@@ -170,3 +170,12 @@ test("README node --test pass count matches a real run of the quoted command", (
   assert.equal(fail, 0);
   assert.equal(pass, nodePass, "README `# pass N` is stale");
 });
+
+test("README verify.sh paragraph states the yield demo stage's real call and rejection counts", async () => {
+  const { EXPECTED_CALLS, EXPECTED_REJECTIONS, EXPECTED_SIGNED, EXPECTED_SENT } = await import("./yield-demo-check.mjs");
+  const para = readme.split("\n").find((l) => l.includes("`yield demo` runs `npm run yield:demo` with a timeout"));
+  assert.ok(para, "verify.sh paragraph about the yield demo stage");
+  const calls = EXPECTED_CALLS === 1 ? "1 call planned" : `${EXPECTED_CALLS} calls planned`;
+  assert.ok(para.includes(calls), `paragraph says ${calls}`);
+  assert.ok(para.includes(`${EXPECTED_SIGNED} signed, ${EXPECTED_SENT} sent and ${EXPECTED_REJECTIONS} rule rejections`));
+});

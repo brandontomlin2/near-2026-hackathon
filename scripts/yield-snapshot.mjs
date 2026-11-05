@@ -116,7 +116,7 @@ export function rpcCall(rpc, method, params, id = 1) {
   assertAllowedRequest(rpc, body);
   const out = execFileSync(
     "curl",
-    ["-sS", "--fail", "--max-time", "30", "-X", "POST", "-H", "content-type: application/json", "--data-binary", JSON.stringify(body), rpc],
+    ["-q", "-sS", "--fail", "--max-time", "30", "-X", "POST", "-H", "content-type: application/json", "--data-binary", JSON.stringify(body), rpc],
     { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
   );
   const res = JSON.parse(out);
