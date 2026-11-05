@@ -28,6 +28,12 @@ function runScript(args) {
 }
 
 function run(command) {
+  if (command === "npm run yield:live:check") {
+    const env = { ...process.env };
+    delete env.NODE_TEST_CONTEXT;
+    const r = spawnSync(process.execPath, [join(root, "scripts/yield-live-check.mjs")], { cwd: root, env, encoding: "utf8", timeout: 180_000 });
+    return { status: r.status, stdout: r.stdout, lines: trimmedLines(`${r.stdout}\n${r.stderr}`) };
+  }
   const m = /^npm run yield:live:(dry-run|preflight)(?:\s+--\s+(.*))?$/.exec(command);
   assert.ok(m, `unexpected command: ${command}`);
   return runScript([m[1], ...(m[2] ? m[2].split(/\s+/) : [])]);
@@ -39,15 +45,16 @@ test("package.json maps yield:live:dry-run and yield:live:preflight to the scrip
   assert.equal(pkg.scripts["yield:live:preflight"], "node scripts/yield-live.mjs preflight");
 });
 
-test("README has the live testnet path subsection with four steps", () => {
+test("README has the live testnet path subsection with five steps", () => {
   assert.ok(sub, "### Live testnet path, unsigned subsection exists under ## Yield Optimizer");
   assert.deepEqual(steps.map((s) => s.command), [
     "npm run yield:live:dry-run",
     "npm run yield:live:dry-run -- --json",
     "npm run yield:live:dry-run -- --send",
     "npm run yield:live:preflight",
+    "npm run yield:live:check",
   ]);
-  assert.deepEqual(steps.map((s) => s.exit), [0, 0, 2, 0]);
+  assert.deepEqual(steps.map((s) => s.exit), [0, 0, 2, 0, 0]);
   for (const s of steps) assert.ok(s.quotes.length >= 1, `step ${s.n} quotes at least 1 line`);
 });
 
@@ -80,4 +87,26 @@ test("subsection links the runbook and the go/no-go checklist, and both exist", 
     assert.ok(existsSync(join(root, f)), `${f} exists`);
   }
   assert.ok(sub.includes("scripts/yield-live.readme.test.mjs"));
+});
+
+test("README step 5 step count matches step 1 and package.json maps yield:live:check", () => {
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  assert.equal(pkg.scripts["yield:live:check"], "node scripts/yield-live-check.mjs");
+  const n1 = /: (\d+) steps,/.exec(steps[0].quotes[0])?.[1];
+  const n5 = /, (\d+) steps, plan valid;/.exec(steps[4].quotes[0])?.[1];
+  assert.ok(n1 && n5, "both step counts are quoted");
+  assert.equal(n5, n1);
+});
+
+test("verify table row counts in README and docs/live-readiness.md match verify.sh's expected stages", () => {
+  const verify = readFileSync(join(root, "scripts/verify.sh"), "utf8");
+  const block = /local expected_stages=\(([\s\S]*?)\)/.exec(verify)?.[1] ?? "";
+  const stages = [...block.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(stages.includes("yield live") && stages.includes("yield shade"), "verify.sh expects the yield shade and yield live stages");
+  const m = /table of (\d+) rows \(([^)]*)\)/.exec(section(readme, "Validate locally"));
+  assert.ok(m, "Validate locally states the row count and lists the stages");
+  assert.equal(Number(m[1]), stages.length);
+  assert.deepEqual(m[2].split(", "), stages);
+  const readiness = readFileSync(join(root, "docs/live-readiness.md"), "utf8");
+  assert.match(readiness, new RegExp(`\\| ${stages.length} rows, \`result: PASS\`\\.`));
 });
