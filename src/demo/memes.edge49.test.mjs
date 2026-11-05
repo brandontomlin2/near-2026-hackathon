@@ -114,6 +114,22 @@ describe("memes edge: villain cards", () => {
     assert.equal(v[0].enemy, "Zed");
   });
 
+  it("regression: enemy names with replacement-pattern characters appear literally in the rivalry line", () => {
+    for (const enemy of ["$&", "$'", "$`", "$$", "a$&b"]) {
+      const v = villains(sheetFor(`${enemy} (4 fights).`));
+      assert.equal(v.length, 1, enemy);
+      assert.ok(!v[0].rivalry.includes("{enemy}"), `${enemy}: ${v[0].rivalry}`);
+      assert.ok(v[0].rivalry.includes(enemy), `${enemy}: ${v[0].rivalry}`);
+    }
+  });
+
+  it("regression: agent ids named like Object.prototype members use the default bank instead of throwing", () => {
+    for (const id of ["__proto__", "constructor", "toString", "hasOwnProperty"]) {
+      const { line } = rivalryPick({ id, seed: 1, enemy: "Cy", fights: 2 });
+      assert.ok(RIVALRY_LINES.default.some((t) => t.replaceAll("{enemy}", "Cy").replaceAll("{n}", "2") === line), `${id}: ${line}`);
+    }
+  });
+
   it("markup in the enemy name is escaped in the svg", () => {
     const v = villains(sheetFor("<b>&x</b> (4 fights)."));
     assert.ok(!v[0].svg.includes("<b>"));

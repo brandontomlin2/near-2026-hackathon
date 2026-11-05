@@ -336,9 +336,10 @@ export function rivalryLine(args) {
 
 /** Like rivalryLine, but also returns whether the picked template is an "I did not start it" line. */
 export function rivalryPick({ id, seed = 0, enemy, fights, used = new Set() }) {
-  const own = RIVALRY_LINES[id] ?? RIVALRY_LINES.default;
+  const own = Object.hasOwn(RIVALRY_LINES, id) ? RIVALRY_LINES[id] : RIVALRY_LINES.default;
   const pool = own === RIVALRY_LINES.default ? [...own] : [...own, ...RIVALRY_LINES.default];
-  const fill = (t) => t.replaceAll("{enemy}", enemy).replaceAll("{n}", String(fights));
+  // Function replacers: a `$&` or `$'` in an enemy name must stay literal.
+  const fill = (t) => t.replaceAll("{enemy}", () => enemy).replaceAll("{n}", () => String(fights));
   const start = fnv1a(`${seed}\u0000${id}`) % own.length;
   let template = pool[start];
   let line = fill(template);
