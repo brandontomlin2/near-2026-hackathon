@@ -20,6 +20,7 @@ Everything here is mock or dry-run. Nothing is signed or sent, no key or account
 2. `open out/index.html` (or open the file in any browser) shows the headline `Your NFT remembers who you are` over the four agents.
 3. `bash scripts/verify.sh` (about 30 seconds to 2 minutes; allow a few minutes on a busy machine) ends with a `STATUS / STAGE / DETAIL` table with no `FAIL` row, then `result: PASS`. It includes the row `PASS      demo            npm run demo (mock)`.
 4. `npm run yield:demo` runs the Yield Optimizer vault demo offline (mock inference, committed snapshots, placeholder account ids) and prints `YIELD DEMO - DRY RUN - mock inference, offline - nothing signed, nothing sent`, then four proposals the vault's on-chain rules reject, under `on-chain rules, vectors from contracts/yield-vault/tests/rule-vectors.json (same message as the Rust check_rules):`, and `4 unsigned execute_swap calls planned, 0 signed, 0 sent`. Then open out/yield-demo/index.html in a browser for the same run as one page.
+5. `npm run yield:shade:dry-run` prints how a Shade Agent runner would sign that vault's first planned `execute_swap` without holding a key, offline and unsigned: first `SHADE AGENT RUNNER PLAN - DRY RUN - offline, nothing signed, nothing sent`, last `dry_run: true, signed: false, sent: false`.
 
 The numbered steps in the next section go deeper.
 
@@ -94,7 +95,7 @@ Nothing in this repository is deployed or live on testnet. The contract is unit-
 
 ## Work in progress: Yield Optimizer
 
-A fifth personality, the Yield Optimizer, is partly built, all of it offline and undeployed: a vault contract with on-chain rules and a planner that proposes swaps checked against those rules, shown by `npm run yield:demo` (see [Yield Optimizer](#yield-optimizer)). The Shade Agent part is still only a spike: `spikes/shade/` computes the NEAR chain-signature key offline (matched against live testnet view calls) and prints the planned sign request and transaction, so that an agent would never hold a private key. It is dry-run only, signs and sends nothing, and is not part of the demo or of the tracks claimed above. Run `node spikes/shade/dry-run.mjs` to see the plan. Design note: [`docs/spikes/shade-agent.md`](docs/spikes/shade-agent.md).
+A fifth personality, the Yield Optimizer, is partly built, all of it offline and undeployed: a vault contract with on-chain rules and a planner that proposes swaps checked against those rules, shown by `npm run yield:demo` (see [Yield Optimizer](#yield-optimizer)). The Shade Agent part is a plan, not a running agent: `npm run yield:shade:dry-run` (see [Shade Agent runner plan](#shade-agent-runner-plan-npm-run-yieldshadedry-run)) derives the vault runner's key offline with the NEAR chain-signature derivation (the earlier spike in `spikes/shade/` matched it against live testnet view calls) and prints the unsigned `execute_swap` transaction and the MPC sign request, so that an agent would never hold a private key. It is dry-run only, signs and sends nothing, no agent contract or TEE exists, and it is not part of the tracks claimed above. Plan and go/no-go: [`docs/yield-shade-agent-plan.md`](docs/yield-shade-agent-plan.md); earlier spike note: [`docs/spikes/shade-agent.md`](docs/spikes/shade-agent.md). The spike's own `node spikes/shade/dry-run.mjs` builds an older `execute_swap` payload that the vault would refuse (no `pool_id`, 50 TGas); use `npm run yield:shade:dry-run` instead.
 
 ## Repository layout
 
@@ -108,6 +109,7 @@ A fifth personality, the Yield Optimizer, is partly built, all of it offline and
 | `scripts/yield-demo.mjs`, `scripts/yield-optimizer.mjs`, `src/yield-optimizer/` | `npm run yield:demo`, the offline vault demo, and the yield-optimizer planner with its committed Rhea snapshot. |
 | `scripts/testnet-deploy.mjs` | `npm run deploy:nft` and `npm run mint`, dry run unless `--send --i-approve`. |
 | `scripts/verify.sh` | Local judge screen, replaces GitHub Actions. |
+| `scripts/yield-shade-dry-run.mjs`, `src/yield/shade/` | `npm run yield:shade:dry-run`, the offline Shade Agent runner plan for the vault (dry run, nothing signed). |
 | `spikes/shade/` | Dry-run spike for chain signatures (see [Work in progress](#work-in-progress-yield-optimizer)). Not part of the demo. |
 | `docs/spikes/shade-agent.md` | Design note for that spike. |
 | `docs/DISCLOSURE.md` | Libraries, AI-generated code and pre-hackathon code. |
@@ -221,6 +223,25 @@ One command, no keys, no network, no Rust. What is mock, plainly: inference is a
 npm run yield:demo
 npm run yield:demo -- --calls
 grep -E '"(dry_run|signed|sent)": ' out/yield-demo/plan.json
+```
+
+### Shade Agent runner plan: `npm run yield:shade:dry-run`
+
+How a vault runner would sign without holding a private key, printed as a plan only. Offline: no network, no key, no `.env`; nothing is signed, sent or written. It takes the first rule-checked `execute_swap` of `npm run yield:demo`, derives the runner's key offline with the NEAR MPC chain-signature derivation (the code in `src/yield/shade/` and `spikes/shade/`), and prints the `add_runner` and function-call `AddKey` that would authorize it, the unsigned `execute_swap` transaction and its hash, the MPC `sign` request, the agent contract's `request_signature` call, and how to revoke. Every account is an invented placeholder that is not deployed, and the nonce and block hash are placeholders. What is real: the MPC signer contract id and its root key. The Shade Agent Framework this plan targets is deprecated upstream; the plan and its go/no-go are in [`docs/yield-shade-agent-plan.md`](docs/yield-shade-agent-plan.md). A test (`scripts/yield-shade.readme.test.mjs`) fails if the lines quoted here drift from the real output.
+
+1. Run `npm run yield:shade:dry-run`. See `SHADE AGENT RUNNER PLAN - DRY RUN - offline, nothing signed, nothing sent`, then under `== execute_swap tx (unsigned) ==` the lines `method              execute_swap` and `gas                 300000000000000 (300 Tgas)` (the vault refuses less than 280 TGas), under `== MPC sign request ==` the line `receiver            v1.signer-prod.testnet`, under `== agent contract request_signature (UNCONFIRMED) ==` the line `confirmed           false`, and last `dry_run: true, signed: false, sent: false`. Exit 0.
+2. Run `npm run yield:shade:dry-run -- --json`. See the same plan as one JSON document with `"dry_run": true`, `"signed": false` and `"sent": false`.
+3. Run `npm run yield:shade:dry-run -- --send`. See `yield:shade:dry-run: refused: --send is not allowed. Dry run only; nothing is signed, sent or sent to mainnet.` and exit 1. `--sign`, `--broadcast`, `--i-approve`, `--mainnet`, `NEAR_NETWORK=mainnet` and any `.near` account are refused the same way.
+
+<!-- judge:run -->
+<!-- judge:expect SHADE AGENT RUNNER PLAN - DRY RUN - offline, nothing signed, nothing sent -->
+<!-- judge:expect dry_run: true, signed: false, sent: false -->
+<!-- judge:expect "signed": false -->
+<!-- judge:expect refused: --send is not allowed -->
+```sh
+npm run yield:shade:dry-run
+npm run yield:shade:dry-run -- --json
+npm run yield:shade:dry-run -- --send 2>&1 || true
 ```
 
 ### The vault contract, the `npm run yield` CLI and tests
