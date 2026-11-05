@@ -4,6 +4,8 @@
 
 PLAN ONLY, DRY RUN. Nothing is deployed, signed, sent, built or pushed. This is not part of the demo. Written 2026-11-05 for the 2026-11-06 go/no-go call by Brandon. It builds on `docs/spikes/shade-agent.md` (earlier spike) and the dry-run code in `spikes/shade/` and `src/yield/shade/`.
 
+The go/no-go is not decided yet. The current status (the decision, and the 10 yes-gated steps, all NOT DONE) is in [the owner checklist](yield-shade-go-nogo.md#status-at-a-glance).
+
 Research method: WebFetch of official docs and the NearDeFi/near repos on 2026-11-05. Every claim carries a URL. "Unconfirmed" means I could not read it in a primary source.
 
 ## 0. Read this first: facts that change the picture
@@ -168,9 +170,13 @@ No-go fallback date: 2026-11-11 23:59 UTC at the latest (earlier if checkpoint 1
 
 Owner checklist: [`docs/yield-shade-go-nogo.md`](yield-shade-go-nogo.md) (every step that needs an explicit yes, all NOT DONE).
 
+Decision status: not decided. If it is a no-go, see [No-go fallback](yield-shade-go-nogo.md#no-go-fallback).
+
 ## 10. How to check this offline
 
 - `npm run yield:shade:dry-run`: prints this plan's payloads with `dry_run: true`, `signed: false`, `sent: false`; `-- --json` prints the JSON only.
+- `npm run yield:shade:check`: asserts `dry_run` is true, `signed` is false, `sent` is false, and that the dry run makes no near CLI, network or subprocess call.
+- [What a judge can run today without the owner's yes](yield-shade-go-nogo.md#what-runs-today-without-a-yes-offline).
 - `gtimeout 900 node --test src/yield/shade/*.test.mjs spikes/shade/*.test.mjs`
 - Compare derivation against `spikes/shade/evidence/testnet-mpc-views.txt`.
 - Drafts in `deploy/shade/` are not built or deployed; every file starts with that banner.
