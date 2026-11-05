@@ -271,7 +271,7 @@ test("empty and truncated sheet.json are a bad_sheet memory error, nothing writt
     const before = snapshot(out);
     const r = ask(["--out", out, "chaotic", "hello?"]);
     assert.equal(r.code, 1, JSON.stringify(body));
-    assert.equal(r.stderr, `${MODE_LINE}ask: memory error (bad_sheet): the sheet file is malformed\n`);
+    assert.equal(r.stderr, `${MODE_LINE}ask: memory error (bad_sheet): the sheet file ${sheetPath(out)} is malformed\n`);
     assert.deepEqual(snapshot(out), before);
   }
 });

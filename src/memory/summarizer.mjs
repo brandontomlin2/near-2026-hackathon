@@ -170,17 +170,21 @@ export function buildSummaryMessages({ name, previous, events }) {
  *   round: number,
  *   log: ReadonlyArray<object>,
  *   previous?: { sheet: string, throughIndex: number } | null,
+ *   sheetFile?: string,
  * }} input
+ *
+ * `sheetFile` is only used to name the sheet file in a bad_state error.
  * @returns {Promise<{ tokenId: string, round: number, sheet: string, sheetHash: string, throughIndex: number, newEvents: number, mode: string, model: string }>}
  */
-export async function summarize({ client, tokenId, name, round, log, previous = null }) {
+export async function summarize({ client, tokenId, name, round, log, previous = null, sheetFile }) {
   assertTokenId(tokenId);
   if (typeof name !== "string" || name.length === 0) {
     throw new MemoryError("name must be a non-empty string", { code: "bad_request" });
   }
   const start = previous ? previous.throughIndex : 0;
   if (!Number.isInteger(start) || start < 0 || start > log.length) {
-    throw new MemoryError("previous.throughIndex is outside the log", { code: "bad_state" });
+    const where = typeof sheetFile === "string" && sheetFile.length > 0 ? ` (sheet file ${sheetFile})` : "";
+    throw new MemoryError(`previous.throughIndex is outside the log${where}`, { code: "bad_state" });
   }
   const fresh = log.slice(start);
   const messages = buildSummaryMessages({
@@ -218,8 +222,14 @@ export function createMemoryStore(root) {
     throw new MemoryError("store root must be a non-empty path", { code: "bad_config" });
   }
   const dirFor = (tokenId) => join(root, assertTokenId(tokenId));
+  const sheetFileFor = (tokenId) => join(dirFor(tokenId), "sheet.json");
 
   return {
+    /** @param {string} tokenId @returns {string} the path of this token's sheet.json */
+    sheetFile(tokenId) {
+      return sheetFileFor(tokenId);
+    },
+
     /** @param {string} tokenId @param {object} event */
     async appendEvent(tokenId, event) {
       const checked = makeEvent(event);
@@ -284,18 +294,18 @@ export function createMemoryStore(root) {
 
     /** @param {string} tokenId @returns {Promise<{ tokenId: string, round: number, sheet: string, sheetHash: string, throughIndex: number } | null>} */
     async readSheet(tokenId) {
-      const file = join(dirFor(tokenId), "sheet.json");
+      const file = sheetFileFor(tokenId);
       let raw;
       try {
         raw = await readFile(file, "utf8");
       } catch (err) {
         if (err && err.code === "ENOENT") return null;
-        throw new MemoryError("could not read the sheet", { code: "io_error", cause: err });
+        throw new MemoryError(`could not read the sheet file ${file}`, { code: "io_error", cause: err });
       }
       try {
         return JSON.parse(raw);
       } catch (err) {
-        throw new MemoryError("the sheet file is malformed", { code: "bad_sheet", cause: err });
+        throw new MemoryError(`the sheet file ${file} is malformed`, { code: "bad_sheet", cause: err });
       }
     },
 
@@ -321,7 +331,7 @@ export function createMemoryStore(root) {
 export async function maybeSummarize({ client, store, tokenId, name, round, every }) {
   if (!shouldSummarize(round, every)) return null;
   const [log, previous] = await Promise.all([store.readLog(tokenId), store.readSheet(tokenId)]);
-  const record = await summarize({ client, tokenId, name, round, log, previous });
+  const record = await summarize({ client, tokenId, name, round, log, previous, sheetFile: store.sheetFile(tokenId) });
   await store.writeSheet(tokenId, record);
   return record;
 }
