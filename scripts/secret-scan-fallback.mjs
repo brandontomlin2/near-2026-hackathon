@@ -45,7 +45,9 @@ export const RULES = [
     name: "seed-phrase",
     configOnly: true,
     re: new RegExp(
-      `(?:seed|mnemonic|passphrase|recovery|secret)[\\w.-]{0,40}["']?\\s*[:=]\\s*["']?(?:${WORD}\\s+){11}${WORD}(?:(?:\\s+${WORD}){12})?(?!\\s*\\w)`,
+      // The whole key name is one [\w.-]+ run that must start at a non-key char, so each run is
+      // scanned once (no nested quantifiers, no length cap). The keyword is tested in code.
+      `(?<![\\w.-])([\\w.-]+)["']?\\s*[:=]\\s*["']?(?:${WORD}\\s+){11}${WORD}(?:(?:\\s+${WORD}){12})?(?!\\s*\\w)`,
       "gi",
     ),
   },
@@ -55,6 +57,7 @@ export const RULES = [
   { name: "slack-token", re: /\bxox[abprs]-[A-Za-z0-9-]{10,}/g },
 ];
 
+const SEED_KEY = /seed|mnemonic|passphrase|recovery|secret/i;
 const CONFIG_FILE = /(?:^|\/)\.env(?:\.[^/]*)?$|\.(?:json|toml|ya?ml|ini|conf|cfg|properties|env)$/i;
 const MAX_BYTES = 2 * 1024 * 1024;
 
@@ -79,7 +82,7 @@ export function scanText(file, text) {
       if (rule.configOnly && !isConfig) continue;
       rule.re.lastIndex = 0;
       for (const m of line.matchAll(rule.re)) {
-        if (rule.name === "seed-phrase" && !wordCountOk(m[0])) continue;
+        if (rule.name === "seed-phrase" && (!SEED_KEY.test(m[1]) || !wordCountOk(m[0]))) continue;
         if (isAllowed(file, rule.name, m[0])) continue;
         findings.push({ file, line: i + 1, rule: rule.name });
       }
