@@ -70,8 +70,11 @@ export function buildTransfer(agents, anchors, { contractId, mode }) {
   for (const a of agents) {
     const latest = a.sheets?.at(-1);
     const anchor = (anchors?.calls ?? []).filter((c) => c.tokenId === a.id).at(-1);
-    if (!latest || typeof anchor?.args?.sheet_hash !== "string") continue;
-    const anchoredHash = anchor.args.sheet_hash;
+    // No sheet or no anchor at all: nothing to verify. An anchor that exists but
+    // lacks a string sheet_hash is a visible failure: it becomes a MISMATCH row.
+    if (!latest || !anchor) continue;
+    const rawHash = anchor.args?.sheet_hash;
+    const anchoredHash = typeof rawHash === "string" ? rawHash : "";
     tokens.push({
       tokenId: a.id,
       anchoredHash,
@@ -86,7 +89,7 @@ export function buildTransfer(agents, anchors, { contractId, mode }) {
   }
   // Tamper example comes from the first token actually emitted, so an agent
   // skipped for lacking an anchor cannot break it.
-  const first = tokens[0];
+  const first = tokens.find((k) => k.anchoredHash !== "");
   const firstAgent = first && agents.find((a) => a.id === first.tokenId);
   const tamperedSheet = first ? tamperSheet(firstAgent.sheets.at(-1).sheet) : null;
   const tamper = first

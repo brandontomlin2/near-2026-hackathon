@@ -127,13 +127,14 @@ describe("buildTransfer edge inputs", () => {
 });
 
 describe("malformed or missing transfer data", () => {
-  it("buildTransfer skips an agent with no sheets list, a missing anchors object, or a call without args", () => {
+  it("buildTransfer skips an agent with no sheets list or no anchor; a call without args is a MISMATCH row", () => {
     const noSheets = { id: "a", name: "a", personality: "p", traits: {} };
     assert.deepEqual(buildTransfer([noSheets], { calls: [] }, opts).tokens, []);
     assert.deepEqual(buildTransfer([agent("a", ["s"])], undefined, opts).tokens, []);
     assert.deepEqual(buildTransfer([agent("a", ["s"])], {}, opts).tokens, []);
     const t = buildTransfer([agent("a", ["s"])], { calls: [{ tokenId: "a" }] }, opts);
-    assert.deepEqual(t.tokens, []);
+    assert.equal(t.tokens.length, 1);
+    assert.equal(t.tokens[0].match, false);
     assert.equal(t.tamper, null);
   });
 
@@ -148,5 +149,29 @@ describe("malformed or missing transfer data", () => {
     const html = transferSection({ transfer: t });
     assert.ok(html.includes("<th>Token</th>"));
     assert.ok(html.includes("Mint metadata"));
+  });
+});
+
+describe("buildTransfer malformed anchors", () => {
+  it("a token whose anchor lacks a string sheet_hash shows a MISMATCH row, not silence", () => {
+    for (const args of [{}, undefined, { sheet_hash: 42 }, { sheet_hash: null }]) {
+      const t = buildTransfer([agent("a", ["sa"])], { calls: [{ tokenId: "a", args }] }, opts);
+      assert.equal(t.tokens.length, 1, JSON.stringify(args));
+      assert.equal(t.tokens[0].tokenId, "a");
+      assert.equal(t.tokens[0].match, false);
+      assert.match(transferSection({ transfer: t }), /<strong>MISMATCH<\/strong>/);
+    }
+  });
+
+  it("an agent with no anchor at all is still skipped, and tamper skips a malformed first token", () => {
+    const t = buildTransfer(
+      [agent("a", ["sa"]), agent("b", ["sb"]), agent("c", ["sc"])],
+      { calls: [{ tokenId: "a", args: {} }, anchorFor("b", "sb")] },
+      opts,
+    );
+    assert.deepEqual(t.tokens.map((k) => k.tokenId), ["a", "b"]);
+    assert.equal(t.tokens[0].match, false);
+    assert.equal(t.tokens[1].match, true);
+    assert.equal(t.tamper.tokenId, "b");
   });
 });
