@@ -223,6 +223,21 @@ test("--send checks proposals against the vault's real config: a vault with no l
   assert.deepEqual(r.calls, []);
 });
 
+test("--send checks proposals against the snapshot's config, not the demo config: a vault that has not approved this runner gets no transaction", async () => {
+  // Control: with the demo config (runner approved), chaotic's modest swap passes and is sent.
+  const demo = await run([...CHAOTIC_SEND, "--vault-state", vaultStateFile({}, "chaotic")], TESTNET_ENV, { hasNear: () => true });
+  assert.equal(demo.code, 0, demo.stderr);
+  assert.equal(demo.calls.length, 1, "the demo config accepts chaotic's swap");
+  // Same state and proposal, but the real vault's owner approved a different runner. Only the
+  // snapshot's config says so, so the swap is blocked only if --send uses that config.
+  const config = { ...defaultVaultConfig("chaotic", { runner: "runner.x.testnet" }), runners: ["other.x.testnet"] };
+  const r = await run([...CHAOTIC_SEND, "--vault-state", vaultStateFile({ config }, "chaotic")], TESTNET_ENV, { hasNear: () => true });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.calls, [], "the vault's real runner list must block the swap");
+  assert.match(r.stdout, /ERR_NOT_RUNNER: runner\.x\.testnet is not an approved runner/);
+  assert.doesNotMatch(r.stdout, /execute_swap/);
+});
+
 test("--send refuses a vault-state that does not name the target vault, or names another one", async () => {
   for (const [vault_id, why] of [[undefined, /needs "vault_id"/], ["other.x.testnet", /vault_id other\.x\.testnet is not the target vault vault\.x\.testnet/]]) {
     const r = await run(["--send", "--i-approve", "--agent", "skeptic", "--vault-state", vaultStateFile({ vault_id })], TESTNET_ENV, { hasNear: () => true });
