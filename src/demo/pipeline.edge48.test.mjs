@@ -79,8 +79,11 @@ describe("runDemo edge48: output dir problems", () => {
     rmSync(join(out, "demo.json"));
     rmSync(join(out, "index.html"));
     chmodSync(out, 0o555);
-    t.after(() => chmodSync(out, 0o755));
-    await assert.rejects(runDemo({ outDir: out, rounds: 2, every: 1 }), (e) => ["EACCES", "EPERM", "EROFS"].includes(e.code));
+    try {
+      await assert.rejects(runDemo({ outDir: out, rounds: 2, every: 1 }), (e) => ["EACCES", "EPERM", "EROFS"].includes(e.code));
+    } finally {
+      chmodSync(out, 0o755);
+    }
     assert.ok(!existsSync(join(out, "demo.json")));
     assert.ok(!existsSync(join(out, "index.html")));
   });
