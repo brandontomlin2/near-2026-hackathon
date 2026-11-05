@@ -40,7 +40,7 @@ test("a proposal one unit below the pool's price floor is ERR_PRICE_FLOOR", () =
 });
 
 test("the price floor uses the rate for the trade direction", () => {
-  const amountIn = "5000";
+  const amountIn = "50"; // nUSDC has 2 decimals: 0.50 nUSDC, under its 1 nUSDC max_trade
   const atFloor = floorMinOut(pool(1).min_rate_b_to_a, amountIn).toString();
   const p = { pool_id: 1, token_in: NUSDC, token_out: NUSDT, amount_in: amountIn, min_amount_out: atFloor };
   assert.equal(check(p).ok, true);
@@ -81,7 +81,7 @@ test("daily cap is per token and independent across tokens", () => {
   // NUSDT is exhausted
   assert.equal(check(stableProposal(1), state).code, "ERR_DAILY_CAP");
   // NUSDC has its own counter and is untouched
-  const amountIn = "5000";
+  const amountIn = "50"; // 0.50 nUSDC at 2 decimals, under its max_trade
   const nusdc = { pool_id: 1, token_in: NUSDC, token_out: NUSDT, amount_in: amountIn, min_amount_out: floorMinOut(pool(1).min_rate_b_to_a, amountIn).toString() };
   assert.equal(check(nusdc, state).ok, true);
   // WNEAR is untouched too
@@ -144,4 +144,12 @@ test("validateVaultConfig mirrors the contract's strategy, pool and runner check
   assert.ok(validateVaultConfig({ ...good, allowed_pools: [pool, pool] }).some((m) => m.includes(`duplicate pool ${pool.pool_id}`)));
   assert.ok(validateVaultConfig({ ...good, allowed_pools: [{ ...pool, token_b: pool.token_a }] }).some((m) => m.includes("token_a must differ")));
   assert.ok(validateVaultConfig({ ...good, runners: ["r.testnet", "r.testnet"] }).includes("duplicate runner"));
+});
+
+test("regression: nUSDC has 2 decimals in the fixture and a whole-token limit scales by 10^2", () => {
+  assert.equal(fixture.tokens[NUSDC].decimals, 2);
+  assert.equal(fixture.tokens[NUSDT].decimals, 6);
+  // social: nUSDC max_trade "1" whole token = 100 base units, daily_cap "2" = 200 (not 10^6 / 2*10^6)
+  assert.equal(limit(NUSDC).max_trade, "100");
+  assert.equal(limit(NUSDC).daily_cap, "200");
 });

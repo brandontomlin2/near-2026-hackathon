@@ -46,8 +46,8 @@
     },
     {
       "token_id": "nusdc.ft-fin.testnet",
-      "max_trade": "10000",
-      "daily_cap": "20000"
+      "max_trade": "100",
+      "daily_cap": "200"
     }
   ],
   "runners": [

@@ -582,7 +582,7 @@ Status meanings: CONFIRMED means checked against the source named in the last co
 - `wrap.testnet` `near_deposit` is unverified (row W1). Without wNEAR the owner cannot fund the vault with the example config.
 - The Ref `swap` action field names (`pool_id`, `token_in`, `amount_in`, `token_out`, `min_amount_out`) were not read from first-party source (row R7). The Ref source repository and docs were unreachable on 2026-11-05.
 - Per-token Ref storage cost is not documented (row R11); how much `storage_withdraw` returns is untested (row R6).
-- nusdc.ft-fin.testnet has 2 decimals on chain, while `src/yield/fixtures` assume 6. The example config uses the pool 0 pair (wrap.testnet to rft.tokenfactory.testnet, 24 and 8 decimals) and is not affected; any config or `min_rate` for nUSDC would be off by 10^4. Fix the fixtures before using pools 1 or nUSDC.
+- Fixed: nusdc.ft-fin.testnet has 2 decimals on chain, and `src/yield/fixtures` now says 2 (it said 6). The nUSDC limits in the per-agent example configs were regenerated (1 nUSDC = 100 base units). The live example config uses the pool 0 pair (wrap.testnet to rft.tokenfactory.testnet) and was never affected.
 - Testnet liquidity is thin and the pools are idle, so rates may move or the pool may hold too little for larger swaps. The config's floor `min_rate` and `max_trade` are set for a tiny swap only.
 - near-cli-rs syntax is unverified against upstream (row N1). The create-account commands use `use-manually-provided-public-key`, which the repo skill documents; the tool, not this document, is the authority on the exact text, and the test only checks that they match.
 - The 261718 byte wasm was built with `non-reproducible-wasm`; nothing proves it equals a reviewed build.

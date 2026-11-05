@@ -75,10 +75,10 @@ export function strategyFor(agentId) {
 // entry in `limits` cannot be sold. max_trade / daily_cap below are in whole tokens and are
 // scaled with the fixture's token decimals.
 const CONFIG_TABLE = {
-  aloof: { pools: [1], limits: { [NUSDT]: ["0.01", "0.03"], [NUSDC]: ["0.01", "0.03"] } },
+  aloof: { pools: [1], limits: { [NUSDT]: ["0.01", "0.03"], [NUSDC]: ["1", "3"] } },
   chaotic: { pools: [0], limits: { [WNEAR]: ["1", "3"], [RFT]: ["10", "30"] } },
-  social: { pools: [0, 1], limits: { [WNEAR]: ["1", "2"], [RFT]: ["10", "20"], [NUSDT]: ["0.01", "0.02"], [NUSDC]: ["0.01", "0.02"] } },
-  skeptic: { pools: [1], limits: { [NUSDT]: ["0.01", "0.02"], [NUSDC]: ["0.01", "0.02"] } },
+  social: { pools: [0, 1], limits: { [WNEAR]: ["1", "2"], [RFT]: ["10", "20"], [NUSDT]: ["0.01", "0.02"], [NUSDC]: ["1", "2"] } },
+  skeptic: { pools: [1], limits: { [NUSDT]: ["0.01", "0.02"], [NUSDC]: ["1", "2"] } },
 };
 
 const POOL_PAIRS = {
