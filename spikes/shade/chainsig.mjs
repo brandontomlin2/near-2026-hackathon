@@ -49,6 +49,7 @@ export const formatEd25519PublicKey = (bytes) => `ed25519:${base58Encode(bytes)}
 
 // ---------- tweak (kdf.rs) ----------
 export function deriveTweak(predecessorId, path) {
+  if (typeof predecessorId !== 'string' || typeof path !== 'string') throw new Error('predecessorId and path must be strings');
   return new Uint8Array(createHash('sha3-256').update(`${TWEAK_PREFIX}${predecessorId},${path}`).digest());
 }
 
@@ -127,7 +128,10 @@ class Writer {
   u64(n) { return this.uint(n, 8); }
   u128(n) { return this.uint(n, 16); }
   vec(b) { return this.u32(b.length).bytes(b); }
-  string(s) { return this.vec(new TextEncoder().encode(s)); }
+  string(s) {
+    if (typeof s !== 'string') throw new Error(`expected a string, got ${typeof s}`);
+    return this.vec(new TextEncoder().encode(s));
+  }
   publicKey(s) { return this.u8(0).bytes(parseEd25519PublicKey(s)); }
   done() { return Buffer.concat(this.parts); }
 }
@@ -168,7 +172,8 @@ export const sha256 = (bytes) => new Uint8Array(createHash('sha256').update(byte
  * NEAR verifies an ed25519 signature over sha256(borsh(tx)), so that hash is the Eddsa payload.
  */
 export function buildSignRequest({ path, txHash }) {
-  if (txHash.length !== 32) throw new Error('txHash must be 32 bytes');
+  if (typeof path !== 'string') throw new Error('path must be a string');
+  if (!(txHash instanceof Uint8Array) || txHash.length !== 32) throw new Error('txHash must be 32 bytes');
   return { request: { path, payload_v2: { Eddsa: Buffer.from(txHash).toString('hex') }, domain_id: ED25519_DOMAIN_ID } };
 }
 
