@@ -33,6 +33,8 @@ Direct dependencies in `contracts/yield-vault/Cargo.toml` (the Yield Optimizer v
 
 The vault calls the Rhea (Ref Finance) testnet exchange contract `ref-finance-101.testnet` at runtime; no Ref code is vendored or imported.
 
+The vault's sandbox integration tests are a separate crate, `contracts/yield-vault/sandbox/` (not built by `cargo test` in the vault directory or by `scripts/verify.sh`), with its own `Cargo.lock`. Its direct dev-dependencies, from `contracts/yield-vault/sandbox/Cargo.toml`: `near-workspaces` 0.24.0 (downloads a local sandbox node binary on first run), `tokio` 1, `serde_json` 1, `anyhow` 1 and `reqwest` 0.13. Its mock contracts (`contracts/yield-vault/sandbox/mocks/`, `mock-ft` and `mock-ref`, never deployed) depend on `near-sdk` 5.30.0. `mock-ref` mimics Ref's method names, JSON argument shapes and inner withdraw gas, which were checked against two public GitHub copies of Ref's `ref-exchange/src` (jumbo-exchange/contracts and rozgo/ref-contracts), because the canonical ref-finance/ref-contracts repository was not reachable; its bodies are much simpler than Ref's. The source note at the top of `mock-ref/src/lib.rs` lists what was mirrored and from where.
+
 `Cargo.lock` also pins their transitive dependencies. Building a contract to wasm needs [cargo-near](https://github.com/near/cargo-near), a build tool that is not a dependency of the crate.
 
 ### Agent skills and templates
@@ -44,6 +46,7 @@ The vault calls the Rhea (Ref Finance) testnet exchange contract `ref-finance-10
 
 - `spikes/shade/chainsig.mjs` reimplements, with no dependencies, the key-derivation and sign-request logic of the NEAR MPC signer contract (`near/mpc`, files `kdf.rs`, `sign.rs`, `deposits.rs` under `crates/`), so derived keys can be computed offline. It was written from reading that source; none of it was copied or vendored. The derived keys match live `v1.signer-prod.testnet` view calls byte for byte (`spikes/shade/evidence/testnet-mpc-views.txt`).
 - The design note also draws on the NearDeFi `shade-agent-template` and shade-agent framework repositories (github.com/NearDeFi), which were read in local clones that are not kept. Their exact repository names, commit SHAs, file paths and line numbers are unverified, and the note marks them as such. No code from them is in this repository.
+- `src/yield/shade/` and `scripts/yield-shade-dry-run.mjs` (`npm run yield:shade:dry-run`) reuse the spike's derivation (`spikes/shade/chainsig.mjs`) to print the vault runner's Shade Agent plan. The agent contract's `request_signature` method and argument names come from the shade-agent-framework docs (URL in the script's output and in `docs/yield-shade-agent-plan.md`); the plan marks the rest of that call as unconfirmed.
 - Unverified: everything that needs a signature. No transaction was signed or sent; the sign request, nonce, block hash and gas figures in the dry run are placeholders or contract minimums, and no TEE attestation was produced.
 
 ## Other notes

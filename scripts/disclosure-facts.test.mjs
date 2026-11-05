@@ -74,3 +74,16 @@ test("personality-nft audit names the init call testnet-deploy really builds", a
   assert.match(audit, /with-init-call new_default_meta/);
   assert.doesNotMatch(audit, /--initFunction/);
 });
+
+test("DISCLOSURE.md names every direct dev-dependency of the yield-vault sandbox crate, with its version", async () => {
+  const cargo = await read("contracts/yield-vault/sandbox/Cargo.toml");
+  const dev = cargo.split(/^\[dev-dependencies\]/m)[1]?.split(/^\[/m)[0] ?? "";
+  const deps = [...dev.matchAll(/^([A-Za-z0-9_-]+)\s*=\s*(?:"([^"]+)"|\{[^}]*version\s*=\s*"([^"]+)")/gm)].map((m) => [m[1], m[2] ?? m[3]]);
+  assert.ok(deps.length >= 3, `parsed ${deps.length} sandbox dev-dependencies`);
+  const text = await disclosure;
+  for (const [name, version] of deps) {
+    assert.ok(text.includes(`\`${name}\` ${version}`), `DISCLOSURE.md lists \`${name}\` ${version}`);
+  }
+  assert.match(await read("contracts/yield-vault/sandbox/mocks/Cargo.toml"), /^near-sdk = "5\.30\.0"/m);
+  assert.match(text, /mocks\/`, `mock-ft` and `mock-ref`, never deployed\) depend on `near-sdk` 5\.30\.0/);
+});
