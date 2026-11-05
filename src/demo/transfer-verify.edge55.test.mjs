@@ -254,3 +254,15 @@ describe("buildTransfer: determinism and mode", () => {
     assert.ok(!JSON.stringify(t.explorer).includes("https://"));
   });
 });
+
+describe("regression: duplicate agent id where first has no sheets", () => {
+  it("builds the tamper example from the duplicate that produced the token, without throwing", () => {
+    const agents = [agent("a", []), agent("a", ["real sheet"])];
+    const t = buildTransfer(agents, { calls: [anchorFor("a", "real sheet")] }, mock);
+    assert.equal(t.tokens.length, 1);
+    assert.equal(t.tokens[0].match, true);
+    assert.equal(t.tamper.tokenId, "a");
+    assert.equal(t.tamper.tamperedSheet, tamperSheet("real sheet"));
+    assert.equal(t.tamper.match, false);
+  });
+});
