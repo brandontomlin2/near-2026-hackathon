@@ -39,6 +39,8 @@ print WARN lines and record SKIP. Planned npm scripts are:
   evidence     write out/evidence.json (mock memory loop: swarm, sheets, anchor_sheet
                dry-runs, mock, not on-chain proof; real hashes and RPC views with --live)
   anchor       dry-run round-hash determinism check (always mock, never signs)
+  yield:demo:check  runs the yield demo with a timeout; PASS only if plan.json is a dry run
+               (signed false, sent false, 4 calls planned, 0 signed) with 4 matching rule rejections
 
 The mock evidence stage passes only for placeholder entries marked mock.
 A missing planned script prints SKIP (not built yet) and does not fail.
@@ -98,7 +100,7 @@ print_summary() {
   # each one has a row, so a lost results file can never look like a clean pass.
   local expected_stages=(
     "fresh clone" "workflows" "symlinks" "secret files" "npm install" "tests"
-    "secret scan" "deploy nft" "mint" "swarm" "demo" "round hash" "yield" "vault tests"
+    "secret scan" "deploy nft" "mint" "swarm" "demo" "round hash" "yield" "yield demo" "vault tests"
     "evidence"
   )
   local status stage detail seen=$'\n' missing=""
@@ -681,6 +683,8 @@ planned "demo" "demo" mock
 planned "round hash" "anchor" mock --dry-run --check
 # Yield Optimizer: one mock debate round, dry run (nothing signed or sent).
 planned "yield" "yield" mock
+# Yield demo: runs npm run yield:demo with a timeout and checks plan.json (dry run, 4 calls, 4 rule rejections).
+planned "yield demo" "yield:demo:check" mock
 
 # Yield vault contract unit tests. The build cache is the source checkout's
 # gitignored target/ so a fresh clone does not recompile near-sdk every run.
