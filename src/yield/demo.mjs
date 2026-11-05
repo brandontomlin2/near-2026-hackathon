@@ -14,6 +14,7 @@ import { AGENT_IDS, runRound } from "./debate.mjs";
 import { createLedger } from "./ledger.mjs";
 import { MOCK_EPOCH_MS, yieldMockResponder } from "./mock.mjs";
 import { loadPoolFixture } from "./pools.mjs";
+import { ruleScenarios } from "./rule-scenarios.mjs";
 import { DEPOSIT, GAS, METHOD, buildExecuteSwapArgv, formatCommand } from "./send.mjs";
 import { PLACEHOLDER_RUNNER, PLACEHOLDER_VAULT, defaultVaultConfig } from "./strategies.mjs";
 
@@ -98,6 +99,7 @@ export async function runDemo({ rhea, rheaSource }) {
   agents.push(planner);
   if (planner.call) calls.push(planner.call);
 
+  const scenarios = ruleScenarios();
   const doc = {
     demo: "yield-demo",
     mode: "mock",
@@ -123,6 +125,9 @@ export async function runDemo({ rhea, rheaSource }) {
     },
     personality_agents: { vault_id: vault, runner_id: runner, now_ms: record.now_ms, consensus: record.consensus },
     agents,
+    // Proposals the on-chain rules reject, from the contract's own vectors. They add no calls.
+    rule_scenarios: scenarios,
+    rule_rejections: scenarios.scenarios.length,
     calls_planned: calls.length,
     calls_signed: 0,
     calls_sent: 0,
@@ -208,9 +213,30 @@ export function renderSummary({ doc }, paths = []) {
   // Say why a proposal that passed the vault rules still does not execute (a veto), so the table reads on its own.
   for (const a of doc.agents) if (a.veto) lines.push(`  ${a.agent} vetoed by ${a.veto.by}: ${a.veto.reason}`);
   for (const c of notes) lines.push(`  optimizer candidate ${c.summary}: ${c.status === "ok" ? "OK" : c.status === "refused" ? `REFUSED ${c.rule_check.reason}` : c.status}`);
+  lines.push(...ruleLines(doc.rule_scenarios));
   lines.push("", `${doc.calls_planned} unsigned execute_swap calls planned, ${doc.calls_signed} signed, ${doc.calls_sent} sent`);
   for (const p of paths) lines.push(`wrote ${p}`);
   return lines.join("\n");
+}
+
+/** Raw base units (the vector proposals carry no token decimals), short token symbols. */
+const rawProposal = (p) => `pool ${p.pool_id}: ${p.amount_in} ${symbolOf(p.token_in)} -> min ${p.min_amount_out} ${symbolOf(p.token_out)}`;
+
+function scenarioContext(s) {
+  if (s.id === "daily_cap") return ` (spent today ${s.state.spent_today?.[s.proposal.token_in] ?? 0})`;
+  if (s.id === "paused") return " (vault paused)";
+  return "";
+}
+
+/** The rule-breaker block of the summary: header plus one REJECTED line per scenario, columns aligned. */
+function ruleLines(rs) {
+  const what = rs.scenarios.map((s) => `${rawProposal(s.proposal)}${scenarioContext(s)}`);
+  const w1 = Math.max(...rs.scenarios.map((s) => s.label.length));
+  const w2 = Math.max(...what.map((x) => x.length));
+  return [
+    `on-chain rules, vectors from ${rs.source} (same message as the Rust ${rs.contract_fn}):`,
+    ...rs.scenarios.map((s, i) => `  ${s.label.padEnd(w1)}  ${what[i].padEnd(w2)}  REJECTED ${s.contract_message}`),
+  ];
 }
 
 function sameProposal(a, b) {
