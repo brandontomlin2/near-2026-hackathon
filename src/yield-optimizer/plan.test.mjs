@@ -7,7 +7,7 @@ import { buildPlan, clipToLimits, MIN_EXECUTE_GAS_TGAS, DRY_RUN_NOTICE, DEFAULTS
 import { EXECUTE_SWAP_GAS_CLI, EXECUTE_SWAP_TGAS } from "../yield/gas.mjs";
 import { quoteOut } from "../yield/pools.mjs";
 import { checkProposal } from "../yield/rules.mjs";
-import { PLACEHOLDER_RUNNER, PLACEHOLDER_VAULT } from "../yield/strategies.mjs";
+import { PLACEHOLDER_RUNNER, PLACEHOLDER_VAULT, WNEAR as WNEAR_ID, limitFor, plannerVaultConfig } from "../yield/strategies.mjs";
 import { MOCK_EPOCH_MS } from "../yield/mock.mjs";
 import { loadSnapshot, rulesView } from "./snapshot.mjs";
 
@@ -464,7 +464,9 @@ describe("the default snapshot: the shared Ref market and the demo vault", () =>
 
   it("symbols are the token id before the first dot, as the personality side prints them", () => {
     const text = renderPlan(s, plan);
-    assert.match(text, /pool 0 wrap -> rft: 1 wrap/);
+    // The pool 0 candidate trades the demo vault's wrap max_trade, printed in whole wNEAR.
+    const maxWrap = BigInt(limitFor(plannerVaultConfig(), WNEAR_ID).max_trade) / 10n ** 24n;
+    assert.match(text, new RegExp(`pool 0 wrap -> rft: ${maxWrap} wrap`));
     assert.match(text, /pool 1 nusdt -> nusdc/);
   });
 

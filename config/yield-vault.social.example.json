@@ -31,13 +31,13 @@
   "limits": [
     {
       "token_id": "wrap.testnet",
-      "max_trade": "1000000000000000000000000",
-      "daily_cap": "2000000000000000000000000"
+      "max_trade": "10000000000000000000000000",
+      "daily_cap": "20000000000000000000000000"
     },
     {
       "token_id": "rft.tokenfactory.testnet",
-      "max_trade": "1000000000",
-      "daily_cap": "2000000000"
+      "max_trade": "100000000000",
+      "daily_cap": "200000000000"
     },
     {
       "token_id": "nusdt.ft-fin.testnet",

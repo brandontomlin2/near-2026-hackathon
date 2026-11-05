@@ -7,6 +7,7 @@ import {
   validateLiveConfig, validatePlan,
 } from "./live-plan.mjs";
 import { RefusalError } from "./send.mjs";
+import { WNEAR, defaultVaultConfig, limitFor } from "./strategies.mjs";
 
 const EXAMPLE = new URL("../../config/yield-vault.live.example.json", import.meta.url);
 const KEY = "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp";
@@ -335,8 +336,10 @@ test("config: structural problems", () => {
   bad((c) => (c.surprise = 1), /unknown field surprise/);
   bad((c) => (c.swap.amount_in = "30000000000000000000000"), /swap\.amount_in exceeds deposit\.amount/);
   bad((c) => {
-    c.deposit.amount = "3000000000000000000000000"; // 3 wNEAR deposited, 2 wNEAR swapped: over max_trade (1 wNEAR) only
-    c.swap.amount_in = "2000000000000000000000000";
+    // Swap one yocto over the chaotic vault's wNEAR max_trade (and deposit enough to cover it): over max_trade only.
+    const over = BigInt(limitFor(defaultVaultConfig("chaotic"), WNEAR).max_trade) + 1n;
+    c.deposit.amount = (over + 10n ** 24n).toString();
+    c.swap.amount_in = over.toString();
     c.swap.min_amount_out = "100000000000"; // above the price floor
   }, /\(ERR_MAX_TRADE\)/);
   bad((c) => (c.swap.min_amount_out = "1"), /\(ERR_PRICE_FLOOR\)/);

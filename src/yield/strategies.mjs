@@ -74,10 +74,14 @@ export function strategyFor(agentId) {
 // units, so one vault can trade several tokens without mixing decimals. A token without an
 // entry in `limits` cannot be sold. max_trade / daily_cap below are in whole tokens and are
 // scaled with the fixture's token decimals.
+// Pool 0 (wrap/rft) holds ~1496 wNEAR / ~141,674 rft (about 95 rft per wNEAR), so 10 wNEAR
+// trades cost ~0.7% impact plus the 40 bps fee. The stable-pool sizes (nusdt/nusdc) stay tiny
+// on purpose: pool 1's whole nusdt reserve is 0.237 nusdt at block 276143441, so any larger
+// nusdt trade would drain it.
 const CONFIG_TABLE = {
   aloof: { pools: [1], limits: { [NUSDT]: ["0.01", "0.03"], [NUSDC]: ["1", "3"] } },
-  chaotic: { pools: [0], limits: { [WNEAR]: ["1", "3"], [RFT]: ["10", "30"] } },
-  social: { pools: [0, 1], limits: { [WNEAR]: ["1", "2"], [RFT]: ["10", "20"], [NUSDT]: ["0.01", "0.02"], [NUSDC]: ["1", "2"] } },
+  chaotic: { pools: [0], limits: { [WNEAR]: ["10", "30"], [RFT]: ["1000", "3000"] } },
+  social: { pools: [0, 1], limits: { [WNEAR]: ["10", "20"], [RFT]: ["1000", "2000"], [NUSDT]: ["0.01", "0.02"], [NUSDC]: ["1", "2"] } },
   skeptic: { pools: [1], limits: { [NUSDT]: ["0.01", "0.02"], [NUSDC]: ["1", "2"] } },
 };
 
@@ -147,7 +151,7 @@ export function defaultVaultConfig(agentId, { runner = PLACEHOLDER_RUNNER, fixtu
 // identity lives in the plan ("agent": "yield-optimizer"). Pools 0 and 1 are the two pools
 // the personality vaults can use; the floors come from the same floorRate maths.
 export const PLANNER_STRATEGY = "aloof";
-const PLANNER_TABLE = { pools: [0, 1], limits: { [WNEAR]: ["1", "2"], [RFT]: ["10", "20"], [NUSDT]: ["0.01", "0.02"], [NUSDC]: ["1", "2"] } };
+const PLANNER_TABLE = { pools: [0, 1], limits: { [WNEAR]: ["10", "20"], [RFT]: ["1000", "2000"], [NUSDT]: ["0.01", "0.02"], [NUSDC]: ["1", "2"] } };
 
 /** VaultConfig (v2) for the Yield Optimizer planner's vault: pools 0 and 1, limits for wrap, rft, nusdt and nusdc. */
 export function plannerVaultConfig({ runner = PLACEHOLDER_RUNNER, fixture = loadPoolFixture() } = {}) {
