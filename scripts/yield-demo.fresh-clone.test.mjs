@@ -28,7 +28,7 @@ const TIMEOUT = 120_000;
 const override = process.env.YIELD_FRESH_CLONE_SRC;
 
 function dirtyTracked() {
-  const r = spawnSync("git", ["status", "--porcelain", "--untracked-files=no", "--", "README.md", "scripts/yield-demo*", "scripts/readme-yield-lib.mjs", "src/yield*", "package.json", "package-lock.json"], { cwd: root, encoding: "utf8", timeout: 30_000 });
+  const r = spawnSync("git", ["status", "--porcelain", "--untracked-files=no", "--", "README.md", "scripts/yield-demo*", "scripts/readme-yield-lib.mjs", "src/yield*", "src/inference", "src/util", "src/traits", "scripts/fresh-clone-lib.mjs", "contracts/yield-vault/tests", "package.json", "package-lock.json"], { cwd: root, encoding: "utf8", timeout: 30_000 });
   return r.stdout.trim();
 }
 
