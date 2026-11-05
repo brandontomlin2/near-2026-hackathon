@@ -115,7 +115,7 @@ Mainnet is out of scope. Total testnet funding is about 15 NEAR plus an unknown 
 
 ## 7. Minimal steps to go live on testnet
 
-Steps marked YES-NEEDED need Brandon's explicit yes (signing, deploy, spend).
+Steps marked YES-NEEDED need Brandon's explicit yes (signing, deploy, spend). Owner checklist: [`docs/yield-shade-go-nogo.md`](yield-shade-go-nogo.md).
 
 1. Review `deploy/shade/` drafts and this plan. No action. (no yes)
 2. Run the offline checks in section 10. (no yes)
@@ -152,7 +152,21 @@ Steps marked YES-NEEDED need Brandon's explicit yes (signing, deploy, spend).
 | Partial: local-mode agent + real MPC signature | Agent contract with `requires_tee=false`, whitelisted local agent, real `sign`, derived key as executor function-call key, one real `execute_swap` | 8-12 h estimate | proves plumbing not trust; encoding and AddKey unknowns; still deprecated framework (can drop it and call the agent contract / MPC directly) | the TEE attestation story |
 | No-go: centralized runner + dry-run evidence | Keep runner key, ship dry-run plan, verified derivation | 0-2 h | judges see a design, not a live primitive | the live real-NEAR-primitive demonstration (chain signatures) |
 
-Recommendation: Partial. Reasoning: judging values real NEAR primitives, and a real MPC signature controlling the executor is the primitive that matters and is reachable by 2026-11-14 23:59 UTC. The TEE leg adds an unaudited, deprecated framework, an unknown Phala bill and several signing steps without enough slack. Timebox Partial to 12 hours; if step 8 (first real signature) fails by 2026-11-09, fall back to No-go with the dry-run evidence. Decide on the TEE leg after step 10 works. Because both Partial and Go share steps 4-11, nothing is wasted. Keep the kill switches (`revoke_runner`, `DeleteKey`) in the demo either way.
+**Recommendation: Partial.** Why: a real MPC signature controlling the executor is the NEAR primitive that matters and is reachable by 2026-11-14 23:59 UTC; the TEE leg adds a deprecated, unaudited framework, an unknown Phala bill and more signing steps without enough slack.
+
+Decide by: 2026-11-06 (Brandon). All times UTC.
+
+Partial time boxes (step numbers are those of section 7):
+
+- Total budget: 12 h of work.
+- Checkpoint 1, by 2026-11-09: first real MPC signature (step 8) verified against the derived key. If not, fall back to No-go.
+- Checkpoint 2, by 2026-11-11: first real `execute_swap` accepted by the vault (step 10, after `AddKey` in step 9). If not, fall back to No-go.
+- TEE leg (step 12): decide only after step 10 works, and not after 2026-11-11. Otherwise it is not done.
+- Both Partial and Go share steps 4-11, so nothing is wasted if the TEE leg is dropped. Keep the kill switches (`revoke_runner`, `DeleteKey`; step 11) in the demo either way.
+
+No-go fallback date: 2026-11-11 23:59 UTC at the latest (earlier if checkpoint 1 is missed). It leaves 2026-11-12 to 2026-11-14 for the README and submission. The No-go content is the dry-run evidence in section 10.
+
+Owner checklist: [`docs/yield-shade-go-nogo.md`](yield-shade-go-nogo.md) (every step that needs an explicit yes, all NOT DONE).
 
 ## 10. How to check this offline
 
