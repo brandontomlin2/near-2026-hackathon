@@ -45,7 +45,7 @@ function configSection(doc) {
   const pa = doc.personality_agents;
   const cards = Object.entries(pa.configs ?? {}).map(([id, c]) => configBlock(`Config for ${id}`, pa.vault_id, pa.runner_id, c, "placeholder ids, not deployed accounts; amounts in base units"));
   const pv = doc.planner_vault;
-  if (pv) cards.push(configBlock("Config for yield-optimizer (from the Rhea snapshot)", pv.vault_id, pv.runner_id, pv.config, "fixture ids, not deployed accounts; amounts in base units"));
+  if (pv) cards.push(configBlock("Config for yield-optimizer (planner vault)", pv.vault_id, pv.runner_id, pv.config, "placeholder ids, not deployed accounts; amounts in base units"));
   return `<details><summary><h2>Vault config</h2> <span class="mut">(per-agent limits and price floors; click to open)</span></summary>
 <p class="mut">The limits and price floors each agent's proposal was checked against. Rates are minimum amount_out per amount_in as num/den.</p>
 ${cards.join("\n")}
@@ -54,7 +54,7 @@ ${cards.join("\n")}
 
 function candidates(a) {
   if (!Array.isArray(a.candidates) || a.candidates.length === 0) return "";
-  const items = a.candidates.map((c) => `<li>${esc(c.summary)}: ${c.status === "ok" ? '<span class="ok">OK</span>' : c.status === "refused" ? `<span class="bad">REFUSED ${esc(c.rule_check.reason)}</span>` : esc(c.status)}</li>`).join("\n");
+  const items = a.candidates.map((c) => `<li>${esc(c.summary)}: ${c.status === "ok" ? '<span class="ok">OK</span>' : c.status === "refused" ? `<span class="bad">REFUSED ${esc(c.rule_check.reason)}</span>` : `<span class="warn">${esc(c.verdict ?? c.status)}</span>`}</li>`).join("\n");
   return `<div class="mut">${esc(a.decision ?? "")}${a.reason ? `: ${esc(a.reason)}` : ""}</div><ul class="cand">
 ${items}
 </ul>`;
@@ -79,7 +79,7 @@ function agentsSection(doc) {
 <td>${a.veto ? `<span class="warn">vetoed by ${esc(a.veto.by)}</span>: ${esc(a.veto.reason)}` : '<span class="mut">-</span>'}</td>
 <td>${esc(a.outcome)}${a.outcome === "refused" ? `<div class="mut">${esc(refusalReason(a))}</div>` : ""}</td></tr>`).join("\n");
   return `<h2>Agent proposals</h2>
-<p class="mut">Four personality agents (mock inference over the committed Ref pool fixture) and the rule-based Yield Optimizer planner. Every proposal is checked with the one JS copy of the vault rules.</p>
+<p class="mut">Four personality agents (mock inference over the committed Ref snapshot) and the rule-based Yield Optimizer planner on the same snapshot. Every proposal is checked with the one JS copy of the vault rules.</p>
 <table><thead><tr><th>agent</th><th>proposal</th><th>vault rule check</th><th>strategy check</th><th>veto</th><th>outcome</th></tr></thead><tbody>
 ${rows}
 </tbody></table>`;
@@ -118,7 +118,7 @@ ${cards || '<p class="mut">No calls planned.</p>'}
  * @returns {string} a complete HTML document
  */
 export function renderDemoPage({ doc, calls }) {
-  const s = doc.snapshots;
+  const s = doc.snapshot;
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 ${securityMetaTags(CSS)}
@@ -126,7 +126,7 @@ ${securityMetaTags(CSS)}
 <style>${CSS}</style></head><body><main>
 <h1>Yield vault demo (dry run)</h1>
 <p class="dry">${esc(doc.notice)}</p>
-<p class="mut">Snapshots: committed fixtures, not fetched. Ref pools at block ${esc(s.ref_pools.block_height)}; Rhea snapshot taken ${esc(s.rhea.taken_at)}.</p>
+<p class="mut">Snapshot: committed, not fetched. ${s.shared_by_agents_and_planner ? `One Ref testnet snapshot at block ${esc(s.block_height)}, shared by the four agents and the planner (vault ${esc(doc.planner_vault.vault_id)}).` : `Planner on ${esc(s.file)}; the four agents on the committed Ref snapshot.`}</p>
 ${agentsSection(doc)}
 ${rulesSection(doc)}
 ${callsSection(doc, calls)}

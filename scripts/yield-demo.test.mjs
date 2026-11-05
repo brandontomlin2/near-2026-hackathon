@@ -10,13 +10,12 @@ import { fileURLToPath } from "node:url";
 
 import { loadPoolFixture } from "../src/yield/pools.mjs";
 import { checkProposal } from "../src/yield/rules.mjs";
-import { PLACEHOLDER_RUNNER, defaultVaultConfig } from "../src/yield/strategies.mjs";
-import { createLedger } from "../src/yield/ledger.mjs";
-import { MOCK_EPOCH_MS } from "../src/yield/mock.mjs";
-import { parseSnapshot, rulesView } from "../src/yield-optimizer/snapshot.mjs";
+import { quoteOut } from "../src/yield/pools.mjs";
+import { GAS } from "../src/yield/send.mjs";
+import { loadSnapshot, rulesView } from "../src/yield-optimizer/snapshot.mjs";
 
 const SCRIPT = fileURLToPath(new URL("./yield-demo.mjs", import.meta.url));
-const RHEA = fileURLToPath(new URL("../src/yield-optimizer/fixtures/rhea-testnet-snapshot.json", import.meta.url));
+const SCENARIO = fileURLToPath(new URL("../src/yield-optimizer/fixtures/scenario.hand-built.json", import.meta.url));
 const BASE_ENV = { PATH: process.env.PATH };
 const STACK = /at .*\.mjs:\d+/;
 const PROPOSAL_KEYS = ["pool_id", "token_in", "token_out", "amount_in", "min_amount_out"];
@@ -50,10 +49,10 @@ describe("yield:demo default run", () => {
     const summary = lines.slice(0, detailsAt).join("\n");
     assert.match(lines[0], /^YIELD DEMO - DRY RUN - mock inference, offline - nothing signed, nothing sent$/);
     for (const id of ["aloof", "chaotic", "social", "skeptic", "yield-optimizer"]) {
-      assert.match(summary, new RegExp(`^${id} +pool \\d+: `, "m"));
+      assert.match(summary, new RegExp(`^${id} +(pool \\d+: |HOLD)`, "m"));
       assert.ok(r.stdout.indexOf(`\n[${id}] `) > r.stdout.indexOf("== details =="), `${id} detail comes after the summary`);
     }
-    assert.match(summary, /^1 unsigned execute_swap call planned, 0 signed, 0 sent$/m);
+    assert.match(summary, /^0 unsigned execute_swap calls planned, 0 signed, 0 sent$/m);
     assert.match(summary, /chaotic .* OK +vetoed$/m);
     // The stable pool 1 is ~1860x off its $1 peg: the three agents that picked it are refused, and the table says why.
     for (const [id, bps] of [["aloof", 18590000], ["social", 18590000], ["skeptic", 18490000]]) {
@@ -61,8 +60,14 @@ describe("yield:demo default run", () => {
     }
     assert.match(r.stdout, /^ {2}reference: quote \+18590000 bps vs mock_usd_price reference \(limit 100 bps, stable pair: OFF REFERENCE\)$/m);
     assert.match(r.stdout, /^ {2}reference: no reference price \(rft has none\): the floor is a spot sanity floor$/m);
-    assert.match(summary, /REFUSED ERR_NO_LIMIT: no limit for dai\.fixture\.testnet/);
-    assert.match(summary, /REFUSED ERR_POOL_NOT_ALLOWED: pool 99/);
+    // One market, one story: the planner is on the same Ref snapshot and says why it holds.
+    assert.match(lines[1], /^snapshot: one committed Ref testnet snapshot at block 276143441, not fetched, shared by the four agents and the optimizer \(vault vault\.yield-demo\.testnet\)$/);
+    assert.doesNotMatch(summary, /Rhea|fixture\.testnet|snapshots:/);
+    assert.match(summary, /^yield-optimizer +HOLD: no pool passes every gate +- +hold$/m);
+    assert.match(summary, /^ {2}optimizer HOLD, 6 pools checked, none usable:$/m);
+    assert.match(summary, /^ {4}no mock reference price: pool 0 wrap -> rft$/m);
+    assert.match(summary, /^ {4}off reference \(spot limit 1000 bps, quote limit 1000 bps vs the mock reference price\): pool 1 nusdt -> nusdc spot \+\d+ bps$/m);
+    assert.match(summary, /^ {4}refused by the vault rules, ERR_POOL_NOT_ALLOWED: pools 2, 5, 6, 8$/m);
     assert.match(summary, /^wrote .*plan\.json$/m);
     assert.equal(r.stderr, "");
     assert.doesNotMatch(r.stdout, STACK);
@@ -116,59 +121,56 @@ describe("yield:demo default run", () => {
     assert.doesNotMatch(html, /<script|https?:\/\//);
   });
 
-  it("plan.json is a dry-run plan with five agents", () => {
+  it("plan.json is a dry-run plan with five agents on one market", () => {
     const plan = readJson(join(dir, "plan.json"));
     assert.equal(plan.dry_run, true);
     assert.equal(plan.signed, false);
     assert.equal(plan.sent, false);
     assert.equal(plan.mode, "mock");
     assert.deepEqual(plan.agents.map((a) => a.agent), ["aloof", "chaotic", "social", "skeptic", "yield-optimizer"]);
-    assert.equal(plan.snapshots.ref_pools.fetched, false);
-    assert.equal(plan.snapshots.rhea.fetched, false);
+    assert.equal("snapshots" in plan, false);
+    assert.equal(plan.snapshot.fetched, false);
+    assert.equal(plan.snapshot.shared_by_agents_and_planner, true);
+    assert.equal(plan.snapshot.file, "src/yield/fixtures/ref-testnet-pools.json");
+    assert.equal(plan.snapshot.block_height, 276143441);
+    assert.equal(plan.planner_vault.vault_id, plan.personality_agents.vault_id);
+    assert.equal(plan.planner_vault.runner_id, plan.personality_agents.runner_id);
+    assert.equal(plan.planner_vault.same_as_agents, true);
     const by = Object.fromEntries(plan.agents.map((a) => [a.agent, a]));
     assert.equal(by.chaotic.outcome, "vetoed");
     assert.equal(by.chaotic.veto.by, "skeptic");
-    const refused = by["yield-optimizer"].candidates.filter((c) => c.status === "refused").map((c) => c.rule_check.reason);
-    assert.deepEqual(refused, ["ERR_NO_LIMIT: no limit for dai.fixture.testnet", "ERR_POOL_NOT_ALLOWED: pool 99"]);
-    assert.equal(plan.calls_planned, 1);
+    const opt = by["yield-optimizer"];
+    assert.equal(opt.decision, "hold");
+    assert.equal(opt.outcome, "hold");
+    assert.equal(opt.call, null);
+    assert.match(opt.reason, /^no pool passes every gate \(1 off the mock reference price \(spot more than 1000 bps away, or quote more than 1000 bps above\), 1 without a mock reference price, 4 refused by the vault rules\)$/);
+    assert.deepEqual(opt.candidates.map((c) => [c.pool_id, c.status]), [[0, "no_reference_price"], [1, "off_reference"], [2, "refused"], [5, "refused"], [6, "refused"], [8, "refused"]]);
+    assert.equal(opt.candidates[1].ref_deviation_bps > 1_000_000, true);
+    assert.equal(plan.calls_planned, 0);
     assert.equal(plan.calls_signed, 0);
     assert.equal(plan.calls_sent, 0);
   });
 
-  it("calls.json holds exactly the executable calls, each passing the vault rules when re-checked", () => {
+  it("calls.json holds exactly the executable calls: none, since no agent and not the optimizer may execute", () => {
     const plan = readJson(join(dir, "plan.json"));
     const calls = readJson(join(dir, "calls.json"));
     assert.equal(calls.signed, false);
     assert.equal(calls.sent, false);
     const executing = plan.agents.filter((a) => a.outcome === "execute").map((a) => a.agent);
-    assert.deepEqual(calls.calls.map((c) => c.agent), executing);
-    assert.equal(calls.calls.length, 1);
-    assert.deepEqual(calls.calls.map((c) => c.agent), ["yield-optimizer"]);
-    assert.ok(calls.calls.every((c) => c.args.proposal.pool_id !== 1), "no execute_swap on the off-peg pool 1");
+    assert.deepEqual(executing, []);
+    assert.deepEqual(calls.calls, []);
+    for (const a of plan.agents) assert.equal(a.call, null, `${a.agent} (${a.outcome}) carries no call`);
+  });
 
+  it("the planner is on the same market: its quotes are the pools.mjs quotes of the Ref snapshot", () => {
+    const plan = readJson(join(dir, "plan.json"));
+    const opt = plan.agents.find((a) => a.agent === "yield-optimizer");
     const fixture = loadPoolFixture();
-    const { states } = createLedger({ fixture });
-    const rhea = parseSnapshot(readJson(RHEA));
-    const view = rulesView(rhea);
-    for (const c of calls.calls) {
-      assert.equal(c.method_name, "execute_swap");
-      assert.equal(c.signed, false);
-      assert.equal(c.sent, false);
-      assert.deepEqual(Object.keys(c.args), ["proposal"]);
-      assert.deepEqual(Object.keys(c.args.proposal), PROPOSAL_KEYS);
-      assert.equal(typeof c.args.proposal.amount_in, "string");
-      assert.match(c.args.proposal.amount_in, /^[0-9]+$/);
-      assert.match(c.args.proposal.min_amount_out, /^[0-9]+$/);
-      const check =
-        c.agent === "yield-optimizer"
-          ? checkProposal(c.args.proposal, view.config, view.state, rhea.runner_id, view.nowMs)
-          : checkProposal(c.args.proposal, defaultVaultConfig(c.agent, { runner: PLACEHOLDER_RUNNER }), states[c.agent], PLACEHOLDER_RUNNER, MOCK_EPOCH_MS);
-      assert.equal(check.ok, true, `${c.agent}: ${check.reason}`);
-      if (c.agent !== "yield-optimizer") assert.match(c.command, /^near contract call-function as-transaction /);
+    for (const c of opt.candidates) {
+      const pool = fixture.pools.find((p) => p.pool_id === c.proposal.pool_id);
+      assert.ok(pool, `pool ${c.proposal.pool_id} is in the Ref snapshot`);
+      assert.ok(quoteOut(pool, c.proposal.token_in, c.proposal.amount_in) >= BigInt(c.proposal.min_amount_out), `pool ${pool.pool_id} min_amount_out is under the shared quote`);
     }
-    const planner = calls.calls.find((c) => c.agent === "yield-optimizer");
-    assert.equal(planner.gas, "280.0 Tgas");
-    assert.equal(planner.receiver_id, "yield-vault.fixture.testnet");
   });
 
   it("summary shows the four on-chain rule rejections with the contract's own messages", () => {
@@ -188,16 +190,16 @@ describe("yield:demo default run", () => {
     assert.deepEqual(at, [...at].sort((a, b) => a - b), "scenario order");
     assert.match(summary, /\(spent today 1501\)/);
     assert.match(summary, /\(vault paused\)/);
-    assert.match(summary, /^1 unsigned execute_swap call planned, 0 signed, 0 sent$/m);
+    assert.match(summary, /^0 unsigned execute_swap calls planned, 0 signed, 0 sent$/m);
   });
 
   it("plan.json records the rule scenarios and they add no calls", () => {
     const plan = readJson(join(dir, "plan.json"));
     assert.equal(plan.rule_rejections, 4);
-    assert.equal(plan.calls_planned, 1);
+    assert.equal(plan.calls_planned, 0);
     assert.deepEqual(plan.rule_scenarios.scenarios.map((s) => s.id), ["max_trade", "daily_cap", "price_floor", "paused"]);
     assert.ok(plan.rule_scenarios.scenarios.every((s) => s.outcome === "rejected" && s.matches_contract === true));
-    assert.equal(readJson(join(dir, "calls.json")).calls.length, 1);
+    assert.equal(readJson(join(dir, "calls.json")).calls.length, 0);
   });
 
   it("is byte-identical across runs", () => {
@@ -230,7 +232,17 @@ describe("yield:demo --calls and --json", () => {
     for (const c of ref.calls) assert.ok(r.stdout.includes(`args: ${JSON.stringify(c.args)}`), c.agent);
     assert.equal((r.stdout.match(/^ {2}signed: false$/gm) ?? []).length, ref.calls.length);
     assert.equal((r.stdout.match(/^ {2}sent: false$/gm) ?? []).length, ref.calls.length);
-    assert.match(r.stdout, /^ {2}method: execute_swap$/m);
+    assert.equal(ref.calls.length, 0);
+    assert.equal(r.stdout, "no calls planned (DRY RUN: nothing signed, nothing sent)\n");
+    assert.equal(existsSync(dir), false);
+    // With a market where the optimizer swaps, --calls prints that one unsigned call.
+    const one = run(["--calls", "--snapshot", SCENARIO, "--out", dir]);
+    assert.equal(one.code, 0, one.stderr);
+    assert.match(one.stdout, /^call 1 of 1 \(yield-optimizer\)$/m);
+    assert.equal((one.stdout.match(/^ {2}method: execute_swap$/gm) ?? []).length, 1);
+    assert.match(one.stdout, /^ {2}gas: 280\.0 Tgas$/m);
+    assert.match(one.stdout, /^ {2}signed: false$/m);
+    assert.match(one.stdout, /^ {2}sent: false$/m);
     assert.equal(existsSync(dir), false);
     assert.doesNotMatch(r.stdout, /index\.html/);
   });
@@ -264,7 +276,7 @@ describe("yield:demo stays offline and keyless", () => {
   it("runs with no HOME and an empty env", () => {
     const r = run(["--out", join(work, "env-b")], { env: {} });
     assert.equal(r.code, 0, r.stderr);
-    assert.match(r.stdout, /1 unsigned execute_swap call planned, 0 signed, 0 sent/);
+    assert.match(r.stdout, /0 unsigned execute_swap calls planned, 0 signed, 0 sent/);
   });
 
   it("refuses NEAR_NETWORK=mainnet and writes nothing", () => {
@@ -327,12 +339,46 @@ describe("yield:demo bad input", () => {
     }
   });
 
-  it("a valid --snapshot override is used and recorded", () => {
+  it("a valid --snapshot override is used and recorded: the planner swaps on the hand-built scenario", () => {
     const copy = join(work, "copy.json");
-    writeFileSync(copy, readFileSync(RHEA));
+    writeFileSync(copy, readFileSync(SCENARIO));
     const dir = join(work, "snap-ok");
     const r = run(["--snapshot", copy, "--out", dir]);
     assert.equal(r.code, 0, r.stderr);
-    assert.equal(readJson(join(dir, "plan.json")).snapshots.rhea.file, copy);
+    const plan = readJson(join(dir, "plan.json"));
+    assert.equal(plan.snapshot.file, copy);
+    assert.equal(plan.snapshot.shared_by_agents_and_planner, false);
+    assert.equal(plan.planner_vault.vault_id, "yield-vault.fixture.testnet");
+    assert.equal(plan.planner_vault.same_as_agents, false);
+    const opt = plan.agents.find((a) => a.agent === "yield-optimizer");
+    assert.equal(opt.decision, "swap");
+    assert.equal(opt.call.gas, GAS);
+    assert.equal(plan.calls_planned, 1);
+    // The one call is the optimizer's, built like any other and passing the scenario vault's rules when re-checked.
+    const calls = readJson(join(dir, "calls.json"));
+    assert.equal(calls.calls.length, 1);
+    const [c] = calls.calls;
+    assert.equal(c.agent, "yield-optimizer");
+    assert.equal(c.method_name, "execute_swap");
+    assert.equal(c.signed, false);
+    assert.equal(c.sent, false);
+    assert.equal(c.gas, GAS);
+    assert.equal(c.receiver_id, "yield-vault.fixture.testnet");
+    assert.deepEqual(Object.keys(c.args.proposal), PROPOSAL_KEYS);
+    assert.match(c.command, /^near contract call-function as-transaction /);
+    const view = rulesView(loadSnapshot(copy));
+    const check = checkProposal(c.args.proposal, view.config, view.state, c.signer_id, view.nowMs);
+    assert.equal(check.ok, true, check.reason);
+    assert.match(r.stdout, /^snapshot: .*copy\.json \(--snapshot: the planner uses this market and vault, the four agents still use src\/yield\/fixtures\/ref-testnet-pools\.json\)$/m);
+  });
+
+  it("the old Rhea-style snapshot shape (token_account_ids, price_usd) is rejected with the bad field named", () => {
+    const old = join(work, "old-shape.json");
+    const raw = readJson(SCENARIO);
+    raw.pools[0] = { pool_id: 17, pool_kind: "SIMPLE_POOL", token_account_ids: ["a", "b"], amounts: ["1", "1"], total_fee: 30 };
+    writeFileSync(old, JSON.stringify(raw));
+    const r = run(["--snapshot", old, "--out", join(work, "old-out")]);
+    assert.equal(r.code, 1);
+    assert.match(r.stderr, /pools\[0\]\.token_a must be a non-empty string/);
   });
 });

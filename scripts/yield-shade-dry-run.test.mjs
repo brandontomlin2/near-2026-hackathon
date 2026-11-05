@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 
 import { runDemo } from "../src/yield/demo.mjs";
 import { loadSnapshot } from "../src/yield-optimizer/snapshot.mjs";
-import { DEFAULT_SNAPSHOT } from "./yield-optimizer.mjs";
+import { SHADE_SCENARIO } from "./yield-shade-dry-run.mjs";
 
 const SCRIPT = fileURLToPath(new URL("./yield-shade-dry-run.mjs", import.meta.url));
 const PKG = fileURLToPath(new URL("../package.json", import.meta.url));
@@ -48,22 +48,34 @@ describe("yield:shade:dry-run --json", () => {
   let demoFirst;
   before(async () => {
     plan = JSON.parse(run(["--json"]).stdout);
-    demoFirst = (await runDemo({ rhea: loadSnapshot(DEFAULT_SNAPSHOT), rheaSource: "x" })).calls.calls[0];
+    demoFirst = (await runDemo({ snapshot: loadSnapshot(fileURLToPath(new URL(`../${SHADE_SCENARIO}`, import.meta.url))) })).calls.calls[0];
   });
   it("is dry run, unsigned, unsent", () => {
     assert.equal(plan.dry_run, true);
     assert.equal(plan.signed, false);
     assert.equal(plan.sent, false);
   });
-  it("mpc sign targets the testnet signer with the tx hash; execute_swap has 300 Tgas and 0 deposit", () => {
+  it("mpc sign targets the testnet signer with the tx hash; execute_swap has 280 Tgas and 0 deposit", () => {
     assert.equal(plan.mpc.mpcSign.receiverId, "v1.signer-prod.testnet");
     assert.equal(plan.mpc.mpcSign.args.request.payload_v2.Eddsa, plan.execute_swap.txHashHex);
-    assert.equal(plan.execute_swap.actions[0].gas, "300000000000000");
+    assert.equal(plan.execute_swap.actions[0].gas, "280000000000000");
     assert.equal(plan.execute_swap.actions[0].deposit, "0");
   });
-  it("the proposal is the first rule-checked yield:demo call, with its source recorded", () => {
+  it("the proposal is the first rule-checked yield:demo call on the hand-built scenario, with its source recorded", () => {
+    assert.equal(demoFirst.agent, "yield-optimizer");
     assert.deepEqual(plan.execute_swap.actions[0].args.proposal, demoFirst.args.proposal);
-    assert.deepEqual(plan.proposal_source, { from: "npm run yield:demo", agent: demoFirst.agent, rule_check: "ok" });
+    assert.deepEqual(plan.proposal_source, {
+      from: "npm run yield:demo -- --snapshot src/yield-optimizer/fixtures/scenario.hand-built.json",
+      market: "hand-built test scenario, not real data (on the committed Ref snapshot yield:demo plans no call)",
+      agent: "yield-optimizer",
+      rule_check: "ok",
+    });
+  });
+  it("the human output says the market is hand-built", () => {
+    assert.match(run([]).stdout, /^ {2}market +hand-built test scenario, not real data \(on the committed Ref snapshot yield:demo plans no call\)$/m);
+  });
+  it("uses the scenario because the committed Ref snapshot plans no call", async () => {
+    assert.deepEqual((await runDemo()).calls.calls, []);
   });
   it("derives the evidence-backed key for yield-agent.testnet / yield-vault-1", () => {
     const p = JSON.parse(run(["--json", "--agent-contract", "yield-agent.testnet", "--path", "yield-vault-1"]).stdout);

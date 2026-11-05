@@ -108,7 +108,7 @@ test("formatCommand shell-quotes the json args and leaves plain words bare", () 
   assert.ok(cmd.startsWith("near contract call-function as-transaction vault.x.testnet execute_swap json-args '"));
   const json = JSON.stringify({ proposal: { pool_id: 1, token_in: PROPOSAL.token_in, token_out: PROPOSAL.token_out, amount_in: "10000", min_amount_out: "9900" } });
   assert.ok(cmd.includes(`'${json}'`));
-  assert.ok(cmd.includes("prepaid-gas '300.0 Tgas'"));
+  assert.ok(cmd.includes("prepaid-gas '280.0 Tgas'"));
   assert.equal(formatCommand(["a", "it's"]), "near a 'it'\\''s'");
 });
 

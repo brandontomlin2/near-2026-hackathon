@@ -39,7 +39,7 @@ Research method: WebFetch of official docs and the NearDeFi/near repos on 2026-1
  executor account (NEAR, e.g. executor.<x>.testnet)
    access key = MPC-derived ed25519 key (function-call key:
    receiver = vault, methods = [execute_swap])
-          |  6. signed tx: execute_swap, 300 Tgas, 0 deposit
+          |  6. signed tx: execute_swap, 280 Tgas, 0 deposit
           v
  VAULT (contracts/yield-vault): predecessor = executor must be in config.runners;
  enforces allowlists, caps, min_out itself.
@@ -56,7 +56,7 @@ Research method: WebFetch of official docs and the NearDeFi/near repos on 2026-1
 2. Separately, the executor account owner submits `AddKey` for the MPC-derived ed25519 public key as a function-call key: `receiver_id = vault`, `method_names = ["execute_swap"]`, allowance set to cover gas (see below). The function-call key cannot attach a deposit, which matches `execute_swap` being non-payable.
 3. Kill switch A (vault side): `revoke_runner({runner_id})` (panics `ERR_RUNNER_NOT_FOUND` if absent) or `revoke_all_runners()`, which clears every runner AND pauses the vault (lib.rs 891-897). Each needs the owner and 1 yocto.
 4. Kill switch B (account side): `DeleteKey` of the derived key on the executor account. Independent of the vault; works even if the vault were mis-configured. Also `remove_agent` / measurement removal on the agent contract stops new signatures (https://raw.githubusercontent.com/NearDeFi/shade-agent-framework/main/docs/reference/agent-contract.md), but signatures already produced stay valid until used, so A and B are the real revocations.
-5. Gas: `execute_swap` needs >= 280 Tgas prepaid; the tx limit is 300 Tgas, so attach 300. The function-call key allowance in the plan is 1 NEAR (1000000000000000000000000 yocto), a choice and not measured. Per https://docs.near.org/protocol/access-keys (fetched 2026-11-05) the allowance "defines how much NEAR the key can spend on gas fees", is charged at the buy price, and is credited back when the gas refund arrives, so the key needs more allowance than the final tx cost. Once it is used up the key cannot sign; adding NEAR to the account does not help, and an existing key's allowance cannot be changed (DeleteKey + AddKey). Each swap prepays 300 Tgas, about 0.03 NEAR at the 0.0001 NEAR/Tgas minimum gas price (that price is an assumption, UNCONFIRMED here); burnt fees accumulate across swaps. The vault has no swap-count cap (only per-token `max_trade` and `daily_cap` on amounts), so the allowance is the only bound on how many swaps the key can pay gas for.
+5. Gas: `execute_swap` needs >= 280 Tgas prepaid (`MIN_EXECUTE_GAS`, checked with `>=`, so exactly 280 passes); we attach exactly 280 Tgas. The function-call key allowance in the plan is 1 NEAR (1000000000000000000000000 yocto), a choice and not measured. Per https://docs.near.org/protocol/access-keys (fetched 2026-11-05) the allowance "defines how much NEAR the key can spend on gas fees", is charged at the buy price, and is credited back when the gas refund arrives, so the key needs more allowance than the final tx cost. Once it is used up the key cannot sign; adding NEAR to the account does not help, and an existing key's allowance cannot be changed (DeleteKey + AddKey). Each swap prepays 280 Tgas, about 0.028 NEAR at the 0.0001 NEAR/Tgas minimum gas price (that price is an assumption, UNCONFIRMED here); burnt fees accumulate across swaps. The vault has no swap-count cap (only per-token `max_trade` and `daily_cap` on amounts), so the allowance is the only bound on how many swaps the key can pay gas for.
 6. The executor account needs a NEAR balance for gas; the allowance is only an upper bound on the key's spending.
 
 ## 4. What Phala hosting needs
@@ -94,7 +94,7 @@ Caveat: the CLI reference describes a `tee_config.phala.enabled` schema, while t
 | Vault `add_runner` | `{runner_id}` | exactly 1 yocto | default | CONFIRMED by reading contracts/yield-vault/src/lib.rs:867 |
 | Vault `revoke_runner` | `{runner_id}` | exactly 1 yocto | default | CONFIRMED lib.rs:878 |
 | Vault `revoke_all_runners` | `{}` (also pauses) | exactly 1 yocto | default | CONFIRMED lib.rs:891 |
-| Vault `execute_swap` | `{proposal:{pool_id, token_in, token_out, amount_in, min_amount_out}}` | 0 (not payable) | >= 280 Tgas, attach 300 | CONFIRMED lib.rs:555-563 |
+| Vault `execute_swap` | `{proposal:{pool_id, token_in, token_out, amount_in, min_amount_out}}` | 0 (not payable) | >= 280 Tgas, attach 280 | CONFIRMED lib.rs:555-563 |
 | Executor `AddKey` (ed25519 function-call key, receiver vault, method execute_swap) | public key, allowance | none | n/a | UNCONFIRMED live: NEAR access-key semantics are standard, but never run with the MPC-derived key; the tutorial used secp256k1 FullAccess. Earlier spike also flagged AddKey nonce 0 as unverified |
 | Shade CLI deploy/plan/whitelist/reproduce | see cli.md | n/a | n/a | CONFIRMED command names (cli.md); behavior against our contract UNCONFIRMED |
 | Ref/swap pools used by vault | not part of this plan | n/a | n/a | out of scope |
@@ -126,7 +126,7 @@ Steps marked YES-NEEDED need Brandon's explicit yes (signing, deploy, spend). Ow
 7. Local mode first: `environment: local`, `shade deploy` deploys the agent contract (`requires_tee=false`), run the agent, `shade whitelist`. YES-NEEDED (deploy, signing, 8 NEAR).
 8. First real signature: agent calls `request_signature` with an ed25519 payload; record the response encoding; verify signature vs `derived_public_key`. YES-NEEDED.
 9. `AddKey` of the derived key on the executor as a function-call key. YES-NEEDED (signing).
-10. Broadcast one `execute_swap` (300 Tgas, tiny amount) signed with the MPC signature; confirm the vault accepts it. YES-NEEDED.
+10. Broadcast one `execute_swap` (280 Tgas, tiny amount) signed with the MPC signature; confirm the vault accepts it. YES-NEEDED.
 11. Exercise both kill switches (`revoke_runner`, `DeleteKey`). YES-NEEDED.
 12. TEE: `shade plan`, then `environment: TEE`, `docker login`, `build_docker_image` push, Phala deploy, approve measurements/PPIDs, register. YES-NEEDED (docker push, Phala spend, deploy).
 13. Remove local-mode, remove agent contract access keys, set a multisig owner (security.md recommendations). YES-NEEDED; optional for a hackathon.
@@ -140,7 +140,7 @@ Steps marked YES-NEEDED need Brandon's explicit yes (signing, deploy, spend). Ow
 - Agent keys are ephemeral; losing them on reboot means re-registering and a new agent account, but the executor/derived key is unaffected.
 - TDX physical-host attacks (TEE.fail) can extract secrets (security.md); our guard is the vault's own limits, which is why the vault must stay the enforcer.
 - Env vars are not measured: `SPONSOR_PRIVATE_KEY` and any API keys are not covered by attestation. The sponsor key should hold only small funds.
-- The vault's `in_flight` and 300 Tgas cap mean one swap at a time; the agent must not double-sign.
+- The vault's `in_flight` flag means one swap at a time; the agent must not double-sign.
 - Open: exact `internal_request_signature` gas and deposit; real Phala price; whether judges credit a deprecated framework.
 - Hackathon rules: docs/HACKATHON.md lists TEE and function call keys under the track themes (security track mentions "FUNCTION CALL KEYS, TEE ATTESTATION"); no rule requires Shade specifically.
 

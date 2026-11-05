@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Shade Agent runner plan, DRY RUN. Offline and unsigned: prints the payloads a Shade Agent runner
-// would build for the Yield vault. The proposal is the first rule-checked call from `npm run yield:demo`.
+// would build for the Yield vault. The proposal is the first rule-checked call of `npm run yield:demo` on the
+// hand-built test scenario (SHADE_SCENARIO): on the committed Ref snapshot every proposal is refused, vetoed or
+// held, so that run has no call to build a plan from.
 //
 //   npm run yield:shade:dry-run
 //   npm run yield:shade:dry-run -- --json
@@ -9,11 +11,15 @@
 
 import { fileURLToPath } from "node:url";
 
+import { EXECUTE_SWAP_TGAS } from "../src/yield/gas.mjs";
 import { RefusalError, assertNotMainnet } from "../src/yield/send.mjs";
 import { runDemo } from "../src/yield/demo.mjs";
-import { buildShadePlan, renderShadePlan } from "../src/yield/shade/plan.mjs";
 import { loadSnapshot } from "../src/yield-optimizer/snapshot.mjs";
-import { DEFAULT_SNAPSHOT } from "./yield-optimizer.mjs";
+import { buildShadePlan, renderShadePlan } from "../src/yield/shade/plan.mjs";
+
+/** The market the proposal comes from, relative to the repo root: hand-built test data, not fetched. */
+export const SHADE_SCENARIO = "src/yield-optimizer/fixtures/scenario.hand-built.json";
+const SHADE_SCENARIO_FILE = fileURLToPath(new URL(`../${SHADE_SCENARIO}`, import.meta.url));
 
 const USAGE = `Usage: node scripts/yield-shade-dry-run.mjs [--json] [--agent-contract ID] [--path P]   (--flag=value also works)
   (no flag)            human-readable Shade Agent runner plan
@@ -21,7 +27,8 @@ const USAGE = `Usage: node scripts/yield-shade-dry-run.mjs [--json] [--agent-con
   --agent-contract ID  agent contract account (testnet ids only; default is a placeholder)
   --path P             MPC derivation path (default yield-vault-1)
   -h, --help           print this help and exit 0
-The proposal is the first rule-checked call of \`npm run yield:demo\`. Always a DRY RUN: offline, no keys,
+The proposal is the first rule-checked call of \`npm run yield:demo -- --snapshot ${SHADE_SCENARIO}\`
+(a hand-built test market; the committed Ref snapshot plans no call). Always a DRY RUN: offline, no keys,
 nothing signed, sent or written. Refused (exit 1): --sign, --send, --broadcast, --i-approve, --mainnet,
 --network other than testnet, NEAR_NETWORK=mainnet, any .near account. MOCK_INFERENCE and NEAR_AI_* are ignored.
 Context: docs/yield-shade-agent-plan.md. Exit 0 ok, 1 refused, 2 usage error.`;
@@ -82,6 +89,7 @@ export function renderHuman(plan) {
     "",
     "== proposal ==",
     row("source", `${src.from} (agent ${src.agent}, rule check ${src.rule_check})`),
+    ...(src.market ? [row("market", src.market)] : []),
     row("proposal", j(act.args.proposal)),
     "",
     "== derivation (MPC chain signatures) ==",
@@ -101,7 +109,7 @@ export function renderHuman(plan) {
     row("receiver", tx.receiverId),
     row("method", act.methodName),
     row("args", j(act.args)),
-    row("gas", `${act.gas} (300 Tgas)`),
+    row("gas", `${act.gas} (${EXECUTE_SWAP_TGAS} Tgas)`),
     row("deposit", act.deposit),
     row("nonce", `${tx.nonce} (${tx.nonceNote})`),
     row("tx hash (hex)", tx.txHashHex),
@@ -150,15 +158,20 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     assertNotMainnet(env);
     if (opts.network !== undefined && opts.network !== "testnet") throw new RefusalError("refused: network must be testnet. This tool never targets mainnet.");
 
-    const { calls } = await runDemo({ rhea: loadSnapshot(DEFAULT_SNAPSHOT), rheaSource: "src/yield-optimizer/fixtures/rhea-testnet-snapshot.json" });
+    const { calls } = await runDemo({ snapshot: loadSnapshot(SHADE_SCENARIO_FILE), snapshotFile: SHADE_SCENARIO });
     const first = calls.calls[0];
-    if (!first) throw new RefusalError("refused: yield:demo planned no rule-checked call to build a plan from");
+    if (!first) throw new RefusalError(`refused: yield:demo on ${SHADE_SCENARIO} planned no rule-checked call to build a plan from`);
     const plan = buildShadePlan({
       env: {},
       agentContract: opts.agentContract,
       path: opts.path,
       proposal: first.args.proposal,
-      proposalSource: { from: "npm run yield:demo", agent: first.agent, rule_check: "ok" },
+      proposalSource: {
+        from: `npm run yield:demo -- --snapshot ${SHADE_SCENARIO}`,
+        market: "hand-built test scenario, not real data (on the committed Ref snapshot yield:demo plans no call)",
+        agent: first.agent,
+        rule_check: "ok",
+      },
     });
     log(opts.json ? renderShadePlan(plan).trimEnd() : renderHuman(plan));
     return 0;

@@ -3,8 +3,6 @@ import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 
 import { escapeHtml } from "../viewer/render.mjs";
-import { DEFAULT_SNAPSHOT } from "../../scripts/yield-optimizer.mjs";
-import { loadSnapshot } from "../yield-optimizer/snapshot.mjs";
 import { renderDemoPage } from "./demo-page.mjs";
 import { runDemo } from "./demo.mjs";
 
@@ -14,7 +12,7 @@ describe("renderDemoPage", () => {
   let result;
   let html;
   before(async () => {
-    result = await runDemo({ rhea: loadSnapshot(DEFAULT_SNAPSHOT), rheaSource: "src/yield-optimizer/fixtures/rhea-testnet-snapshot.json" });
+    result = await runDemo();
     html = renderDemoPage(result);
   });
 
@@ -22,8 +20,8 @@ describe("renderDemoPage", () => {
     assert.match(html, /^<!doctype html>/);
     assert.match(html, /<h1>Yield vault demo \(dry run\)<\/h1>/);
     assert.ok(html.includes(`<p class="dry">${NOTICE}</p>`));
-    assert.ok(html.includes(`Ref pools at block ${result.doc.snapshots.ref_pools.block_height}`));
-    assert.ok(html.includes(`Rhea snapshot taken ${result.doc.snapshots.rhea.taken_at}`));
+    assert.ok(html.includes(`One Ref testnet snapshot at block ${result.doc.snapshot.block_height}, shared by the four agents and the planner (vault ${result.doc.planner_vault.vault_id}).`));
+    assert.doesNotMatch(html, /Rhea/);
     // What the rules did comes first; the per-agent config tables are folded at the end.
     assert.ok(html.indexOf("Agent proposals") < html.indexOf("Rejected by the on-chain rules"));
     assert.ok(html.indexOf("Rejected by the on-chain rules") < html.indexOf("Unsigned calls"));
@@ -42,10 +40,12 @@ describe("renderDemoPage", () => {
     assert.ok(html.includes(`<code>${result.doc.planner_vault.vault_id}</code>`));
   });
 
-  it("lists all five agents and the planner's REFUSED candidates", () => {
+  it("lists all five agents and the planner's HOLD with every candidate's reason", () => {
     for (const id of ["aloof", "chaotic", "social", "skeptic", "yield-optimizer"]) assert.ok(html.includes(`<td class="who">${id}<`), id);
-    assert.ok(html.includes("REFUSED ERR_NO_LIMIT: no limit for dai.fixture.testnet"));
-    assert.ok(html.includes("REFUSED ERR_POOL_NOT_ALLOWED: pool 99"));
+    assert.ok(html.includes("HOLD: no pool passes every gate"));
+    assert.ok(html.includes("REFUSED ERR_POOL_NOT_ALLOWED: pool 6"));
+    assert.match(html, /SKIP off reference: spot \+\d+ bps vs the mock reference price \(limit 1000 bps\)/);
+    assert.ok(html.includes("SKIP no mock reference price for rft"));
     assert.match(html, /vetoed by skeptic/);
   });
 
@@ -66,11 +66,10 @@ describe("renderDemoPage", () => {
   });
 
   it("shows each unsigned call and the totals line", () => {
-    assert.equal(result.calls.calls.length, 1);
-    assert.equal((html.match(/<code>execute_swap<\/code>/g) ?? []).length, 1);
-    assert.equal((html.match(/signed: false/g) ?? []).length, 1);
-    assert.equal((html.match(/sent: false/g) ?? []).length, 1);
-    assert.ok(html.includes("1 unsigned execute_swap call planned, 0 signed, 0 sent"));
+    assert.equal(result.calls.calls.length, 0);
+    assert.equal((html.match(/signed: false/g) ?? []).length, 0);
+    assert.ok(html.includes("0 unsigned execute_swap calls planned, 0 signed, 0 sent"));
+    assert.ok(html.includes("<h2>Unsigned calls</h2>\n<p class=\"mut\">No calls planned.</p>"));
     for (const c of result.calls.calls) assert.ok(html.includes(escapeHtml(JSON.stringify(c.args, null, 2))), c.agent);
   });
 
@@ -86,7 +85,8 @@ describe("renderDemoPage", () => {
     const doc = structuredClone(result.doc);
     doc.agents[0].summary = evil;
     doc.agents[1].veto = { by: evil, reason: evil };
-    doc.agents[4].candidates[1].rule_check.reason = evil;
+    doc.agents[4].candidates[2].rule_check.reason = evil;
+    doc.agents[4].candidates[1].verdict = evil;
     doc.rule_scenarios.scenarios[0].contract_message = evil;
     doc.personality_agents.configs.aloof.limits[0].token_id = evil;
     const out = renderDemoPage({ doc, calls: result.calls });

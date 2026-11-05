@@ -5,7 +5,7 @@
 //   npm run yield:demo -- --calls
 //
 // The four personality agents propose one swap each (mock inference over the committed Ref
-// pool fixture) and the Yield Optimizer planner is the fifth (committed Rhea snapshot).
+// pool fixture) and the Yield Optimizer planner is the fifth, on that same Ref snapshot.
 // Every proposal is checked with the one JS copy of the vault rules (src/yield/rules.mjs),
 // and the unsigned execute_swap calls are printed and written to plan.json / calls.json;
 // index.html is the same dry run as one static page (no script, no external asset).
@@ -20,16 +20,16 @@ import { renderDemoPage } from "../src/yield/demo-page.mjs";
 import { renderCalls, renderDetails, renderSummary, runDemo } from "../src/yield/demo.mjs";
 import { RefusalError, assertNotMainnet } from "../src/yield/send.mjs";
 import { SnapshotError, loadSnapshot } from "../src/yield-optimizer/snapshot.mjs";
-import { DEFAULT_SNAPSHOT } from "./yield-optimizer.mjs";
 
 const DEFAULT_OUT = "out/yield-demo";
-const DEFAULT_SNAPSHOT_LABEL = "src/yield-optimizer/fixtures/rhea-testnet-snapshot.json";
 
 const USAGE = `Usage: node scripts/yield-demo.mjs [--out DIR] [--snapshot FILE] [--calls | --json]
   (no flag)      one-screen summary, then per-agent detail; writes DIR/plan.json, DIR/calls.json
                  and DIR/index.html (the same dry run as a static page)
   --out DIR      where plan.json, calls.json and index.html go (default ${DEFAULT_OUT}; rewritten each run)
-  --snapshot FILE  use this Rhea snapshot for the planner instead of the committed fixture
+  --snapshot FILE  plan on this market + vault file instead of the shared Ref snapshot (Ref-shaped pools and tokens
+                 plus a "vault" section and taken_at or now_ms; see src/yield-optimizer/fixtures/scenario.hand-built.json);
+                 the four agents still use the committed Ref snapshot
   --calls        print ONLY the unsigned execute_swap calls (receiver, method, signer, args, gas,
                  deposit, signed: false, sent: false); writes no files
   --json         print the plan JSON only (same content as plan.json); writes no files
@@ -105,18 +105,17 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     return 2;
   }
 
-  let rhea;
-  const snapshotFile = opts.snapshot ?? DEFAULT_SNAPSHOT;
+  let snapshot;
   try {
-    rhea = loadSnapshot(snapshotFile);
+    snapshot = loadSnapshot(opts.snapshot ?? null);
   } catch (e) {
     if (!(e instanceof SnapshotError)) throw e;
-    const msg = e.message.includes(snapshotFile) ? e.message : `snapshot ${snapshotFile} rejected: ${e.message}`;
+    const msg = opts.snapshot === undefined || e.message.includes(opts.snapshot) ? e.message : `snapshot ${opts.snapshot} rejected: ${e.message}`;
     err(`yield:demo: ${msg}. Nothing was written.`);
     return 1;
   }
 
-  const result = await runDemo({ rhea, rheaSource: opts.snapshot ?? DEFAULT_SNAPSHOT_LABEL });
+  const result = await runDemo({ snapshot, snapshotFile: opts.snapshot ?? null });
   const planText = `${JSON.stringify(result.doc, null, 2)}\n`;
   if (opts.json) {
     log(planText.trimEnd());

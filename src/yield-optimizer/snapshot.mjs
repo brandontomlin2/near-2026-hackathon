@@ -1,17 +1,27 @@
-// Loads and validates a pool/price snapshot for the Yield Optimizer.
+// Loads and validates the market + vault snapshot the Yield Optimizer plans on.
 //
-// A snapshot is one JSON file with:
-//   - market data shaped like Rhea (Ref Finance) `get_pool` views
-//     (`pool_kind`, `token_account_ids`, `amounts`, `total_fee`) plus a `pool_id`,
-//   - reference USD prices per token (fixture values, not an oracle),
-//   - the vault as its views would return it: `config` like `get_config`
-//     (VaultConfig) and `state` like `get_state` (the VaultState fields the
-//     rules read).
-// Nothing here touches the network. Amounts arrive as decimal strings (the
-// contract's U128 JSON form) and leave as BigInt.
+// ONE market: by default this is the Ref testnet snapshot the four personality agents
+// trade on (src/yield/fixtures/ref-testnet-pools.json, read through loadPoolFixture), the
+// vault is the demo vault (PLACEHOLDER_VAULT / PLACEHOLDER_RUNNER), the clock is the mock
+// round's MOCK_EPOCH_MS, and reference prices are the fixture's `mock_usd_price`
+// ("mock reference price", never an oracle; null means no reference price).
+//
+// `--snapshot FILE` takes the same Ref shape (exchange, tokens{decimals, mock_usd_price,
+// optional symbol}, pools[{pool_id, pool_kind, token_a, token_b, reserve_a, reserve_b,
+// total_fee}], optional _block_height / _source) PLUS:
+//   - `vault`: { vault_id, runner_id, config (VaultConfig JSON like get_config),
+//                state (VaultState fields the rules read, like get_state) },
+//   - the clock: exactly one of `taken_at` (ISO-8601 with Z or an offset) or `now_ms`.
+// Nothing here touches the network. Amounts arrive as decimal strings (the contract's
+// U128 JSON form) and leave as BigInt, so pools have the shape src/yield/pools.mjs
+// `quoteOut` reads.
 
 import { readFileSync } from "node:fs";
-import { U128_MAX, validateVaultConfig } from "../yield/rules.mjs";
+import { initialState } from "../yield/ledger.mjs";
+import { MOCK_EPOCH_MS } from "../yield/mock.mjs";
+import { loadPoolFixture } from "../yield/pools.mjs";
+import { U128_MAX, dayOf, validateVaultConfig } from "../yield/rules.mjs";
+import { PLACEHOLDER_RUNNER, PLACEHOLDER_VAULT, plannerVaultConfig } from "../yield/strategies.mjs";
 
 /** The snapshot is missing, unreadable or malformed. */
 export class SnapshotError extends Error {}
@@ -24,8 +34,12 @@ function need(cond, msg) {
   if (!cond) throw new SnapshotError(msg);
 }
 
+// Control characters (newlines, ANSI escapes) in a --snapshot file would reach the terminal through the plan text.
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+
 function str(v, where) {
   need(typeof v === "string" && v.length > 0, `${where} must be a non-empty string`);
+  need(!CONTROL.test(v), `${where} must not contain control characters`);
   return v;
 }
 
@@ -114,35 +128,62 @@ function parseState(s) {
   };
 }
 
+/** Symbol shown for a token: the optional `symbol`, else the id before the first dot (as the personality side prints it). */
+export const symbolOf = (id) => id.split(".")[0];
+
 function parseToken(id, t) {
+  need(!CONTROL.test(id), `tokens has a token id with control characters: ${JSON.stringify(id)}`);
   const w = `tokens["${id}"]`;
   need(isObj(t), `${w} must be an object`);
   need(Number.isInteger(t.decimals) && t.decimals >= 0 && t.decimals <= 38, `${w}.decimals must be an integer 0..38`);
-  need(typeof t.price_usd === "string" && /^\d+(\.\d+)?$/.test(t.price_usd), `${w}.price_usd must be a decimal string`);
-  const price = Number(t.price_usd);
-  need(price > 0, `${w}.price_usd must be > 0`);
-  return { symbol: str(t.symbol, `${w}.symbol`), decimals: t.decimals, price_usd: price };
+  // mock_usd_price: a decimal string, or null/absent = no reference price (never invented).
+  let ref_price = null;
+  if (t.mock_usd_price !== undefined && t.mock_usd_price !== null) {
+    need(typeof t.mock_usd_price === "string" && /^\d+(\.\d+)?$/.test(t.mock_usd_price), `${w}.mock_usd_price must be a decimal string or null`);
+    ref_price = Number(t.mock_usd_price);
+    need(Number.isFinite(ref_price) && ref_price > 0, `${w}.mock_usd_price must be a finite number > 0`);
+  }
+  const symbol = t.symbol === undefined ? symbolOf(id) : str(t.symbol, `${w}.symbol`);
+  return { symbol, decimals: t.decimals, ref_price };
 }
 
+/** A pool in the shape src/yield/pools.mjs reads: reserves as BigInt. */
 function parsePool(p, i, tokens) {
   const w = `pools[${i}]`;
   need(isObj(p), `${w} must be an object`);
   // Only constant-product pools are quoted; a stable or rated pool needs a different formula.
   need(p.pool_kind === "SIMPLE_POOL", `${w}.pool_kind must be "SIMPLE_POOL" (got ${JSON.stringify(p.pool_kind)})`);
-  const ids = arr(p.token_account_ids, `${w}.token_account_ids`);
-  const amounts = arr(p.amounts, `${w}.amounts`);
-  need(ids.length === 2 && amounts.length === 2, `${w} must have exactly 2 tokens and 2 amounts`);
-  ids.forEach((t, j) => need(typeof t === "string" && Object.hasOwn(tokens, t), `${w}.token_account_ids[${j}] has no entry in tokens`));
-  need(ids[0] !== ids[1], `${w} lists the same token twice`);
-  const reserves = amounts.map((a, j) => u128(a, `${w}.amounts[${j}]`));
-  need(reserves[0] > 0n && reserves[1] > 0n, `${w} has an empty reserve`);
+  const token_a = str(p.token_a, `${w}.token_a`);
+  const token_b = str(p.token_b, `${w}.token_b`);
+  for (const [k, t] of [["token_a", token_a], ["token_b", token_b]]) need(Object.hasOwn(tokens, t), `${w}.${k} has no entry in tokens`);
+  need(token_a !== token_b, `${w} lists the same token twice`);
+  const reserve_a = u128(p.reserve_a, `${w}.reserve_a`);
+  const reserve_b = u128(p.reserve_b, `${w}.reserve_b`);
+  need(reserve_a > 0n && reserve_b > 0n, `${w} has an empty reserve`);
   need(Number.isInteger(p.total_fee) && p.total_fee >= 0 && p.total_fee < 10_000, `${w}.total_fee must be an integer 0..9999 (bps)`);
-  return { pool_id: u64(p.pool_id, `${w}.pool_id`), token_account_ids: ids, reserves, total_fee: p.total_fee };
+  return { pool_id: u64(p.pool_id, `${w}.pool_id`), pool_kind: p.pool_kind, token_a, token_b, reserve_a, reserve_b, total_fee: p.total_fee };
 }
 
-/** Validates a parsed JSON value. Throws SnapshotError naming the first bad field. */
-export function parseSnapshot(raw) {
-  need(isObj(raw), "snapshot must be a JSON object");
+/** The Ref-shaped market half of a snapshot (the committed fixture or a --snapshot file). */
+function parseMarket(raw) {
+  const source = typeof raw._source === "string" ? raw._source : "";
+  let block_height = null;
+  if (raw._block_height !== undefined) block_height = u64(raw._block_height, "_block_height");
+  need(isObj(raw.tokens), "tokens must be an object keyed by token account id");
+  // No prototype: a token id like "toString" or "__proto__" is just a key.
+  const tokens = Object.create(null);
+  for (const [id, t] of Object.entries(raw.tokens)) tokens[id] = parseToken(id, t);
+  const pools = arr(raw.pools, "pools").map((p, i) => parsePool(p, i, tokens));
+  need(new Set(pools.map((p) => p.pool_id)).size === pools.length, "pools lists a pool_id twice");
+  return { exchange: str(raw.exchange, "exchange"), source, block_height, tokens, pools };
+}
+
+/** The clock: exactly one of taken_at (ISO) or now_ms. Returns { taken_at, now_ms }. */
+function parseClock(raw) {
+  const hasAt = raw.taken_at !== undefined;
+  const hasMs = raw.now_ms !== undefined;
+  need(hasAt !== hasMs, "give the clock as exactly one of taken_at (ISO-8601 time) or now_ms");
+  if (hasMs) return { taken_at: null, now_ms: u64(raw.now_ms, "now_ms") };
   const takenAt = str(raw.taken_at, "taken_at");
   // An explicit Z or offset is required: Date.parse reads a bare time as local
   // time, which would make the UTC day (and so the daily cap) depend on the machine.
@@ -156,28 +197,56 @@ export function parseSnapshot(raw) {
     cal.getUTCFullYear() === y && cal.getUTCMonth() === mo - 1 && cal.getUTCDate() === d && h < 24 && mi < 60 && s < 60,
     `taken_at ${takenAt} is not a real calendar date and time`,
   );
-  need(isObj(raw.tokens), "tokens must be an object keyed by token account id");
-  // No prototype: a token id like "toString" or "__proto__" is just a key.
-  const tokens = Object.create(null);
-  for (const [id, t] of Object.entries(raw.tokens)) tokens[id] = parseToken(id, t);
-  const pools = arr(raw.pools, "pools").map((p, i) => parsePool(p, i, tokens));
-  need(new Set(pools.map((p) => p.pool_id)).size === pools.length, "pools lists a pool_id twice");
-  need(isObj(raw.vault), "vault must be an object");
+  return { taken_at: takenAt, now_ms: ms };
+}
+
+/** Validates a parsed JSON value (market + vault + clock). Throws SnapshotError naming the first bad field. */
+export function parseSnapshot(raw) {
+  need(isObj(raw), "snapshot must be a JSON object");
+  const clock = parseClock(raw);
+  const market = parseMarket(raw);
+  need(isObj(raw.vault), "vault must be an object { vault_id, runner_id, config, state }");
   return {
-    source: typeof raw.source === "string" ? raw.source : "",
-    exchange: str(raw.exchange, "exchange"),
-    taken_at: takenAt,
-    now_ns: BigInt(ms) * 1_000_000n,
-    tokens,
-    pools,
+    ...market,
+    ...clock,
     vault_id: str(raw.vault.vault_id, "vault.vault_id"),
     runner_id: str(raw.vault.runner_id, "vault.runner_id"),
     vault: { config: parseConfig(raw.vault.config), state: parseState(raw.vault.state) },
   };
 }
 
-/** Reads and validates a snapshot file. Throws SnapshotError for any problem. */
-export function loadSnapshot(file) {
+/**
+ * The default snapshot: the shared Ref testnet fixture, the demo vault and runner, the
+ * mock round's clock. The planner vault's config is plannerVaultConfig (strategies.mjs)
+ * and its balances are the ledger's fresh-agent initialState, so both halves of the demo
+ * start from the same funds. Validated like a file (a broken default throws).
+ */
+export function defaultSnapshot() {
+  const fixture = loadPoolFixture();
+  const market = parseMarket(fixture);
+  const fresh = initialState();
+  const config = JSON.parse(JSON.stringify(plannerVaultConfig({ runner: PLACEHOLDER_RUNNER, fixture })));
+  const state = {
+    paused: fresh.paused,
+    swap_in_flight: fresh.in_flight,
+    recovery_in_flight: false,
+    day: dayOf(MOCK_EPOCH_MS),
+    spent_today: [],
+    balances: Object.entries(fresh.balances),
+  };
+  return {
+    ...market,
+    taken_at: null,
+    now_ms: MOCK_EPOCH_MS,
+    vault_id: PLACEHOLDER_VAULT,
+    runner_id: PLACEHOLDER_RUNNER,
+    vault: { config: parseConfig(config), state: parseState(state) },
+  };
+}
+
+/** Reads and validates a snapshot file; `null`/undefined gives the shared default (defaultSnapshot). Throws SnapshotError for any problem. */
+export function loadSnapshot(file = null) {
+  if (file === null || file === undefined) return defaultSnapshot();
   let text;
   try {
     text = readFileSync(file, "utf8");
@@ -216,6 +285,6 @@ export function rulesView(snap) {
       spent: { day: Number(state.day), amounts: byToken(state.spent_today) },
       balances: byToken(state.balances),
     },
-    nowMs: Number(snap.now_ns / 1_000_000n),
+    nowMs: snap.now_ms,
   };
 }

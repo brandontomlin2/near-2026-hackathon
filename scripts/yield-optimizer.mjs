@@ -1,24 +1,26 @@
 #!/usr/bin/env node
-// Yield Optimizer (fifth personality), DRY RUN ONLY. Reads a pool/price
-// snapshot, applies the yield-vault contract's rules, and prints a readable
-// plan plus a JSON plan whose call args match `execute_swap(proposal)`.
+// Yield Optimizer (fifth personality), DRY RUN ONLY. Plans on the same Ref testnet
+// snapshot the four personality agents trade on (or a --snapshot file of that shape),
+// applies the yield-vault contract's rules, and prints a readable plan plus a JSON
+// plan whose call args match `execute_swap(proposal)`.
 // It never signs, never sends, never reads keys and never uses the network.
 //
-//   node scripts/yield-optimizer.mjs [--snapshot <file>] [--slippage-bps N] [--min-edge-bps N] [--json]
+//   node scripts/yield-optimizer.mjs [--snapshot <file>] [--slippage-bps N] [--min-edge-bps N] [--max-ref-deviation-bps N] [--json]
 
 import fs from "node:fs";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 import { buildPlan, DEFAULTS, renderPlan } from "../src/yield-optimizer/plan.mjs";
 import { loadSnapshot, SnapshotError } from "../src/yield-optimizer/snapshot.mjs";
 
-export const DEFAULT_SNAPSHOT = fileURLToPath(
-  new URL("../src/yield-optimizer/fixtures/rhea-testnet-snapshot.json", import.meta.url),
-);
+/** null = the shared default snapshot (loadSnapshot(null)): the Ref fixture, the demo vault, the mock clock. */
+export const DEFAULT_SNAPSHOT = null;
 
-const USAGE = `usage: node scripts/yield-optimizer.mjs [--snapshot <file>] [--slippage-bps N] [--min-edge-bps N] [--json]
-  --snapshot <file>    pool/price snapshot JSON (default: the committed Rhea testnet-style fixture)
+const USAGE = `usage: node scripts/yield-optimizer.mjs [--snapshot <file>] [--slippage-bps N] [--min-edge-bps N] [--max-ref-deviation-bps N] [--json]
+  --snapshot <file>    Ref-shaped market JSON plus a "vault" section and a clock (taken_at or now_ms)
+                       (default: src/yield/fixtures/ref-testnet-pools.json, the demo vault, the mock clock)
   --slippage-bps N     slippage tolerance for min_amount_out, integer 0..9999 (default ${DEFAULTS.slippage_bps})
   --min-edge-bps N     minimum edge over the reference price to trade, integer 0..10000 (default ${DEFAULTS.min_edge_bps})
+  --max-ref-deviation-bps N  skip a pool whose spot price is further than this from the mock reference price, integer 0..1000000 (default ${DEFAULTS.max_ref_deviation_bps})
   --json               print only the JSON plan
 DRY RUN only: no keys, no network, nothing signed or sent.`;
 
@@ -47,6 +49,7 @@ export function parseArgs(argv) {
     else if (a === "--snapshot") out.snapshot = value();
     else if (a === "--slippage-bps") out.opts.slippage_bps = intOpt(a, value(), 9_999);
     else if (a === "--min-edge-bps") out.opts.min_edge_bps = intOpt(a, value(), 10_000);
+    else if (a === "--max-ref-deviation-bps") out.opts.max_ref_deviation_bps = intOpt(a, value(), 1_000_000);
     else throw new UsageError(`unknown argument ${JSON.stringify(a)}`);
   }
   return out;

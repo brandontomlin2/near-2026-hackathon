@@ -5,8 +5,11 @@
 //
 // Runs `node scripts/yield-demo.mjs --out DIR` (offline, mock) with a timeout, then reads
 // DIR/plan.json, DIR/calls.json and DIR/index.html and fails unless the plan is a dry run with nothing signed
-// or sent, 1 call planned (the optimizer's; the stable-pool agents are refused as off reference), and the 4 vault-rule rejections match the contract. index.html must
-// carry the DRY RUN notice and each rejection's contract message (HTML-escaped as rendered).
+// or sent, 0 calls planned (the stable-pool agents are refused as off reference, chaotic is vetoed and the
+// optimizer holds on the thin real pools), and the 4 vault-rule rejections match the contract. It also fails
+// when the demo tells two stories: more than one vault id across the agents, the planner vault and the calls,
+// more than one gas string across the calls, or a planner that is not on the one shared snapshot. index.html
+// must carry the DRY RUN notice and each rejection's contract message (HTML-escaped as rendered).
 
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -15,10 +18,12 @@ import { fileURLToPath } from "node:url";
 
 import { escapeHtml } from "../src/viewer/render.mjs";
 import { assertSafeOutDir } from "../src/util/outdir.mjs";
+import { EXECUTE_SWAP_GAS_CLI } from "../src/yield/gas.mjs";
 
 export const EXPECTED_MODE = "mock";
 export const EXPECTED_AGENTS = 5;
-export const EXPECTED_CALLS = 1;
+export const EXPECTED_CALLS = 0;
+export const PLANNER_STATUSES = ["ok", "off_reference", "below_min_edge", "no_reference_price", "refused"];
 export const EXPECTED_SIGNED = 0;
 export const EXPECTED_SENT = 0;
 export const EXPECTED_REJECTIONS = 4;
@@ -72,6 +77,8 @@ export function checkYieldDemo(plan, calls) {
     expect(isObject(agent.reference) && typeof agent.reference.reference_deviation_bps === "number", `plan.json agents[${i}] (${agent.agent}) must carry reference.reference_deviation_bps`);
   });
 
+  problems.push(...checkOneStory(plan, callsFile));
+
   expect(plan.rule_rejections === EXPECTED_REJECTIONS, `plan.json rule_rejections must be ${EXPECTED_REJECTIONS} (got ${JSON.stringify(plan.rule_rejections)})`);
   const scenarios = isObject(plan.rule_scenarios) && Array.isArray(plan.rule_scenarios.scenarios) ? plan.rule_scenarios.scenarios : null;
   if (scenarios === null) {
@@ -88,6 +95,58 @@ export function checkYieldDemo(plan, calls) {
       expect(s.contract_message === s.js_message, `${label} contract_message must equal js_message`);
       expect(typeof s.contract_message === "string" && typeof s.code === "string" && s.contract_message.startsWith(`${s.code}: `), `${label} contract_message must start with "<code>: "`);
     });
+  }
+  return problems;
+}
+
+/**
+ * Problems when plan.json and calls.json do not tell one story: one vault id and one runner id for every agent
+ * row, the planner vault and every call; one gas string across the calls; one snapshot shared by the agents and
+ * the planner; a planner row with a decision, a reason and candidates that each carry a known status.
+ */
+export function checkOneStory(plan, calls) {
+  const problems = [];
+  const expect = (ok, message) => { if (!ok) problems.push(message); };
+  const agents = Array.isArray(plan.agents) ? plan.agents.filter(isObject) : [];
+  const calls_ = Array.isArray(calls.calls) ? calls.calls.filter(isObject) : [];
+
+  const vaults = new Set([
+    ...agents.map((a) => a.vault_id),
+    plan.personality_agents?.vault_id,
+    plan.planner_vault?.vault_id,
+    ...calls_.map((c) => c.receiver_id),
+    ...agents.map((a) => a.call?.receiver_id),
+  ].filter((v) => v !== undefined && v !== null));
+  expect(vaults.size === 1, `plan.json and calls.json must name one vault id (got ${vaults.size}: ${[...vaults].join(", ") || "none"})`);
+  const runners = new Set([
+    ...agents.map((a) => a.runner_id),
+    plan.personality_agents?.runner_id,
+    plan.planner_vault?.runner_id,
+    ...calls_.map((c) => c.signer_id),
+  ].filter((v) => v !== undefined && v !== null));
+  expect(runners.size === 1, `plan.json and calls.json must name one runner id (got ${runners.size}: ${[...runners].join(", ") || "none"})`);
+
+  const gas = new Set([...calls_.map((c) => c.gas), ...agents.map((a) => a.call?.gas)].filter((v) => v !== undefined && v !== null));
+  // With no call planned there is no gas string at all; with calls there must be exactly one, the shared figure.
+  const wantGas = calls_.length > 0 ? 1 : 0;
+  expect(gas.size === wantGas, `plan.json and calls.json must carry ${wantGas === 1 ? "one gas string" : "no gas string when no call is planned"} (got ${gas.size}: ${[...gas].join(", ") || "none"})`);
+  for (const g of gas) expect(g === EXECUTE_SWAP_GAS_CLI, `gas ${JSON.stringify(g)} is not the shared execute_swap figure ${EXECUTE_SWAP_GAS_CLI} (src/yield/gas.mjs)`);
+
+  expect(!("snapshots" in plan), "plan.json must have one snapshot, not a snapshots pair");
+  expect(isObject(plan.snapshot) && plan.snapshot.shared_by_agents_and_planner === true, "plan.json snapshot must be shared_by_agents_and_planner: true");
+  expect(isObject(plan.snapshot) && plan.snapshot.fetched === false, "plan.json snapshot.fetched must be false");
+
+  const planner = agents.find((a) => a.kind === "planner");
+  if (!planner) {
+    problems.push("plan.json has no planner row");
+  } else {
+    expect(planner.decision === "hold" || planner.decision === "swap", `planner decision must be hold or swap (got ${JSON.stringify(planner.decision)})`);
+    expect(typeof planner.reason === "string" && planner.reason !== "", "planner reason must be a non-empty string");
+    expect(planner.decision !== "hold" || planner.call === null, "a planner that holds must carry no call");
+    const cands = Array.isArray(planner.candidates) ? planner.candidates : [];
+    expect(cands.length > 0, "planner must list its candidates");
+    cands.forEach((c, i) => expect(isObject(c) && PLANNER_STATUSES.includes(c.status), `planner candidates[${i}] has an unknown status ${JSON.stringify(isObject(c) ? c.status : c)}`));
+    expect(planner.decision !== "swap" || cands.some((c) => c.status === "ok"), "a planner that swaps must have an ok candidate");
   }
   return problems;
 }
@@ -199,7 +258,7 @@ function main(argv) {
     for (const problem of problems) console.error(`FAIL: ${problem}`);
     return 1;
   }
-  console.log(`yield demo: dry_run true, signed false, sent false; ${EXPECTED_CALLS} call planned, ${EXPECTED_SIGNED} signed, ${EXPECTED_SENT} sent; ${EXPECTED_REJECTIONS} rule rejections match the contract`);
+  console.log(`yield demo: dry_run true, signed false, sent false; one vault${EXPECTED_CALLS > 0 ? ", one gas figure" : ", no gas figure (no call)"}; ${EXPECTED_CALLS} ${EXPECTED_CALLS === 1 ? "call" : "calls"} planned, ${EXPECTED_SIGNED} signed, ${EXPECTED_SENT} sent; ${EXPECTED_REJECTIONS} rule rejections match the contract`);
   return 0;
 }
 

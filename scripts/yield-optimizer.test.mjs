@@ -7,6 +7,9 @@ import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_SNAPSHOT, main, parseArgs, UsageError } from "./yield-optimizer.mjs";
+import { PLACEHOLDER_VAULT } from "../src/yield/strategies.mjs";
+
+const SCENARIO = fileURLToPath(new URL("../src/yield-optimizer/fixtures/scenario.hand-built.json", import.meta.url));
 
 const SCRIPT = fileURLToPath(new URL("./yield-optimizer.mjs", import.meta.url));
 const REPO = path.dirname(path.dirname(SCRIPT));
@@ -22,15 +25,16 @@ describe("parseArgs", () => {
   it("defaults", () => {
     const a = parseArgs([]);
     assert.equal(a.snapshot, DEFAULT_SNAPSHOT);
+    assert.equal(DEFAULT_SNAPSHOT, null, "no file: the shared Ref snapshot");
     assert.equal(a.json, false);
     assert.deepEqual(a.opts, {});
   });
   it("reads every option", () => {
-    const a = parseArgs(["--snapshot", "x.json", "--slippage-bps", "100", "--min-edge-bps", "0", "--json"]);
-    assert.deepEqual(a, { help: false, snapshot: "x.json", json: true, opts: { slippage_bps: 100, min_edge_bps: 0 } });
+    const a = parseArgs(["--snapshot", "x.json", "--slippage-bps", "100", "--min-edge-bps", "0", "--max-ref-deviation-bps", "250", "--json"]);
+    assert.deepEqual(a, { help: false, snapshot: "x.json", json: true, opts: { slippage_bps: 100, min_edge_bps: 0, max_ref_deviation_bps: 250 } });
   });
   it("throws UsageError for bad input", () => {
-    for (const argv of [["--nope"], ["stray"], ["--slippage-bps"], ["--slippage-bps", "abc"], ["--slippage-bps", "-1"], ["--slippage-bps", "10000"], ["--min-edge-bps", "10001"], ["--snapshot", "--json"]]) {
+    for (const argv of [["--nope"], ["stray"], ["--slippage-bps"], ["--slippage-bps", "abc"], ["--slippage-bps", "-1"], ["--slippage-bps", "10000"], ["--min-edge-bps", "10001"], ["--max-ref-deviation-bps", "1000001"], ["--max-ref-deviation-bps"], ["--snapshot", "--json"]]) {
       assert.throws(() => parseArgs(argv), UsageError, argv.join(" "));
     }
   });
@@ -51,7 +55,26 @@ describe("main", () => {
     const j = JSON.parse(jsonPart);
     assert.equal(j.dry_run, true);
     assert.match(j.notice, /^DRY RUN/);
+    // The honest result on the thin real Ref pools: nothing passes the reference guard and the vault rules.
+    assert.equal(j.decision, "hold");
+    assert.equal(j.vault_id, PLACEHOLDER_VAULT);
+    assert.equal(j.snapshot.block_height, 276143441);
+    assert.match(human, /Decision: HOLD - no pool passes every gate/);
+  });
+
+  it("--snapshot with the hand-built scenario plans the swap on pool 17", () => {
+    const j = JSON.parse(run(["--json", "--snapshot", SCENARIO]).stdout);
     assert.equal(j.decision, "swap");
+    assert.equal(j.call.args.proposal.pool_id, 17);
+    assert.equal(j.vault_id, "yield-vault.fixture.testnet");
+    assert.equal(j.call.gas, "280.0 Tgas");
+  });
+
+  it("--max-ref-deviation-bps reaches the plan: 100 bps rejects the 193 bps pool 17 of the scenario", () => {
+    const j = JSON.parse(run(["--json", "--snapshot", SCENARIO, "--max-ref-deviation-bps", "100"]).stdout);
+    assert.equal(j.params.max_ref_deviation_bps, 100);
+    assert.equal(j.decision, "hold");
+    assert.equal(j.candidates.find((c) => c.proposal.pool_id === 17).status, "off_reference");
   });
 
   it("--json prints parseable JSON only", () => {
@@ -65,7 +88,7 @@ describe("main", () => {
   });
 
   it("passes --slippage-bps and --min-edge-bps through to the plan", () => {
-    const j = JSON.parse(run(["--json", "--slippage-bps", "100", "--min-edge-bps", "10000"]).stdout);
+    const j = JSON.parse(run(["--json", "--snapshot", SCENARIO, "--slippage-bps", "100", "--min-edge-bps", "10000"]).stdout);
     assert.equal(j.params.slippage_bps, 100);
     assert.equal(j.params.min_edge_bps, 10000);
     assert.equal(j.decision, "hold");
@@ -128,7 +151,7 @@ describe("main", () => {
     });
 
     it("a zero-pool snapshot holds", () => {
-      const raw = JSON.parse(fs.readFileSync(DEFAULT_SNAPSHOT, "utf8"));
+      const raw = JSON.parse(fs.readFileSync(SCENARIO, "utf8"));
       raw.pools = [];
       const f = path.join(dir, "nopools.json");
       fs.writeFileSync(f, JSON.stringify(raw));

@@ -12,7 +12,7 @@
 ## Cost and time
 
 - Owner outflow for the full path: 8.525 NEAR plus 7 yocto (the 1 yocto security deposits). Of that, 6 NEAR funds the vault account (about 2.62 NEAR is its wasm storage), 2 NEAR funds the runner, 0.5 NEAR goes to Ref storage, and 0.02 NEAR becomes wNEAR. Most of it comes back through the rollback steps (Ref storage via step 29, vault and runner balances via the account deletions in steps 35 and 36).
-- 19 transactions and 17 read-only calls, 1140 TGas prepaid in total. Prepaid gas is an upper bound; unused gas is refunded. The real gas cost was not measured (UNCONFIRMED); at the usual testnet gas price it is a small fraction of 1 NEAR.
+- 19 transactions and 17 read-only calls, 1120 TGas prepaid in total. Prepaid gas is an upper bound; unused gas is refunded. The real gas cost was not measured (UNCONFIRMED); at the usual testnet gas price it is a small fraction of 1 NEAR.
 - The owner needs the outflow above plus gas. Have at least 10 NEAR in the owner account.
 - Time estimate (not measured): 45 to 90 minutes of operator time for the full path, mostly spent confirming each step. The swap chain (step 19) settles in under a few minutes if nothing fails; a stuck swap adds a 10 minute wait for force release.
 
@@ -86,7 +86,7 @@ near account create-account fund-myself runner.owner.yield-demo.testnet '2 NEAR'
 #### Step 3 [setup] deploy the vault wasm and call new in one transaction
 
 ```bash
-near contract deploy vault.owner.yield-demo.testnet use-file contracts/yield-vault/target/near/yield_vault.wasm with-init-call new json-args '{"owner_id":"owner.yield-demo.testnet","nft_contract_id":"personality-nft.yield-demo.testnet","token_id":"<FILL_ME>","ref_exchange_id":"ref-finance-101.testnet","config":{"strategy":"chaotic","allowed_pools":[{"pool_id":0,"token_a":"wrap.testnet","token_b":"rft.tokenfactory.testnet","min_rate_a_to_b":{"num":"1770923779569","den":"374136952131431998480120321"},"min_rate_b_to_a":{"num":"374136952131431998480120321","den":"7083695118276"}}],"limits":[{"token_id":"wrap.testnet","max_trade":"1000000000000000000000000","daily_cap":"3000000000000000000000000"},{"token_id":"rft.tokenfactory.testnet","max_trade":"1000000000","daily_cap":"3000000000"}],"runners":["runner.owner.yield-demo.testnet"]}}' prepaid-gas '100 Tgas' attached-deposit '0 NEAR' network-config testnet sign-with-keychain send
+near contract deploy vault.owner.yield-demo.testnet use-file contracts/yield-vault/target/near/yield_vault.wasm with-init-call new json-args '{"owner_id":"owner.yield-demo.testnet","nft_contract_id":"personality-nft.yield-demo.testnet","token_id":"<FILL_ME>","ref_exchange_id":"ref-finance-101.testnet","config":{"strategy":"chaotic","allowed_pools":[{"pool_id":0,"token_a":"wrap.testnet","token_b":"rft.tokenfactory.testnet","min_rate_a_to_b":{"num":"1770923779569","den":"374136952131431998480120321"},"min_rate_b_to_a":{"num":"374136952131431998480120321","den":"7083695118276"}}],"limits":[{"token_id":"wrap.testnet","max_trade":"10000000000000000000000000","daily_cap":"30000000000000000000000000"},{"token_id":"rft.tokenfactory.testnet","max_trade":"100000000000","daily_cap":"300000000000"}],"runners":["runner.owner.yield-demo.testnet"]}}' prepaid-gas '100 Tgas' attached-deposit '0 NEAR' network-config testnet sign-with-keychain send
 ```
 
 - Signer: `vault.owner.yield-demo.testnet`; receiver: `vault.owner.yield-demo.testnet`.
@@ -298,14 +298,14 @@ near contract call-function as-read-only vault.owner.yield-demo.testnet check_pr
 #### Step 19 [swap] runner swaps 10000000000000000000000 wrap.testnet -> rft.tokenfactory.testnet on pool 0
 
 ```bash
-near contract call-function as-transaction vault.owner.yield-demo.testnet execute_swap json-args '{"proposal":{"pool_id":0,"token_in":"wrap.testnet","token_out":"rft.tokenfactory.testnet","amount_in":"10000000000000000000000","min_amount_out":"50000000"}}' prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as runner.owner.yield-demo.testnet network-config testnet sign-with-keychain send
+near contract call-function as-transaction vault.owner.yield-demo.testnet execute_swap json-args '{"proposal":{"pool_id":0,"token_in":"wrap.testnet","token_out":"rft.tokenfactory.testnet","amount_in":"10000000000000000000000","min_amount_out":"50000000"}}' prepaid-gas '280.0 Tgas' attached-deposit '0 NEAR' sign-as runner.owner.yield-demo.testnet network-config testnet sign-with-keychain send
 ```
 
 - Signer: `runner.owner.yield-demo.testnet`; receiver: `vault.owner.yield-demo.testnet`.
 - Cost: 0 NEAR.
 - Expected result: The transaction itself returns after the first receipt; the swap chain (ft_transfer_call to Ref, on_deposit, Ref swap, on_swap, pre-withdraw read, Ref withdraw, reconcile) takes several more blocks. Poll step 20 until `swap_in_flight` is false. Logs end in a `swap_executed` event.
 - Check (the plan's expectation): swap_executed event; balance of token_out >= min_amount_out
-- If it fails: This is the step most likely to fail and the least tested: no gas figure has been measured on Ref. 300 TGas attached against a 280 TGas minimum (MIN_EXECUTE_GAS); NEAR allows up to 1 PGas per transaction, so you may attach more, but the near-cli-rs skill documents 300 Tgas as its maximum (UNCONFIRMED against upstream). Read the vault README "Failure handling" table. If funds are stranded on Ref the vault records them in `stranded_on_ref` / `unverified_on_ref`. If a callback never ran, wait 10 minutes, then use the force release procedure in the Rollback section.
+- If it fails: This is the step most likely to fail and the least tested: no gas figure has been measured on Ref. 280 TGas attached, exactly the 280 TGas minimum (MIN_EXECUTE_GAS, checked with `>=`). If it fails for lack of gas, NEAR allows up to 1 PGas per transaction so you may attach more, but the near-cli-rs skill documents 300 Tgas as its maximum (UNCONFIRMED against upstream). Read the vault README "Failure handling" table. If funds are stranded on Ref the vault records them in `stranded_on_ref` / `unverified_on_ref`. If a callback never ran, wait 10 minutes, then use the force release procedure in the Rollback section.
 
 ### Phase: Check
 
@@ -616,7 +616,7 @@ Status meanings: CONFIRMED means checked against the source named in the last co
 | T3 | token | `ft_transfer`, `ft_balance_of` | standard NEP-141 | 1 yocto / view | vault passes 30 TGas | CONFIRMED (NEP-141 standard) |
 | W1 | wrap.testnet | `near_deposit` | none | NEAR to wrap | 30 TGas | UNCONFIRMED: payable methods cannot be RPC-checked. Inspect the deployed wrap.testnet code or run the step with 0.02 NEAR and read `ft_balance_of` |
 | N1 | near-cli-rs | every command shape in this document | n/a | n/a | n/a | UNCONFIRMED against upstream: shapes come from the repo skill `.agents/skills/near-cli-rs/SKILL.md` (v0.14+), not checked against the near-cli-rs README or `near --help`. Run `near --version` and `near contract call-function as-transaction --help` before the first send |
-| N2 | near-cli-rs | step 19 gas `'300.0 Tgas'` | n/a | n/a | 300 TGas | The skill lists 300 Tgas as the maximum; NEAR itself allows 1 PGas per transaction (CONFIRMED, docs.near.org gas page and testnet protocol config) |
+| N2 | near-cli-rs | step 19 gas `'280.0 Tgas'` | n/a | n/a | 280 TGas | The skill lists 300 Tgas as the maximum; NEAR itself allows 1 PGas per transaction (CONFIRMED, docs.near.org gas page and testnet protocol config) |
 | N3 | RPC | https://test.rpc.fastnear.com | n/a | n/a | n/a | CONFIRMED in the official provider list (docs.near.org). near-cli-rs `network-config testnet` uses its own default RPC; the provider it picks was not checked |
 
 ## Known gaps
@@ -626,7 +626,7 @@ Status meanings: CONFIRMED means checked against the source named in the last co
 - The Ref `swap` action field names (`pool_id`, `token_in`, `amount_in`, `token_out`, `min_amount_out`) were not read from first-party source (row R7). The Ref source repository and docs were unreachable on 2026-11-05.
 - Per-token Ref storage cost is not documented (row R11); how much `storage_withdraw` returns is untested (row R6).
 - Fixed: nusdc.ft-fin.testnet has 2 decimals on chain, and `src/yield/fixtures` now says 2 (it said 6). The nUSDC limits in the per-agent example configs were regenerated (1 nUSDC = 100 base units). The live example config uses the pool 0 pair (wrap.testnet to rft.tokenfactory.testnet) and was never affected.
-- Testnet liquidity is thin and the pools are idle, so rates may move or the pool may hold too little for larger swaps. The config's floor `min_rate` and `max_trade` are set for a tiny swap only.
+- Testnet liquidity is thin and the pools are idle, so rates may move or the pool may hold too little for larger swaps. The example swap is tiny (0.01 wNEAR); the config's `max_trade` (10 wNEAR) and `daily_cap` (30 wNEAR) are the demo caps, not the swap size, and its floor `min_rate` is a sanity floor 50% under the snapshot spot price.
 - near-cli-rs syntax is unverified against upstream (row N1). The create-account commands use `use-manually-provided-public-key`, which the repo skill documents; the tool, not this document, is the authority on the exact text, and the test only checks that they match.
 - The 261718 byte wasm was built with `non-reproducible-wasm`; nothing proves it equals a reviewed build.
 - Real gas burn is not estimated beyond the prepaid upper bound.
