@@ -1,7 +1,10 @@
 //! Yield Vault.
 //!
-//! A per-personality-NFT trading vault. Each personality NFT (aloof, chaotic,
-//! social, skeptic) is an AI agent running a strategy off chain. The agent can
+//! A trading vault for one personality (aloof, chaotic, social, skeptic), an
+//! AI agent running a strategy off chain. The vault is owned by a fixed
+//! `owner_id` account: `nft_contract_id` and `token_id` are recorded metadata
+//! only and are never checked, so transferring the NFT does not transfer the
+//! vault (every owner check is `predecessor == owner_id`). The agent can
 //! only act through approved *runner* accounts, and this contract enforces HARD
 //! limits regardless of what the strategy proposes: an allow-list of pools, a
 //! per-trade cap, a per-day cap, a minimum output, a pause switch and a
@@ -738,7 +741,25 @@ impl YieldVault {
                 self.fail_stranded(&fl, "swap_failed");
                 PromiseOrValue::Value(U128(0))
             }
-            Ok(out) if out.0 == 0 || out.0 < fl.min_amount_out => {
+            Ok(out) if out.0 == 0 => {
+                // Not expected on Ref: `check_rules` requires `min_amount_out > 0`
+                // and Ref's swap panics below it. If it happens anyway, Ref took
+                // `token_in` for nothing, so there is nothing on Ref to strand or
+                // recover. Say so explicitly instead of failing silently.
+                emit(
+                    "swap_zero_out",
+                    json!({
+                        "swap_id": swap_id,
+                        "pool_id": fl.pool_id,
+                        "token_in": fl.token_in,
+                        "amount_in": fl.amount_in.to_string(),
+                        "token_out": fl.token_out,
+                    }),
+                );
+                self.fail_stranded(&fl, "amount_out_zero");
+                PromiseOrValue::Value(U128(0))
+            }
+            Ok(out) if out.0 < fl.min_amount_out => {
                 self.strand(&fl.token_out, out.0, "amount_out_below_min");
                 self.fail_stranded(&fl, "amount_out_below_min");
                 PromiseOrValue::Value(U128(0))
