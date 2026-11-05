@@ -57,6 +57,8 @@ pub const GAS_CB_SWAP: Gas = Gas::from_tgas(110);
 pub const GAS_CB_DEPOSIT: Gas = Gas::from_tgas(180);
 /// Minimum prepaid gas for `execute_swap` (70 + 180 + own body + margin). Max tx gas is 300.
 pub const MIN_EXECUTE_GAS: Gas = Gas::from_tgas(280);
+/// Consecutive swaps that end stranded before the vault pauses itself.
+pub const MAX_CONSECUTIVE_STRANDS: u32 = 3;
 /// A swap lock older than this (ns, 10 minutes) may be force-released by the owner.
 pub const STALE_LOCK_NS: u64 = 600 * 1_000_000_000;
 /// A pending force release older than this (ns, 10 minutes) may be aborted by the owner.
@@ -268,6 +270,10 @@ pub struct YieldVault {
     /// Its transient credit may be visible to the release's `ft_balance_of`
     /// read, so that read is not trusted (treated as failed) when it resolves.
     release_tainted: bool,
+    /// Swaps in a row that ended in a strand (not a rollback). At
+    /// `MAX_CONSECUTIVE_STRANDS` the vault pauses itself. Reset by a completed
+    /// swap and by the owner's `unpause`.
+    consecutive_strands: u32,
     day: u64,
     spent_today: BTreeMap<AccountId, u128>,
     balances: BTreeMap<AccountId, u128>,
@@ -383,6 +389,7 @@ impl YieldVault {
             release: None,
             release_started_at: 0,
             release_tainted: false,
+            consecutive_strands: 0,
             day: day_of(env::block_timestamp()),
             spent_today: BTreeMap::new(),
             balances: BTreeMap::new(),
@@ -683,11 +690,11 @@ impl YieldVault {
             }
             Ok(d) if d.0 >= covered => {
                 self.strand(&fl.token_in, fl.amount_in, "deposit_landed_on_ref");
-                self.fail(&fl, "deposit_landed_on_ref");
+                self.fail_stranded(&fl, "deposit_landed_on_ref");
             }
             Ok(_) | Err(_) => {
                 self.strand_unverified(&fl.token_in, fl.amount_in, "deposit_unverified");
-                self.fail(&fl, "deposit_unverified");
+                self.fail_stranded(&fl, "deposit_unverified");
             }
         }
         U128(0)
@@ -708,12 +715,12 @@ impl YieldVault {
             Err(_) => {
                 // Deposit succeeded, swap failed: token_in sits in the vault's Ref account.
                 self.strand(&fl.token_in, fl.amount_in, "swap_failed");
-                self.fail(&fl, "swap_failed");
+                self.fail_stranded(&fl, "swap_failed");
                 PromiseOrValue::Value(U128(0))
             }
             Ok(out) if out.0 == 0 || out.0 < fl.min_amount_out => {
                 self.strand(&fl.token_out, out.0, "amount_out_below_min");
-                self.fail(&fl, "amount_out_below_min");
+                self.fail_stranded(&fl, "amount_out_below_min");
                 PromiseOrValue::Value(U128(0))
             }
             Ok(out) => {
@@ -750,12 +757,12 @@ impl YieldVault {
             // withdrawn. Strand it (recoverable) without crediting.
             Ok(_) => {
                 self.strand_unverified(&fl.token_out, fl.amount_out, "withdraw_pre_mismatch");
-                self.fail(&fl, "withdraw_pre_mismatch");
+                self.fail_stranded(&fl, "withdraw_pre_mismatch");
                 return PromiseOrValue::Value(U128(0));
             }
             Err(_) => {
                 self.strand(&fl.token_out, fl.amount_out, "withdraw_pre_unverified");
-                self.fail(&fl, "withdraw_pre_unverified");
+                self.fail_stranded(&fl, "withdraw_pre_unverified");
                 return PromiseOrValue::Value(U128(0));
             }
         };
@@ -799,17 +806,18 @@ impl YieldVault {
             Ok(d) if d.0.saturating_add(fl.amount_out) <= fl.ref_pre_out => {}
             Ok(_) => {
                 self.strand(&fl.token_out, fl.amount_out, "withdraw_not_reconciled");
-                self.fail(&fl, "withdraw_not_reconciled");
+                self.fail_stranded(&fl, "withdraw_not_reconciled");
                 return U128(0);
             }
             Err(_) => {
                 self.strand_unverified(&fl.token_out, fl.amount_out, "withdraw_unverified");
-                self.fail(&fl, "withdraw_unverified");
+                self.fail_stranded(&fl, "withdraw_unverified");
                 return U128(0);
             }
         }
         self.credit(&fl.token_out, fl.amount_out);
         self.swaps_executed += 1;
+        self.consecutive_strands = 0;
         self.in_flight = None;
         emit(
             "swap_executed",
@@ -851,6 +859,7 @@ impl YieldVault {
     pub fn unpause(&mut self) {
         self.owner_one_yocto();
         self.paused = false;
+        self.consecutive_strands = 0;
         emit("unpaused", json!({ "by": env::predecessor_account_id() }));
     }
 
@@ -1117,6 +1126,7 @@ impl YieldVault {
             if held_out {
                 self.credit(&token, amount);
                 self.swaps_executed += 1;
+                self.consecutive_strands = 0;
                 self.in_flight = None;
                 emit(
                     "swap_executed",
@@ -1666,6 +1676,26 @@ impl YieldVault {
             emit(
                 "stranded",
                 json!({ "token_id": r.token_id, "amount": r.amount.to_string(), "reason": why, "verified": verified }),
+            );
+        }
+    }
+
+    /// `fail` for a swap whose funds ended up stranded on Ref. A runner that
+    /// keeps proposing swaps Ref cannot fill (an unreachable `min_amount_out`)
+    /// strands `amount_in` each time, so after `MAX_CONSECUTIVE_STRANDS` in a
+    /// row the vault pauses itself; the owner recovers and unpauses.
+    fn fail_stranded(&mut self, fl: &InFlight, reason: &str) {
+        self.fail(fl, reason);
+        self.consecutive_strands = self.consecutive_strands.saturating_add(1);
+        if self.consecutive_strands >= MAX_CONSECUTIVE_STRANDS && !self.paused {
+            self.paused = true;
+            emit(
+                "auto_paused",
+                json!({
+                    "reason": "consecutive_strands",
+                    "count": self.consecutive_strands,
+                    "last_reason": reason,
+                }),
             );
         }
     }

@@ -3265,3 +3265,153 @@ fn release_swap_that_never_ran_emits_no_untracked_event() {
     assert!(!get_logs().join("\n").contains("ref_balance_untracked"));
     assert_eq!(unverified(&v, &wrap()), 100);
 }
+
+// ------------------------------------------------- L-5: spend vs strand/rollback
+
+#[test]
+fn strand_keeps_spend_counted_and_rollback_restores_it() {
+    // Pins current behavior: a stranded swap keeps its amount in today's spend
+    // (the funds sit on Ref, recoverable only by the owner); a rolled-back swap
+    // gives the spend back (the tokens never left).
+    let mut v = funded();
+    run(&mut v, proposal(400));
+    let id = v.next_swap_id;
+    cb_ctx(ok_result(&U128(400)), T0);
+    let _ = v.on_deposit(id, Ok(U128(400)));
+    cb_ctx(PromiseResult::Failed, T0);
+    let _ = v.on_swap(id, Err(PromiseError::Failed));
+    assert_eq!(stranded(&v, &wrap()), 400);
+    assert_eq!(spent_view(&v, &wrap()), 400, "strand keeps the spend");
+
+    run(&mut v, proposal(300));
+    assert_eq!(spent_view(&v, &wrap()), 700);
+    let id = v.next_swap_id;
+    cb_ctx(ok_result(&U128(0)), T0);
+    let _ = v.on_deposit(id, Ok(U128(0)));
+    assert_eq!(bal(&v, &wrap()), 9_600);
+    assert_eq!(spent_view(&v, &wrap()), 400, "rollback restores only its own, same-day spend");
+}
+
+// -------------------------------------------- L-4: auto-pause after repeated strands
+
+/// One swap that ends in a strand (`ref.swap` failed).
+fn strand_swap(v: &mut YieldVault) {
+    run(v, proposal(100));
+    let id = v.next_swap_id;
+    cb_ctx(ok_result(&U128(100)), T0);
+    let _ = v.on_deposit(id, Ok(U128(100)));
+    cb_ctx(PromiseResult::Failed, T0);
+    let _ = v.on_swap(id, Err(PromiseError::Failed));
+    assert!(!v.get_state().swap_in_flight);
+}
+/// One swap that completes (390 rft credited).
+fn good_swap(v: &mut YieldVault) {
+    run(v, proposal(100));
+    let id = v.next_swap_id;
+    cb_ctx(ok_result(&U128(100)), T0);
+    let _ = v.on_deposit(id, Ok(U128(100)));
+    cb_ctx(ok_result(&U128(390)), T0);
+    let _ = v.on_swap(id, Ok(U128(390)));
+    cb_ctx(ok_result(&U128(390)), T0);
+    let _ = v.on_withdraw_pre(id, Ok(U128(390)));
+    cb_ctx(ok_result(&U128(0)), T0);
+    v.on_withdraw_reconciled(id, Ok(U128(0)));
+    assert!(!v.get_state().swap_in_flight);
+}
+fn unpause(v: &mut YieldVault) {
+    testing_env!(ctx1("owner.testnet").build());
+    v.unpause();
+}
+
+#[test]
+fn three_consecutive_strands_pause_the_vault() {
+    let mut v = funded();
+    strand_swap(&mut v);
+    strand_swap(&mut v);
+    assert!(!v.get_state().paused, "two strands do not pause");
+    strand_swap(&mut v);
+    assert!(v.get_state().paused, "the third consecutive strand pauses");
+    let logs = get_logs().join("\n");
+    assert!(logs.contains("\"event\":\"auto_paused\"") && logs.contains("consecutive_strands"), "{logs}");
+    let r = v.check_proposal(proposal(100), acct("runner.testnet"));
+    assert!(!r.ok && r.reason.starts_with("ERR_PAUSED"), "{}", r.reason);
+}
+
+#[test]
+fn a_successful_swap_resets_the_strand_streak() {
+    let mut v = funded();
+    strand_swap(&mut v);
+    strand_swap(&mut v);
+    good_swap(&mut v);
+    strand_swap(&mut v);
+    strand_swap(&mut v);
+    assert!(!v.get_state().paused, "streak restarted after the success");
+    strand_swap(&mut v);
+    assert!(v.get_state().paused);
+}
+
+#[test]
+fn owner_unpause_resets_the_strand_streak() {
+    let mut v = funded();
+    strand_swap(&mut v);
+    strand_swap(&mut v);
+    unpause(&mut v);
+    strand_swap(&mut v);
+    strand_swap(&mut v);
+    assert!(!v.get_state().paused, "2 + 2 strands around an unpause do not pause");
+    strand_swap(&mut v);
+    assert!(v.get_state().paused);
+    unpause(&mut v);
+    assert!(!v.get_state().paused);
+    strand_swap(&mut v);
+    assert!(!v.get_state().paused, "a fresh streak after the auto-pause");
+}
+
+#[test]
+fn rolled_back_failures_do_not_count_as_strands() {
+    let mut v = funded();
+    for _ in 0..5 {
+        run(&mut v, proposal(100));
+        let id = v.next_swap_id;
+        cb_ctx(ok_result(&U128(0)), T0);
+        let _ = v.on_deposit(id, Ok(U128(0))); // nothing left the vault
+    }
+    assert!(!v.get_state().paused);
+    assert_eq!(bal(&v, &wrap()), 10_000);
+}
+
+#[test]
+fn other_strand_outcomes_count_too() {
+    // amount_out below the runner's own min_amount_out (the L-4 attack), then
+    // an unverified deposit, then a withdraw that did not reconcile.
+    let mut v = funded();
+    let mut p = proposal(100);
+    p.min_amount_out = U128(1_000_000);
+    run(&mut v, p);
+    let id = v.next_swap_id;
+    cb_ctx(ok_result(&U128(100)), T0);
+    let _ = v.on_deposit(id, Ok(U128(100)));
+    cb_ctx(ok_result(&U128(390)), T0);
+    let _ = v.on_swap(id, Ok(U128(390)));
+    assert_eq!(stranded(&v, &rft()), 390);
+
+    run(&mut v, proposal(100));
+    let id = v.next_swap_id;
+    cb_ctx(PromiseResult::Failed, T0);
+    let _ = v.on_deposit(id, Err(PromiseError::Failed));
+    cb_ctx(PromiseResult::Failed, T0);
+    v.on_deposit_reconciled(id, Err(PromiseError::Failed));
+    assert!(!v.get_state().paused);
+
+    run(&mut v, proposal(100));
+    let id = v.next_swap_id;
+    cb_ctx(ok_result(&U128(100)), T0);
+    let _ = v.on_deposit(id, Ok(U128(100)));
+    cb_ctx(ok_result(&U128(390)), T0);
+    let _ = v.on_swap(id, Ok(U128(390)));
+    cb_ctx(ok_result(&U128(390)), T0);
+    let _ = v.on_withdraw_pre(id, Ok(U128(390)));
+    cb_ctx(ok_result(&U128(390)), T0);
+    v.on_withdraw_reconciled(id, Ok(U128(390))); // deposit did not drop
+    assert!(v.get_state().paused);
+}
