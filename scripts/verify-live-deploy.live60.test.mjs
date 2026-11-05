@@ -1,6 +1,6 @@
-// Regression: `verify.sh --live` runs the "deploy nft" stage inside a fresh clone,
-// where contracts/personality-nft/target/ (gitignored) does not exist. The stage
-// must still pass as a dry run. Runs the exact args verify.sh passes, offline.
+// Regression (#189 review): `verify.sh --live` runs the "deploy nft" stage; when the
+// contract wasm has not been built it must FAIL ("wasm not found"), not pass via a
+// --json plan that skips the wasm-built gate. Runs the exact args verify.sh passes, offline.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -42,16 +42,14 @@ function run(extra, wasm) {
   });
 }
 
-test("verify.sh deploy nft stage passes when the wasm was never built (fresh clone)", () => {
+test("verify.sh deploy nft stage fails when the wasm was never built (wasm gate kept)", () => {
   const dir = mkdtempSync(join(tmpdir(), "live60-deploy-"));
   try {
-    const wasm = join(dir, "missing.wasm");
-    const r = run(plannedArgs(), wasm);
-    assert.equal(r.status, 0, r.stdout + r.stderr);
-    const out = r.stdout + r.stderr;
-    assert.match(out, /new_default_meta/);
-    assert.match(out, /nft-x\.testnet/);
-    assert.doesNotMatch(out, /wasm not found/);
+    const args = plannedArgs();
+    assert.ok(!args.includes("--json"), "verify.sh must not pass --json (it skips the wasm gate)");
+    const r = run(args, join(dir, "missing.wasm"));
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stdout + r.stderr, /wasm not found/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
