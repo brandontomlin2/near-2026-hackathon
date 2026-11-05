@@ -33,6 +33,38 @@ function run(script, args, { cwd, env = {} } = {}) {
   });
 }
 
+describe("regression: running the CLI through a symlink", () => {
+  // Bug: the entry-point check compared argv[1] (the symlink) to import.meta.url (the realpath),
+  // so a symlinked launch did nothing: exit 0, no output, even for a bad flag.
+  test("a symlinked script prints the dry-run report exactly like the real path", () => {
+    const link = path.join(tmp, "linked-anchor.mjs");
+    fs.symlinkSync(SCRIPT, link);
+    const real = run(SCRIPT, ["--dry-run"]);
+    const viaLink = run(link, ["--dry-run"]);
+    assert.equal(viaLink.status, 0);
+    assert.ok(viaLink.stdout.length > 0, "symlinked run printed nothing");
+    assert.equal(viaLink.stdout, real.stdout);
+    assert.equal(JSON.parse(viaLink.stdout).status, "dry-run");
+  });
+
+  test("a symlinked script still rejects a bad flag with exit 2, not a silent exit 0", () => {
+    const link = path.join(tmp, "linked-anchor-bad.mjs");
+    fs.symlinkSync(SCRIPT, link);
+    const r = run(link, ["--send"]);
+    assert.equal(r.status, 2);
+    assert.equal(r.stdout, "");
+    assert.equal(r.stderr, 'anchor: unknown argument "--send" (see --help)\n');
+  });
+
+  test("a symlinked directory in front of the script works too", () => {
+    const dirLink = path.join(tmp, "scripts-link");
+    fs.symlinkSync(path.dirname(SCRIPT), dirLink);
+    const r = run(path.join(dirLink, "anchor.mjs"), ["--dry-run", "--check"]);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /^OK: round hashes are deterministic \(3 rounds/);
+  });
+});
+
 describe("launch environment", () => {
   test("the report is the same from any cwd, and nothing is written there", () => {
     const cwd = fs.mkdtempSync(path.join(tmp, "cwd-"));
