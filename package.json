@@ -9,7 +9,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test --test-reporter=spec 'scripts/**/*.test.mjs' 'src/**/*.test.mjs'",
+    "test": "node scripts/require-node.mjs && node --test --test-reporter=spec 'scripts/**/*.test.mjs' 'src/**/*.test.mjs'",
     "test:contract": "cd contracts/personality-nft && cargo test",
     "build:contract": "cd contracts/personality-nft && cargo near build non-reproducible-wasm",
     "infer": "node scripts/infer.mjs",
@@ -28,6 +28,7 @@
     "deploy:nft": "node scripts/testnet-deploy.mjs deploy",
     "mint": "node scripts/testnet-deploy.mjs mint",
     "live:check": "node scripts/live-check.mjs",
-    "live-proof": "node scripts/live-proof.mjs"
+    "live-proof": "node scripts/live-proof.mjs",
+    "live:dry-run": "node scripts/live-proof.mjs --dry-run"
   }
 }

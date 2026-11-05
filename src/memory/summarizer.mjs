@@ -10,7 +10,7 @@
 // The summary call goes through src/inference/client.mjs, so mock mode (the
 // default) stays deterministic and needs no keys.
 
-import { mkdir, readFile, rename, writeFile, appendFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile, appendFile, truncate, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
 import { hashSheet } from "../anchor/hash.mjs";
@@ -170,17 +170,21 @@ export function buildSummaryMessages({ name, previous, events }) {
  *   round: number,
  *   log: ReadonlyArray<object>,
  *   previous?: { sheet: string, throughIndex: number } | null,
+ *   sheetFile?: string,
  * }} input
+ *
+ * `sheetFile` is only used to name the sheet file in a bad_state error.
  * @returns {Promise<{ tokenId: string, round: number, sheet: string, sheetHash: string, throughIndex: number, newEvents: number, mode: string, model: string }>}
  */
-export async function summarize({ client, tokenId, name, round, log, previous = null }) {
+export async function summarize({ client, tokenId, name, round, log, previous = null, sheetFile }) {
   assertTokenId(tokenId);
   if (typeof name !== "string" || name.length === 0) {
     throw new MemoryError("name must be a non-empty string", { code: "bad_request" });
   }
   const start = previous ? previous.throughIndex : 0;
   if (!Number.isInteger(start) || start < 0 || start > log.length) {
-    throw new MemoryError("previous.throughIndex is outside the log", { code: "bad_state" });
+    const where = typeof sheetFile === "string" && sheetFile.length > 0 ? ` (sheet file ${sheetFile})` : "";
+    throw new MemoryError(`previous.throughIndex is outside the log${where}`, { code: "bad_state" });
   }
   const fresh = log.slice(start);
   const messages = buildSummaryMessages({
@@ -206,6 +210,25 @@ export async function summarize({ client, tokenId, name, round, log, previous = 
   };
 }
 
+const isCount = (v) => Number.isSafeInteger(v) && v >= 0;
+
+const SHEET_FIELD_CHECKS = [
+  ["tokenId", (v, tokenId) => typeof v === "string" && v === tokenId, "expected the token id being read"],
+  ["round", isCount, "expected a non-negative integer"],
+  ["sheet", (v) => typeof v === "string" && v.length > 0, "expected a non-empty string"],
+  ["sheetHash", (v) => typeof v === "string" && /^[0-9a-f]{64}$/.test(v), "expected 64 lowercase hex characters"],
+  ["throughIndex", isCount, "expected a non-negative integer"],
+];
+
+/** Throw bad_sheet on the first field of a sheet record that callers cannot rely on. */
+function checkSheetRecord(value, tokenId, file) {
+  for (const [field, ok, reason] of SHEET_FIELD_CHECKS) {
+    if (ok(value[field], tokenId)) continue;
+    const got = value[field] === undefined ? "missing" : (JSON.stringify(value[field]) ?? String(value[field])).slice(0, 40);
+    throw new MemoryError(`the sheet file ${file} has a bad ${field}: ${reason} (got ${got})`, { code: "bad_sheet" });
+  }
+}
+
 /**
  * File-backed store, one directory per token id:
  *   <root>/<tokenId>/log.jsonl   append-only, one event per line
@@ -218,8 +241,14 @@ export function createMemoryStore(root) {
     throw new MemoryError("store root must be a non-empty path", { code: "bad_config" });
   }
   const dirFor = (tokenId) => join(root, assertTokenId(tokenId));
+  const sheetFileFor = (tokenId) => join(dirFor(tokenId), "sheet.json");
 
   return {
+    /** @param {string} tokenId @returns {string} the path of this token's sheet.json */
+    sheetFile(tokenId) {
+      return sheetFileFor(tokenId);
+    },
+
     /** @param {string} tokenId @param {object} event */
     async appendEvent(tokenId, event) {
       const checked = makeEvent(event);
@@ -227,6 +256,37 @@ export function createMemoryStore(root) {
       await mkdir(dir, { recursive: true });
       await appendFile(join(dir, "log.jsonl"), `${JSON.stringify(checked)}\n`, "utf8");
       return checked;
+    },
+
+    /**
+     * Cut the log back to its first `count` events, to undo appends after a failed
+     * sheet write. Truncates in place, so it works even in a read-only directory.
+     * @param {string} tokenId @param {number} count
+     */
+    async truncateLog(tokenId, count) {
+      if (!Number.isInteger(count) || count < 0) {
+        throw new MemoryError("count must be a non-negative integer", { code: "bad_request" });
+      }
+      const file = join(dirFor(tokenId), "log.jsonl");
+      let raw;
+      try {
+        raw = await readFile(file);
+      } catch (err) {
+        if (err && err.code === "ENOENT" && count === 0) return;
+        throw new MemoryError("could not read the event log", { code: "io_error", cause: err });
+      }
+      // Count events the way readLog() does: blank lines are skipped, not counted,
+      // so "event one, blank line, event two" keeps event two when count is 2.
+      let offset = 0;
+      let seen = 0;
+      while (seen < count) {
+        if (offset >= raw.length) return; // fewer than `count` events: nothing to cut
+        const nl = raw.indexOf(0x0a, offset);
+        const end = nl === -1 ? raw.length : nl;
+        if (end > offset) seen += 1;
+        offset = nl === -1 ? raw.length : nl + 1;
+      }
+      await truncate(file, offset);
     },
 
     /** @param {string} tokenId @returns {Promise<object[]>} */
@@ -253,19 +313,26 @@ export function createMemoryStore(root) {
 
     /** @param {string} tokenId @returns {Promise<{ tokenId: string, round: number, sheet: string, sheetHash: string, throughIndex: number } | null>} */
     async readSheet(tokenId) {
-      const file = join(dirFor(tokenId), "sheet.json");
+      const file = sheetFileFor(tokenId);
       let raw;
       try {
         raw = await readFile(file, "utf8");
       } catch (err) {
         if (err && err.code === "ENOENT") return null;
-        throw new MemoryError("could not read the sheet", { code: "io_error", cause: err });
+        throw new MemoryError(`could not read the sheet file ${file}`, { code: "io_error", cause: err });
       }
+      let value;
       try {
-        return JSON.parse(raw);
+        value = JSON.parse(raw);
       } catch (err) {
-        throw new MemoryError("the sheet file is malformed", { code: "bad_sheet", cause: err });
+        throw new MemoryError(`the sheet file ${file} is malformed`, { code: "bad_sheet", cause: err });
       }
+      if (value === null || typeof value !== "object" || Array.isArray(value)) {
+        const kind = value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
+        throw new MemoryError(`the sheet file ${file} is not a sheet record (got ${kind})`, { code: "bad_sheet" });
+      }
+      checkSheetRecord(value, tokenId, file);
+      return value;
     },
 
     /** @param {string} tokenId @param {{ tokenId: string, round: number, sheet: string, sheetHash: string, throughIndex: number }} record */
@@ -274,8 +341,18 @@ export function createMemoryStore(root) {
       await mkdir(dir, { recursive: true });
       const target = join(dir, "sheet.json");
       const temp = `${target}.tmp`;
-      await writeFile(temp, `${JSON.stringify(record, null, 2)}\n`, "utf8");
-      await rename(temp, target);
+      try {
+        await writeFile(temp, `${JSON.stringify(record, null, 2)}\n`, "utf8");
+        await rename(temp, target);
+      } catch (err) {
+        // Do not leave the temp file behind; the original error is the one that matters.
+        try {
+          await unlink(temp);
+        } catch {
+          // nothing to remove, or not removable
+        }
+        throw err;
+      }
     },
   };
 }
@@ -290,7 +367,7 @@ export function createMemoryStore(root) {
 export async function maybeSummarize({ client, store, tokenId, name, round, every }) {
   if (!shouldSummarize(round, every)) return null;
   const [log, previous] = await Promise.all([store.readLog(tokenId), store.readSheet(tokenId)]);
-  const record = await summarize({ client, tokenId, name, round, log, previous });
+  const record = await summarize({ client, tokenId, name, round, log, previous, sheetFile: store.sheetFile(tokenId) });
   await store.writeSheet(tokenId, record);
   return record;
 }

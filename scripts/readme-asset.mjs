@@ -39,6 +39,40 @@ const OWN_ASSET = Object.freeze({
  * before the demo, so a refusal writes nothing. Throws an Error with a one-line message.
  */
 export function assertAssetsWritable(dir, force) {
+  // Check every output before any is written, so a refusal never leaves a partial write.
+  for (const name of Object.keys(OWN_ASSET)) {
+    const file = path.join(dir, name);
+    let st;
+    try {
+      st = fs.lstatSync(file);
+    } catch (e) {
+      if (e.code === "ENOENT" || e.code === "ENOTDIR") continue;
+      throw new Error(`cannot inspect ${file}: ${e.message}`);
+    }
+    if (st.isSymbolicLink()) {
+      // A dangling link is absent (writeAssets replaces the link itself). A link to
+      // a directory or to a foreign file is refused, even with --force.
+      let target;
+      try {
+        target = fs.statSync(file);
+      } catch (e) {
+        if (e.code === "ENOENT" || e.code === "ENOTDIR" || e.code === "ELOOP") continue;
+        throw new Error(`cannot inspect ${file}: ${e.message}`);
+      }
+      let text = null;
+      if (target.isFile()) {
+        try {
+          text = fs.readFileSync(file, "utf8");
+        } catch (e) {
+          throw new Error(`cannot read existing ${file}: ${e.message}`);
+        }
+      }
+      if (text === null || !OWN_ASSET[name].test(text)) throw new Error(`${file} is a symbolic link to a directory or to a file that is not an asset this tool wrote; refusing to write through it`);
+      continue;
+    }
+    // Without --force the content check below already refuses a directory.
+    if (force && st.isDirectory()) throw new Error(`${file} is a directory; remove it or pick another --out`);
+  }
   if (force) return;
   for (const [name, pattern] of Object.entries(OWN_ASSET)) {
     const file = path.join(dir, name);
@@ -93,6 +127,8 @@ export function writeAssets(assets, dir, log = console.log) {
   fs.mkdirSync(dir, { recursive: true });
   for (const [name, text] of Object.entries(assets)) {
     const file = path.join(dir, name);
+    // Never write through a symlink: replace the link itself.
+    if (fs.lstatSync(file, { throwIfNoEntry: false })?.isSymbolicLink()) fs.unlinkSync(file);
     fs.writeFileSync(file, text);
     log(`wrote ${file}`);
   }

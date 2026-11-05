@@ -76,11 +76,12 @@ const ANCHOR_TOKEN = "aloof";
 const PLACEHOLDER_CONTRACT = "<NEAR_CONTRACT_ACCOUNT_ID>";
 const PLACEHOLDER_OWNER = "<NEAR_ACCOUNT_ID>";
 
-const USAGE = `Usage: node scripts/live-proof.mjs [--send --i-approve --media-base <url>] [--out <file>] [--force] [--update-example]
+const USAGE = `Usage: node scripts/live-proof.mjs [--dry-run] [--send --i-approve --media-base <url>] [--out <file>] [--force] [--update-example]
 
 Default is a dry run: prints the deploy, mint (4 tokens) and anchor_sheet steps and writes
 an example evidence file. Nothing is signed or sent.
 
+  --dry-run      explicit form of the default: print the plan, send nothing (refused with --send)
   --send         really send all steps on testnet (needs NEAR_ACCOUNT_ID,
                  NEAR_CONTRACT_ACCOUNT_ID, --i-approve and --media-base); writes the
                  transaction hashes to ${TX_FILE_LABEL} and prints the npm run evidence command
@@ -157,6 +158,19 @@ export async function buildPlan({ contract, owner, env, mediaBase = null }) {
   return [deploy, ...mints, buildAnchorStep({ contract, owner })];
 }
 
+/** Exact total of "<decimal> NEAR" deposit strings, in yocto (BigInt), shown as a trimmed decimal. */
+export function totalDeposit(steps) {
+  let yocto = 0n;
+  for (const s of steps) {
+    const m = /^(\d+)(?:\.(\d{1,24}))?\s+NEAR$/.exec(s.deposit);
+    if (!m) throw new Error(`unreadable deposit ${JSON.stringify(s.deposit)} in step ${s.name}`);
+    yocto += BigInt(m[1]) * 10n ** 24n + BigInt((m[2] ?? "").padEnd(24, "0"));
+  }
+  const whole = yocto / 10n ** 24n;
+  const frac = (yocto % 10n ** 24n).toString().padStart(24, "0").replace(/0+$/, "");
+  return `${whole}${frac ? `.${frac}` : ""} NEAR`;
+}
+
 const nearLine = (step) => `near ${step.argv.map(shellQuote).join(" ")}`;
 
 function formatPlan(steps) {
@@ -210,6 +224,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === "--send") opts.send = true;
+    else if (a === "--dry-run") opts.dryRun = true; // explicit no-op: the dry run is already the default
     else if (a === "--i-approve") opts.approve = true;
     else if (a === "--force") opts.force = true;
     else if (a === "--update-example") opts.updateExample = true;
@@ -228,6 +243,7 @@ function parseArgs(argv) {
     } else if (a === "-h" || a === "--help") opts.help = true;
     else throw new UsageError(`unknown argument: ${a}`);
   }
+  if (opts.dryRun && opts.send) throw new UsageError("--dry-run and --send contradict each other; pass one. Nothing was run.");
   if (opts.updateExample && opts.outGiven) throw new UsageError("--update-example and --out cannot be combined");
   // Review L-6: these three name the dry run's example file, which --send never writes.
   // Refused rather than ignored, so nobody expects a record that was not made.
@@ -353,6 +369,10 @@ export async function run(argv, env = process.env, deps = {}) {
     out(`network: ${NETWORK}   owner: ${owner}   contract: ${contract}`);
     out("");
     out(formatPlan(steps));
+    const agents = steps.filter((s) => s.name.startsWith("mint ")).map((s) => s.args.token_id).join(", ");
+    out(`summary: contract ${contract}  owner ${owner}  agents ${agents}  total deposit ${totalDeposit(steps)}`);
+    out(`summary: anchor sheet_hash ${steps.at(-1).sheetHash}`);
+    out("");
     const evidence = exampleEvidence({ contract, owner, steps });
     mkdirSync(path.dirname(opts.out), { recursive: true });
     writeFileSync(opts.out, `${JSON.stringify(evidence, null, 2)}\n`);

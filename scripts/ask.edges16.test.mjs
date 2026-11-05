@@ -252,16 +252,14 @@ test("sheet.json that is valid JSON of the wrong shape fails cleanly: nonzero, o
   }
 });
 
-test("a hand-edited negative round with a sheet text is tolerated: the round comes from the log, the hash is recomputed, the output is coherent", () => {
+test("a hand-edited negative round is a bad_sheet memory error naming the field, nothing written", () => {
   const out = fresh();
-  const lastLogRound = logEvents(out).at(-1).round;
-  writeFileSync(sheetPath(out), '{"round":-1,"sheet":"x","sheetHash":"y","throughIndex":0}');
+  writeFileSync(sheetPath(out), JSON.stringify({ ...sheetOf(out), round: -1 }));
+  const before = snapshot(out);
   const r = ask(["--out", out, "chaotic", "hello?"]);
-  assert.equal(r.code, 0, r.stderr);
-  const after = sheetOf(out);
-  assert.equal(after.round, lastLogRound + 1);
-  assert.equal(after.sheetHash, hashSheet(after.sheet));
-  assert.match(lastLine(r.stdout), new RegExp(`^sheet chaotic round ${after.round} ${after.sheetHash} `));
+  assert.equal(r.code, 1, r.stderr);
+  assert.match(r.stderr, /ask: memory error \(bad_sheet\): the sheet file .* has a bad round: /);
+  assert.deepEqual(snapshot(out), before);
 });
 
 test("empty and truncated sheet.json are a bad_sheet memory error, nothing written", () => {
@@ -271,7 +269,7 @@ test("empty and truncated sheet.json are a bad_sheet memory error, nothing writt
     const before = snapshot(out);
     const r = ask(["--out", out, "chaotic", "hello?"]);
     assert.equal(r.code, 1, JSON.stringify(body));
-    assert.equal(r.stderr, `${MODE_LINE}ask: memory error (bad_sheet): the sheet file is malformed\n`);
+    assert.equal(r.stderr, `${MODE_LINE}ask: memory error (bad_sheet): the sheet file ${sheetPath(out)} is malformed\n`);
     assert.deepEqual(snapshot(out), before);
   }
 });
