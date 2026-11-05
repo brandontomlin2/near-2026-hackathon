@@ -42,6 +42,7 @@ async function rpcViewAccount(fetchFn, account) {
     }),
     signal: AbortSignal.timeout(8000),
   });
+  if (res.ok === false) throw Object.assign(new Error(`rpc http ${res.status}`), { httpStatus: res.status });
   const body = await res.json();
   if (body.error) {
     const text = JSON.stringify(body.error);
@@ -93,8 +94,10 @@ export async function check(env = process.env, deps = {}) {
         else if (name === contractName && value !== env.NEAR_ACCOUNT_ID) {
           lines.push(`[note] ${name} does not exist on ${NETWORK} yet (create it outside this repo before deploy)`);
         } else add(false, `${name} does not exist on ${NETWORK}; create it outside this repo`);
-      } catch {
-        lines.push(`[skip] account existence check skipped for ${name}: RPC unreachable (offline?)`);
+      } catch (e) {
+        lines.push(e?.httpStatus
+          ? `[skip] account existence check skipped for ${name}: RPC error (HTTP ${e.httpStatus})`
+          : `[skip] account existence check skipped for ${name}: RPC unreachable (offline?)`);
       }
     }
   }

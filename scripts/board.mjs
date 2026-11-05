@@ -147,7 +147,12 @@ function serializeItems(items) {
 
 function loadItems(file) {
   if (!fs.existsSync(file)) return [];
-  const raw = fs.readFileSync(file, "utf8");
+  let raw;
+  try {
+    raw = fs.readFileSync(file, "utf8");
+  } catch (err) {
+    fail(`board/board.json cannot be read (${err.code ?? err.message})`);
+  }
   if (raw.trim() === "") return [];
   let data;
   try {
