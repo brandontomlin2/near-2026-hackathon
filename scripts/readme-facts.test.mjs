@@ -505,7 +505,23 @@ test("README swarm steps read out/swarm before the seed 2 run overwrites it, and
   assert.ok(steps[seed2].text.includes("overwrites `out/swarm/`"));
   assert.ok(readmeText.includes("`npm run anchor` never signs"));
   assert.ok(!readmeText.includes("deploy, mint and anchor are dry runs"));
-  assert.ok(readmeText.includes("about 30 seconds to 2 minutes measured"));
+  assert.ok(readmeText.includes("about 1 to 2 minutes measured on an Apple-silicon Mac with the Rust build cached"));
+  assert.ok(!readmeText.includes("about 30 seconds to 2 minutes"), "pre-vault-tests timing is gone");
   assert.ok(!readmeText.includes("about 20 to 30 seconds"));
   assert.ok(readmeText.includes("the fifth of the six runs makes the Owner public enemy #1") && readmeText.includes("the sixth only raises the count"));
+});
+
+test("README's verify.sh row counts and stage list match the stages verify.sh requires", async () => {
+  const verify = await readFile(join(root, "scripts/verify.sh"), "utf8");
+  const block = verify.match(/local expected_stages=\(([\s\S]*?)\n\s*\)/);
+  assert.ok(block, "verify.sh declares expected_stages");
+  const stages = [...block[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(stages.length >= 10, `parsed ${stages.length} stages`);
+  const rowClaims = [...readmeText.matchAll(/(\d+)-row `STATUS \/ STAGE \/ DETAIL` table/g)].map((m) => Number(m[1]));
+  assert.ok(rowClaims.length >= 2, "quick path and Try it both state the row count");
+  for (const n of rowClaims) assert.equal(n, stages.length, `README says ${n}-row, verify.sh has ${stages.length} stages`);
+  const listed = readmeText.match(/table of (\d+) rows \(([^)]+)\)/);
+  assert.ok(listed, "Validate locally lists the rows");
+  assert.equal(Number(listed[1]), stages.length);
+  assert.deepEqual(listed[2].split(", "), stages, "Validate locally lists the stages in verify.sh order");
 });

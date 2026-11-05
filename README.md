@@ -23,6 +23,8 @@ Everything here is mock or dry-run. Nothing is signed or sent, no key or account
 
 The numbered steps in the next section go deeper.
 
+For the undeployed Yield Optimizer vault runner plan (offline, nothing signed): `npm run yield:shade:dry-run` — see `SHADE AGENT RUNNER PLAN - DRY RUN - offline, nothing signed, nothing sent` and `dry_run: true, signed: false, sent: false`.
+
 ## What this is
 
 Problem: when an AI character moves to a new app or a new owner, it forgets who it was, and the new owner has no agreed record of which history came with it. This NFT carries the hash of the character's current sheet, so the new owner can check that the sheet they received is the one the previous owner anchored.
@@ -94,7 +96,7 @@ Nothing in this repository is deployed or live on testnet. The contract is unit-
 
 ## Work in progress: Yield Optimizer
 
-A fifth personality, the Yield Optimizer, is partly built, all of it offline and undeployed: a vault contract with on-chain rules and a planner that proposes swaps checked against those rules, shown by `npm run yield:demo` (see [Yield Optimizer](#yield-optimizer)). The Shade Agent part is a dry run and a plan, not a deployment: `npm run yield:shade:dry-run` prints, offline, the payloads a Shade Agent runner would build (the MPC-derived executor key, `add_runner`, `AddKey`, the unsigned `execute_swap` transaction and the MPC `sign` request); see [Shade Agent dry run](#shade-agent-dry-run-npm-run-yieldshadedry-run). The plan and the go/no-go are in [`docs/yield-shade-agent-plan.md`](docs/yield-shade-agent-plan.md) and the owner checklist is [`docs/yield-shade-go-nogo.md`](docs/yield-shade-go-nogo.md); every step that signs, deploys or spends is not done and needs the owner's explicit yes. The older spike `spikes/shade/` computes the same chain-signature key offline (matched against live testnet view calls). All of it signs and sends nothing and is not part of the demo or of the tracks claimed above. Design note: [`docs/spikes/shade-agent.md`](docs/spikes/shade-agent.md).
+A fifth personality, the Yield Optimizer, is partly built, all of it offline and undeployed: a vault contract with on-chain rules and a planner that proposes swaps checked against those rules, shown by `npm run yield:demo` (see [Yield Optimizer](#yield-optimizer)). The Shade Agent part is a dry run and a plan, not a deployment: `npm run yield:shade:dry-run` prints, offline, the payloads a Shade Agent runner would build (the MPC-derived executor key, `add_runner`, `AddKey`, the unsigned `execute_swap` transaction and the MPC `sign` request); see [Shade Agent dry run](#shade-agent-dry-run-npm-run-yieldshadedry-run). The plan and the go/no-go are in [`docs/yield-shade-agent-plan.md`](docs/yield-shade-agent-plan.md) and the owner checklist is [`docs/yield-shade-go-nogo.md`](docs/yield-shade-go-nogo.md); every step that signs, deploys or spends is not done and needs the owner's explicit yes. The older spike `spikes/shade/` computes the same chain-signature key offline. The spike's own `node spikes/shade/dry-run.mjs` builds an older `execute_swap` payload that the vault would refuse (no `pool_id`, 50 TGas); use `npm run yield:shade:dry-run` instead. (matched against live testnet view calls). All of it signs and sends nothing and is not part of the demo or of the tracks claimed above. Design note: [`docs/spikes/shade-agent.md`](docs/spikes/shade-agent.md).
 
 ## Repository layout
 
