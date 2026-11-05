@@ -62,6 +62,16 @@ describe("yield:demo default run", () => {
     assert.doesNotMatch(r.stdout, STACK);
   });
 
+  it("summary says why each vetoed agent does not execute, matching plan.json", () => {
+    const summary = r.stdout.slice(0, r.stdout.indexOf("== details =="));
+    const vetoed = readJson(join(dir, "plan.json")).agents.filter((a) => a.veto);
+    assert.ok(vetoed.length >= 1, "the mock round has a veto");
+    for (const a of vetoed) {
+      assert.ok(summary.split("\n").includes(`  ${a.agent} vetoed by ${a.veto.by}: ${a.veto.reason}`), `${a.agent} veto line`);
+    }
+    assert.match(summary, /^ {2}chaotic vetoed by skeptic: size is 10000 bps of max_trade, above the 8000 bps audit line$/m);
+  });
+
   it("writes exactly plan.json and calls.json", () => {
     assert.deepEqual(files(dir), ["calls.json", "plan.json"]);
   });

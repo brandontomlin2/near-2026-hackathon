@@ -205,6 +205,8 @@ export function renderSummary({ doc }, paths = []) {
     line(rows[0]),
     ...rows.slice(1).map(line),
   ];
+  // Say why a proposal that passed the vault rules still does not execute (a veto), so the table reads on its own.
+  for (const a of doc.agents) if (a.veto) lines.push(`  ${a.agent} vetoed by ${a.veto.by}: ${a.veto.reason}`);
   for (const c of notes) lines.push(`  optimizer candidate ${c.summary}: ${c.status === "ok" ? "OK" : c.status === "refused" ? `REFUSED ${c.rule_check.reason}` : c.status}`);
   lines.push("", `${doc.calls_planned} unsigned execute_swap calls planned, ${doc.calls_signed} signed, ${doc.calls_sent} sent`);
   for (const p of paths) lines.push(`wrote ${p}`);
