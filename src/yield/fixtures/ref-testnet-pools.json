@@ -16,7 +16,7 @@
       "mock_usd_price": "1.00"
     },
     "nusdc.ft-fin.testnet": {
-      "decimals": 6,
+      "decimals": 2,
       "stable": true,
       "mock_usd_price": "1.00"
     },

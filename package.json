@@ -22,6 +22,8 @@
     "demo": "node scripts/demo.mjs",
     "yield": "node scripts/yield.mjs",
     "yield:demo": "node scripts/yield-demo.mjs",
+    "yield:live:dry-run": "node scripts/yield-live.mjs dry-run",
+    "yield:live:preflight": "node scripts/yield-live.mjs preflight",
     "screenshot": "node scripts/screenshot.mjs",
     "readme-asset": "node scripts/readme-asset.mjs",
     "site": "node scripts/site.mjs",

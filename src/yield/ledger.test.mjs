@@ -124,14 +124,16 @@ test("formatUsd and formatScoreboard render signed micro-USD", () => {
 });
 
 test("mockFill values both sides at reference prices when the pool spot ratio differs from the reference ratio", () => {
-  // Pool 1 holds NUSDT/NUSDC at about 5.3:1, but both tokens have a $1 reference price (6 decimals each).
+  // Pool 1 is far off peg: nUSDT (6 decimals) reserve 237316 = 0.237316 against nUSDC (2 decimals) reserve 44411 = 444.11.
+  // Both tokens have a $1 reference price, so 1 nUSDC base unit is worth 10^4 micro-USD and 1 nUSDT base unit 1 micro-USD.
   const sell = mockFill({ pool_id: 1, token_in: "nusdt.ft-fin.testnet", token_out: "nusdc.ft-fin.testnet", amount_in: "500", min_amount_out: "1" }, { fixture });
   assert.equal(sell.amount_out, "93");
-  const loss = BigInt(sell.pnl_micro_usd);
-  assert.ok(loss >= -408n && loss <= -406n, `selling 500 for 93 is about -407 micro-USD, got ${loss}`);
+  // 93 nUSDC base = 0.93 USD = 930000 micro-USD (less the -1 bps drift), against 500 micro-USD in: about +929407.
+  const gain = BigInt(sell.pnl_micro_usd);
+  assert.ok(gain >= 929405n && gain <= 929409n, `selling 500 nUSDT base for 93 nUSDC base is about +929407 micro-USD, got ${gain}`);
   const buy = mockFill({ pool_id: 1, token_in: "nusdc.ft-fin.testnet", token_out: "nusdt.ft-fin.testnet", amount_in: "500", min_amount_out: "1" }, { fixture });
-  const out = BigInt(buy.amount_out);
-  assert.ok(out > 500n);
-  const gain = BigInt(buy.pnl_micro_usd);
-  assert.ok(gain >= out - 500n - 2n && gain <= out - 500n + 2n, `the reference-value gain is out - 500, got ${gain} for out ${out}`);
+  assert.equal(buy.amount_out, "2636");
+  // 500 nUSDC base = 5.00 USD = 5000000 micro-USD in, 2636 nUSDT base = 2636 micro-USD out: about -4997364.
+  const loss = BigInt(buy.pnl_micro_usd);
+  assert.ok(loss >= -4997366n && loss <= -4997362n, `buying 2636 nUSDT base with 500 nUSDC base is about -4997364 micro-USD, got ${loss}`);
 });
