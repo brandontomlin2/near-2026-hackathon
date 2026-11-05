@@ -4,7 +4,7 @@
 // holds whatever the agent or the model says.
 
 import { AGENTS } from "../traits/agents.mjs";
-import { loadPoolFixture, poolById } from "./pools.mjs";
+import { MAX_REF_DEVIATION_BPS, STABLE_PEG_BPS, loadPoolFixture, otherToken, poolById, referenceRate } from "./pools.mjs";
 
 export const STRATEGY_VERSION = 1;
 export const WNEAR = "wrap.testnet";
@@ -86,7 +86,10 @@ const POOL_PAIRS = {
   1: { pool_id: 1, token_a: NUSDT, token_b: NUSDC },
 };
 
-/** Margin below the snapshot's spot price that the price floor leaves, in bps (50%: generous, a sanity floor, not a slippage rule). */
+/**
+ * Fallback margin below the snapshot's spot price that the price floor leaves, in bps (50%:
+ * generous, a sanity floor, not a slippage rule). Used only for pairs with no reference price.
+ */
 export const FLOOR_MARGIN_BPS = 5000n;
 
 const gcd = (a, b) => (b === 0n ? a : gcd(b, a % b));
@@ -100,15 +103,30 @@ function toBaseUnits(whole, token, fixture) {
 
 /**
  * Price floor for selling `tokenIn` in `pool`, as {num, den} decimal strings with
- * min_amount_out * den >= amount_in * num on chain. Derived from the snapshot's spot price
- * (reserve_out / reserve_in, no fee, no impact) minus FLOOR_MARGIN_BPS:
- *   num / den = reserve_out * (10000 - margin) / (reserve_in * 10000)
- * reduced by the gcd. Both are in base units, so the decimals are already accounted for.
+ * min_amount_out * den >= amount_in * num on chain. Both are in base units, so decimals are
+ * already accounted for, reduced by the gcd.
+ *  - Pair with a reference price on both tokens (mock_usd_price): the floor comes from the
+ *    reference, not from the pool, so a mispriced pool cannot lower it:
+ *    referenceRate * (10000 - margin) / 10000, margin = STABLE_PEG_BPS (stable pair) or
+ *    MAX_REF_DEVIATION_BPS (other priced pair).
+ *  - Pair without a reference (e.g. wNEAR/rft, rft has no price): there is nothing independent
+ *    to anchor to, so the floor is only a sanity floor under the snapshot's own spot price:
+ *    reserve_out * (10000 - FLOOR_MARGIN_BPS) / (reserve_in * 10000). It guards against a pool
+ *    that moves far from this snapshot, not against a pool that is already wrong.
  */
-function floorRate(pool, tokenIn) {
-  const [rIn, rOut] = tokenIn === pool.token_a ? [BigInt(pool.reserve_a), BigInt(pool.reserve_b)] : [BigInt(pool.reserve_b), BigInt(pool.reserve_a)];
-  const num = rOut * (10000n - FLOOR_MARGIN_BPS);
-  const den = rIn * 10000n;
+function floorRate(pool, tokenIn, fixture) {
+  const ref = referenceRate(tokenIn, otherToken(pool, tokenIn), fixture);
+  let num;
+  let den;
+  if (ref) {
+    const margin = BigInt(fixture.tokens[pool.token_a]?.stable && fixture.tokens[pool.token_b]?.stable ? STABLE_PEG_BPS : MAX_REF_DEVIATION_BPS);
+    num = ref.num * (10000n - margin);
+    den = ref.den * 10000n;
+  } else {
+    const [rIn, rOut] = tokenIn === pool.token_a ? [BigInt(pool.reserve_a), BigInt(pool.reserve_b)] : [BigInt(pool.reserve_b), BigInt(pool.reserve_a)];
+    num = rOut * (10000n - FLOOR_MARGIN_BPS);
+    den = rIn * 10000n;
+  }
   const g = gcd(num, den);
   return { num: (num / g).toString(), den: (den / g).toString() };
 }
@@ -130,7 +148,7 @@ export function defaultVaultConfig(agentId, { runner = PLACEHOLDER_RUNNER, fixtu
     allowed_pools: c.pools.map((id) => {
       const pair = POOL_PAIRS[id];
       const pool = poolById(id, fixture);
-      return { ...pair, min_rate_a_to_b: floorRate(pool, pair.token_a), min_rate_b_to_a: floorRate(pool, pair.token_b) };
+      return { ...pair, min_rate_a_to_b: floorRate(pool, pair.token_a, fixture), min_rate_b_to_a: floorRate(pool, pair.token_b, fixture) };
     }),
     limits: Object.entries(c.limits).map(([token_id, [max, cap]]) => ({ token_id, max_trade: toBaseUnits(max, token_id, fixture), daily_cap: toBaseUnits(cap, token_id, fixture) })),
     runners: [runner],

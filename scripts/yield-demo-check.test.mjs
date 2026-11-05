@@ -17,15 +17,21 @@ function fixture() {
   const call = { signed: false, sent: false, method: "execute_swap" };
   const plan = {
     demo: "yield-demo", mode: "mock", dry_run: true, signed: false, sent: false,
-    agents: [{ call }, { call }, { call }, { call }, { call: null }],
-    calls_planned: 4, calls_signed: 0, calls_sent: 0, rule_rejections: 4,
+    agents: [
+      { agent: "aloof", kind: "personality", proposal: { pool_id: 1 }, outcome: "refused", rule_check: { ok: true }, strategy_check: { ok: false, violations: [{ code: "SOFT_OFF_REFERENCE" }] }, reference: { reference_deviation_bps: 18590000 }, call: null },
+      { agent: "chaotic", kind: "personality", proposal: { pool_id: 0 }, outcome: "vetoed", call: null },
+      { agent: "social", kind: "personality", proposal: null, outcome: "skipped", call: null },
+      { agent: "skeptic", kind: "personality", proposal: { pool_id: 1 }, outcome: "refused", rule_check: { ok: false, code: "ERR_PRICE_FLOOR" }, strategy_check: { ok: false, violations: [] }, reference: { reference_deviation_bps: -9994 }, call: null },
+      { agent: "yield-optimizer", kind: "planner", call },
+    ],
+    calls_planned: 1, calls_signed: 0, calls_sent: 0, rule_rejections: 4,
     rule_scenarios: {
       scenarios: IDS.map((id) => ({
         id, outcome: "rejected", code: `E_${id}`, contract_message: `E_${id}: nope`, js_message: `E_${id}: nope`, matches_contract: true,
       })),
     },
   };
-  const calls = { dry_run: true, signed: false, sent: false, calls: [call, call, call, call] };
+  const calls = { dry_run: true, signed: false, sent: false, calls: [call] };
   return { plan, calls };
 }
 
@@ -45,18 +51,21 @@ const CASES = [
   ["plan signed true", (p) => { p.signed = true; }, /plan\.json signed/],
   ["plan sent true", (p) => { p.sent = true; }, /plan\.json sent/],
   ["plan mode live", (p) => { p.mode = "live"; }, /mode/],
+  ["a pool 1 personality proposal that executes", (p) => { p.agents[0].outcome = "execute"; }, /aloof.*must be refused/],
+  ["a pool 1 refusal that cites no reference or floor", (p) => { p.agents[0].strategy_check.violations = [{ code: "SOFT_SLIPPAGE" }]; }, /aloof.*SOFT_OFF_REFERENCE or ERR_PRICE_FLOOR/],
+  ["a pool 1 refusal without the deviation number", (p) => { delete p.agents[0].reference; }, /aloof.*reference_deviation_bps/],
   ["calls_planned 3", (p) => { p.calls_planned = 3; }, /calls_planned/],
   ["calls_signed 1", (p) => { p.calls_signed = 1; }, /calls_signed/],
   ["calls_sent 1", (p) => { p.calls_sent = 1; }, /calls_sent/],
   ["four agents", (p) => { p.agents.pop(); }, /agents/],
-  ["agent call signed", (p) => { p.agents = p.agents.map((a) => (a.call ? { call: { ...a.call } } : a)); p.agents[1].call.signed = true; }, /agents\[1\]\.call\.signed/],
-  ["agent call sent", (p) => { p.agents = p.agents.map((a) => (a.call ? { call: { ...a.call } } : a)); p.agents[2].call.sent = true; }, /agents\[2\]\.call\.sent/],
+  ["agent call signed", (p) => { p.agents = p.agents.map((a) => (a.call ? { ...a, call: { ...a.call } } : a)); p.agents[4].call.signed = true; }, /agents\[4\]\.call\.signed/],
+  ["agent call sent", (p) => { p.agents = p.agents.map((a) => (a.call ? { ...a, call: { ...a.call } } : a)); p.agents[4].call.sent = true; }, /agents\[4\]\.call\.sent/],
   ["calls.json dry_run false", (p, c) => { c.dry_run = false; }, /calls\.json dry_run/],
   ["calls.json signed true", (p, c) => { c.signed = true; }, /calls\.json signed/],
   ["calls.json sent true", (p, c) => { c.sent = true; }, /calls\.json sent/],
   ["calls.json length mismatch", (p, c) => { c.calls.pop(); }, /calls length/],
   ["calls.json call signed", (p, c) => { c.calls = c.calls.map((x) => ({ ...x })); c.calls[0].signed = true; }, /calls\[0\]\.signed/],
-  ["calls.json call sent", (p, c) => { c.calls = c.calls.map((x) => ({ ...x })); c.calls[3].sent = true; }, /calls\[3\]\.sent/],
+  ["calls.json call sent", (p, c) => { c.calls = c.calls.map((x) => ({ ...x })); c.calls[0].sent = true; }, /calls\[0\]\.sent/],
   ["rule_rejections 3", (p) => { p.rule_rejections = 3; }, /rule_rejections/],
   ["scenario matches_contract false", (p) => { p.rule_scenarios.scenarios[1].matches_contract = false; }, /daily_cap.*matches_contract/],
   ["scenario outcome accepted", (p) => { p.rule_scenarios.scenarios[0].outcome = "accepted"; }, /max_trade.*outcome/],
@@ -125,7 +134,7 @@ test("CLI: the real demo passes and prints the success line", () => {
     const r = runCheck(["--out", join(dir, "out")]);
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.ok(
-      r.stdout.split("\n").includes("yield demo: dry_run true, signed false, sent false; 4 calls planned, 0 signed, 0 sent; 4 rule rejections match the contract"),
+      r.stdout.split("\n").includes("yield demo: dry_run true, signed false, sent false; 1 call planned, 0 signed, 0 sent; 4 rule rejections match the contract"),
       r.stdout,
     );
   } finally {

@@ -14,6 +14,7 @@ import { AGENT_IDS, runRound } from "./debate.mjs";
 import { createLedger } from "./ledger.mjs";
 import { MOCK_EPOCH_MS, yieldMockResponder } from "./mock.mjs";
 import { loadPoolFixture } from "./pools.mjs";
+import { offReferenceNote, referenceLine, referenceView } from "./reference-view.mjs";
 import { ruleScenarios, scenarioSummary } from "./rule-scenarios.mjs";
 import { DEPOSIT, GAS, METHOD, buildExecuteSwapArgv, formatCommand } from "./send.mjs";
 import { PLACEHOLDER_RUNNER, PLACEHOLDER_VAULT, defaultVaultConfig } from "./strategies.mjs";
@@ -67,6 +68,7 @@ export async function runDemo({ rhea, rheaSource }) {
       status: d.status,
       proposal: d.proposal ? { ...swapProposal(d.proposal), rationale: d.proposal.rationale } : null,
       summary: d.proposal ? `pool ${d.proposal.pool_id}: ${fmtRef(fixture, d.proposal.token_in, d.proposal.amount_in)} -> min ${fmtRef(fixture, d.proposal.token_out, d.proposal.min_amount_out)}` : "no proposal",
+      reference: d.proposal ? referenceView(d.proposal, fixture) : null,
       rule_check: d.hard ? { ok: d.hard.ok, code: d.hard.code, reason: d.hard.reason } : null,
       strategy_check: d.soft ? { ok: d.soft.ok, violations: d.soft.violations } : null,
       veto: d.veto,
@@ -177,6 +179,7 @@ function plannerRow(rhea, plan) {
     summary: p ? `pool ${p.pool_id}: ${fmt(p.token_in, p.amount_in)} -> min ${fmt(p.token_out, p.min_amount_out)}` : "no proposal (hold)",
     rule_check: j.check ? { ok: j.check.ok, code: j.check.ok ? null : j.check.reason.split(":")[0], reason: j.check.reason } : null,
     strategy_check: null,
+    reference: null,
     veto: null,
     error: null,
     outcome: c ? "execute" : "skipped",
@@ -200,7 +203,7 @@ export function renderSummary({ doc }, paths = []) {
   const rows = [["agent", "proposal", "vault rules", "outcome"]];
   const notes = [];
   for (const a of doc.agents) {
-    rows.push([a.agent, a.summary, ruleCell(a.rule_check), a.outcome]);
+    rows.push([a.agent, a.summary, ruleCell(a.rule_check), outcomeCell(a)]);
     if (a.kind === "planner") {
       for (const c of a.candidates) {
         if (c.status === "ok" && a.proposal && sameProposal(c.proposal, a.proposal)) continue;
@@ -221,9 +224,27 @@ export function renderSummary({ doc }, paths = []) {
   for (const a of doc.agents) if (a.veto) lines.push(`  ${a.agent} vetoed by ${a.veto.by}: ${a.veto.reason}`);
   for (const c of notes) lines.push(`  optimizer candidate ${c.summary}: ${c.status === "ok" ? "OK" : c.status === "refused" ? `REFUSED ${c.rule_check.reason}` : c.status}`);
   lines.push(...ruleLines(doc.rule_scenarios));
-  lines.push("", `${doc.calls_planned} unsigned execute_swap calls planned, ${doc.calls_signed} signed, ${doc.calls_sent} sent`);
+  lines.push("", `${doc.calls_planned} unsigned execute_swap ${doc.calls_planned === 1 ? "call" : "calls"} planned, ${doc.calls_signed} signed, ${doc.calls_sent} sent`);
   for (const p of paths) lines.push(`wrote ${p}`);
   return lines.join("\n");
+}
+
+/**
+ * The summary table's outcome cell. A refusal names its cause in the table itself, e.g.
+ * "refused: SOFT_OFF_REFERENCE +18590000 bps vs reference (limit 100)", so it reads without the details.
+ */
+function outcomeCell(a) {
+  if (a.outcome !== "refused") return a.outcome;
+  if (a.rule_check && !a.rule_check.ok) return `refused: ${a.rule_check.code ?? a.rule_check.reason}`;
+  const codes = (a.strategy_check?.violations ?? []).map((v) => v.code);
+  const note = codes.includes("SOFT_OFF_REFERENCE") && a.reference ? offReferenceNote(a.reference) : null;
+  return `refused: ${codes.join(", ")}${note ? ` ${note}` : ""}`;
+}
+
+/** Why a personality agent's proposal was refused: the hard rule that fails, else its strategy violations. */
+export function refusalReason(a) {
+  if (a.rule_check && !a.rule_check.ok) return a.rule_check.reason;
+  return a.strategy_check?.violations?.map((v) => `${v.code}: ${v.reason}`).join("; ") ?? "refused";
 }
 
 /** The rule-breaker block of the summary: header plus one REJECTED line per scenario, columns aligned. */
@@ -252,6 +273,7 @@ export function renderDetails({ doc, plan, rhea }) {
       const p = a.proposal;
       lines.push(`  proposal: pool ${p.pool_id} ${p.token_in} -> ${p.token_out}, amount_in ${p.amount_in}, min_amount_out ${p.min_amount_out}`);
       lines.push(`  in human units: ${a.summary}`);
+      lines.push(`  reference: ${referenceLine(a.reference)}`);
       lines.push(`  why: ${p.rationale}`);
       lines.push(`  vault rules (off chain): ${a.rule_check.ok ? "OK" : a.rule_check.reason}`);
       lines.push(`  strategy checks: ${a.strategy_check.ok ? "OK" : a.strategy_check.violations.map((v) => `${v.code}: ${v.reason}`).join("; ")}`);

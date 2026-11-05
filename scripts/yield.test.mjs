@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { assertSafeOutDir } from "../src/util/outdir.mjs";
 import { initialState } from "../src/yield/ledger.mjs";
 import { defaultVaultConfig } from "../src/yield/strategies.mjs";
+import { yieldMockResponder } from "../src/yield/mock.mjs";
 import { main } from "./yield.mjs";
 
 const NOW_MS = Date.UTC(2026, 10, 3);
@@ -17,17 +18,31 @@ const TESTNET_ENV = {
 };
 
 /** Write a --vault-state file (the target vault's get_config()/get_state()) and return its path. */
-function vaultStateFile(overrides = {}) {
+function vaultStateFile(overrides = {}, agent = "skeptic") {
   const dir = mkdtempSync(join(tmpdir(), "yield-vs-"));
-  const doc = { config: defaultVaultConfig("skeptic", { runner: "runner.x.testnet" }), state: initialState(), fetched_at: new Date(NOW_MS - 60_000).toISOString(), block_height: 123456, ...overrides };
+  const doc = { config: defaultVaultConfig(agent, { runner: "runner.x.testnet" }), state: initialState(), fetched_at: new Date(NOW_MS - 60_000).toISOString(), block_height: 123456, ...overrides };
   const file = join(dir, "vault.json");
   writeFileSync(file, JSON.stringify(doc));
   return file;
 }
-const VS = () => ["--vault-state", vaultStateFile()];
+const VS = (agent = "skeptic") => ["--vault-state", vaultStateFile({}, agent)];
+
+/**
+ * Under the shipped mock, --send (one round only) cannot reach the sender: in round 1 every
+ * pool 1 proposal (aloof, social, skeptic) is refused as SOFT_OFF_REFERENCE and chaotic's
+ * full-size wNEAR trade is vetoed by skeptic. To still exercise the send gate end to end, this
+ * stub model answers chaotic with the mock's round 2 proposal (a modest wNEAR swap that passes the
+ * vault rules, the strategy checks and the skeptic's audit); every other answer is the real mock's.
+ */
+const chaoticModest = (request) => {
+  const facts = JSON.parse(request.messages.at(-1).content);
+  if (facts.agent === "chaotic" && facts.task === "propose") facts.round = 2;
+  return yieldMockResponder({ ...request, messages: [{ role: "user", content: JSON.stringify(facts) }] });
+};
+const CHAOTIC_SEND = ["--send", "--i-approve", "--agent", "chaotic"];
 
 /** Run main() in-process with captured output, a recording spawner and a fresh out dir. */
-async function run(argv, env = {}, { spawnStatus = 0, hasNear } = {}) {
+async function run(argv, env = {}, { spawnStatus = 0, hasNear, responder } = {}) {
   const out = mkdtempSync(join(tmpdir(), "yield-cli-"));
   assertSafeOutDir(out);
   const stdout = [];
@@ -44,6 +59,8 @@ async function run(argv, env = {}, { spawnStatus = 0, hasNear } = {}) {
     now: () => NOW_MS,
   };
   if (hasNear) io.hasNear = hasNear;
+  // chaotic is the only agent with a sendable swap, and only with the stub model (see chaoticModest).
+  if (responder ?? (argv.includes("chaotic") && argv.includes("--send") ? chaoticModest : null)) io.responder = responder ?? chaoticModest;
   try {
     const code = await main([...argv, "--out", out], io);
     return { code, stdout: stdout.join("\n"), stderr: stderr.join("\n"), calls, out };
@@ -52,14 +69,55 @@ async function run(argv, env = {}, { spawnStatus = 0, hasNear } = {}) {
   }
 }
 
-test("mock mode with an empty env: exit 0, proposal, off-chain rules, dry-run execute_swap, no spawn", async () => {
+test("mock mode with an empty env: exit 0, proposal, reference line, refusal, off-chain rules, no spawn", async () => {
   const r = await run([], {});
   assert.equal(r.code, 0, r.stderr);
   assert.match(r.stdout, /proposal: pool /);
   assert.ok(r.stdout.includes("vault rules (off chain):"));
-  assert.ok(r.stdout.includes("DRY RUN, not sent"));
-  assert.match(r.stdout, /near contract call-function as-transaction \S+ execute_swap json-args /);
+  assert.ok(r.stdout.includes("DRY RUN, not sent (nothing is signed)"));
+  // Round 1: the stable pool 1 is ~1860x off its $1 peg, so aloof, social and skeptic are refused and nothing executes.
+  assert.equal((r.stdout.match(/^ {2}reference: quote \+1[0-9]{7} bps vs mock_usd_price reference \(limit 100 bps, stable pair: OFF REFERENCE\)$/gm) ?? []).length, 3);
+  assert.ok(r.stdout.includes("reference: no reference price (rft has none): the floor is a spot sanity floor"));
+  assert.equal((r.stdout.match(/strategy checks: SOFT_OFF_REFERENCE: pool 1 quote is \+\d+ bps off the reference price \(limit 100 bps for a stable pair\)/g) ?? []).length, 3);
+  assert.equal((r.stdout.match(/outcome: rejected_soft/g) ?? []).length, 3);
+  assert.doesNotMatch(r.stdout, /near contract call-function/);
   assert.match(r.stdout, /scoreboard/);
+  assert.deepEqual(r.calls, []);
+});
+
+test("5 rounds --json: aloof and skeptic never trade, every pool 1 decision is refused with SOFT_OFF_REFERENCE or ERR_PRICE_FLOOR and carries the deviation", async () => {
+  const r = await run(["--rounds", "5", "--json"], {});
+  assert.equal(r.code, 0, r.stderr);
+  const doc = JSON.parse(r.stdout);
+  assert.equal(doc.dry_run, true);
+  const board = Object.fromEntries(doc.scoreboard.map((x) => [x.agent, x]));
+  for (const id of ["aloof", "skeptic", "social"]) {
+    assert.equal(board[id].trades, 0, `${id} trades`);
+    assert.equal(board[id].pnl_micro_usd, "0", `${id} has no P&L loss`);
+  }
+  let pool1 = 0;
+  for (const round of doc.rounds) {
+    for (const x of round.executions) assert.notEqual(x.proposal.pool_id, 1, "no execute_swap on pool 1");
+    for (const [id, d] of Object.entries(round.decisions)) {
+      if (d.proposal?.pool_id !== 1) continue;
+      pool1++;
+      assert.ok(["rejected_soft", "rejected_hard"].includes(d.outcome), `${id} round ${round.round}: ${d.outcome}`);
+      assert.ok(JSON.stringify([d.hard, d.soft]).match(/SOFT_OFF_REFERENCE|ERR_PRICE_FLOOR/), `${id} round ${round.round}`);
+      assert.equal(d.max_reference_deviation_bps, 100);
+      assert.equal(typeof d.reference_deviation_bps, "number");
+      assert.ok(Math.abs(d.reference_deviation_bps) > 100);
+    }
+    assert.equal(round.decisions.chaotic.max_reference_deviation_bps, null, "rft has no reference price");
+  }
+  assert.ok(pool1 >= 10, `expected the stable agents to try pool 1 in most rounds (saw ${pool1})`);
+});
+
+test("round 2 (no pool 1 swap executes): chaotic's passing wNEAR swap is printed as a dry-run execute_swap, no spawn", async () => {
+  const r = await run(["--rounds", "2"], {});
+  assert.equal(r.code, 0, r.stderr);
+  assert.ok(r.stdout.includes("DRY RUN, not sent:"));
+  assert.match(r.stdout, /near contract call-function as-transaction \S+ execute_swap json-args /);
+  assert.doesNotMatch(r.stdout, /execute_swap json-args .*"pool_id":1/);
   assert.deepEqual(r.calls, []);
 });
 
@@ -170,10 +228,19 @@ test("--vault-state without --send is a usage error (2)", async () => {
   assert.equal(r.code, 2);
 });
 
-test("--send --i-approve --agent skeptic on testnet spawns only skeptic argv, all testnet", async () => {
+test("--send --i-approve --agent skeptic sends nothing: its pool 1 hedge is refused as off reference", async () => {
   const r = await run(["--send", "--i-approve", "--agent", "skeptic", ...VS()], TESTNET_ENV, { hasNear: () => true });
   assert.equal(r.code, 0, r.stderr);
-  assert.ok(r.calls.length >= 1, "skeptic should have sent at least one swap");
+  assert.deepEqual(r.calls, [], "no execute_swap for an off-peg pool");
+  assert.match(r.stdout, /SENDING to testnet/);
+  assert.match(r.stdout, /SOFT_OFF_REFERENCE: pool 1 quote is \+18490000 bps off the reference price/);
+  assert.match(r.stdout, /outcome: rejected_soft/);
+});
+
+test("--send --i-approve --agent chaotic on testnet spawns only chaotic argv, all testnet", async () => {
+  const r = await run([...CHAOTIC_SEND, ...VS("chaotic")], TESTNET_ENV, { hasNear: () => true, responder: chaoticModest });
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.calls.length, 1, "chaotic should have sent its one swap");
   for (const c of r.calls) {
     assert.equal(c.bin, "near");
     assert.ok(c.args.includes("testnet"));
@@ -183,21 +250,23 @@ test("--send --i-approve --agent skeptic on testnet spawns only skeptic argv, al
     assert.ok(!c.args.some((a) => /mainnet/i.test(a)));
   }
   assert.match(r.stdout, /SENDING to testnet/);
+  assert.match(r.stdout, /reference: no reference price \(rft has none\)/);
 });
 
-test("--send argv count equals the skeptic executions in --json output", async () => {
-  const r = await run(["--send", "--i-approve", "--agent", "skeptic", "--json", ...VS()], TESTNET_ENV, { hasNear: () => true });
+test("--send argv count equals the chaotic executions in --json output", async () => {
+  const r = await run([...CHAOTIC_SEND, "--json", ...VS("chaotic")], TESTNET_ENV, { hasNear: () => true, responder: chaoticModest });
   assert.equal(r.code, 0, r.stderr);
   const doc = JSON.parse(r.stdout);
   assert.equal(doc.dry_run, false);
   const shownExecs = doc.rounds.flatMap((x) => x.executions);
-  assert.ok(shownExecs.every((x) => x.agent === "skeptic"));
+  assert.equal(shownExecs.length, 1);
+  assert.ok(shownExecs.every((x) => x.agent === "chaotic"));
   assert.equal(r.calls.length, shownExecs.length);
   assert.equal(doc.sent.length, shownExecs.length);
 });
 
 test("a failing near exit status stops the run with exit 1", async () => {
-  const r = await run(["--send", "--i-approve", "--agent", "skeptic", ...VS()], TESTNET_ENV, { hasNear: () => true, spawnStatus: 7 });
+  const r = await run([...CHAOTIC_SEND, ...VS("chaotic")], TESTNET_ENV, { hasNear: () => true, spawnStatus: 7, responder: chaoticModest });
   assert.equal(r.code, 1);
   assert.equal(r.calls.length, 1);
   assert.match(r.stderr, /status 7/);
@@ -230,10 +299,10 @@ test("usage errors: unknown agent, bad rounds, unknown flag exit 2; --help exits
   assert.match(h.stdout, /^Usage: /);
 });
 
-const SEND = ["--send", "--i-approve", "--agent", "skeptic"];
+const SEND = ["--send", "--i-approve", "--agent", "chaotic"];
 
 test("M1: --send in mock mode uses the real clock, not the mock epoch", async () => {
-  const r = await run([...SEND, "--json", ...VS()], TESTNET_ENV, { hasNear: () => true });
+  const r = await run([...SEND, "--json", ...VS("chaotic")], TESTNET_ENV, { hasNear: () => true });
   assert.equal(r.code, 0, r.stderr);
   assert.equal(JSON.parse(r.stdout).rounds[0].now_ms, NOW_MS);
 });
@@ -241,7 +310,7 @@ test("M1: --send in mock mode uses the real clock, not the mock epoch", async ()
 test("M1: --send refuses a vault-state whose spent.day is in the future", async () => {
   const day = Math.floor(NOW_MS / 86_400_000) + 1;
   const state = { ...initialState(), spent: { day, amounts: {} } };
-  const r = await run([...SEND, "--vault-state", vaultStateFile({ state })], TESTNET_ENV, { hasNear: () => true });
+  const r = await run([...SEND, "--vault-state", vaultStateFile({ state }, "chaotic")], TESTNET_ENV, { hasNear: () => true });
   assert.equal(r.code, 1);
   assert.match(r.stderr, /spent\.day is in the future/);
   assert.deepEqual(r.calls, []);
@@ -249,17 +318,17 @@ test("M1: --send refuses a vault-state whose spent.day is in the future", async 
 
 test("M1: the daily cap is enforced off chain against the real day under --send", async () => {
   const day = Math.floor(NOW_MS / 86_400_000);
-  const config = defaultVaultConfig("skeptic", { runner: "runner.x.testnet" });
+  const config = defaultVaultConfig("chaotic", { runner: "runner.x.testnet" });
   const amounts = Object.fromEntries(config.limits.map((l) => [l.token_id, l.daily_cap]));
   const state = { ...initialState(), spent: { day, amounts } };
-  const r = await run([...SEND, "--vault-state", vaultStateFile({ state })], TESTNET_ENV, { hasNear: () => true });
+  const r = await run([...SEND, "--vault-state", vaultStateFile({ state }, "chaotic")], TESTNET_ENV, { hasNear: () => true });
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(r.calls, [], "cap already spent today: nothing may be sent");
 });
 
 test("M2: --send refuses a vault-state without fetched_at or block_height", async () => {
   for (const o of [{ fetched_at: undefined }, { block_height: undefined }, { fetched_at: "not a date" }, { block_height: 0 }, { block_height: "5" }]) {
-    const r = await run([...SEND, "--vault-state", vaultStateFile(o)], TESTNET_ENV, { hasNear: () => true });
+    const r = await run([...SEND, "--vault-state", vaultStateFile(o, "chaotic")], TESTNET_ENV, { hasNear: () => true });
     assert.equal(r.code, 1, JSON.stringify(o));
     assert.match(r.stderr, /fetched_at/);
     assert.deepEqual(r.calls, []);
@@ -267,19 +336,19 @@ test("M2: --send refuses a vault-state without fetched_at or block_height", asyn
 });
 
 test("M2: --send refuses a stale vault-state and one fetched in the future", async () => {
-  const stale = await run([...SEND, "--vault-state", vaultStateFile({ fetched_at: new Date(NOW_MS - 11 * 60_000).toISOString() })], TESTNET_ENV, { hasNear: () => true });
+  const stale = await run([...SEND, "--vault-state", vaultStateFile({ fetched_at: new Date(NOW_MS - 11 * 60_000).toISOString() }, "chaotic")], TESTNET_ENV, { hasNear: () => true });
   assert.equal(stale.code, 1);
   assert.match(stale.stderr, /stale/);
-  const future = await run([...SEND, "--vault-state", vaultStateFile({ fetched_at: new Date(NOW_MS + 10 * 60_000).toISOString() })], TESTNET_ENV, { hasNear: () => true });
+  const future = await run([...SEND, "--vault-state", vaultStateFile({ fetched_at: new Date(NOW_MS + 10 * 60_000).toISOString() }, "chaotic")], TESTNET_ENV, { hasNear: () => true });
   assert.equal(future.code, 1);
   assert.match(future.stderr, /in the future/);
   assert.deepEqual([...stale.calls, ...future.calls], []);
-  const fresh = await run([...SEND, ...["--vault-state", vaultStateFile({ fetched_at: new Date(NOW_MS - 9 * 60_000).toISOString() })]], TESTNET_ENV, { hasNear: () => true });
+  const fresh = await run([...SEND, ...["--vault-state", vaultStateFile({ fetched_at: new Date(NOW_MS - 9 * 60_000).toISOString() }, "chaotic")]], TESTNET_ENV, { hasNear: () => true });
   assert.equal(fresh.code, 0, fresh.stderr);
 });
 
 test("L1: --send refuses vault === runner", async () => {
-  const r = await run([...SEND, ...VS()], { ...TESTNET_ENV, YIELD_RUNNER_ACCOUNT_ID: "vault.x.testnet" }, { hasNear: () => true });
+  const r = await run([...SEND, ...VS("chaotic")], { ...TESTNET_ENV, YIELD_RUNNER_ACCOUNT_ID: "vault.x.testnet" }, { hasNear: () => true });
   assert.equal(r.code, 1);
   assert.match(r.stderr, /different accounts/);
   assert.deepEqual(r.calls, []);
@@ -288,7 +357,7 @@ test("L1: --send refuses vault === runner", async () => {
 test("L3: --send does not write simulated P&L into the ledger", async () => {
   const out = mkdtempSync(join(tmpdir(), "yield-cli-"));
   try {
-    const code = await main([...SEND, ...VS(), "--out", out], { env: TESTNET_ENV, log: () => {}, err: () => {}, spawner: () => 0, hasNear: () => true, now: () => NOW_MS });
+    const code = await main([...SEND, ...VS("chaotic"), "--out", out], { env: TESTNET_ENV, log: () => {}, err: () => {}, spawner: () => 0, hasNear: () => true, now: () => NOW_MS });
     assert.equal(code, 0);
     assert.ok(!existsSync(join(out, "yield", "ledger.json")), "no ledger written under --send");
   } finally {
@@ -320,7 +389,7 @@ function rawState(over = {}) {
     ...over,
   };
 }
-const sendRaw = (state) => run([...SEND, "--vault-state", vaultStateFile({ state })], TESTNET_ENV, { hasNear: () => true });
+const sendRaw = (state) => run([...SEND, "--vault-state", vaultStateFile({ state }, "chaotic")], TESTNET_ENV, { hasNear: () => true });
 
 test("raw get_state(): a funded proposal within limits is accepted and one swap is sent", async () => {
   const r = await sendRaw(rawState());
@@ -330,9 +399,9 @@ test("raw get_state(): a funded proposal within limits is accepted and one swap 
 });
 
 test("raw get_state(): spent_today already at the daily cap rejects with ERR_DAILY_CAP", async () => {
-  const config = defaultVaultConfig("skeptic", { runner: "runner.x.testnet" });
+  const config = defaultVaultConfig("chaotic", { runner: "runner.x.testnet" });
   const spent_today = config.limits.map((l) => [l.token_id, l.daily_cap]);
-  const r = await run([...SEND, "--json", "--vault-state", vaultStateFile({ state: rawState({ spent_today }) })], TESTNET_ENV, { hasNear: () => true });
+  const r = await run([...SEND, "--json", "--vault-state", vaultStateFile({ state: rawState({ spent_today }) }, "chaotic")], TESTNET_ENV, { hasNear: () => true });
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(r.calls, []);
   assert.match(r.stdout, /ERR_DAILY_CAP/);
@@ -340,7 +409,7 @@ test("raw get_state(): spent_today already at the daily cap rejects with ERR_DAI
 
 test("raw get_state(): swap, recovery or release in flight each reject with ERR_SWAP_IN_FLIGHT", async () => {
   for (const flag of ["swap_in_flight", "recovery_in_flight", "release_in_flight"]) {
-    const r = await run([...SEND, "--json", "--vault-state", vaultStateFile({ state: rawState({ [flag]: true }) })], TESTNET_ENV, { hasNear: () => true });
+    const r = await run([...SEND, "--json", "--vault-state", vaultStateFile({ state: rawState({ [flag]: true }) }, "chaotic")], TESTNET_ENV, { hasNear: () => true });
     assert.equal(r.code, 0, `${flag}: ${r.stderr}`);
     assert.deepEqual(r.calls, [], flag);
     assert.match(r.stdout, /ERR_SWAP_IN_FLIGHT/, flag);
@@ -355,7 +424,7 @@ test("raw get_state(): paused rejects", async () => {
 
 test("raw get_state(): an empty or short balances list rejects with ERR_INSUFFICIENT_BALANCE", async () => {
   for (const balances of [[], Object.entries(initialState().balances).map(([t]) => [t, "1"])]) {
-    const r = await run([...SEND, "--json", "--vault-state", vaultStateFile({ state: rawState({ balances }) })], TESTNET_ENV, { hasNear: () => true });
+    const r = await run([...SEND, "--json", "--vault-state", vaultStateFile({ state: rawState({ balances }) }, "chaotic")], TESTNET_ENV, { hasNear: () => true });
     assert.equal(r.code, 0, r.stderr);
     assert.deepEqual(r.calls, []);
     assert.match(r.stdout, /ERR_INSUFFICIENT_BALANCE/);
@@ -363,7 +432,7 @@ test("raw get_state(): an empty or short balances list rejects with ERR_INSUFFIC
 });
 
 test("raw get_state(): spent_today from a previous day does not count", async () => {
-  const config = defaultVaultConfig("skeptic", { runner: "runner.x.testnet" });
+  const config = defaultVaultConfig("chaotic", { runner: "runner.x.testnet" });
   const spent_today = config.limits.map((l) => [l.token_id, l.daily_cap]);
   const r = await sendRaw(rawState({ day: TODAY - 1, spent_today }));
   assert.equal(r.code, 0, r.stderr);

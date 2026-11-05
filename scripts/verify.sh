@@ -40,7 +40,7 @@ print WARN lines and record SKIP. Planned npm scripts are:
                dry-runs, mock, not on-chain proof; real hashes and RPC views with --live)
   anchor       dry-run round-hash determinism check (always mock, never signs)
   yield:demo:check  runs the yield demo with a timeout; PASS only if plan.json is a dry run
-               (signed false, sent false, 4 calls planned, 0 signed) with 4 matching rule rejections
+               (signed false, sent false, 1 call planned, 0 signed) with 4 matching rule rejections
   yield:shade:check  runs yield:shade:dry-run under a guard (no near CLI, network or subprocess call);
                PASS only if it is a testnet dry run (signed false, sent false) and refused flags exit 1
 
@@ -685,7 +685,7 @@ planned "demo" "demo" mock
 planned "round hash" "anchor" mock --dry-run --check
 # Yield Optimizer: one mock debate round, dry run (nothing signed or sent).
 planned "yield" "yield" mock
-# Yield demo: runs npm run yield:demo with a timeout and checks plan.json (dry run, 4 calls, 4 rule rejections).
+# Yield demo: runs npm run yield:demo with a timeout and checks plan.json (dry run, 1 call, 4 rule rejections).
 planned "yield demo" "yield:demo:check" mock
 # Yield shade: runs the Shade dry run under a no-near-CLI, no-network, no-subprocess guard and checks it never signs or sends.
 planned "yield shade" "yield:shade:check" mock

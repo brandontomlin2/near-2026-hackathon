@@ -49,6 +49,13 @@ describe("renderDemoPage", () => {
     assert.match(html, /vetoed by skeptic/);
   });
 
+  it("shows the reference deviation and why each pool 1 agent is refused", () => {
+    assert.ok(html.includes("reference: quote +18590000 bps vs mock_usd_price reference (limit 100 bps, stable pair: OFF REFERENCE)"));
+    assert.ok(html.includes("reference: no reference price (rft has none): the floor is a spot sanity floor"));
+    assert.equal((html.match(/SOFT_OFF_REFERENCE: pool 1 quote is/g) ?? []).length, 6, "strategy cell and outcome cell, for three agents");
+    assert.ok(!html.includes("<code>nusdt.ft-fin.testnet</code> -> "), "no pool 1 call card");
+  });
+
   it("shows every contract message in code, with the vectors file", () => {
     const rs = result.doc.rule_scenarios;
     assert.equal(rs.scenarios.length, 4);
@@ -59,11 +66,11 @@ describe("renderDemoPage", () => {
   });
 
   it("shows each unsigned call and the totals line", () => {
-    assert.equal(result.calls.calls.length, 4);
-    assert.equal((html.match(/<code>execute_swap<\/code>/g) ?? []).length, 4);
-    assert.equal((html.match(/signed: false/g) ?? []).length, 4);
-    assert.equal((html.match(/sent: false/g) ?? []).length, 4);
-    assert.ok(html.includes("4 unsigned execute_swap calls planned, 0 signed, 0 sent"));
+    assert.equal(result.calls.calls.length, 1);
+    assert.equal((html.match(/<code>execute_swap<\/code>/g) ?? []).length, 1);
+    assert.equal((html.match(/signed: false/g) ?? []).length, 1);
+    assert.equal((html.match(/sent: false/g) ?? []).length, 1);
+    assert.ok(html.includes("1 unsigned execute_swap call planned, 0 signed, 0 sent"));
     for (const c of result.calls.calls) assert.ok(html.includes(escapeHtml(JSON.stringify(c.args, null, 2))), c.agent);
   });
 

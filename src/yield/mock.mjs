@@ -3,7 +3,7 @@
 // a model: the schedule below is fixed per round so the demo shows every outcome.
 
 import { createMockClient } from "../inference/client.mjs";
-import { floorMinOut, loadPoolFixture, minOutFor, poolById } from "./pools.mjs";
+import { floorMinOut, loadPoolFixture, minOutFor, poolById, quoteOut } from "./pools.mjs";
 import { NUSDC, NUSDT, WNEAR, strategyFor } from "./strategies.mjs";
 
 // Chaotic's size (bps of max_trade for wNEAR) and slippage by round, cycling: a big one the
@@ -30,8 +30,12 @@ function build(pool, tokenIn, amountIn, slip, rationale, fixture, { belowFloor =
   let minOut = minOutFor(p, tokenIn, amountIn, slip);
   const rate = pool[tokenIn === p.token_a ? "min_rate_a_to_b" : "min_rate_b_to_a"];
   if (rate && !belowFloor) {
+    // Clamp up to the floor only when the quote itself clears it. A quote below the floor means
+    // the pool is mispriced against the vault's reference: raising min_out to the floor would
+    // build a swap that is guaranteed to revert on Ref (stranding funds), so leave min_out from
+    // the quote and let the hard rule (ERR_PRICE_FLOOR) refuse it off chain.
     const floor = floorMinOut(rate, amountIn);
-    if (minOut < floor) minOut = floor;
+    if (minOut < floor && quoteOut(p, tokenIn, amountIn) >= floor) minOut = floor;
   }
   return {
     pool_id: p.pool_id,

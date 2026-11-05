@@ -3,6 +3,8 @@
 // came from the run is escaped. Deterministic: nothing here reads a clock or the environment.
 
 import { escapeHtml as esc, securityMetaTags } from "../viewer/render.mjs";
+import { refusalReason } from "./demo.mjs";
+import { referenceLine } from "./reference-view.mjs";
 import { scenarioSummary } from "./rule-scenarios.mjs";
 
 const CSS = `
@@ -64,12 +66,18 @@ function strategyCell(a) {
   return `<span class="bad">${a.strategy_check.violations.map((v) => esc(`${v.code}: ${v.reason}`)).join("; ")}</span>`;
 }
 
+function referenceDiv(a) {
+  if (!a.reference) return "";
+  const off = a.reference.reference_deviation_bps !== null && Math.abs(a.reference.reference_deviation_bps) > a.reference.max_reference_deviation_bps;
+  return `<div class="${off ? "bad" : "mut"}">reference: ${esc(referenceLine(a.reference))}</div>`;
+}
+
 function agentsSection(doc) {
   const rows = doc.agents.map((a) => `<tr><td class="who">${esc(a.agent)}<div class="mut">${esc(a.name)}</div></td>
-<td>${esc(a.summary)}${a.error ? `<div class="bad">invalid reply (${esc(a.error.code)}): ${esc(a.error.message)}</div>` : ""}${candidates(a)}</td>
+<td>${esc(a.summary)}${referenceDiv(a)}${a.error ? `<div class="bad">invalid reply (${esc(a.error.code)}): ${esc(a.error.message)}</div>` : ""}${candidates(a)}</td>
 <td>${rule(a.rule_check)}</td><td>${strategyCell(a)}</td>
 <td>${a.veto ? `<span class="warn">vetoed by ${esc(a.veto.by)}</span>: ${esc(a.veto.reason)}` : '<span class="mut">-</span>'}</td>
-<td>${esc(a.outcome)}</td></tr>`).join("\n");
+<td>${esc(a.outcome)}${a.outcome === "refused" ? `<div class="mut">${esc(refusalReason(a))}</div>` : ""}</td></tr>`).join("\n");
   return `<h2>Agent proposals</h2>
 <p class="mut">Four personality agents (mock inference over the committed Ref pool fixture) and the rule-based Yield Optimizer planner. Every proposal is checked with the one JS copy of the vault rules.</p>
 <table><thead><tr><th>agent</th><th>proposal</th><th>vault rule check</th><th>strategy check</th><th>veto</th><th>outcome</th></tr></thead><tbody>
@@ -101,7 +109,7 @@ function callsSection(doc, calls) {
 <pre>${esc(JSON.stringify(c.args, null, 2))}</pre></div>`).join("\n");
   return `<h2>Unsigned calls</h2>
 ${cards || '<p class="mut">No calls planned.</p>'}
-<p class="who">${esc(doc.calls_planned)} unsigned execute_swap calls planned, ${esc(doc.calls_signed)} signed, ${esc(doc.calls_sent)} sent</p>`;
+<p class="who">${esc(doc.calls_planned)} unsigned execute_swap ${doc.calls_planned === 1 ? "call" : "calls"} planned, ${esc(doc.calls_signed)} signed, ${esc(doc.calls_sent)} sent</p>`;
 }
 
 /**
