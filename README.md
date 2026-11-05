@@ -232,6 +232,15 @@ npm run yield:demo -- --calls
 grep -E '"(dry_run|signed|sent)": ' out/yield-demo/plan.json
 ```
 
+### Judge path (offline, yield)
+
+Four commands, for a fresh clone after `npm install`. Nothing is signed, sent or deployed; no keys, no network, no `near` CLI. Each finishes in a few seconds (measured: under 3 s). Details are in the subsections above and below; a test (`scripts/yield-judge-path.readme.test.mjs`) runs all four and fails if a quoted line drifts.
+
+1. Run `npm run yield:demo`. See `YIELD DEMO - DRY RUN - mock inference, offline - nothing signed, nothing sent` and `1 unsigned execute_swap call planned, 0 signed, 0 sent`. Exit 0.
+2. Run `npm run yield:shade:check`. See `yield shade: dry_run true, signed false, sent false, network testnet; no near CLI, network or subprocess call; 5 refused flags and NEAR_NETWORK=mainnet exit 1`. Exit 0.
+3. Run `npm run yield:live:check`. See `yield live: dry-run unsigned true, network testnet, 36 steps, plan valid; no near CLI, network or subprocess call; 6 refused flags and NEAR_NETWORK=mainnet exit 2`. Exit 0.
+4. Run `npm run yield:live:dry-run -- --send`. See `refused: this tool never signs or sends; it only prints unsigned plans and offline checks. Run the printed near-cli-rs commands yourself, by hand, after review.` on stderr. Exit 2.
+
 ### The planner alone: `node scripts/yield-optimizer.mjs`
 
 The Yield Optimizer planner is also a script. It prints a plan, then the same plan as JSON, and exits 0. Nothing is signed or sent. A test (`scripts/yield-demo.readme.test.mjs`) fails if the lines below drift.
