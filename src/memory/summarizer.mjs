@@ -246,11 +246,16 @@ export function createMemoryStore(root) {
         if (err && err.code === "ENOENT" && count === 0) return;
         throw new MemoryError("could not read the event log", { code: "io_error", cause: err });
       }
+      // Count events the way readLog() does: blank lines are skipped, not counted,
+      // so "event one, blank line, event two" keeps event two when count is 2.
       let offset = 0;
-      for (let i = 0; i < count; i += 1) {
+      let seen = 0;
+      while (seen < count) {
+        if (offset >= raw.length) return; // fewer than `count` events: nothing to cut
         const nl = raw.indexOf(0x0a, offset);
-        if (nl === -1) return; // fewer than `count` lines: nothing to cut
-        offset = nl + 1;
+        const end = nl === -1 ? raw.length : nl;
+        if (end > offset) seen += 1;
+        offset = nl === -1 ? raw.length : nl + 1;
       }
       await truncate(file, offset);
     },
