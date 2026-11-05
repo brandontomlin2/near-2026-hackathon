@@ -45,7 +45,7 @@ function checkAccount(role, id) {
 }
 
 /** The vault args, validated: exactly the SwapProposal fields (rationale and anything else is rejected). */
-function checkProposal(proposal) {
+function checkProposalShape(proposal) {
   if (!isObj(proposal)) throw new Error("proposal must be an object");
   for (const k of VAULT_PROPOSAL_KEYS) if (!Object.hasOwn(proposal, k)) throw new Error(`proposal is missing key ${k}`);
   for (const k of Object.keys(proposal)) {
@@ -63,7 +63,7 @@ function checkProposal(proposal) {
 }
 
 export function buildExecuteSwapAction(proposal) {
-  checkProposal(proposal);
+  checkProposalShape(proposal);
   return { type: "FunctionCall", methodName: METHOD, args: vaultArgs(proposal), gas: EXECUTE_SWAP_GAS, deposit: 0n };
 }
 
