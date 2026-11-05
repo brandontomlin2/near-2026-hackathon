@@ -104,5 +104,6 @@ test('vault README says nft_contract_id/token_id are not checked and recovery ke
   const text = read(VAULT_README);
   assert.match(text, /nft_contract_id[^.]*(not|never) (checked|enforced)/is);
   assert.match(text, /transferring the NFT does not transfer the vault/i);
-  assert.match(text, /recover_from_ref[^.]*spent_today[^.]*not reduced/is);
+  assert.match(text, /recovers them with `recover_from_ref`, that day's `spent_today` is not reduced/);
+  assert.match(text, /## Events\n\n[^\n]*`swap_zero_out`/, 'event list includes swap_zero_out');
 });

@@ -633,7 +633,9 @@ fn three_zero_out_swaps_auto_pause() {
         let _ = v.handle_swap(id, Ok(U128(0)));
     }
     assert!(v.get_state().paused);
-    assert!(get_logs().join("\n").contains("\"event\":\"auto_paused\""));
+    let logs = get_logs().join("\n");
+    assert!(logs.contains("\"event\":\"auto_paused\""), "{logs}");
+    assert!(logs.contains("\"last_reason\":\"amount_out_zero\""), "{logs}");
 }
 
 #[test]
@@ -687,7 +689,13 @@ fn nft_contract_and_token_are_metadata_only_for_owner_checks() {
     let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ = v.withdraw(wrap(), U128(1));
     }));
-    assert!(r.is_err(), "the NFT contract account is not the owner");
+    let msg = r.expect_err("the NFT contract account is not the owner");
+    let msg = msg
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| msg.downcast_ref::<&str>().map(|s| s.to_string()))
+        .unwrap_or_default();
+    assert!(msg.contains("ERR_NOT_OWNER"), "{msg}");
     testing_env!(ctx1("owner.testnet").build());
     let _ = v.withdraw(wrap(), U128(1));
     assert_eq!(bal(&v, &wrap()), 10_000 - 1, "owner_id can withdraw regardless of NFT");

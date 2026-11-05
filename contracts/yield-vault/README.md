@@ -201,7 +201,8 @@ A failed promise result is not trusted as proof of what happened. The vault asks
 | Deposit reported used amount 0 | still with the vault | roll back the debit and day spend; `deposit_failed` |
 | Deposit used less than `amount_in` | remainder with the vault | refund the remainder, swap only the used part |
 | `ref.swap` failed | token_in is on Ref | `stranded_on_ref[token_in] += amount`, `stranded` event |
-| `amount_out < min_amount_out` (or 0) | token_out is on Ref | `stranded_on_ref[token_out] += amount_out` |
+| `amount_out < min_amount_out` | token_out is on Ref | `stranded_on_ref[token_out] += amount_out` |
+| `amount_out == 0` (not expected: `min_amount_out > 0` and Ref panics below it) | Ref took token_in for nothing; nothing to recover | no strand; emits `swap_zero_out`, `swap_failed` reason `amount_out_zero`, counts toward auto-pause |
 | pre-withdraw `get_deposit` failed | token_out is on Ref (the swap reported it) | `stranded_on_ref[token_out] += amount_out`; reason `withdraw_pre_unverified`; nothing withdrawn |
 | pre-withdraw `get_deposit` below `amount_out` | unknown | `unverified_on_ref[token_out] += amount_out`; reason `withdraw_pre_mismatch`; nothing withdrawn |
 | `ref.withdraw` failed, or ok but Ref deposit fell by less than `amount_out` from the snapshot | token_out still on Ref | strand, reason `withdraw_not_reconciled`; no credit |
@@ -218,7 +219,7 @@ Other limitation: there is no on-chain market price. Slippage is bounded only by
 
 ## Events
 
-NEP-297, `standard: "yield_vault"`, `version: "1.0.0"`: `deposit`, `withdraw`, `withdraw_failed`, `swap_proposed`, `swap_executed`, `swap_failed`, `stranded`, `recovered`, `recover_refused`, `force_release_started`, `force_release_aborted`, `ref_balance_untracked`, `balance_synced`, `sync_failed`, `sync_invalidated`, `registered_on_ref`, `register_failed`, `near_withdrawn`, `ref_storage_withdraw`, `paused`, `auto_paused`, `unpaused`, `runner_added`, `runner_revoked`, `config_updated`.
+NEP-297, `standard: "yield_vault"`, `version: "1.0.0"`: `deposit`, `withdraw`, `withdraw_failed`, `swap_proposed`, `swap_executed`, `swap_failed`, `swap_zero_out`, `stranded`, `recovered`, `recover_refused`, `force_release_started`, `force_release_aborted`, `ref_balance_untracked`, `balance_synced`, `sync_failed`, `sync_invalidated`, `registered_on_ref`, `register_failed`, `near_withdrawn`, `ref_storage_withdraw`, `paused`, `auto_paused`, `unpaused`, `runner_added`, `runner_revoked`, `config_updated`.
 
 ## Develop
 

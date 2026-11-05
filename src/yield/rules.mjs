@@ -99,7 +99,9 @@ export function checkProposal(proposal, config, state, runnerId, nowMs) {
   const fail = (code, detail) => ({ ok: false, code, reason: `${code}: ${detail}` });
   // The contract parses amounts as near-sdk U128 (canonical decimal string of a u128) before
   // check_rules runs, so non-canonical input is rejected first. Mirror that at the very top;
-  // it never fires for input the contract can deserialize, so no existing vector's result moves.
+  // ERR_BAD_AMOUNT is an off-chain-only code (the contract fails at JSON parsing, not in check_rules).
+  // It is stricter than near-sdk U128 parsing (which may accept e.g. "+5" or "01"), so it never
+  // accepts what the contract refuses; the shared vectors use canonical strings, so none moves.
   // BigInt in [0, U128_MAX] is accepted (in-process callers); numbers and other types are not.
   for (const field of ["amount_in", "min_amount_out"]) {
     if (!isU128Amount(proposal?.[field])) return fail("ERR_BAD_AMOUNT", `${field} must be a canonical decimal u128 string`);
