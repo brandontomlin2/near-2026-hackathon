@@ -108,7 +108,7 @@ test("go/no-go status at a glance matches the checklist it summarizes", () => {
   const done = tableRow(glance, "Yes-gated steps done") ?? "";
   const ticked = yesItems.filter((m) => m[1] !== " ").length;
   assert.match(done, new RegExp(`^${ticked} of ${yesItems.length}\\. All ${yesItems.length} are NOT DONE`));
-  assert.match(tableRow(glance, "Live Shade evidence") ?? "", /^none: no transaction id/);
+  assert.equal(tableRow(glance, "Live Shade evidence"), "none: no transaction id, no signature, no deployed account or contract");
 });
 
 test("README Shade subsection states the same undecided status and counts as the checklist", () => {
@@ -144,9 +144,26 @@ test("No-go fallback is dry-run only and every command and file it names exists"
   assert.ok(scripts.length >= 2);
   for (const s of scripts) assert.ok(pkg.scripts[s], `package.json has script ${s}`);
   for (const [, file] of fallback.matchAll(/`(spikes\/[^`\s]+\.txt)`/g)) assert.ok(existsSync(join(root, file)), `${file} exists`);
-  // No live artifacts: no explorer links and no 64-hex or base58 transaction hash.
-  assert.doesNotMatch(fallback, /nearblocks|explorer\.|testnet\.near\.org\/txns/i);
-  assert.doesNotMatch(fallback, /\b[0-9a-f]{64}\b|\b[1-9A-HJ-NP-Za-km-z]{43,44}\b/);
+});
+
+test("checklist and README Shade subsection cite no live artifact (explorer link or transaction hash)", () => {
+  const explorer = /nearblocks|explorer\.|testnet\.near\.org\/txns/i;
+  // NEAR tx hashes are 43-44 base58 chars; also reject 64-hex hashes.
+  const txHash = /(?<![\w:])(?:[1-9A-HJ-NP-Za-km-z]{43,44}|[0-9a-f]{64})(?!\w)/;
+  assert.match("tx 6zgh2u9DqHHiXzdy9ouTP7oGky2T4nugqzqt9wJZwNFm done", txHash, "regex sanity: matches a tx-shaped hash");
+  for (const [name, text] of [["docs/yield-shade-go-nogo.md", nogo], ["README Shade subsection", sub]]) {
+    assert.doesNotMatch(text, explorer, `${name} has an explorer link`);
+    assert.doesNotMatch(text, txHash, `${name} has a transaction-hash-shaped string`);
+  }
+});
+
+test("the dry run's placeholder agent account is not in the live view evidence (as the checklist says)", () => {
+  assert.match(nogo, /`shade-agent\.yield-demo\.testnet`; it is computed by the same code and was not queried on chain/);
+  const evidence = readFileSync(join(root, "spikes/shade/evidence/testnet-mpc-views.txt"), "utf8");
+  assert.match(evidence, /derived_public_key predecessor=yield-agent\.testnet path=yield-vault-1/);
+  assert.ok(!evidence.includes("shade-agent.yield-demo.testnet"));
+  const r = runScript("scripts/yield-shade-dry-run.mjs", []);
+  assert.ok(r.lines.some((l) => /^agent contract\s+shade-agent\.yield-demo\.testnet /.test(l)), "dry run derives from the placeholder");
 });
 
 test("every link into the go/no-go checklist from README and plan resolves to a heading", () => {
