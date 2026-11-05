@@ -319,7 +319,7 @@ export function buildLivePlan(config) {
   create("create-runner", runner, config.funding.runner_initial_near, config.public_keys.runner, "runner");
   step("deploy-init", "setup", "deploy the vault wasm and call new in one transaction", vault, vault, [
     { type: "DeployContract", wasm_path: config.wasm_path },
-    call("new", { owner_id: owner, nft_contract_id: config.nft_contract_id, token_id: config.token_id, ref_exchange_id: ref, config: vc }, 30),
+    call("new", { owner_id: owner, nft_contract_id: config.nft_contract_id, token_id: config.token_id, ref_exchange_id: ref, config: vc }, 100),
   ], "both actions succeed (new is only callable by the vault account itself, so it must be this transaction)");
   step("view-config", "check", "read the stored config", null, vault, [viewCall("get_config")], `runners == [${runner}], strategy == ${config.agent}`);
   step("view-state", "check", "read the vault state", null, vault, [viewCall("get_state")], "paused == false, nothing in flight");
@@ -357,7 +357,11 @@ export function buildLivePlan(config) {
   step("withdraw-ref-storage", "rollback", "pull the Ref storage balance back to the vault account", owner, vault, [call("withdraw_ref_storage", {}, 100, 1n)], "ref_storage_withdraw event; NEAR returns to the vault account");
   step("view-withdrawable", "check", "read how much NEAR the owner can withdraw", null, vault, [viewCall("get_withdrawable_near")], `>= ${config.funding.withdraw_near_amount_near} NEAR (else lower funding.withdraw_near_amount_near)`);
   step("withdraw-near", "rollback", "send free NEAR from the vault to the owner", owner, vault, [call("withdraw_near", { amount: parseNear(config.funding.withdraw_near_amount_near).toString() }, 30, 1n)], "near_withdrawn event");
-  step("delete-vault", "rollback", "delete the vault account", vault, vault, [{ type: "DeleteAccount", beneficiary_id: owner }], `${vault} no longer exists; its NEAR went to ${owner}`);
+  step("pre-delete-state", "check", "read the vault state before deleting it", null, vault, [viewCall("get_state")], "balances, stranded_on_ref, unverified_on_ref all empty or zero; swap_in_flight, recovery_in_flight, release_in_flight false");
+  for (const t of tokens) {
+    step("pre-delete-ref-deposit", "check", `read what Ref still holds of ${t} for the vault`, null, ref, [viewCall("get_deposit", { account_id: vault, token_id: t })], "0");
+  }
+  step("delete-vault", "rollback", "delete the vault account (destroys any tokens it still holds on token contracts or Ref)", vault, vault, [{ type: "DeleteAccount", beneficiary_id: owner }], `${vault} no longer exists. Deleting it destroys any tokens still held for it on the token contracts or on Ref; only run it after the pre-delete checks are clean. The beneficiary ${owner} receives the remaining NEAR, so withdraw_near is only needed if you keep the account.`);
   step("delete-runner", "rollback", "delete the runner account", runner, runner, [{ type: "DeleteAccount", beneficiary_id: owner }], `${runner} no longer exists; its NEAR went to ${owner}`);
 
   return {
@@ -660,8 +664,10 @@ export function validatePlan(plan, contractMethods, { minGas = {} } = {}) {
 /** Totals for display: transaction and view counts, deposits, gas and the owner's NEAR outflow. */
 export function planTotals(plan) {
   let deposit = 0n;
+  let security = 0n; // 1-yocto security deposits
   let gas = 0n;
   let outflow = 0n;
+  let outflowSecurity = 0n;
   let transactions = 0;
   let views = 0;
   for (const s of plan.steps) {
@@ -671,9 +677,30 @@ export function planTotals(plan) {
     }
     transactions++;
     const d = s.actions.reduce((x, a) => x + BigInt(a.deposit_yocto ?? 0), 0n);
+    const one = BigInt(s.actions.filter((a) => a.type === "FunctionCall" && a.deposit_yocto === "1").length);
     deposit += d;
+    security += one;
     gas += s.actions.reduce((x, a) => x + BigInt(a.gas ?? 0), 0n);
-    if (s.signer_id === plan.owner_id) outflow += d;
+    if (s.signer_id === plan.owner_id) {
+      outflow += d;
+      outflowSecurity += one;
+    }
   }
-  return { transactions, views, deposit_near: formatNear(deposit), owner_outflow_near: formatNear(outflow), gas_tgas: (gas / TGAS).toString() };
+  return {
+    transactions,
+    views,
+    // NEAR without the 1-yocto security deposits, the yocto count of those, and the exact totals.
+    deposit_near: formatNear(deposit - security),
+    deposit_security_yocto: security.toString(),
+    deposit_yocto: deposit.toString(),
+    owner_outflow_near: formatNear(outflow - outflowSecurity),
+    owner_outflow_security_yocto: outflowSecurity.toString(),
+    owner_outflow_yocto: outflow.toString(),
+    gas_tgas: (gas / TGAS).toString(),
+  };
+}
+
+/** "8.525 NEAR + 7 yocto (1-yocto security deposits)" */
+export function formatSplit(near, securityYocto) {
+  return `${near} NEAR + ${securityYocto} yocto (1-yocto security deposits)`;
 }

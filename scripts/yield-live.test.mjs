@@ -42,6 +42,8 @@ test("dry-run --json: unsigned, ordered steps, exit 0", () => {
   assert.ok(ids.indexOf("execute-swap") < ids.indexOf("withdraw-out"));
   assert.ok(ids.indexOf("withdraw-out") < ids.indexOf("delete-vault"));
   assert.equal(doc.totals.transactions + doc.totals.views, doc.transactions.length);
+  assert.match(doc.totals.deposit_yocto, /^\d+$/);
+  assert.equal(doc.totals.deposit_near, "8.525");
 });
 
 test("dry-run text lists steps, totals and commands; --out writes the JSON", () => {
@@ -52,7 +54,7 @@ test("dry-run text lists steps, totals and commands; --out writes the JSON", () 
   assert.match(r.stdout, /UNSIGNED \(nothing is signed or sent\)/);
   assert.match(r.stdout, /^ 1\. \[setup\]/m);
   assert.match(r.stdout, /near-cli-rs \(text only\): near contract call-function as-transaction .* execute_swap/);
-  assert.match(r.stdout, /totals: \d+ transactions, \d+ views/);
+  assert.match(r.stdout, /totals: \d+ transactions, \d+ views, deposits 8\.525 NEAR \+ \d+ yocto \(1-yocto security deposits\), owner outflow 8\.525 NEAR \+ \d+ yocto/);
   assert.match(r.stdout, /warning: placeholder not filled in: owner_id/);
   assert.equal(JSON.parse(readFileSync(out, "utf8")).unsigned, true);
 });

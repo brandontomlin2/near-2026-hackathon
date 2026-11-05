@@ -17,7 +17,7 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  CONTRACT_SOURCE_URL, YOCTO_PER_BYTE, buildLivePlan, findPlaceholders, formatNear, loadContractSpec, loadLiveConfig,
+  CONTRACT_SOURCE_URL, YOCTO_PER_BYTE, buildLivePlan, findPlaceholders, formatNear, formatSplit, loadContractSpec, loadLiveConfig,
   parseNear, planTotals, validateLiveConfig, validatePlan,
 } from "../src/yield/live-plan.mjs";
 import { RefusalError, assertNotMainnet } from "../src/yield/send.mjs";
@@ -140,7 +140,7 @@ function dryRun(opts, { log }) {
   log("");
   plan.steps.forEach((s, i) => log(renderStep(s, i)));
   log("");
-  log(`totals: ${totals.transactions} transactions, ${totals.views} views, deposits ${totals.deposit_near} NEAR, owner outflow ${totals.owner_outflow_near} NEAR, prepaid gas ${totals.gas_tgas} TGas`);
+  log(`totals: ${totals.transactions} transactions, ${totals.views} views, deposits ${formatSplit(totals.deposit_near, totals.deposit_security_yocto)}, owner outflow ${formatSplit(totals.owner_outflow_near, totals.owner_outflow_security_yocto)}, prepaid gas ${totals.gas_tgas} TGas`);
   for (const w of warnings) log(`warning: ${w}`);
   for (const m of plan.manual) log(`manual: ${m}`);
   if (problems.length) {
@@ -176,7 +176,7 @@ function preflight(opts, { log, err }) {
     if (built.problems.length) add("FAIL", "plan valid against lib.rs, gas and deposits within limits", built.problems.join("; "));
     else {
       const t = planTotals(plan);
-      add("PASS", "plan valid against lib.rs, gas and deposits within limits", `${t.transactions} transactions, owner outflow ${t.owner_outflow_near} NEAR`);
+      add("PASS", "plan valid against lib.rs, gas and deposits within limits", `${t.transactions} transactions, owner outflow ${formatSplit(t.owner_outflow_near, t.owner_outflow_security_yocto)}`);
     }
   }
 
@@ -206,7 +206,7 @@ function preflight(opts, { log, err }) {
   const manual = [];
   if (plan) {
     const t = planTotals(plan);
-    manual.push(`owner ${plan.owner_id} exists on testnet and holds at least ${t.owner_outflow_near} NEAR plus gas for its transactions`);
+    manual.push(`owner ${plan.owner_id} exists on testnet and holds at least ${formatSplit(t.owner_outflow_near, t.owner_outflow_security_yocto)} plus gas for its transactions`);
     manual.push(`keys for owner, vault ${plan.vault_id} and runner ${plan.runner_id} are in the near-cli-rs keychain (the vault and runner public keys in the config match them)`);
     manual.push(`${config.nft_contract_id} exists and token ${config.token_id} is minted (the vault records them; the contract does not verify them)`);
     manual.push("Ref's storage_balance_bounds min is below ref_storage_deposit_near (read it with the view step)");

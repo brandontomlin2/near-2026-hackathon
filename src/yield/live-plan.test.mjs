@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
-  MAX_TX_GAS, TGAS, buildLivePlan, formatNear, loadContractSpec, loadLiveConfig, parseContractMethods, parseMinGas, parseNear,
+  MAX_TX_GAS, TGAS, buildLivePlan, formatNear, formatSplit, planTotals, loadContractSpec, loadLiveConfig, parseContractMethods, parseMinGas, parseNear,
   validateLiveConfig, validatePlan,
 } from "./live-plan.mjs";
 import { RefusalError } from "./send.mjs";
@@ -265,4 +265,46 @@ test("refused: private-key-looking fields and values", () => {
   c = example();
   c.public_keys.vault = KEY;
   assert.doesNotThrow(() => validateLiveConfig(c, { allowPlaceholders: true }));
+});
+
+test("deploy+init carries 100 TGas", () => {
+  assert.equal(callOf(buildLivePlan(example()), "deploy-init").gas, String(100n * TGAS));
+});
+
+test("pre-delete checks come right before the deletes, with the destroy warning", () => {
+  const plan = buildLivePlan(example());
+  const ids = plan.steps.map((s) => s.id);
+  const del = ids.indexOf("delete-vault");
+  assert.ok(ids.indexOf("withdraw-near") < ids.indexOf("pre-delete-state"));
+  assert.ok(ids.indexOf("pre-delete-state") < del);
+  const state = stepOf(plan, "pre-delete-state");
+  assert.equal(state.view, true);
+  assert.equal(state.actions[0].method_name, "get_state");
+  assert.match(state.expect, /stranded_on_ref, unverified_on_ref all empty or zero; swap_in_flight, recovery_in_flight, release_in_flight false/);
+  const refChecks = plan.steps.filter((s) => s.id.startsWith("pre-delete-ref-deposit"));
+  const vc = buildLivePlan(example()).steps.find((s) => s.id === "deploy-init").actions[1].args.config;
+  const tokens = [...new Set(vc.allowed_pools.flatMap((p) => [p.token_a, p.token_b]))];
+  assert.deepEqual(refChecks.map((s) => s.actions[0].args.token_id), tokens);
+  for (const s of refChecks) {
+    assert.equal(s.receiver_id, "ref-finance-101.testnet");
+    assert.equal(s.actions[0].args.account_id, plan.vault_id);
+    assert.equal(s.expect, "0");
+    assert.ok(ids.indexOf(s.id) < del);
+  }
+  const d = stepOf(plan, "delete-vault");
+  assert.match(d.title, /destroys any tokens/);
+  assert.match(d.expect, /destroys any tokens still held for it on the token contracts or on Ref/);
+  assert.match(d.expect, /withdraw_near is only needed if you keep the account/);
+  assert.deepEqual(validate(plan), []);
+});
+
+test("totals split NEAR from 1-yocto security deposits and keep exact yocto", () => {
+  const plan = buildLivePlan(example());
+  const t = planTotals(plan);
+  const oneYocto = plan.steps.flatMap((s) => s.actions).filter((a) => a.type === "FunctionCall" && a.deposit_yocto === "1").length;
+  assert.equal(t.deposit_security_yocto, String(oneYocto));
+  assert.equal(t.deposit_near, "8.525");
+  assert.equal(formatSplit(t.deposit_near, t.deposit_security_yocto), `8.525 NEAR + ${oneYocto} yocto (1-yocto security deposits)`);
+  assert.equal(BigInt(t.deposit_yocto), parseNear("8.525") + BigInt(oneYocto));
+  assert.equal(t.owner_outflow_yocto, t.deposit_yocto);
 });
