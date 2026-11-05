@@ -17,7 +17,7 @@ const VERIFY = path.join(root, "scripts/verify.sh");
 const verify = fs.readFileSync(VERIFY, "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 const quick = readme.match(/## Judge quick path\n([\s\S]*?)\n## /)?.[1] ?? "";
-const step3 = quick.split(/^3\. /m)[1]?.split(/^4\. /m)[0] ?? "";
+const verifyStep = quick.split(/^4\. /m)[1]?.split(/^5\. /m)[0] ?? "";
 const quoted = (text) => [...text.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
 
 // verify.sh's stage list, read from print_summary so this test follows the script.
@@ -73,20 +73,20 @@ test("without cargo, verify.sh's vault tests stage is SKIP with a WARN, the tabl
   assert.equal(run.stdout.trimEnd().split("\n").at(-1), "result: PASS");
 });
 
-test("Judge quick path step 3 quotes the real no-cargo and no-gitleaks lines and does not claim the Rust tests ran", () => {
-  const q = quoted(step3);
+test("Judge quick path step 4 (verify.sh) quotes the real no-cargo and no-gitleaks lines and does not claim the Rust tests ran", () => {
+  const q = quoted(verifyStep);
   const run = runVaultBlockWithoutCargo();
   for (const line of ["NOT RUN: cargo not installed", "WARN: cargo not installed; the yield vault contract tests did NOT run"]) {
-    assert.ok(q.includes(line), `step 3 quotes: ${line}`);
+    assert.ok(q.includes(line), `step 4 quotes: ${line}`);
     assert.ok(run.stdout.includes(line) || run.stderr.includes(line), `verify.sh prints: ${line}`);
   }
   const fallback = "FALLBACK scan, no findings (gitleaks not installed; narrower than gitleaks)";
-  assert.ok(q.includes(fallback), "step 3 quotes the fallback secret scan detail");
+  assert.ok(q.includes(fallback), "step 4 quotes the fallback secret scan detail");
   assert.ok(verify.includes(`record PASS "secret scan" "${fallback}"`), "verify.sh records that detail");
-  assert.match(step3, /not a gitleaks pass/);
-  assert.match(step3, /18 rows/);
-  assert.match(step3, /Rust tests did not run/);
-  assert.match(quick, /no Rust is needed for steps 1, 2 and 4/, "the intro does not say step 3 needs no Rust");
+  assert.match(verifyStep, /not a gitleaks pass/);
+  assert.match(verifyStep, /18 rows/);
+  assert.match(verifyStep, /Rust tests did not run/);
+  assert.match(quick, /no Rust is needed for steps 1, 2 and 3/, "the intro does not say step 4 needs no Rust");
 });
 
 test("the README refund caveat points at a vault README paragraph that exists and names the mock-only limit", () => {
