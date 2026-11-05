@@ -2,6 +2,8 @@
 
 For the owner, for the moment of "yes, deploy". Every command below was run in dry-run mode with placeholder accounts (`demo-owner.testnet`, `personality-nft-demo.testnet`) and behaved as written. Nothing here signs anything until you add `--send --i-approve`. Mainnet is refused everywhere.
 
+The step-by-step runbook (commands in order, expected output, failure handling, rollback) is [`docs/live-runbook.md`](live-runbook.md).
+
 ## Before you start (once)
 
 - near-cli-rs v0.14 or later on `PATH` (`near --version`). Dry runs do not need it; `--send` does.
