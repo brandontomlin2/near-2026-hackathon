@@ -1192,7 +1192,7 @@ fn recover_from_ref_rejects_low_gas() {
     let mut v = funded();
     v.stranded.insert(rft(), 500);
     let mut c = ctx1("owner.testnet");
-    c.prepaid_gas(Gas::from_tgas(149));
+    c.prepaid_gas(Gas::from_tgas(MIN_RECOVER_GAS.as_tgas() - 1));
     testing_env!(c.build());
     let _ = v.recover_from_ref(rft(), U128(300));
 }
