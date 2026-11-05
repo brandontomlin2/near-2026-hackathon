@@ -19,7 +19,7 @@ const TESTNET_ENV = {
 /** Write a --vault-state file (the target vault's get_config()/get_state()) and return its path. */
 function vaultStateFile(overrides = {}) {
   const dir = mkdtempSync(join(tmpdir(), "yield-vs-"));
-  const doc = { config: defaultVaultConfig("skeptic", { runner: "runner.x.testnet" }), state: initialState(), fetched_at: new Date(NOW_MS - 60_000).toISOString(), block_height: 123456, ...overrides };
+  const doc = { config: defaultVaultConfig("skeptic", { runner: "runner.x.testnet" }), state: initialState(), vault_id: "vault.x.testnet", fetched_at: new Date(NOW_MS - 60_000).toISOString(), block_height: 123456, ...overrides };
   const file = join(dir, "vault.json");
   writeFileSync(file, JSON.stringify(doc));
   return file;
@@ -162,6 +162,24 @@ test("--send checks proposals against the vault's real config: a vault with no l
   const config = { ...defaultVaultConfig("skeptic", { runner: "runner.x.testnet" }), limits: [] };
   const r = await run(["--send", "--i-approve", "--agent", "skeptic", "--vault-state", vaultStateFile({ config })], TESTNET_ENV, { hasNear: () => true });
   assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.calls, []);
+});
+
+test("--send refuses a vault-state that does not name the target vault, or names another one", async () => {
+  for (const [vault_id, why] of [[undefined, /needs "vault_id"/], ["other.x.testnet", /vault_id other\.x\.testnet is not the target vault vault\.x\.testnet/]]) {
+    const r = await run(["--send", "--i-approve", "--agent", "skeptic", "--vault-state", vaultStateFile({ vault_id })], TESTNET_ENV, { hasNear: () => true });
+    assert.equal(r.code, 1);
+    assert.match(r.stderr, why);
+    assert.match(r.stderr, /Nothing was sent/);
+    assert.deepEqual(r.calls, []);
+  }
+});
+
+test("--send refuses a vault-state whose config strategy is not the --agent's", async () => {
+  const config = defaultVaultConfig("chaotic", { runner: "runner.x.testnet" });
+  const r = await run(["--send", "--i-approve", "--agent", "skeptic", "--vault-state", vaultStateFile({ config })], TESTNET_ENV, { hasNear: () => true });
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /config\.strategy chaotic is not --agent skeptic/);
   assert.deepEqual(r.calls, []);
 });
 

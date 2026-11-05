@@ -38,8 +38,9 @@ const USAGE = `Usage: node scripts/yield.mjs [--agent ID] [--rounds N] [--json] 
   --json        print one JSON document instead of text
   --out DIR     where the track record goes: DIR/yield/ledger.json (default out; rewritten each run)
   --vault-state FILE  JSON {"config": <get_config()>, "state": <get_state()>} of the target vault
-                (state: the raw get_state() JSON; balances and spent_today are [token, amount] pairs), plus "fetched_at" (ISO time) and
-                "block_height" of the view calls. Required with --send: proposals are checked against
+                (state: the raw get_state() JSON; balances and spent_today are [token, amount] pairs), plus
+                "vault_id" (must equal YIELD_VAULT_ACCOUNT_ID; config.strategy must equal --agent),
+                "fetched_at" (ISO time) and "block_height" of the view calls. Required with --send: proposals are checked against
                 it, never against the built-in demo config. Refused if older than 10 minutes. It is
                 only a cache: the chain is the authority and re-checks every rule on execute_swap.
   --send        really send the accepted execute_swap calls with near-cli-rs (one round only:
@@ -163,15 +164,18 @@ export function normalizeContractState(state, nowMs) {
 }
 
 /** Read the target vault's real config and state; throws an Error with a clear message. */
-function loadVaultState(file, nowMs) {
+function loadVaultState(file, nowMs, { vault, agent }) {
   let doc;
   try {
     doc = JSON.parse(readFileSync(file, "utf8"));
   } catch (e) {
     throw new Error(`cannot read --vault-state ${file}: ${e.message.split("\n")[0]}`);
   }
-  const { config, state, fetched_at: fetchedAt, block_height: blockHeight } = doc ?? {};
+  const { config, state, vault_id: vaultId, fetched_at: fetchedAt, block_height: blockHeight } = doc ?? {};
   if (!config || typeof config !== "object" || !state || typeof state !== "object") throw new Error(`--vault-state ${file} needs both "config" and "state" objects`);
+  if (typeof vaultId !== "string" || vaultId === "") throw new Error(`--vault-state ${file} needs "vault_id": the account the view calls were made against`);
+  if (vaultId !== vault) throw new Error(`--vault-state vault_id ${vaultId} is not the target vault ${vault} (YIELD_VAULT_ACCOUNT_ID)`);
+  if (config.strategy !== agent) throw new Error(`--vault-state config.strategy ${config.strategy} is not --agent ${agent}: each vault belongs to one agent`);
   const problems = validateVaultConfig(config);
   if (problems.length) throw new Error(`--vault-state config is invalid: ${problems.join("; ")}`);
   const fetchedMs = typeof fetchedAt === "string" ? Date.parse(fetchedAt) : NaN;
@@ -250,7 +254,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
       return 1;
     }
     try {
-      const v = loadVaultState(opts.vaultState, now());
+      const v = loadVaultState(opts.vaultState, now(), { vault, agent: opts.agent });
       configs[opts.agent] = v.config;
       ledger.states[opts.agent] = v.state;
     } catch (e) {
