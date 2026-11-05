@@ -39,7 +39,7 @@ export const STYLE_NAMES = Object.freeze(Object.keys(STYLES));
  * @returns {Style}
  */
 export function getStyle(name) {
-  if (!Object.hasOwn(STYLES, name)) {
+  if (typeof name !== "string" || !Object.hasOwn(STYLES, name)) {
     throw new Error(`unknown style: ${String(name)} (expected one of ${STYLE_NAMES.join(", ")})`);
   }
   return STYLES[name];
