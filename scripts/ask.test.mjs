@@ -325,7 +325,7 @@ test("a malformed sheet.json is a memory error with its code: exit 1, one line, 
   const r = ask(["--out", out, "chaotic", "hello?"]);
   assert.equal(r.code, 1);
   assert.equal(r.stdout, "");
-  assert.equal(r.stderr, `${MODE_LINE}ask: memory error (bad_sheet): the sheet file is malformed\n`);
+  assert.equal(r.stderr, `${MODE_LINE}ask: memory error (bad_sheet): the sheet file ${join(out, "memory", "chaotic", "sheet.json")} is malformed\n`);
   assert.ok(noStack(r.stderr));
   assert.deepEqual(snapshot(out), before);
 });
