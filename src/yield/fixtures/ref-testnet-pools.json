@@ -12,7 +12,7 @@
     8,
     747
   ],
-  "_note": "Decoded snapshot of selected pools. Amounts are base units (decimal strings); total_fee is in bps (of 10000); decimals come from each token's ft_metadata. mock_usd_price is the demo's reference price, not an oracle: stable tokens use the $1 peg, wrap.testnet a fixed mock $3.00, null means no reference price. Testnet liquidity is thin and most reserves are junk: pool 1 (nusdt/nusdc) holds 0.237 nUSDT vs 444.11 nUSDC, about 99.9% off the peg. Pool 747 (usdc.fakes/usdt.fakes) holds about 4.98 USDC.e and 5.11 USDT.e, 264 bps off the peg: shallow but sanely priced. ref_get_return records Ref's own get_return view at the same block, so the constant-product quote can be checked against the exchange.",
+  "_note": "Decoded snapshot of selected pools. Amounts are base units (decimal strings); total_fee is in bps (of 10000); decimals come from each token's ft_metadata. mock_usd_price is the demo's reference price, not an oracle: stable tokens use the $1 peg, wrap.testnet a fixed mock $3.00, null means no reference price. Testnet liquidity is thin and most reserves are junk (e.g. pool 1, nusdt/nusdc, is far off the peg); pool 747 (usdc.fakes/usdt.fakes) is shallow but near the peg. Read the reserves below, not this note: it is regenerated unchanged. ref_get_return records Ref's own get_return view at the same block, so the constant-product quote can be checked against the exchange.",
   "exchange": "ref-finance-101.testnet",
   "tokens": {
     "wrap.testnet": {

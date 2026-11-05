@@ -21,6 +21,7 @@
     "swarm": "node scripts/swarm.mjs",
     "demo": "node scripts/demo.mjs",
     "yield": "node scripts/yield.mjs",
+    "yield:snapshot": "node scripts/yield-snapshot.mjs",
     "yield:demo": "node scripts/yield-demo.mjs",
     "yield:demo:check": "node scripts/yield-demo-check.mjs",
     "yield:shade:dry-run": "node scripts/yield-shade-dry-run.mjs",
