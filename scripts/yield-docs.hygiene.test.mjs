@@ -22,7 +22,7 @@ function vaultDocs() {
 }
 
 // Absolute paths into a local home or temp directory.
-const LOCAL_PATH = /(^|[^\w.:/-])(\/Users\/|\/tmp\/|\/home\/[a-z]|\/private\/var\/|~\/\.claude)/;
+const LOCAL_PATH = /(^|[^\w.:/-])(\/Users\/|\/tmp\/|\/home\/[a-z]|\/root\/|\/private\/var\/|\/var\/folders\/|~\/\.claude)|\b[A-Z]:\\Users\\/;
 
 test('vault docs set is not empty (the scan below is not vacuous)', () => {
   const docs = vaultDocs();
@@ -46,6 +46,8 @@ test('the local-path pattern catches the paths it is meant to catch', () => {
     'report (/tmp/review.md)',
     'path /home/dev/x',
     'log at ~/.claude/logs/a.md',
+    'temp /var/folders/ab/T/x',
+    'C:\\Users\\dev\\notes.md',
   ]) assert.ok(LOCAL_PATH.test(bad), bad);
   for (const ok of ['https://docs.near.org/tmp/x', 'out/yield-demo/plan.json', 'src/tmp/x']) {
     assert.ok(!LOCAL_PATH.test(ok), ok);
@@ -55,7 +57,11 @@ test('the local-path pattern catches the paths it is meant to catch', () => {
 test('vault and root READMEs do not call the AI reviews an independent audit', () => {
   for (const rel of [VAULT_README, 'README.md']) {
     const text = read(rel);
-    assert.doesNotMatch(text, /\ban independent (audit|review)\b/i, rel);
+    for (const line of text.split('\n')) {
+      // Negated forms ("No professional or independent auditor", "not a professional audit") are honest.
+      if (/\b(no|not a|not an)\b[^.]*\b(professional|independent)/i.test(line)) continue;
+      assert.doesNotMatch(line, /\b(independent(ly)?|professional(ly)?|third-party) (audit|review)|\baudited by\b/i, `${rel}: ${line.slice(0, 120)}`);
+    }
   }
   assert.match(read(VAULT_README), /AI review agents/);
   assert.match(read(VAULT_README), /No professional or independent auditor/);
@@ -71,9 +77,17 @@ test('README VaultState lists exactly the fields of lib.rs VaultState, in order'
   const rust = structFields(read(LIB_RS), 'VaultState');
   const block = read(VAULT_README).match(/VaultState\s+\{([\s\S]*?)\}/);
   assert.ok(block, 'VaultState block not found in the vault README');
-  const documented = [...block[1].matchAll(/(\w+)(?=\s*[,}:]|\s*$)/g)]
-    .map((x) => x[1])
-    .filter((w) => /^[a-z_]+$/.test(w) && w !== 'u64' && w !== 'bool');
+  // Split on commas outside brackets; each entry is `name` or `name: Type`.
+  const entries = [];
+  let depth = 0;
+  let cur = '';
+  for (const ch of block[1]) {
+    if ('([<'.includes(ch)) depth++;
+    if (')]>'.includes(ch)) depth--;
+    if (ch === ',' && depth === 0) { entries.push(cur); cur = ''; } else cur += ch;
+  }
+  entries.push(cur);
+  const documented = entries.map((e) => e.split(':')[0].trim()).filter(Boolean);
   assert.ok(rust.includes('unverified_on_ref'));
   assert.deepEqual(documented, rust);
 });
