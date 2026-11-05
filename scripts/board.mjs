@@ -156,6 +156,20 @@ function loadItems(file) {
     fail(`board/board.json is not valid JSON (${err.message})`);
   }
   if (!Array.isArray(data)) fail("board/board.json must be a JSON list");
+  const seen = new Set();
+  data.forEach((entry, index) => {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      fail(`board/board.json item ${index} must be an object`);
+    }
+    if (typeof entry.id !== "string" || entry.id.trim() === "") {
+      fail(`board/board.json item ${index} needs a non-empty string id`);
+    }
+    if (!STATUSES.includes(entry.status)) {
+      fail(`board/board.json item ${entry.id} has invalid status: ${entry.status} (expected ${STATUSES.join(", ")})`);
+    }
+    if (seen.has(entry.id)) fail(`board/board.json has duplicate id: ${entry.id}`);
+    seen.add(entry.id);
+  });
   return data.map(canonicalize);
 }
 
