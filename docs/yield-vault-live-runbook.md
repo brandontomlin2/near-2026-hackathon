@@ -234,7 +234,7 @@ near contract call-function as-transaction wrap.testnet ft_transfer_call json-ar
 - Cost: 0.000000000000000000000001 NEAR.
 - Expected result: wrap.testnet moves 20000000000000000000000 (0.02 wNEAR) to the vault and calls `ft_on_transfer`; the vault accepts it because wrap.testnet is in an allowed pool and the sender is the owner. A `deposit` event is logged and `ft_transfer_call` resolves with 0 unused.
 - Check (the plan's expectation): vault ft_on_transfer accepts the owner's deposit (token is in an allowed pool): deposit event, nothing refunded
-- If it fails: The vault refunds in full (the token returns the amount to the owner) if the sender is not the owner, the token is not in an allowed pool, the vault is paused, or a force release is pending. Check `get_state` and the transaction logs.
+- If it fails: The vault refunds in full (the token returns the amount to the owner) if the sender is not the owner, the token is not in an allowed pool, the amount is 0, a force release is pending, or a `sync_balance` read is pending. Pausing does not refuse deposits. Check `get_state` and the transaction logs.
 
 ### Phase: Check
 
@@ -364,7 +364,7 @@ near contract call-function as-transaction vault.owner.yield-demo.testnet pause 
 
 - Signer: `owner.yield-demo.testnet`; receiver: `vault.owner.yield-demo.testnet`.
 - Cost: 0.000000000000000000000001 NEAR.
-- Expected result: A `paused` event. From now on `execute_swap` and `ft_on_transfer` deposits are refused.
+- Expected result: A `paused` event. From now on `execute_swap` is refused (`ERR_PAUSED`). Owner deposits through `ft_on_transfer` are still accepted; `pause` does not check them.
 - Check (the plan's expectation): paused event
 - If it fails: Needs exactly 1 yocto and the owner key; ERR_NOT_OWNER otherwise.
 
@@ -495,7 +495,7 @@ near contract call-function as-transaction vault.owner.yield-demo.testnet pause 
 near contract call-function as-transaction vault.owner.yield-demo.testnet revoke_all_runners json-args '{}' prepaid-gas '30 Tgas' attached-deposit '1 yoctoNEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
 ```
 
-After this no runner can start a swap and owner deposits are refunded. A swap already in flight continues to its end; it cannot be stopped. `unpause` and `add_runner` (owner, 1 yocto) undo it. Funds stay in the vault until withdrawn.
+After this no runner can start a swap. It blocks swaps only: owner deposits are still accepted and owner withdrawals still work, so stop sending deposits yourself. A swap already in flight continues to its end; it cannot be stopped. `unpause` and `add_runner` (owner, 1 yocto) undo it. Funds stay in the vault until withdrawn.
 
 ### Full teardown order
 
