@@ -222,7 +222,7 @@ function main(argv) {
     else if (!commandsOf(block.code).length) rows.push({ status: "FAIL", step, detail: "empty block" });
     else {
       const r = runBlock(block, opts.cwd, opts.timeoutMs);
-      rows.push({ status: r.status, step, detail: `${label.slice(0, 50)}: ${r.detail}` });
+      rows.push({ status: r.status, step, detail: `${Array.from(label).slice(0, 50).join("")}: ${r.detail}` });
     }
   }
   const { text, failed } = formatTable(rows);

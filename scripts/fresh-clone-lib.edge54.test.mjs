@@ -420,3 +420,17 @@ describe("regression: a backtick line with backticks in its info string is not a
     assert.equal(b.code, "echo a");
   });
 });
+
+describe("regression: the row label is clipped by code point, not UTF-16 unit", () => {
+  test("an emoji straddling the 50-char boundary is kept whole or dropped, never split", T, (t) => {
+    const cmd = `echo ${"a".repeat(44)}😀bbb`; // emoji occupies UTF-16 units 49 and 50
+    const dir = tmp(t);
+    const file = path.join(dir, "README.md");
+    fs.writeFileSync(file, run(cmd));
+    const r = cli(["run", "--readme", file, "--cwd", dir]);
+    assert.equal(r.status, 0, r.all);
+    const table = r.stdout.slice(r.stdout.indexOf("STATUS"));
+    assert.ok(!table.includes("�"), "table contains a replacement character");
+    assert.ok(table.includes(`echo ${"a".repeat(44)}😀`), table);
+  });
+});
