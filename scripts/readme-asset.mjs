@@ -39,6 +39,19 @@ const OWN_ASSET = Object.freeze({
  * before the demo, so a refusal writes nothing. Throws an Error with a one-line message.
  */
 export function assertAssetsWritable(dir, force) {
+  // Check every output before any is written, so a refusal never leaves a partial write.
+  for (const name of Object.keys(OWN_ASSET)) {
+    const file = path.join(dir, name);
+    let st;
+    try {
+      st = fs.lstatSync(file);
+    } catch (e) {
+      if (e.code === "ENOENT" || e.code === "ENOTDIR") continue;
+      throw new Error(`cannot inspect ${file}: ${e.message}`);
+    }
+    if (st.isSymbolicLink()) throw new Error(`${file} is a symbolic link; refusing to write through it`);
+    if (st.isDirectory()) throw new Error(`${file} is a directory; remove it or pick another --out`);
+  }
   if (force) return;
   for (const [name, pattern] of Object.entries(OWN_ASSET)) {
     const file = path.join(dir, name);
