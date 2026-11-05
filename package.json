@@ -21,6 +21,7 @@
     "swarm": "node scripts/swarm.mjs",
     "demo": "node scripts/demo.mjs",
     "yield": "node scripts/yield.mjs",
+    "yield:demo": "node scripts/yield-demo.mjs",
     "screenshot": "node scripts/screenshot.mjs",
     "readme-asset": "node scripts/readme-asset.mjs",
     "site": "node scripts/site.mjs",
