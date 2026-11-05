@@ -190,3 +190,29 @@ test("a malformed events.jsonl does not stop mutations: new events are appended 
   assert.equal(lines[0], "not json");
   assert.equal(JSON.parse(lines[1]).action, "changed");
 });
+
+test("malformed items (null, non-object, missing id, unknown or missing status, duplicate id) fail cleanly and are never rewritten", (t) => {
+  const cases = [
+    ["[null]", /^error: board\/board\.json item 0 must be an object\n$/],
+    ["[1]", /^error: board\/board\.json item 0 must be an object\n$/],
+    ['[["a"]]', /^error: board\/board\.json item 0 must be an object\n$/],
+    ["[{}]", /^error: board\/board\.json item 0 needs a non-empty string id\n$/],
+    ['[{"id":"  ","status":"todo"}]', /needs a non-empty string id/],
+    ['[{"id":"a"}]', /^error: board\/board\.json item a has invalid status: undefined /],
+    ['[{"id":"a","status":"weird"}]', /^error: board\/board\.json item a has invalid status: weird /],
+    ['[{"id":"a","status":"todo"},{"id":"a","status":"done"}]', /^error: board\/board\.json has duplicate id: a\n$/],
+  ];
+  for (const [raw, pattern] of cases) {
+    for (const cmd of [["list"], ["add", "New", ...ACT], ["claim", "a", "--owner", "me", ...ACT]]) {
+      const cwd = tempRepo(t);
+      seedRaw(cwd, raw);
+      const r = run(cwd, cmd);
+      assert.equal(r.status, 1, `${raw} ${cmd[0]}: ${r.stdout}`);
+      assert.match(r.stderr, pattern);
+      assert.doesNotMatch(r.stderr, NO_STACK);
+      assert.equal(r.stdout, "");
+      assert.equal(readText(boardPath(cwd)), raw);
+      assert.equal(readText(eventsPath(cwd)), null);
+    }
+  }
+});
