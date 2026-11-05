@@ -394,3 +394,34 @@ describe("enemyInSheet and thenNowCaption edges", () => {
     assert.ok(html.includes("Public enemy #1 &lt;i&gt;&quot;x&quot;&lt;/i&gt;"));
   });
 });
+
+describe("a manifest missing a scalar the page prints throws instead of printing 'undefined'", () => {
+  for (const key of ["rounds", "seed", "every", "finalRoundHash"]) {
+    it(`manifest.${key}`, () => {
+      const m = baseManifest();
+      delete m[key];
+      assert.throws(() => render(m), TypeError);
+    });
+  }
+
+  for (const key of ["name", "personality", "memoryDepth"]) {
+    it(`agent.${key}`, () => {
+      assert.throws(() => render(baseManifest({ agents: [agentFixture("aloof", "Aloof", { [key]: undefined })] })), TypeError);
+    });
+  }
+
+  it("anchors.contractId", () => {
+    assert.throws(() => render(baseManifest(), { events: [], anchors: { calls: [] } }), TypeError);
+  });
+
+  it("null counts as missing", () => {
+    assert.throws(() => render(baseManifest({ seed: null })), TypeError);
+  });
+
+  it("falsy but present values are fine: seed 0, rounds 0, empty personality", () => {
+    const html = render(baseManifest({ seed: 0, rounds: 0, agents: [agentFixture("aloof", "Aloof", { personality: "" })] }));
+    assert.ok(html.includes("seed 0"));
+    assertNoLeaks(html);
+  });
+});
+
