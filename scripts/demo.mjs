@@ -88,6 +88,9 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     const { manifest } = run;
     const sheetCount = manifest.agents.reduce((n, a) => n + a.sheets.length, 0);
     const eventCount = manifest.roundHashes.length * manifest.agents.length;
+    log("Personality NFT: four AI characters argue in a group chat. Each NFT keeps a character sheet (rivals, allies, best line), and the sheet's hash is prepared for anchoring on NEAR so a new owner can check it was not rewritten.");
+    log("This run is mock mode: scripted chat, no AI model call, nothing sent to NEAR.");
+    log("");
     log(`[1/5] swarm: ${plural(manifest.rounds, "round")}, ${plural(eventCount, "event")}, verify: ok`);
     log(`[2/5] memory: ${plural(sheetCount, "sheet")} (a summary every ${plural(manifest.every, "round")}, ${plural(manifest.agents.length, "agent")})`);
     // One line per agent: first sheet -> latest sheet. This is what the camera sees.
