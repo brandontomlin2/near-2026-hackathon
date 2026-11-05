@@ -7,7 +7,7 @@ A per-personality-NFT trading vault. Each personality NFT (aloof, chaotic, socia
 **Status: NOT deployed.** A testnet deploy needs the human's explicit yes. Tested with 228 unit tests (`cargo test`) and 14 integration tests in a throwaway local sandbox against a mock Ref and mock NEP-141 tokens (`sandbox/`, see "Sandbox measurements"). See "Known risks".
 
 **Measured in a local sandbox, not against real Ref:**
-- The gas figures in `src/lib.rs` are now checked against gas measured in a local near-workspaces sandbox (a throwaway chain on this machine; no testnet, no mainnet, no real keys). The vault wasm runs the full swap, recovery, withdraw, sync, register and force-release chains against a mock Ref exchange and mock NEP-141 tokens. Every entry point completes at exactly its documented minimum prepaid gas. See "Sandbox measurements".
+- The gas figures in `src/lib.rs` are now checked against gas measured in a local near-workspaces sandbox (a throwaway chain on this machine; no testnet, no mainnet, no real keys). The vault wasm runs the full swap, recovery, owner withdraw, sync and register chains against a mock Ref exchange and mock NEP-141 tokens, each at exactly its documented minimum prepaid gas. `force_release_lock` was measured at its minimum in an earlier sandbox run (see "Sandbox measurements") and is now covered by unit tests only. `withdraw_ref_storage` has not run in the sandbox. See "Sandbox measurements".
 - What the sandbox cannot tell: what real Ref's `ft_on_transfer`, `swap`, `withdraw` and `get_deposit` bodies cost. The mock uses Ref's method names and JSON argument shapes (`ft_transfer_call` with `msg: ""`, `swap { actions, referral_id }`, `withdraw { token_id, amount, unregister, skip_unwrap_near }`, `get_deposit { account_id, token_id }`, `storage_deposit`, `storage_withdraw`) and Ref's inner withdraw gas (20 TGas `ft_transfer` + 20 TGas callback). Those were taken from a public fork of Ref's source, because the canonical `ref-finance/ref-contracts` repository is no longer public. The mock bodies are much lighter than Ref's, so the sandbox measures how much heavier each Ref hop may be before the chain fails (headroom), not Ref's real cost.
 
 ## Interface
@@ -139,7 +139,7 @@ Gas burnt, Ref inner withdraw gas 20 + 20 (TGas; subtree = the receipt plus ever
 | owner `withdraw` | `MIN_WITHDRAW_GAS` 80 | 6.3 |
 | `sync_balance` | `MIN_SYNC_GAS` 50 | 6.2 |
 | `register_on_ref` | `MIN_REGISTER_GAS` 60 | 6.4 |
-| `force_release_lock` | `MIN_FORCE_RELEASE_GAS` 100 | 10.8 |
+| `force_release_lock` | `MIN_FORCE_RELEASE_GAS` 100 | 10.8 (earlier run; no sandbox flow sticks a lock now) |
 
 The vault's own callback bodies burn 1.8 to 2.9 TGas each. Callbacks often receive more than their constant, because near-sdk hands unused gas to them.
 

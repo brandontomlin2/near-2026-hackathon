@@ -86,7 +86,7 @@ with the chain still completing (steps of 5 TGas; `get_deposit` 1 TGas):
 
 At the limit (the next step fails with "Exceeded the prepaid gas" in that Ref receipt) the tests
 assert: lock released, vault value (wallet + Ref inner deposit) equals credited + stranded +
-unverified (nothing lost or double counted), credits never exceed the wallet. Observed outcomes:
+unverified (nothing lost or double counted), credits never exceed the wallet. Outcomes seen in the printed output (printed, not asserted per hop):
 ft_on_transfer fails -> token refunded to the vault; swap fails -> token_in stranded; get_deposit
 fails -> token_out stranded (swap chain) or token_in back as stranded/unverified (recover);
 withdraw fails -> stranded; post-withdraw callback fails -> the transfer already landed and is credited.

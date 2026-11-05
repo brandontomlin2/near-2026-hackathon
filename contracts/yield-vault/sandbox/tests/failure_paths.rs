@@ -23,7 +23,7 @@ fn pair_amount(list: &Value, id: &str) -> u128 {
 /// attaches 20 TGas to ft_transfer and 20 TGas to its resolve callback (ref-exchange utils.rs
 /// GAS_FOR_FT_TRANSFER / GAS_FOR_RESOLVE_TRANSFER; mirrored in mock-ref), leaving nothing for
 /// Ref's body. The vault stayed consistent (token_out stranded on Ref) but no swap could ever
-/// complete. Fixed in lib.rs by raising GAS_REF_WITHDRAW to 60 and rebudgeting the chain.
+/// complete. Fixed in lib.rs by raising GAS_REF_WITHDRAW to 60, then to 80 after tests/headroom.rs showed only ~15 TGas spare at 60.
 /// This test pins the fix: with Ref at its realistic default 20 + 20, swap at exactly
 /// MIN_EXECUTE_GAS and recover_from_ref at exactly MIN_RECOVER_GAS both complete.
 #[tokio::test]

@@ -1314,7 +1314,7 @@ impl YieldVault {
         require!(amount.0 > 0, "ERR_ZERO_AMOUNT: amount must be > 0");
         require!(
             env::prepaid_gas() >= MIN_RECOVER_GAS,
-            "ERR_INSUFFICIENT_GAS: attach at least 150 TGas"
+            "ERR_INSUFFICIENT_GAS: attach at least 170 TGas"
         );
         let verified = self.stranded_of(&token_id);
         let unv_have = self.unverified.get(&token_id).copied().unwrap_or(0);
