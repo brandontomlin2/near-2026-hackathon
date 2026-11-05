@@ -376,6 +376,45 @@ test("raw get_state(): a day in the future is refused", async () => {
   assert.deepEqual(r.calls, []);
 });
 
+test("mirror-shaped state: a snapshot missing paused, in_flight or spent is refused, never read as unpaused, idle and unspent", async () => {
+  const full = initialState();
+  const [tok] = Object.keys(full.balances);
+  const day = Math.floor(NOW_MS / 86_400_000);
+  const bad = [
+    { balances: full.balances }, // the bare balances: every lock and the cap would default open
+    { ...full, paused: undefined },
+    { ...full, paused: "false" },
+    { ...full, in_flight: undefined },
+    { ...full, in_flight: 0 },
+    { ...full, spent: undefined },
+    { ...full, spent: { day } },
+    { ...full, spent: { day: "1", amounts: {} } },
+    { ...full, spent: { day, amounts: { [tok]: 5 } } },
+    { ...full, spent: { day, amounts: [] } },
+    { ...full, balances: undefined },
+    { ...full, balances: [] },
+    { ...full, balances: { [tok]: "-1" } },
+    { ...full, balances: { [tok]: "340282366920938463463374607431768211456" } },
+  ];
+  for (const state of bad) {
+    const r = await run([...SEND, "--vault-state", vaultStateFile({ state })], TESTNET_ENV, { hasNear: () => true });
+    assert.equal(r.code, 1, `must refuse ${JSON.stringify(state).slice(0, 120)}`);
+    assert.match(r.stderr, /--vault-state state\.\S+ (must|amount)/);
+    assert.match(r.stderr, /Nothing was sent/);
+    assert.deepEqual(r.calls, []);
+  }
+});
+
+test("mirror-shaped state: a complete snapshot is still accepted and its daily spend still counts", async () => {
+  const day = Math.floor(NOW_MS / 86_400_000);
+  const ok = await run([...SEND, "--vault-state", vaultStateFile({ state: initialState() })], TESTNET_ENV, { hasNear: () => true });
+  assert.equal(ok.code, 0, ok.stderr);
+  assert.ok(ok.calls.length >= 1, "a complete, funded mirror state must still send");
+  const busy = await run([...SEND, "--vault-state", vaultStateFile({ state: { ...initialState(), in_flight: true, spent: { day, amounts: {} } } })], TESTNET_ENV, { hasNear: () => true });
+  assert.equal(busy.code, 0, busy.stderr);
+  assert.deepEqual(busy.calls, [], "a swap in flight blocks the next one");
+});
+
 test("raw get_state(): malformed pairs, amounts, flags or duplicates are refused and nothing is sent", async () => {
   const [tok] = Object.keys(initialState().balances);
   const bad = [
