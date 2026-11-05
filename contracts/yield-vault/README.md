@@ -7,7 +7,7 @@ A per-personality-NFT trading vault. Each personality NFT (aloof, chaotic, socia
 **Status: NOT deployed.** A testnet deploy needs the human's explicit yes. Tested with unit tests only (`cargo test`, 176 tests). See "Known risks".
 
 **Not measured, not tested against Ref:**
-- Every gas figure here, including the 270 TGas `execute_swap` minimum, is arithmetic over the static constants in `src/lib.rs`. None was measured on a sandbox, testnet or mainnet. The unit-test VM charges receipt fees, and tests check that each entry point fits in exactly its minimum there. That catches a minimum too small to pay for its own promises. It says nothing about what Ref's `ft_on_transfer`, `swap`, `withdraw` or `get_deposit` really cost.
+- Every gas figure here, including the 280 TGas `execute_swap` minimum, is arithmetic over the static constants in `src/lib.rs`. None was measured on a sandbox, testnet or mainnet. The unit-test VM charges receipt fees, and tests check that each entry point fits in exactly its minimum there. That catches a minimum too small to pay for its own promises. It says nothing about what Ref's `ft_on_transfer`, `swap`, `withdraw` or `get_deposit` really cost.
 - The Ref method names and argument shapes (`ft_transfer_call` with `msg: ""`, `swap { actions, referral_id }`, `withdraw { token_id, amount, unregister, skip_unwrap_near }`, `get_deposit { account_id, token_id }`, `storage_deposit { account_id, registration_only }`) were written from Ref's public interface and have never run against a real Ref contract. The unit tests feed hand-built promise results to the callbacks. They cannot catch a wrong method name, a wrong argument or a wrong return shape.
 
 ## Interface
@@ -33,7 +33,7 @@ A token with no `limits` entry cannot be sold (`ERR_NO_LIMIT`). `spent_today` is
 
 | Method | Who | Yocto | Notes |
 | --- | --- | --- | --- |
-| `execute_swap(proposal) -> Promise` | runner | none | needs >= 270 TGas prepaid |
+| `execute_swap(proposal) -> Promise` | runner | none | needs >= 280 TGas prepaid |
 | `ft_on_transfer(sender_id, amount, msg) -> PromiseOrValue<U128>` | token contract | n/a | owner deposits of pool tokens only, else full refund |
 | `withdraw(token_id, amount) -> Promise` | owner | 1 | needs >= 80 TGas prepaid (`ERR_INSUFFICIENT_GAS`, checked before the debit) so `on_owner_withdraw` cannot be starved; debits, `ft_transfer` to owner, callback restores on failure. Refused while a force release is pending (`ERR_RELEASE_PENDING`) |
 | `pause()`, `unpause()` | owner | 1 | |
@@ -47,7 +47,7 @@ A token with no `limits` entry cannot be sold (`ERR_NO_LIMIT`). `spent_today` is
 | `abort_release()` | owner | 1 | Only if a force release has been pending >= 10 min. Clears it and strands the held amount as unverified. Escape if the reconcile callback can never succeed |
 | `get_config()`, `get_state()`, `get_balance(token_id)` | anyone | | views |
 | `check_proposal(proposal, runner_id) -> CheckResult` | anyone | | same rules as `execute_swap` except the gas check, no side effects |
-| `on_deposit`, `on_deposit_reconciled`, `on_swap`, `on_withdraw_done`, `on_withdraw_reconciled`, `on_owner_withdraw`, `on_recover_pre`, `on_recover`, `on_recover_reconciled`, `on_force_release_swap`, `on_force_release_recovery`, `on_register`, `on_sync_balance` | self only | | private callbacks |
+| `on_deposit`, `on_deposit_reconciled`, `on_swap`, `on_withdraw_pre`, `on_withdraw_reconciled`, `on_owner_withdraw`, `on_recover_pre`, `on_recover`, `on_recover_reconciled`, `on_force_release_swap`, `on_force_release_recovery`, `on_register`, `on_sync_balance` | self only | | private callbacks |
 
 Consistency rule: every owner method that moves value or changes permissions requires exactly 1 yoctoNEAR (`assert_one_yocto`) after the owner check, except `register_on_ref`, which needs a real deposit. Non-owners get `ERR_NOT_OWNER` first.
 
@@ -70,7 +70,7 @@ Consistency rule: every owner method that moves value or changes permissions req
 | 11 | `spent_today[token_in] + amount_in <= daily_cap` of that token | `ERR_DAILY_CAP` |
 | 12 | Vault balance of `token_in >= amount_in` | `ERR_INSUFFICIENT_BALANCE` |
 
-After the rules, `execute_swap` (not `check_proposal`) also requires prepaid gas >= 270 TGas (`ERR_INSUFFICIENT_GAS`).
+After the rules, `execute_swap` (not `check_proposal`) also requires prepaid gas >= 280 TGas (`ERR_INSUFFICIENT_GAS`).
 
 Other codes: `ERR_NOT_OWNER`, `ERR_PRIVATE_INIT` (`new` called by anyone but the contract account), `ERR_BAD_CONFIG` (strategy not one of the four, a limit with `max_trade == 0`, `daily_cap < max_trade`, duplicate limit token, rate `num` or `den` equal to 0, `token_a == token_b`, duplicate pool, duplicate runner), `ERR_RUNNER_EXISTS`, `ERR_RUNNER_NOT_FOUND`, `ERR_DEPOSIT_REQUIRED`, `ERR_INSUFFICIENT_STRANDED`, `ERR_NO_SWAP_IN_FLIGHT`, `ERR_LOCK_NOT_STALE`, `ERR_PRIVATE_CALLBACK`, `ERR_OVERFLOW`, `ERR_NO_RELEASE` (`abort_release` with no force release pending), `ERR_RELEASE_NOT_STALE` (`abort_release` before 10 minutes), `ERR_RELEASE_PENDING` (`withdraw` while a release reconciles), `ERR_SYNC_BUSY` (`sync_balance` while the vault is moving tokens), `ERR_INSUFFICIENT_GAS`. `ERR_ZERO_AMOUNT` and `ERR_INSUFFICIENT_BALANCE` are also raised by `withdraw` and `recover_from_ref` (zero amount) and by the balance debit. Rejections panic, so no log survives; they show up as failed transactions. `check_proposal` returns the same code in `reason`.
 
@@ -83,17 +83,18 @@ Limits are in each token's own base units and are never summed across tokens. Th
 This is a plan, not a measurement. The numbers are the static constants in `src/lib.rs`, added up by hand. They have not been profiled against Ref on any network (see "Not measured" at the top). If a real Ref hop costs more than its constant, the chain stops mid-way and the only way out is `force_release_lock` after 10 minutes.
 
 ```
-execute_swap  (>= 270 TGas prepaid; debits balance + spent_today, sets lock)
+execute_swap  (>= 280 TGas prepaid; debits balance + spent_today, sets lock)
  -> token_in.ft_transfer_call(ref, amount_in, "")   70 TGas, 1 yocto   (deposit into the vault's Ref account)
- -> on_deposit                                     170 TGas  (own ~10, then:)
+ -> on_deposit                                     180 TGas  (own ~10, then:)
      -> ref.swap({actions:[{pool_id,token_in,token_out,amount_in,min_amount_out}], referral_id:null})
                                                     50 TGas, 1 yocto
-     -> on_swap                                    100 TGas  (own ~10, then:)
-         -> ref.withdraw({token_id: token_out, amount: amount_out, unregister:null, skip_unwrap_near:true})
+     -> on_swap                                    110 TGas  (own ~10, then:)
+         -> ref.get_deposit(vault, token_out)       10 TGas, view    (pre-withdraw snapshot)
+         -> on_withdraw_pre                         80 TGas  (own ~10, records the snapshot, then:)
+             -> ref.withdraw({token_id: token_out, amount: amount_out, unregister:null, skip_unwrap_near:true})
                                                     40 TGas, 1 yocto
-         -> on_withdraw_done                        40 TGas  (own ~10, then:)
-             -> ref.get_deposit(vault, token_out)   10 TGas, view
-             -> on_withdraw_reconciled              15 TGas  (credits balance[token_out], releases lock, emits swap_executed)
+             -> ref.get_deposit(vault, token_out)   10 TGas, view    (runs even if withdraw failed)
+             -> on_withdraw_reconciled              15 TGas  (credits balance[token_out] only if the deposit fell by amount_out from the snapshot; releases lock, emits swap_executed)
 ```
 
 Reconciliation branches:
@@ -133,7 +134,7 @@ If `storage_deposit` itself fails, the protocol refunds the deposit to the vault
 | neither, all reads ok | the swap ran: strand Ref's untracked token_out (`deposit - stranded`) (`lock_force_released_swapped`) | strand unverified | restore to stranded (`..._unverified`) |
 | a read failed | strand on Ref if the Ref read shows it, else strand unverified (`lock_force_released_unverified`); never roll back | same; never credit | restore to stranded; never credit |
 
-Amounts that are only maybe on Ref (a failed read, or `abort_release`) go to a separate `unverified_on_ref` record (`get_state()`), not `stranded`. Only `stranded` is the baseline for the reconcile checks, so a phantom record cannot make a failed withdraw look successful. `recover_from_ref` takes verified strands first, then unverified ones. `sync_balance` recovers tokens an unverified record wrongly marks as on Ref.
+Amounts that are only maybe on Ref (a failed read, or `abort_release`) go to a separate `unverified_on_ref` record (`get_state()`), not `stranded`. No swap or recovery reconcile credits on the strength of either record: swap withdraws and recoveries measure their own before/after drop of Ref's deposit, and a failed deposit is rolled back only when Ref's deposit is below the deposited amount itself. `stranded` is used only to mark an ambiguous deposit as verified and by force release. `recover_from_ref` takes verified strands first, then unverified ones. `sync_balance` recovers tokens an unverified record wrongly marks as on Ref.
 
 Each branch books the amount in at most one place, so a force release never counts the same funds twice. While the reconcile is pending (`get_state().release_in_flight`), the lock stays held, the stuck operation's own callbacks are no-ops, owner `withdraw` is refused (`ERR_RELEASE_PENDING`) and owner deposits are refunded. That keeps the balances being compared from moving. If the reconcile callback never runs, call `force_release_lock` again; the newer call replaces the older one. The release callbacks read their results as raw bytes: a read that fails or returns a payload that is not a `U128` counts as a failed read (strand unverified), it does not panic. If the callback still cannot run (for example `GAS_CB_RELEASE` is too small), the owner calls `abort_release` (1 yocto) once 10 minutes have passed since `force_release_lock`. It clears the release and strands the held amount as unverified (`lock_force_released_unverified`, event `force_release_aborted`), so withdrawals and deposits work again. A late callback of an aborted release is a no-op.
 
@@ -141,23 +142,24 @@ Each branch books the amount in at most one place, so a force release never coun
 
 The swap, deposit, withdraw and recover callbacks use `#[callback_result]` (or `promise_result_checked`) and do not panic on a failed promise. A successful result whose payload does not parse as `U128` still panics those callbacks (and `ERR_OVERFLOW` can panic any of them). The two force-release callbacks are the exception: they read raw results and treat an unparseable payload as a failed read, because a panic there would hold the release lock (see `abort_release`). Every failure of a swap releases the lock and emits `swap_failed`. Each swap carries an id passed to its callbacks, so a late callback of a force-released swap is a no-op.
 
-A failed promise result is not trusted as proof of what happened. The vault asks Ref for `get_deposit(vault, token)` and compares it with a baseline of `stranded[token] + amount`.
+A failed promise result is not trusted as proof of what happened. The vault asks Ref for `get_deposit(vault, token)`. A credit or rollback needs a per-operation proof, never the absolute `stranded` record (which can overstate Ref, for example after a `swap_failed` strand whose swap really ran).
 
 | Step failed | Funds | Action |
 | --- | --- | --- |
-| `ft_transfer_call` failed, Ref deposit below baseline | still with the vault | roll back the debit and the day spend (day spend only if the day has not rolled); `swap_failed: deposit_failed` |
-| `ft_transfer_call` failed, Ref deposit at or above baseline | on Ref | `stranded_on_ref[token_in] += amount`; reason `deposit_landed_on_ref` |
-| `ft_transfer_call` failed, `get_deposit` also failed | unknown | `stranded_on_ref[token_in] += amount`; reason `deposit_unverified` |
+| `ft_transfer_call` failed, Ref deposit below `amount_in` | still with the vault | roll back the debit and the day spend (day spend only if the day has not rolled); `swap_failed: deposit_failed` |
+| `ft_transfer_call` failed, Ref deposit at or above `stranded[token_in] + amount_in` | on Ref | `stranded_on_ref[token_in] += amount`; reason `deposit_landed_on_ref` |
+| `ft_transfer_call` failed, deposit in between, or `get_deposit` failed | unknown | `unverified_on_ref[token_in] += amount`; reason `deposit_unverified`; no rollback (if the tokens are really in the vault, `sync_balance` recovers them) |
 | Deposit reported used amount 0 | still with the vault | roll back the debit and day spend; `deposit_failed` |
 | Deposit used less than `amount_in` | remainder with the vault | refund the remainder, swap only the used part |
 | `ref.swap` failed | token_in is on Ref | `stranded_on_ref[token_in] += amount`, `stranded` event |
 | `amount_out < min_amount_out` (or 0) | token_out is on Ref | `stranded_on_ref[token_out] += amount_out` |
-| `ref.withdraw` failed | token_out is on Ref | `stranded_on_ref[token_out] += amount_out`; `withdraw_failed` |
-| `ref.withdraw` ok but Ref deposit still at or above baseline | token_out still on Ref | strand, reason `withdraw_not_reconciled`; no credit |
-| `ref.withdraw` ok but `get_deposit` failed | unknown | strand, reason `withdraw_unverified`; no credit |
+| pre-withdraw `get_deposit` failed | token_out is on Ref (the swap reported it) | `stranded_on_ref[token_out] += amount_out`; reason `withdraw_pre_unverified`; nothing withdrawn |
+| pre-withdraw `get_deposit` below `amount_out` | unknown | `unverified_on_ref[token_out] += amount_out`; reason `withdraw_pre_mismatch`; nothing withdrawn |
+| `ref.withdraw` failed, or ok but Ref deposit fell by less than `amount_out` from the snapshot | token_out still on Ref | strand, reason `withdraw_not_reconciled`; no credit |
+| post-withdraw `get_deposit` failed | unknown | unverified, reason `withdraw_unverified`; no credit |
 | Callback never ran (e.g. out of gas) | unknown | after 10 minutes the owner calls `force_release_lock`, which reads the vault's FT balance and Ref's deposit and then rolls back, credits or strands (see "Force release") |
 
-Balance is credited after a withdraw only once `get_deposit` shows the funds left Ref. This covers Ref's `withdraw`, which can re-credit its internal balance and still return success when the token transfer fails.
+Balance is credited after a withdraw only once `get_deposit` shows Ref's deposit fell by `amount_out` from the snapshot taken just before the withdraw. The swap lock keeps every other vault operation off Ref meanwhile, so the drop can only come from this withdraw. This covers Ref's `withdraw`, which can re-credit its internal balance and still return success when the token transfer fails.
 
 The owner recovers stranded funds with `recover_from_ref(token_id, amount)`, only while no swap or other recovery is in flight, and no swap can start until the recovery's reconcile has run. The stranded record is reduced up front. `on_recover_pre` reads Ref's deposit first. If Ref holds less than `amount`, or the read fails, the recovery stops and the record is restored (`recover_refused`). A failed withdraw restores it too. After a withdraw that reports success, the vault credits only if Ref's deposit fell by at least `amount` since the first read. Otherwise it strands the amount again (`withdraw_not_reconciled` or `withdraw_unverified`). The recovery lock keeps every other vault operation off Ref meanwhile, so the drop can only come from this withdraw. Success credits the balance and emits `recovered`.
 
@@ -183,7 +185,7 @@ Source: an independent audit of the earlier version (`/Users/brandont/.claude-lo
 Fixed after the audit:
 
 - High, phantom balance after Ref `withdraw` (swap and recovery): credit only after Ref `get_deposit` shows the funds left Ref; otherwise strand (`withdraw_not_reconciled`, `withdraw_unverified`).
-- High, failed `ft_transfer_call` treated as "nothing reached Ref": the vault queries `get_deposit` and rolls back only if Ref's deposit is below `stranded + amount`; otherwise it strands (`deposit_landed_on_ref`, `deposit_unverified`).
+- High, failed `ft_transfer_call` treated as "nothing reached Ref": the vault queries `get_deposit` and rolls back only if Ref's deposit is below the deposited amount; otherwise it strands (`deposit_landed_on_ref`, `deposit_unverified`).
 - High, one `max_trade`/`daily_cap` across tokens with different decimals: per-token `limits`, per-token `spent_today`, and a token without a limit cannot be sold.
 - High, only `min_amount_out > 0` as price protection: per-pool, per-direction `min_rate` floor (`ERR_PRICE_FLOOR`), compared in 256 bits.
 - Medium, `new` had no caller check: requires predecessor == contract account (`ERR_PRIVATE_INIT`).
@@ -197,9 +199,13 @@ Fixed after a second review (`/tmp/yrev26-report.md`):
 - Medium, `force_release_lock` always stranded the debited amount, even when the lock stuck before any token left the vault. The tokens stayed in the vault's FT balance, untracked and unwithdrawable. It now reads the vault's FT balance and Ref's deposits and books the amount where it really is (see "Force release"). Tests cover both the "never left the vault" and the "on Ref" cases.
 - Medium, `withdraw` had no prepaid gas check: now >= 80 TGas, checked before the debit.
 - Medium, `register_on_ref` had no callback and used `registration_only: true`: now `registration_only: false` plus `on_register` (see "Ref storage").
-- Medium, the 270 TGas plan and the Ref call shapes were presented without saying they are unmeasured and untested against Ref: stated at the top of this file and in the root README.
+- Medium, the gas plan (then 270 TGas, now 280) and the Ref call shapes were presented without saying they are unmeasured and untested against Ref: stated at the top of this file and in the root README.
 - Low, the UTC daily-cap boundary: documented under the rules (up to 2x `daily_cap` around midnight).
 - The deferred phantom-stranded case for recoveries (a `stranded` entry larger than what is on Ref making a later withdraw look successful): `recover_from_ref` now reads Ref's deposit before and after and credits only the measured drop.
+
+Fixed after a third review (`/tmp/secyv-review.md`, M2):
+
+- Medium, the swap-path reconcile compared Ref's deposit with the absolute `stranded[token] + amount`. A `stranded` record larger than what Ref really holds (for example a `swap_failed` strand whose swap actually ran) let a silently re-credited swap withdraw look successful, so token_out was credited while still on Ref; it also let a landed deposit look rolled back. Now `on_swap` snapshots Ref's token_out deposit before the withdraw (`on_withdraw_pre`) and `on_withdraw_reconciled` credits only if the deposit fell by `amount_out` from that snapshot. A failed deposit is rolled back only if Ref's deposit is below `amount_in`; an ambiguous one is stranded unverified, never credited. The extra hop raised `execute_swap`'s minimum from 270 to 280 TGas (still under the 300 TGas limit). Tests: `m2_phantom_stranded_does_not_fake_withdraw_credit`, `m2_phantom_stranded_does_not_fake_deposit_rollback` (both failed before the fix), plus snapshot, partial-drop and pre-read-failure cases.
 
 Open (not fixed):
 
@@ -207,14 +213,13 @@ Open (not fixed):
 - `register_on_ref` failure forwarding is best effort (see "Ref storage"); NEAR that ends up on the vault account cannot be withdrawn. The Ref storage balance itself cannot be withdrawn either (no `storage_withdraw` method).
 - `force_release_lock` compares FT and Ref balances read in separate receipts. A transfer in transit at that moment can skew a read. Examples: a third party's `ft_transfer_call` that `ft_on_transfer` will refund, or an owner `withdraw` sent just before the release whose `ft_transfer` has not run yet. While a release is pending, new withdrawals are refused and new deposits are refunded, but transfers already in transit are not covered. Such a skew can make "in the vault" true when the amount is really gone, so the vault credits a balance that has no tokens behind it. A later withdraw of that balance fails and `on_owner_withdraw` restores it. No one else's funds are taken. Avoid owner transfers in the minutes around a force release. The "neither" branch also strands Ref's whole untracked token_out excess, which can include unrelated dust. The "ambiguous" branch (both reads show the amount) records it on Ref. If the real tokens are the ones in the vault, the vault copy goes untracked and the Ref record is a phantom. Recovery's before/after check keeps that phantom from ever being credited.
 - A pending force release is normally cleared by its callback, which parses its reads leniently and so does not panic on a malformed payload. If it still fails every time (for example the unmeasured 20 TGas `GAS_CB_RELEASE` is too small), `withdraw` stays refused until the owner calls `abort_release` 10 minutes after the release started. The abort strands the held amount as unverified; it is not credited or rolled back.
-- The nested callbacks' static gas (`on_deposit` 170 TGas, `on_swap` 100 TGas, `on_recover_pre` 100 TGas) is never exercised against the gas they attach onward. Only each entry point's outer minimum is checked in the unit-test VM.
+- The nested callbacks' static gas (`on_deposit` 180 TGas, `on_swap` 110 TGas, `on_withdraw_pre` 80 TGas, `on_recover_pre` 100 TGas) is never exercised against the gas they attach onward. Only each entry point's outer minimum is checked in the unit-test VM.
 - If `ref.swap` returns an error that is really a timeout or out-of-gas, the swap may have executed. The vault strands the full `amount_in` as token_in without asking Ref, so token_out could sit on Ref untracked. Only the deposit and withdraw steps are reconciled, not the swap step.
 - Tokens sent with a plain `ft_transfer` (not `ft_transfer_call`) are not recorded and cannot be recovered. There is no sweep method. Unknown-token deposits through `ft_on_transfer` are refunded in full.
-- `check_proposal` (view) cannot show `ERR_INSUFFICIENT_GAS`, so it can return ok for a call that fails on gas. The sender must attach at least 270 TGas.
+- `check_proposal` (view) cannot show `ERR_INSUFFICIENT_GAS`, so it can return ok for a call that fails on gas. The sender must attach at least 280 TGas.
 - `strategy` is validated but not used by any on-chain rule. Config size (pools, limits, runners) is unbounded; only the owner can set it.
 - Pause and revoke do not cancel a swap already in flight. The only way out of a stuck swap is `force_release_lock` after 10 minutes.
 - Runners are accounts, not keys, and are trusted for timing and for the exact price at or above the floor. The floor is static and owner-set; a stale floor can be too loose or too tight.
-- The reconciliation baseline (`stranded + amount`) assumes the vault's Ref balance of that token only holds funds the vault tracks. Funds sent to the vault's Ref account by other means can make a deposit or withdraw look unreconciled and strand it. The owner can then use `recover_from_ref`. The reverse also holds for the swap path: a `stranded` entry larger than what is really on Ref (from an unverified strand when the tokens never left the vault) raises the baseline. A later swap withdraw that Ref silently re-credited can then look like it left Ref, and the vault credits token_out while the tokens are still on Ref (an internal double count, not a third-party theft). Recoveries no longer use the baseline (they measure the before/after drop). The swap path still does, because a pre-withdraw `get_deposit` hop does not fit in the 300 TGas transaction limit next to the 270 TGas plan.
 - Gas constants are static and have not been measured against real Ref costs on any network (the audit asked for a gas test on testnet). The Ref method names and argument shapes have never run against a real Ref contract (see "Not measured" at the top).
 - `daily_cap` is per UTC calendar day, so up to 2x `daily_cap` can be spent within minutes around 00:00 UTC.
 - The off-chain JS and Rust rule order and the JS side of the rules are outside this contract and are covered elsewhere in the repository, not here.

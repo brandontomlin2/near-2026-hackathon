@@ -41,20 +41,22 @@ pub const GAS_FT_TRANSFER_CALL: Gas = Gas::from_tgas(70);
 pub const GAS_REF_SWAP: Gas = Gas::from_tgas(50);
 /// `ref.withdraw` (includes its inner ft_transfer and callback).
 pub const GAS_REF_WITHDRAW: Gas = Gas::from_tgas(40);
-/// `on_withdraw_done` / `on_recover` / `on_owner_withdraw` bodies.
+/// `on_recover` / `on_owner_withdraw` bodies.
 pub const GAS_CB_FINAL: Gas = Gas::from_tgas(15);
 /// Ref view `get_deposit`.
 pub const GAS_REF_VIEW: Gas = Gas::from_tgas(10);
 /// Reconciliation callbacks (`on_*_reconciled`) bodies.
 pub const GAS_CB_RECONCILE: Gas = Gas::from_tgas(15);
-/// `on_withdraw_done` / `on_recover`: own body (~10) + `get_deposit` (10) + reconcile (15) + margin.
+/// `on_recover`: own body (~10) + `get_deposit` (10) + reconcile (15) + margin.
 pub const GAS_CB_WITHDRAW_DONE: Gas = Gas::from_tgas(40);
-/// `on_swap`: own body (~10) + withdraw (40) + `on_withdraw_done` (40) + margin.
-pub const GAS_CB_SWAP: Gas = Gas::from_tgas(100);
-/// `on_deposit`: own body (~10) + swap (50) + `on_swap` (100) + margin.
-pub const GAS_CB_DEPOSIT: Gas = Gas::from_tgas(170);
-/// Minimum prepaid gas for `execute_swap` (70 + 170 + own body + margin). Max tx gas is 300.
-pub const MIN_EXECUTE_GAS: Gas = Gas::from_tgas(270);
+/// `on_withdraw_pre`: own body (~10) + withdraw (40) + `get_deposit` (10) + reconcile (15) + margin.
+pub const GAS_CB_WITHDRAW_PRE: Gas = Gas::from_tgas(80);
+/// `on_swap`: own body (~10) + `get_deposit` (10) + `on_withdraw_pre` (80) + margin.
+pub const GAS_CB_SWAP: Gas = Gas::from_tgas(110);
+/// `on_deposit`: own body (~10) + swap (50) + `on_swap` (110) + margin.
+pub const GAS_CB_DEPOSIT: Gas = Gas::from_tgas(180);
+/// Minimum prepaid gas for `execute_swap` (70 + 180 + own body + margin). Max tx gas is 300.
+pub const MIN_EXECUTE_GAS: Gas = Gas::from_tgas(280);
 /// A swap lock older than this (ns, 10 minutes) may be force-released by the owner.
 pub const STALE_LOCK_NS: u64 = 600 * 1_000_000_000;
 /// A pending force release older than this (ns, 10 minutes) may be aborted by the owner.
@@ -194,6 +196,10 @@ pub struct InFlight {
     pub amount_out: u128,
     /// Block timestamp (ns) when the swap started; used by the stale-lock escape.
     pub started_at: u64,
+    /// Ref's `get_deposit` of token_out read after the swap and before the
+    /// withdraw (set by `on_withdraw_pre`). The withdraw is credited only if
+    /// Ref's deposit dropped by `amount_out` from this snapshot.
+    pub ref_pre_out: u128,
 }
 
 impl InFlight {
@@ -516,7 +522,7 @@ impl YieldVault {
         }
         require!(
             env::prepaid_gas() >= MIN_EXECUTE_GAS,
-            "ERR_INSUFFICIENT_GAS: attach at least 270 TGas"
+            "ERR_INSUFFICIENT_GAS: attach at least 280 TGas"
         );
         let amount = proposal.amount_in.0;
         let today = day_of(env::block_timestamp());
@@ -537,6 +543,7 @@ impl YieldVault {
             day: today,
             amount_out: 0,
             started_at: env::block_timestamp(),
+            ref_pre_out: 0,
         });
         emit(
             "swap_proposed",
@@ -623,8 +630,11 @@ impl YieldVault {
         PromiseOrValue::Promise(p)
     }
 
-    /// After a failed `ft_transfer_call`: roll back only if Ref's deposit shows
-    /// the tokens did not land; otherwise (or if unknown) strand them.
+    /// After a failed `ft_transfer_call`: roll back only if Ref's deposit is
+    /// below `amount_in` (then the tokens cannot have landed, whatever the
+    /// stranded records say). A deposit covering `stranded + amount_in` is
+    /// stranded as verified. Anything in between is ambiguous (the stranded
+    /// record may overstate Ref) and is stranded as unverified: never credited.
     #[private]
     pub fn on_deposit_reconciled(
         &mut self,
@@ -635,17 +645,17 @@ impl YieldVault {
         let Some(fl) = self.current(swap_id) else {
             return U128(0);
         };
-        let baseline = self.stranded_of(&fl.token_in).saturating_add(fl.amount_in);
+        let covered = self.stranded_of(&fl.token_in).saturating_add(fl.amount_in);
         match deposit {
-            Ok(d) if d.0 < baseline => {
+            Ok(d) if d.0 < fl.amount_in => {
                 self.rollback(&fl, fl.amount_in);
                 self.fail(&fl, "deposit_failed");
             }
-            Ok(_) => {
+            Ok(d) if d.0 >= covered => {
                 self.strand(&fl.token_in, fl.amount_in, "deposit_landed_on_ref");
                 self.fail(&fl, "deposit_landed_on_ref");
             }
-            Err(_) => {
+            Ok(_) | Err(_) => {
                 self.strand_unverified(&fl.token_in, fl.amount_in, "deposit_unverified");
                 self.fail(&fl, "deposit_unverified");
             }
@@ -679,51 +689,72 @@ impl YieldVault {
             Ok(out) => {
                 fl.amount_out = out.0;
                 self.in_flight = Some(fl.clone());
-                let p = Promise::new(self.ref_exchange_id.clone())
-                    .function_call(
-                        "withdraw".to_string(),
-                        json_bytes(json!({
-                            "token_id": fl.token_out,
-                            "amount": out,
-                            "unregister": null,
-                            "skip_unwrap_near": true,
-                        })),
-                        ONE_YOCTO,
-                        GAS_REF_WITHDRAW,
-                    )
-                    .then(
-                        Self::ext(env::current_account_id())
-                            .with_static_gas(GAS_CB_WITHDRAW_DONE)
-                            .on_withdraw_done(swap_id),
-                    );
-                PromiseOrValue::Promise(p)
+                // Snapshot Ref's token_out deposit before the withdraw, so the
+                // reconcile measures this withdraw's own drop.
+                PromiseOrValue::Promise(self.ref_deposit_query(&fl.token_out).then(
+                    Self::ext(env::current_account_id())
+                        .with_static_gas(GAS_CB_WITHDRAW_PRE)
+                        .on_withdraw_pre(swap_id),
+                ))
             }
         }
     }
 
-    /// Hop 3 callback: if Ref's `withdraw` did not fail, verifies against Ref's
-    /// deposit before crediting (Ref re-credits and returns normally when the
-    /// token transfer fails).
+    /// Hop 3 callback: records Ref's pre-withdraw deposit of token_out, then
+    /// withdraws `amount_out` and re-reads the deposit. Ref's `withdraw`
+    /// re-credits and returns normally when its token transfer fails, and a
+    /// failed `withdraw` leaves the deposit unchanged; the re-read catches both.
     #[private]
-    pub fn on_withdraw_done(&mut self, swap_id: u64) -> PromiseOrValue<U128> {
+    pub fn on_withdraw_pre(
+        &mut self,
+        swap_id: u64,
+        #[callback_result] pre: Result<U128, PromiseError>,
+    ) -> PromiseOrValue<U128> {
         Self::assert_self();
-        let ok = env::promise_result_checked(0, 4096).is_ok();
-        let Some(fl) = self.current(swap_id) else {
+        let Some(mut fl) = self.current(swap_id) else {
             return PromiseOrValue::Value(U128(0));
         };
-        if !ok {
-            self.strand(&fl.token_out, fl.amount_out, "withdraw_failed");
-            self.fail(&fl, "withdraw_failed");
-            return PromiseOrValue::Value(U128(0));
-        }
-        PromiseOrValue::Promise(self.ref_deposit_query(&fl.token_out).then(
-            Self::ext(env::current_account_id())
-                .with_static_gas(GAS_CB_RECONCILE)
-                .on_withdraw_reconciled(swap_id),
-        ))
+        let pre = match pre {
+            Ok(p) if p.0 >= fl.amount_out => p.0,
+            // Ref's swap reported amount_out, so it sits on Ref; nothing was
+            // withdrawn. Strand it (recoverable) without crediting.
+            Ok(_) => {
+                self.strand_unverified(&fl.token_out, fl.amount_out, "withdraw_pre_mismatch");
+                self.fail(&fl, "withdraw_pre_mismatch");
+                return PromiseOrValue::Value(U128(0));
+            }
+            Err(_) => {
+                self.strand(&fl.token_out, fl.amount_out, "withdraw_pre_unverified");
+                self.fail(&fl, "withdraw_pre_unverified");
+                return PromiseOrValue::Value(U128(0));
+            }
+        };
+        fl.ref_pre_out = pre;
+        self.in_flight = Some(fl.clone());
+        let p = Promise::new(self.ref_exchange_id.clone())
+            .function_call(
+                "withdraw".to_string(),
+                json_bytes(json!({
+                    "token_id": fl.token_out,
+                    "amount": U128(fl.amount_out),
+                    "unregister": null,
+                    "skip_unwrap_near": true,
+                })),
+                ONE_YOCTO,
+                GAS_REF_WITHDRAW,
+            )
+            .then(self.ref_deposit_query(&fl.token_out))
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(GAS_CB_RECONCILE)
+                    .on_withdraw_reconciled(swap_id),
+            );
+        PromiseOrValue::Promise(p)
     }
 
-    /// Credits token_out only if Ref's deposit shows the funds left Ref.
+    /// Credits token_out only if Ref's deposit dropped by `amount_out` from
+    /// the pre-withdraw snapshot (a per-operation delta, independent of the
+    /// `stranded` records).
     #[private]
     pub fn on_withdraw_reconciled(
         &mut self,
@@ -734,9 +765,8 @@ impl YieldVault {
         let Some(fl) = self.current(swap_id) else {
             return U128(0);
         };
-        let baseline = self.stranded_of(&fl.token_out).saturating_add(fl.amount_out);
         match deposit {
-            Ok(d) if d.0 < baseline => {}
+            Ok(d) if d.0.saturating_add(fl.amount_out) <= fl.ref_pre_out => {}
             Ok(_) => {
                 self.strand(&fl.token_out, fl.amount_out, "withdraw_not_reconciled");
                 self.fail(&fl, "withdraw_not_reconciled");
