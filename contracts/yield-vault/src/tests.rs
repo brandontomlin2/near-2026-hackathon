@@ -3175,3 +3175,43 @@ fn superseded_release_callback_does_not_clear_the_taint() {
     v.resolve_release_swap(first + 100, Ok(U128(10_000)), Ok(U128(0)), Ok(U128(0))); // stale id
     assert!(v.release_tainted, "a stale callback must not consume the taint");
 }
+
+// ------------------------------------------- withdraw_ref_storage locks (L-6)
+
+fn ref_storage_call(v: &mut YieldVault) {
+    near_ctx("owner.testnet", 5 * ONE_NEAR);
+    let _ = v.withdraw_ref_storage(None);
+}
+
+#[test]
+#[should_panic(expected = "ERR_SWAP_IN_FLIGHT")]
+fn withdraw_ref_storage_refused_during_swap() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    ref_storage_call(&mut v);
+}
+
+#[test]
+#[should_panic(expected = "ERR_SWAP_IN_FLIGHT")]
+fn withdraw_ref_storage_refused_during_recovery() {
+    let mut v = recovery_started();
+    ref_storage_call(&mut v);
+}
+
+#[test]
+#[should_panic(expected = "ERR_RELEASE_PENDING")]
+fn withdraw_ref_storage_refused_during_release() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    force_release(&mut v);
+    ref_storage_call(&mut v);
+}
+
+#[test]
+fn withdraw_ref_storage_allowed_again_after_the_lock_clears() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    v.in_flight = None;
+    ref_storage_call(&mut v);
+    assert_eq!(created_calls()[0].1, "storage_withdraw");
+}

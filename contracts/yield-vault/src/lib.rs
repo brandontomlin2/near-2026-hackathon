@@ -1284,6 +1284,16 @@ impl YieldVault {
     #[payable]
     pub fn withdraw_ref_storage(&mut self, amount: Option<U128>) -> Promise {
         self.owner_one_yocto();
+        // The Ref storage balance pays for the first deposit of a new token
+        // mid-swap, and a recovery or release is reading Ref's account.
+        require!(
+            self.release.is_none(),
+            "ERR_RELEASE_PENDING: a force release is reconciling balances"
+        );
+        require!(
+            self.in_flight.is_none() && self.recovery.is_none(),
+            "ERR_SWAP_IN_FLIGHT: cannot withdraw Ref storage during a swap or recovery"
+        );
         require!(
             env::prepaid_gas() >= MIN_STORAGE_WITHDRAW_GAS,
             "ERR_INSUFFICIENT_GAS: attach at least 40 TGas"
