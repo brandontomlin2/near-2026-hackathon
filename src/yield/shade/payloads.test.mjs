@@ -56,6 +56,10 @@ describe("contract shape", () => {
     assert.deepEqual(a.permission.methodNames, ["execute_swap"]);
     assert.match(a.permission.allowance, /^[1-9][0-9]*$/);
   });
+  it("AddKey allowance is exactly 1 NEAR in yocto, as a decimal string", () => {
+    assert.equal(plan.authorization.executorAddKey.action.permission.allowance, (10n ** 24n).toString());
+    assert.equal(plan.authorization.executorAddKey.action.permission.allowance, "1000000000000000000000000");
+  });
 });
 
 describe("MPC sign request", () => {
@@ -79,6 +83,8 @@ describe("MPC sign request", () => {
     const r = plan.mpc.agentRequestSignature;
     assert.equal(r.confirmed, false);
     assert.match(r.note, /UNCONFIRMED/);
+    assert.match(r.note, /CONFIRMED by https:\/\/raw\.githubusercontent\.com\/NearDeFi\/shade-agent-framework\/main\/docs\/reference\/agent-contract\.md/);
+    assert.match(r.note, /Eddsa/);
     assert.equal(r.receiverId, plan.accounts.agentContract.id);
     assert.equal(plan.mpc.mpcSign.predecessor, plan.accounts.agentContract.id);
   });
@@ -106,6 +112,31 @@ describe("borsh sanity", () => {
     assert.ok(bytes.includes(Buffer.from(JSON.stringify({ proposal: SAMPLE_PROPOSAL }))));
     assert.ok(bytes.includes(Buffer.from("execute_swap")));
   });
+  it("decodes as exactly one FunctionCall execute_swap action and consumes every byte", () => {
+    const plan = buildShadePlan();
+    const buf = Buffer.from(plan.execute_swap.unsignedTxBorshBase64, "base64");
+    let off = 0;
+    const u32 = () => { const v = buf.readUInt32LE(off); off += 4; return v; };
+    const take = (n) => { const s = buf.subarray(off, off + n); assert.equal(s.length, n, "ran past the end"); off += n; return s; };
+    const str = () => take(u32()).toString("utf8");
+    const u64 = () => { const v = buf.readBigUInt64LE(off); off += 8; return v; };
+    const u128 = () => { const lo = u64(); const hi = u64(); return (hi << 64n) | lo; };
+
+    assert.equal(str(), plan.accounts.executor.id);
+    assert.equal(take(1)[0], 0, "ed25519 key type byte");
+    assert.equal(take(32).length, 32);
+    assert.equal(u64(), 1n); // placeholder nonce
+    assert.equal(str(), plan.accounts.vault.id);
+    assert.equal(take(32).length, 32); // block hash
+    assert.equal(u32(), 1, "one action");
+    assert.equal(take(1)[0], 2, "FunctionCall tag");
+    assert.equal(str(), "execute_swap");
+    const args = JSON.parse(take(u32()).toString("utf8"));
+    assert.deepEqual(args, { proposal: SAMPLE_PROPOSAL });
+    assert.equal(u64(), 300000000000000n);
+    assert.equal(u128(), 0n);
+    assert.equal(off, buf.length, "reader consumed exactly all bytes");
+  });
   it("supplied nonce/blockHash change the bytes and drop the placeholder label", () => {
     const base = buildRunnerTx({ executor: "e.testnet", vault: "v.testnet", derivedKey: buildShadePlan().derivation.derived_key, proposal: SAMPLE_PROPOSAL });
     const real = buildRunnerTx({ executor: "e.testnet", vault: "v.testnet", derivedKey: buildShadePlan().derivation.derived_key, proposal: SAMPLE_PROPOSAL, nonce: 77n, blockHash: "8uFVJpEaF5Bwf1caRZSq7TDWgadPA7XYbQdASRAPUgAj" });
@@ -121,6 +152,18 @@ describe("proposal validation", () => {
     const { pool_id, ...rest } = SAMPLE_PROPOSAL;
     assert.throws(() => buildExecuteSwapAction(rest), /missing key pool_id/);
     assert.deepEqual(Object.keys(buildExecuteSwapAction(SAMPLE_PROPOSAL).args.proposal), VAULT_PROPOSAL_KEYS);
+  });
+  it("rejects invalid values", () => {
+    const bad = [
+      { pool_id: -1 }, { pool_id: 1.5 }, { pool_id: "0" }, { pool_id: Number.MAX_SAFE_INTEGER + 2 },
+      { token_in: 5 }, { token_out: null },
+      { amount_in: "01" }, { amount_in: 100 }, { amount_in: "-5" }, { amount_in: "1.5" }, { amount_in: "" },
+      { min_amount_out: "007" }, { min_amount_out: 7n }, { min_amount_out: "1e6" },
+    ];
+    for (const patch of bad) {
+      assert.throws(() => buildExecuteSwapAction({ ...SAMPLE_PROPOSAL, ...patch }), Error, JSON.stringify(patch, (_, v) => (typeof v === "bigint" ? String(v) : v)));
+    }
+    assert.doesNotThrow(() => buildExecuteSwapAction({ ...SAMPLE_PROPOSAL, amount_in: "0", pool_id: 7 }));
   });
 });
 
@@ -147,6 +190,21 @@ describe("refusals", () => {
   }
   it("refuses NEAR_NETWORK=mainnet", () => {
     assert.throws(() => buildShadePlan({ env: { NEAR_NETWORK: "mainnet" } }), RefusalError);
+  });
+  it("refuses process.env NEAR_NETWORK=mainnet even when env:{} is passed", () => {
+    const prev = process.env.NEAR_NETWORK;
+    process.env.NEAR_NETWORK = "mainnet";
+    try {
+      assert.throws(() => buildShadePlan({ env: {} }), RefusalError);
+      assert.throws(() => buildShadePlan(), RefusalError);
+    } finally {
+      if (prev === undefined) delete process.env.NEAR_NETWORK;
+      else process.env.NEAR_NETWORK = prev;
+    }
+    assert.doesNotThrow(() => buildShadePlan({ env: {} }));
+  });
+  it("notice says accounts are placeholders unless user-supplied", () => {
+    assert.match(buildShadePlan().notice, /invented placeholders.*unless supplied by the user/);
   });
   it("allows explicit testnet and falsy flags", () => {
     assert.doesNotThrow(() => buildShadePlan({ network: "testnet", sign: false, env: { NEAR_NETWORK: "testnet" } }));

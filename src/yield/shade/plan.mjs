@@ -28,11 +28,12 @@ export const SAMPLE_PROPOSAL = Object.freeze({
   amount_in: "1000000000000000000000000",
   min_amount_out: "1000000",
 });
-export const NOTICE = "DRY RUN. Every account below is an invented placeholder that is not deployed on testnet; nonce and block hash are placeholders. "
+export const NOTICE = "DRY RUN. Accounts are invented placeholders that are not deployed on testnet, unless supplied by the user (those are labeled user-supplied and not checked on chain); nonce and block hash are placeholders. "
   + "Nothing is signed or sent. Real: the MPC signer contract and its root key.";
 
 export function buildShadePlan(options = {}) {
-  assertDryRunOptions(options, options.env ?? process.env);
+  assertDryRunOptions(options, options.env);
+  assertDryRunOptions({}, process.env); // the real environment is always checked, whatever env was passed in
   const o = { ...DEFAULTS, proposal: SAMPLE_PROPOSAL, rootKey: TESTNET_ED25519_ROOT, ...stripUndefined(options) };
   const proposalSource = options.proposalSource ?? null; // e.g. {from, agent, rule_check}; recorded as given
   const isPlaceholder = (role) => o[role] === DEFAULTS[role];

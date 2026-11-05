@@ -56,7 +56,7 @@ Research method: WebFetch of official docs and the NearDeFi/near repos on 2026-1
 2. Separately, the executor account owner submits `AddKey` for the MPC-derived ed25519 public key as a function-call key: `receiver_id = vault`, `method_names = ["execute_swap"]`, allowance set to cover gas (see below). The function-call key cannot attach a deposit, which matches `execute_swap` being non-payable.
 3. Kill switch A (vault side): `revoke_runner({runner_id})` (panics `ERR_RUNNER_NOT_FOUND` if absent) or `revoke_all_runners()`, which clears every runner AND pauses the vault (lib.rs 891-897). Each needs the owner and 1 yocto.
 4. Kill switch B (account side): `DeleteKey` of the derived key on the executor account. Independent of the vault; works even if the vault were mis-configured. Also `remove_agent` / measurement removal on the agent contract stops new signatures (https://raw.githubusercontent.com/NearDeFi/shade-agent-framework/main/docs/reference/agent-contract.md), but signatures already produced stay valid until used, so A and B are the real revocations.
-5. Gas: `execute_swap` needs >= 280 Tgas prepaid; the tx limit is 300 Tgas, so attach 300. Allowance must cover the fee for 300 Tgas per swap; the exact NEAR burnt depends on the gas price (assume the 0.0001 NEAR/Tgas order of magnitude, UNCONFIRMED here) times the number of swaps; set allowance generously (e.g. 1 NEAR on testnet) and cap swap count in the vault. Unused gas is refunded to the signer, only the burnt part is charged.
+5. Gas: `execute_swap` needs >= 280 Tgas prepaid; the tx limit is 300 Tgas, so attach 300. The function-call key allowance in the plan is 1 NEAR (1000000000000000000000000 yocto), a choice and not measured. Per https://docs.near.org/protocol/access-keys (fetched 2026-11-05) the allowance "defines how much NEAR the key can spend on gas fees", is charged at the buy price, and is credited back when the gas refund arrives, so the key needs more allowance than the final tx cost. Once it is used up the key cannot sign; adding NEAR to the account does not help, and an existing key's allowance cannot be changed (DeleteKey + AddKey). Each swap prepays 300 Tgas, about 0.03 NEAR at the 0.0001 NEAR/Tgas minimum gas price (that price is an assumption, UNCONFIRMED here); burnt fees accumulate across swaps. The vault has no swap-count cap (only per-token `max_trade` and `daily_cap` on amounts), so the allowance is the only bound on how many swaps the key can pay gas for.
 6. The executor account needs a NEAR balance for gas; the allowance is only an upper bound on the key's spending.
 
 ## 4. What Phala hosting needs
@@ -106,7 +106,7 @@ Caveat: the CLI reference describes a `tee_config.phala.enabled` schema, while t
 | Agent contract funding | 8 NEAR testnet (`funding_amount: 8`) | CONFIRMED in template deployment.yaml; testnet faucet, no real value |
 | `register_agent` | about 0.005 NEAR, once, again if re-registered after removal | CONFIRMED api.md / agent-contract.md |
 | MPC `sign` | 1 yocto + gas per signature | CONFIRMED README |
-| Executor account + function-call key allowance | e.g. 1 NEAR testnet | estimate |
+| Executor account + function-call key allowance | 1 NEAR allowance on the key (1000000000000000000000000 yocto), a choice and not measured; semantics (charged at buy price, credited back on refund, cannot be changed, exhausted key cannot sign) per https://docs.near.org/protocol/access-keys | choice; gas price assumed, UNCONFIRMED |
 | Phala Cloud | no price found in the docs fetched; docs say monitor and delete unused deployments | UNCONFIRMED. Check https://cloud.phala.network pricing for `tdx.small` before approving |
 | Docker registry | free tier should suffice | estimate |
 | Sponsor account for the agent | few NEAR testnet | estimate |
@@ -135,6 +135,7 @@ Steps marked YES-NEEDED need Brandon's explicit yes (signing, deploy, spend).
 
 - Framework deprecated since 2026-04-19, unaudited; Phala/dstack schema drift between template and CLI reference (section 4). Pin versions or fall back to hand-written calls.
 - Signature encoding from the MPC for ed25519 unconfirmed; transaction nonce/block hash handling and AddKey nonce 0 unverified.
+- Allowance exhaustion is permanent for that key: an exhausted function-call key cannot sign, topping up the account does not help, and the allowance cannot be edited. Rotate with DeleteKey + AddKey (needs signing, so the owner's explicit yes).
 - Latency: the skill file says about 2-3 s per signature (not primary-source). Block hash expiry (about 24 h on NEAR) is not a problem; nonce races between concurrent signed txs are.
 - Agent keys are ephemeral; losing them on reboot means re-registering and a new agent account, but the executor/derived key is unaffected.
 - TDX physical-host attacks (TEE.fail) can extract secrets (security.md); our guard is the vault's own limits, which is why the vault must stay the enforcer.

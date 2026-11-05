@@ -26,8 +26,14 @@ export const OWNER_CALL_DEPOSIT = 1n; // 1 yocto: owner_one_yocto on #[payable] 
 export const MPC_SIGN_GAS = 30n * TGAS;
 // UNMEASURED CHOICE: the agent contract forwards to MPC, so give it generous headroom. Not benchmarked.
 export const AGENT_REQUEST_SIGNATURE_GAS = 100n * TGAS;
-// UNMEASURED CHOICE: 0.25 NEAR gas allowance for the executor's function-call key (50 swaps at ~0.005 NEAR is a guess).
-export const EXECUTOR_KEY_ALLOWANCE_YOCTO = 250_000_000_000_000_000_000_000n;
+// Function-call key allowance: 1 NEAR. https://docs.near.org/protocol/access-keys (fetched 2026-11-05): the allowance
+// "defines how much NEAR the key can spend on gas fees", is charged at the buy price, is credited back when the gas
+// refund arrives (so the key needs more allowance than the final tx cost), and once used up the key cannot sign.
+// Adding NEAR to the account does not help and an existing key's allowance cannot be changed (DeleteKey + AddKey).
+// Each swap prepays 300 Tgas at the buy price: about 0.03 NEAR at the 0.0001 NEAR/Tgas minimum gas price (that price
+// is an ASSUMPTION, not read from chain). Burnt fees accumulate; refunds credit back. 1 NEAR is headroom for a
+// testnet run. The value is a CHOICE, not measured.
+export const EXECUTOR_KEY_ALLOWANCE_YOCTO = 1_000_000_000_000_000_000_000_000n;
 export const PLACEHOLDER_NONCE = 1n; // live: executor access-key nonce + 1 from RPC
 export const PLACEHOLDER_BLOCK_HASH = base58Encode(new Uint8Array(32)); // live: block.header.hash from RPC
 
@@ -45,6 +51,15 @@ function checkProposal(proposal) {
   for (const k of VAULT_PROPOSAL_KEYS) if (!Object.hasOwn(proposal, k)) throw new Error(`proposal is missing key ${k}`);
   for (const k of Object.keys(proposal)) {
     if (!VAULT_PROPOSAL_KEYS.includes(k)) throw new Error(`proposal has unexpected key ${JSON.stringify(k).slice(0, 40)}`);
+  }
+  if (!Number.isSafeInteger(proposal.pool_id) || proposal.pool_id < 0) throw new Error("proposal pool_id must be a non-negative safe integer");
+  for (const k of ["token_in", "token_out"]) {
+    if (typeof proposal[k] !== "string") throw new Error(`proposal ${k} must be a string`);
+  }
+  for (const k of ["amount_in", "min_amount_out"]) {
+    if (typeof proposal[k] !== "string" || !/^(0|[1-9][0-9]*)$/.test(proposal[k])) {
+      throw new Error(`proposal ${k} must be a decimal integer string without leading zeros`);
+    }
   }
 }
 
@@ -96,13 +111,13 @@ export function buildMpcSignRequest({ agentContract, path, txHash }) {
       predecessor: agentContract,
       signed: false, sent: false,
     },
-    // What the runner (inside the TEE) would call on the agent contract. Arg names are NOT verified against a deployed contract.
+    // What the runner (inside the TEE) would call on the agent contract. Never executed against a deployed contract.
     agentRequestSignature: {
       receiverId: agentContract, methodName: "request_signature",
       args: { path, payload: Buffer.from(hashBytes).toString("hex"), key_type: "Eddsa" },
       deposit: "0", gas: String(AGENT_REQUEST_SIGNATURE_GAS),
       confirmed: false,
-      note: "UNCONFIRMED: method name, arg names, key_type spelling, deposit and gas are assumptions about the Shade Agent contract, not read from a deployed contract. The agent contract then calls `sign` on the MPC contract as predecessor.",
+      note: "Never executed. Method name and arg names {path, payload, key_type} are CONFIRMED by https://raw.githubusercontent.com/NearDeFi/shade-agent-framework/main/docs/reference/agent-contract.md. UNCONFIRMED: the \"Eddsa\" key_type spelling and its mapping to MPC domain 1, the deposit and the gas. The agent contract then calls `sign` on the MPC contract as predecessor.",
       signed: false, sent: false,
     },
   };
@@ -125,7 +140,7 @@ export function buildRunnerAuthorization({ owner, vault, executor, derivedKey })
         type: "AddKey", publicKey: derivedKey,
         permission: { allowance: EXECUTOR_KEY_ALLOWANCE_YOCTO, receiverId: vault, methodNames: [METHOD] },
       }),
-      allowanceNote: "UNMEASURED CHOICE: explicit 0.25 NEAR allowance; never unlimited.",
+      allowanceNote: "CHOICE, not measured: explicit 1 NEAR allowance, never unlimited. Per https://docs.near.org/protocol/access-keys the allowance is charged at the buy price, credited back on refund, cannot be changed later, and an exhausted key cannot sign (rotate with DeleteKey + AddKey).",
       signed: false, sent: false,
     },
     revocation: {

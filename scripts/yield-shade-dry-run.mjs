@@ -15,7 +15,7 @@ import { buildShadePlan, renderShadePlan } from "../src/yield/shade/plan.mjs";
 import { loadSnapshot } from "../src/yield-optimizer/snapshot.mjs";
 import { DEFAULT_SNAPSHOT } from "./yield-optimizer.mjs";
 
-const USAGE = `Usage: node scripts/yield-shade-dry-run.mjs [--json] [--agent-contract ID] [--path P]
+const USAGE = `Usage: node scripts/yield-shade-dry-run.mjs [--json] [--agent-contract ID] [--path P]   (--flag=value also works)
   (no flag)            human-readable Shade Agent runner plan
   --json               print only the plan JSON (dry_run true, signed false, sent false)
   --agent-contract ID  agent contract account (testnet ids only; default is a placeholder)
@@ -34,13 +34,26 @@ function parseArgs(argv) {
   const o = { json: false, help: false, agentContract: undefined, path: undefined, network: undefined, refused: null };
   if (argv.some((a) => a === "--help" || a === "-h")) return { ...o, help: true };
   for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
+    let a = argv[i];
+    let inline; // value from the --flag=value form
+    const eq = a.startsWith("--") ? a.indexOf("=") : -1;
+    if (eq > 0) {
+      inline = a.slice(eq + 1);
+      a = a.slice(0, eq);
+    }
     const value = () => {
+      if (inline !== undefined) {
+        if (inline === "") throw new UsageError(`${a} needs a value`);
+        return inline;
+      }
       const v = argv[i + 1];
       if (v === undefined || v.startsWith("-")) throw new UsageError(`${a} needs a value`);
       i++;
       return v;
     };
+    if (inline !== undefined && !["--agent-contract", "--path", "--network"].includes(a) && !REFUSED_FLAGS.has(a)) {
+      throw new UsageError(`unknown argument ${JSON.stringify(argv[i]).slice(0, 40)}`);
+    }
     if (a === "--json") o.json = true;
     else if (a === "--agent-contract") o.agentContract = value();
     else if (a === "--path") o.path = value();

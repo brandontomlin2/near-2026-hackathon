@@ -86,6 +86,23 @@ describe("yield:shade:dry-run refusals and usage", () => {
       assert.match(r.stderr, /refused/);
     });
   }
+  it("refuses --network=mainnet and --mainnet=1 with exit 1 and empty stdout", () => {
+    for (const a of ["--network=mainnet", "--mainnet=1", "--agent-contract=agent.near"]) {
+      const r = run([a]);
+      assert.equal(r.code, 1, a);
+      assert.equal(r.stdout, "", a);
+      assert.match(r.stderr, /refused/);
+    }
+  });
+  it("accepts --flag=value forms", () => {
+    assert.equal(run(["--network=testnet"]).code, 0);
+    const p = JSON.parse(run(["--json", "--agent-contract=yield-agent.testnet", "--path=yield-vault-1"]).stdout);
+    assert.equal(p.derivation.derived_key, EVIDENCE_KEY);
+    const q = JSON.parse(run(["--json", "--path=other-path"]).stdout);
+    assert.equal(q.derivation.path, "other-path");
+    assert.equal(run(["--json=1"]).code, 2);
+    assert.equal(run(["--path="]).code, 2);
+  });
   it("refuses NEAR_NETWORK=mainnet", () => {
     const r = run([], { env: { ...BASE_ENV, NEAR_NETWORK: "mainnet" } });
     assert.equal(r.code, 1);
