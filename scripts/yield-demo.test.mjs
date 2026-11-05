@@ -135,7 +135,10 @@ describe("yield:demo default run", () => {
     assert.equal(r2.stdout, r.stdout);
     const r3 = run(["--out", dir2]);
     assert.equal(readFileSync(join(dir2, "plan.json"), "utf8"), readFileSync(join(dir, "plan.json"), "utf8"));
-    assert.equal(r3.stdout.replaceAll(dir2, dir), r.stdout);
+    // Only the out-dir name differs. The demo may print it relative to a realpath'd cwd
+    // (macOS /tmp is /private/tmp), so swap the directory name, not the absolute path.
+    assert.match(r3.stdout, /^wrote \S*default2\/plan\.json$/m);
+    assert.equal(r3.stdout.replaceAll("default2/", "default/"), r.stdout);
   });
 
   it("prints out-dir paths relative to cwd when inside it", () => {
