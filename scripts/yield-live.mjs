@@ -17,9 +17,10 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  CONTRACT_SOURCE_URL, YOCTO_PER_BYTE, buildLivePlan, findPlaceholders, formatNear, formatSplit, loadContractSpec, loadLiveConfig,
+  CONTRACT_SOURCE_URL, YOCTO_PER_BYTE, abiPathFor, compareMethods, parseAbiMethods, buildLivePlan, findPlaceholders, formatNear, formatSplit, loadContractSpec, loadLiveConfig,
   parseNear, planTotals, validateLiveConfig, validatePlan,
 } from "../src/yield/live-plan.mjs";
+import { DEFAULT_RPC, assertRpcUrl, createRpc, onlineChecks } from "../src/yield/live-rpc.mjs";
 import { RefusalError, assertNotMainnet } from "../src/yield/send.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -28,7 +29,7 @@ const CONTRACT_DIR = resolve(ROOT, "contracts/yield-vault");
 const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
 const REFUSED_FLAGS = ["--send", "--sign", "--i-approve", "--sign-with-keychain", "--sign-with-plaintext-private-key", "--private-key", "--seed-phrase", "--live", "--broadcast"];
 
-const USAGE = `Usage: node scripts/yield-live.mjs <dry-run|preflight> [options]
+const USAGE = () => `Usage: node scripts/yield-live.mjs <dry-run|preflight> [options]
   dry-run [--config FILE] [--json] [--out FILE]
       Build the full ordered list of unsigned testnet transactions for the vault's live path,
       validate it against contracts/yield-vault/src/lib.rs and print it. Placeholders in the
@@ -36,10 +37,14 @@ const USAGE = `Usage: node scripts/yield-live.mjs <dry-run|preflight> [options]
       --json     print one JSON document {network, unsigned:true, transactions, problems, totals}
       --out FILE write that JSON document to FILE as well
       Exit 0 plan valid, 1 plan has problems, 2 refused or usage error.
-  preflight [--config FILE] [--json] [--build]
+  preflight [--config FILE] [--json] [--build] [--online [--rpc URL]]
       Offline checklist (PASS / FAIL / MISSING / WARN / MANUAL): config complete, ids testnet,
       plan valid against lib.rs, limits, wasm present (size, sha256, storage cost estimate), wasm
       newer than src/lib.rs, cargo and cargo-near on PATH. Ends with "READY FOR LIVE: yes|no".
+      --online   also run read-only JSON-RPC views against testnet (default RPC ${DEFAULT_RPC}): Ref and token
+                 contracts exist and match the config, storage bounds, pool tokens and reserves, owner funded,
+                 vault/runner not yet created. Only query/call_function and view_account with finality final; no keys.
+      --rpc URL  RPC endpoint for --online; must be https and must not contain "mainnet" (else exit 2)
       --build    first run \`cargo near build non-reproducible-wasm\` in contracts/yield-vault (10 min timeout)
       Exit 0 no FAIL (MISSING and MANUAL items do not fail; they make READY FOR LIVE no),
       1 at least one FAIL, 2 refused or usage error.
@@ -61,7 +66,7 @@ function refuseSigning(argv) {
 }
 
 function parseArgs(argv) {
-  const o = { cmd: undefined, config: DEFAULT_CONFIG, json: false, out: undefined, build: false, help: false };
+  const o = { cmd: undefined, config: DEFAULT_CONFIG, json: false, out: undefined, build: false, online: false, rpc: DEFAULT_RPC, help: false };
   if (argv.some((a) => a === "--help" || a === "-h")) return { ...o, help: true };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -78,9 +83,19 @@ function parseArgs(argv) {
     else if (a === "--json") o.json = true;
     else if (a === "--out" && o.cmd === "dry-run") o.out = resolve(value());
     else if (a === "--build" && o.cmd === "preflight") o.build = true;
+    else if (a === "--online" && o.cmd === "preflight") o.online = true;
+    else if (a === "--rpc" && o.cmd === "preflight") o.rpc = value();
     else throw new UsageError(`unknown argument ${JSON.stringify(a.slice(0, 40))}`);
   }
   if (!o.cmd) throw new UsageError("a command is required: dry-run or preflight");
+  if (o.rpc !== DEFAULT_RPC && !o.online) throw new UsageError("--rpc only applies together with --online");
+  if (o.online) {
+    try {
+      assertRpcUrl(o.rpc);
+    } catch (e) {
+      throw new RefusalError(`refused: ${e.message}. --online only reads testnet over https.`, 2);
+    }
+  }
   return o;
 }
 
@@ -129,7 +144,10 @@ function dryRun(opts, { log }) {
   const { plan, problems } = buildAndValidate(config);
   const warnings = findPlaceholders(config).map((p) => `placeholder not filled in: ${p}`);
   const totals = planTotals(plan);
-  const doc = { network: plan.network, unsigned: true, owner_id: plan.owner_id, vault_id: plan.vault_id, runner_id: plan.runner_id, transactions: plan.steps, problems, warnings, manual: plan.manual, totals };
+  const wasmFile = isAbsolute(config.wasm_path) ? config.wasm_path : resolve(ROOT, config.wasm_path);
+  const wasm = existsSync(wasmFile) ? { path: config.wasm_path, bytes: statSync(wasmFile).size, sha256: sha256File(wasmFile) } : { path: config.wasm_path, bytes: null, sha256: null };
+  const transactions = plan.steps.map((s) => ({ ...s, actions: s.actions.map((a) => (a.type === "DeployContract" && wasm.sha256 ? { ...a, wasm_sha256: wasm.sha256 } : a)) }));
+  const doc = { network: plan.network, unsigned: true, owner_id: plan.owner_id, vault_id: plan.vault_id, runner_id: plan.runner_id, wasm, transactions, problems, warnings, manual: plan.manual, totals };
   if (opts.out) writeFileSync(opts.out, `${JSON.stringify(doc, null, 2)}\n`);
   if (opts.json) {
     log(JSON.stringify(doc, null, 2));
@@ -150,7 +168,7 @@ function dryRun(opts, { log }) {
   return problems.length ? 1 : 0;
 }
 
-function preflight(opts, { log, err }) {
+async function preflight(opts, { log, fetch: fetchFn }) {
   const checks = [];
   const add = (status, name, detail = "") => checks.push({ status, name, detail });
 
@@ -198,18 +216,47 @@ function preflight(opts, { log, err }) {
     else add("PASS", "wasm newer than src/lib.rs");
   }
 
+  const abiFile = config.wasm_path ? abiPathFor(wasmPath) : null;
+  if (!abiFile || !existsSync(abiFile)) {
+    add("MISSING", "plan valid against built ABI", `${abiFile ?? "(no wasm_path)"} not found; cargo near build writes it next to the wasm`);
+  } else {
+    try {
+      const spec = loadContractSpec();
+      const abiMethods = parseAbiMethods(JSON.parse(readFileSync(abiFile, "utf8")), spec.methods);
+      const disagree = compareMethods(spec.methods, abiMethods);
+      if (disagree.length) add("FAIL", "lib.rs parse agrees with built ABI", disagree.join("; "));
+      else add("PASS", "lib.rs parse agrees with built ABI", `${abiMethods.size} functions`);
+      if (plan) {
+        const abiProblems = validatePlan(plan, abiMethods, { minGas: spec.minGas });
+        if (abiProblems.length) add("FAIL", "plan valid against built ABI", abiProblems.join("; "));
+        else add("PASS", "plan valid against built ABI", "every vault call matches the built wasm's method, kind, payable/private flags and argument names");
+      }
+    } catch (e) {
+      add("FAIL", "plan valid against built ABI", `cannot read ${abiFile}: ${e.message}`);
+    }
+  }
+
   const cargo = detectCargo(["--version"]);
   const cargoNear = cargo ? detectCargo(["near", "--version"]) : null;
   add(cargo ? "PASS" : "MISSING", "toolchain: cargo", cargo ?? "cargo not found on PATH");
   add(cargoNear ? "PASS" : "MISSING", "toolchain: cargo-near", cargoNear ?? "cargo-near not found on PATH (cargo install cargo-near)");
 
   const manual = [];
+  if (opts.online) {
+    if (!plan) add("FAIL", "online checks", "skipped: the config does not validate");
+    else {
+      const rpc = createRpc({ url: opts.rpc, fetch: fetchFn });
+      const online = await onlineChecks(config, plan, rpc);
+      for (const c of online) add(c.status, c.name, c.detail);
+      add("PASS", "online requests", `${rpc.requests} read-only RPC requests to ${opts.rpc}`);
+    }
+  }
   if (plan) {
     const t = planTotals(plan);
     manual.push(`owner ${plan.owner_id} exists on testnet and holds at least ${formatSplit(t.owner_outflow_near, t.owner_outflow_security_yocto)} plus gas for its transactions`);
     manual.push(`keys for owner, vault ${plan.vault_id} and runner ${plan.runner_id} are in the near-cli-rs keychain (the vault and runner public keys in the config match them)`);
     manual.push(`${config.nft_contract_id} exists and token ${config.token_id} is minted (the vault records them; the contract does not verify them)`);
-    manual.push("Ref's storage_balance_bounds min is below ref_storage_deposit_near (read it with the view step)");
+    if (!opts.online) manual.push("Ref's storage_balance_bounds min is below ref_storage_deposit_near (read it with the view step, or run preflight --online)");
     manual.push(...plan.manual);
   } else manual.push("fix the FAIL items above first");
   for (const m of manual) add("MANUAL", m);
@@ -221,14 +268,14 @@ function preflight(opts, { log, err }) {
     log(JSON.stringify({ network: "testnet", unsigned: true, checks, ready_for_live: ready, missing: missing.map((c) => c.name) }, null, 2));
     return failed ? 1 : 0;
   }
-  log(`Yield vault live preflight (offline, ${opts.config === DEFAULT_CONFIG ? "config/yield-vault.live.example.json" : "custom config"})`);
+  log(`Yield vault live preflight (${opts.online ? "online read-only" : "offline"}, ${opts.config === DEFAULT_CONFIG ? "config/yield-vault.live.example.json" : "custom config"})`);
   for (const c of checks) log(`${c.status.padEnd(7)} ${c.name}${c.detail ? `: ${c.detail}` : ""}`);
   log("");
   log("Missing for live:");
   const todo = checks.filter((c) => c.status === "MISSING" || c.status === "MANUAL" || c.status === "FAIL");
   if (todo.length === 0) log("  nothing");
   for (const c of todo) log(`  - [${c.status}] ${c.name}${c.status === "MISSING" ? `: ${c.detail}` : ""}`);
-  log(`READY FOR LIVE: ${ready ? "yes (offline checks only; confirm the MANUAL items by hand, then get the human's explicit yes)" : "no"}`);
+  log(`READY FOR LIVE: ${ready ? `yes (${opts.online ? "online read-only" : "offline"} checks only; confirm the MANUAL items by hand, then get the human's explicit yes)` : "no"}`);
   return failed ? 1 : 0;
 }
 
@@ -241,17 +288,17 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     assertNotMainnet(env);
     const opts = parseArgs(argv);
     if (opts.help) {
-      log(USAGE);
+      log(USAGE());
       return 0;
     }
-    return opts.cmd === "dry-run" ? dryRun(opts, { log, err }) : preflight(opts, { log, err });
+    return opts.cmd === "dry-run" ? dryRun(opts, { log }) : await preflight(opts, { log, fetch: io.fetch });
   } catch (e) {
     if (e instanceof RefusalError) {
       err(e.message);
       return 2;
     }
     if (e instanceof UsageError) {
-      err(`yield-live: ${e.message}\n${USAGE}`);
+      err(`yield-live: ${e.message}\n${USAGE()}`);
       return 2;
     }
     err(`yield-live: ${e.code === "ENOENT" ? "config file not found" : e.message}`);

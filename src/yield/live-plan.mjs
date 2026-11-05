@@ -704,3 +704,61 @@ export function planTotals(plan) {
 export function formatSplit(near, securityYocto) {
   return `${near} NEAR + ${securityYocto} yocto (1-yocto security deposits)`;
 }
+
+// ------------------------------------------------------------------------------- built ABI
+
+/** cargo-near writes <name>_abi.json next to <name>.wasm. */
+export function abiPathFor(wasmPath) {
+  return wasmPath.replace(/\.wasm$/, "") + "_abi.json";
+}
+
+const abiOptional = (schema) =>
+  Array.isArray(schema?.type) ? schema.type.includes("null") : [...(schema?.anyOf ?? []), ...(schema?.oneOf ?? [])].some((x) => x?.type === "null");
+
+/**
+ * Method table from a NEAR ABI document (body.functions[]), shaped like parseContractMethods.
+ * ABI has no 1-yocto / deposit-required info, so those two flags are taken from `sourceMethods`.
+ */
+export function parseAbiMethods(abi, sourceMethods = new Map()) {
+  const out = new Map();
+  for (const f of abi?.body?.functions ?? []) {
+    const args = f.params?.args ?? [];
+    const src = sourceMethods.get(f.name);
+    out.set(f.name, {
+      name: f.name,
+      payable: (f.modifiers ?? []).includes("payable"),
+      private: (f.modifiers ?? []).includes("private"),
+      init: (f.modifiers ?? []).includes("init"),
+      view: f.kind === "view",
+      args: args.map((a) => a.name),
+      argTypes: src?.argTypes ?? {}, // the ABI types U128 as a plain string; the Rust type is more precise
+      optional: args.filter((a) => abiOptional(a.type_schema)).map((a) => a.name),
+      oneYocto: src?.oneYocto ?? false,
+      depositRequired: src?.depositRequired ?? false,
+    });
+  }
+  return out;
+}
+
+/**
+ * Disagreements between the lib.rs parse and the ABI cargo-near built, over the non-callback
+ * methods (name, view/call, payable, init, arg names). A disagreement means a parser bug or a stale ABI.
+ */
+export function compareMethods(sourceMethods, abiMethods) {
+  const problems = [];
+  for (const [name, s] of sourceMethods) {
+    const a = abiMethods.get(name);
+    if (!a) {
+      if (!s.private) problems.push(`${name}: in lib.rs but not in the ABI (stale build?)`);
+      continue;
+    }
+    if (s.private !== a.private) problems.push(`${name}: #[private] differs (lib.rs ${s.private}, ABI ${a.private})`);
+    if (s.private || a.private) continue;
+    if (s.view !== a.view) problems.push(`${name}: view/call differs (lib.rs ${s.view ? "view" : "call"}, ABI ${a.view ? "view" : "call"})`);
+    if (s.payable !== a.payable) problems.push(`${name}: #[payable] differs (lib.rs ${s.payable}, ABI ${a.payable})`);
+    if (s.init !== a.init) problems.push(`${name}: #[init] differs (lib.rs ${s.init}, ABI ${a.init})`);
+    if (s.args.join(",") !== a.args.join(",")) problems.push(`${name}: args differ (lib.rs [${s.args}], ABI [${a.args}])`);
+  }
+  for (const [name, a] of abiMethods) if (!a.private && !sourceMethods.has(name) && name !== "contract_source_metadata") problems.push(`${name}: in the ABI but not parsed from lib.rs (parser bug?)`);
+  return problems;
+}

@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { parseContractMethods } from "../src/yield/live-plan.mjs";
+import { main } from "./yield-live.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,6 +16,21 @@ const KEY = "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp";
 function run(args, env = {}) {
   const r = spawnSync(process.execPath, [SCRIPT, ...args], { encoding: "utf8", timeout: 20_000, env: { PATH: process.env.PATH, ...env } });
   return { code: r.status, stdout: r.stdout, stderr: r.stderr };
+}
+
+/** A small hand-built NEAR ABI in cargo-near's shape, derived from the methods parsed from lib.rs. */
+function abiFixture(mutate = () => {}) {
+  const src = parseContractMethods(readFileSync(new URL("../contracts/yield-vault/src/lib.rs", import.meta.url), "utf8"));
+  const functions = [...src.values()].map((m) => ({
+    name: m.name,
+    kind: m.view ? "view" : "call",
+    ...(m.payable || m.private || m.init ? { modifiers: [m.payable && "payable", m.private && "private", m.init && "init"].filter(Boolean) } : {}),
+    params: { serialization_type: "json", args: m.args.filter((a) => !(m.private && a === "out")).map((a) => ({ name: a, type_schema: m.optional.includes(a) ? { type: ["string", "null"] } : { type: "string" } })) },
+  }));
+  functions.push({ name: "contract_source_metadata", kind: "view" });
+  const abi = { schema_version: "0.4.0", body: { functions } };
+  mutate(abi);
+  return abi;
 }
 
 /** A complete (non-placeholder) config in a temp dir; returns {file, dir, config}. */
@@ -141,6 +158,7 @@ test("preflight reports size and sha256 of a present wasm, and is READY when all
   const c = JSON.parse(readFileSync(file, "utf8"));
   c.wasm_path = wasm;
   writeFileSync(file, JSON.stringify(c));
+  writeFileSync(join(dir, "fake_abi.json"), JSON.stringify(abiFixture()));
   const r = run(["preflight", "--config", file, "--json"]);
   assert.equal(r.code, 0, r.stderr);
   const doc = JSON.parse(r.stdout);
@@ -194,4 +212,132 @@ test("the tool never spawns near-cli-rs: the only spawn commands are cargo", () 
     assert.doesNotMatch(src, /["']near["']\s*,\s*(argv|args|\[)/, "no near invocation");
   }
   assert.doesNotMatch(readFileSync(LIB, "utf8"), /child_process/);
+});
+
+function configWithAbi(abi) {
+  const { file, dir } = filledConfig();
+  const wasm = join(dir, "v.wasm");
+  writeFileSync(wasm, Buffer.alloc(1000, 3));
+  const c = JSON.parse(readFileSync(file, "utf8"));
+  c.wasm_path = wasm;
+  writeFileSync(file, JSON.stringify(c));
+  if (abi) writeFileSync(join(dir, "v_abi.json"), JSON.stringify(abi));
+  return file;
+}
+const checkOf = (doc, name) => doc.checks.find((c) => c.name === name);
+
+test("preflight: no built ABI is MISSING", () => {
+  const doc = JSON.parse(run(["preflight", "--config", configWithAbi(null), "--json"]).stdout);
+  assert.equal(checkOf(doc, "plan valid against built ABI").status, "MISSING");
+  assert.equal(doc.ready_for_live, false);
+});
+
+test("preflight: a matching ABI passes both ABI checks", () => {
+  const r = run(["preflight", "--config", configWithAbi(abiFixture()), "--json"]);
+  assert.equal(r.code, 0, r.stderr);
+  const doc = JSON.parse(r.stdout);
+  assert.equal(checkOf(doc, "lib.rs parse agrees with built ABI").status, "PASS");
+  assert.equal(checkOf(doc, "plan valid against built ABI").status, "PASS");
+});
+
+test("preflight: ABI/lib.rs disagreement on payable, args or a missing method is a FAIL", () => {
+  const cases = [
+    [(a) => (a.body.functions.find((f) => f.name === "withdraw").modifiers = []), /withdraw: #\[payable\] differs/],
+    [(a) => a.body.functions.find((f) => f.name === "withdraw").params.args.pop(), /withdraw: args differ/],
+    [(a) => (a.body.functions = a.body.functions.filter((f) => f.name !== "execute_swap")), /execute_swap: in lib\.rs but not in the ABI/],
+    [(a) => a.body.functions.push({ name: "surprise", kind: "call" }), /surprise: in the ABI but not parsed from lib\.rs/],
+  ];
+  for (const [mutate, re] of cases) {
+    const r = run(["preflight", "--config", configWithAbi(abiFixture(mutate)), "--json"]);
+    assert.equal(r.code, 1);
+    assert.match(checkOf(JSON.parse(r.stdout), "lib.rs parse agrees with built ABI").detail, re);
+  }
+});
+
+test("preflight: the plan is checked against the ABI's own view of a method", () => {
+  // The ABI says get_state is a call: lib.rs disagrees AND the plan's view of it is wrong.
+  const doc = JSON.parse(run(["preflight", "--config", configWithAbi(abiFixture((a) => (a.body.functions.find((f) => f.name === "get_state").kind = "call"))), "--json"]).stdout);
+  assert.equal(checkOf(doc, "plan valid against built ABI").status, "FAIL");
+  assert.match(checkOf(doc, "plan valid against built ABI").detail, /get_state is not a view/);
+});
+
+test("dry-run --json carries the wasm sha256 when the wasm exists, null otherwise", () => {
+  const { file, dir } = filledConfig();
+  const wasm = join(dir, "w.wasm");
+  const bytes = Buffer.from("not really wasm");
+  writeFileSync(wasm, bytes);
+  const c = JSON.parse(readFileSync(file, "utf8"));
+  c.wasm_path = wasm;
+  writeFileSync(file, JSON.stringify(c));
+  const sha = createHash("sha256").update(bytes).digest("hex");
+  const doc = JSON.parse(run(["dry-run", "--config", file, "--json"]).stdout);
+  assert.deepEqual(doc.wasm, { path: wasm, bytes: bytes.length, sha256: sha });
+  assert.equal(doc.transactions.find((t) => t.id === "deploy-init").actions[0].wasm_sha256, sha);
+  c.wasm_path = join(dir, "absent.wasm");
+  writeFileSync(file, JSON.stringify(c));
+  const none = JSON.parse(run(["dry-run", "--config", file, "--json"]).stdout);
+  assert.equal(none.wasm.sha256, null);
+  assert.equal(none.transactions.find((t) => t.id === "deploy-init").actions[0].wasm_sha256, undefined);
+});
+
+/** main() in-process with an injected fetch: no network. */
+async function online(argv, fetch) {
+  const out = [];
+  const errs = [];
+  const code = await main(argv, { env: {}, log: (...a) => out.push(a.join(" ")), err: (s) => errs.push(String(s)), fetch });
+  return { code, stdout: out.join("\n"), stderr: errs.join("\n") };
+}
+
+test("preflight --online uses only the injected fetch, with read-only bodies", async () => {
+  const seen = [];
+  const fetch = async (url, init) => {
+    const body = JSON.parse(init.body);
+    seen.push({ url, body });
+    if (body.params.request_type === "view_account") return { ok: true, status: 200, json: async () => ({ result: { code_hash: "5Uk3VqDvSyGkS5pE8eWqjR9zVfXk2QxJf8cYhFZ9pQd1", amount: "1" } }) };
+    const answers = {
+      storage_balance_bounds: { min: "1020000000000000000000" },
+      get_whitelisted_tokens: ["wrap.testnet", "rft.tokenfactory.testnet"],
+      get_pool: { token_account_ids: ["wrap.testnet", "rft.tokenfactory.testnet"], amounts: ["1000000000000000000000000000", "5000000000000"] },
+      ft_metadata: { decimals: 24 },
+    };
+    return { ok: true, status: 200, json: async () => ({ result: { result: [...Buffer.from(JSON.stringify(answers[body.params.method_name]))] } }) };
+  };
+  const r = await online(["preflight", "--online", "--json"], fetch);
+  assert.equal(r.code, 0, r.stderr);
+  assert.ok(seen.length > 5 && seen.length <= 20);
+  for (const s of seen) {
+    assert.equal(s.url, "https://test.rpc.fastnear.com/");
+    assert.equal(s.body.method, "query");
+    assert.ok(["call_function", "view_account"].includes(s.body.params.request_type));
+    assert.equal(s.body.params.finality, "final");
+  }
+  const doc = JSON.parse(r.stdout);
+  assert.equal(doc.checks.find((c) => c.name === "online: Ref exchange has code").status, "PASS");
+  assert.match(doc.checks.find((c) => c.name === "online requests").detail, /^\d+ read-only RPC requests to https:\/\/test\.rpc\.fastnear\.com/);
+});
+
+test("preflight without --online never calls fetch", async () => {
+  const r = await online(["preflight", "--json"], async () => {
+    throw new Error("network used");
+  });
+  assert.equal(r.code, 0, r.stderr);
+  assert.ok(!JSON.parse(r.stdout).checks.some((c) => c.name.startsWith("online")));
+});
+
+test("--rpc must be https and not mainnet (exit 2); --rpc without --online is a usage error", () => {
+  for (const url of ["http://test.rpc.fastnear.com", "https://rpc.mainnet.near.org"]) {
+    const r = run(["preflight", "--online", "--rpc", url]);
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /refused/);
+    assert.equal(r.stdout, "");
+  }
+  assert.equal(run(["preflight", "--rpc", "https://x.example"]).code, 2);
+  assert.equal(run(["dry-run", "--online"]).code, 2);
+});
+
+test("--help documents --online and --rpc", () => {
+  const r = run(["--help"]);
+  assert.match(r.stdout, /--online/);
+  assert.match(r.stdout, /--rpc URL/);
+  assert.match(r.stdout, /https:\/\/test\.rpc\.fastnear\.com/);
 });
