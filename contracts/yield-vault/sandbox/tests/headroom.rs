@@ -97,13 +97,10 @@ async fn swap_trial(sb: &Sb, c: &std::collections::BTreeMap<String, u64>) -> any
     Ok(Trial { complete: failed.is_empty() && after == before + 1, failed })
 }
 
-/// Strands AMOUNT_IN of token_in on Ref (swap panics), then recovers it with MIN_RECOVER_GAS.
+/// Strands AMOUNT_IN of token_in on Ref (swap panics and the refund withdraw's ft_transfer fails), then recovers it with MIN_RECOVER_GAS.
 async fn recover_trial(sb: &Sb, c: &std::collections::BTreeMap<String, u64>, method: &str, extra: u64) -> anyhow::Result<Trial> {
     sb.set_ref_burn(method, 0).await?;
-    sb.admin.call(sb.rf.id(), "set_swap_panic").args_json(json!({"v": true})).transact().await?.into_result()?;
-    let _strand = sb.runner.call(sb.vault.id(), "execute_swap")
-        .args_json(sb.swap_args(AMOUNT_IN, MIN_OUT)).gas(tgas(c["MIN_EXECUTE_GAS"])).transact().await?;
-    sb.admin.call(sb.rf.id(), "set_swap_panic").args_json(json!({"v": false})).transact().await?.into_result()?;
+    let _strand = sb.strand_token_in(AMOUNT_IN, MIN_OUT).await?;
     let st = sb.state().await?;
     assert_eq!(pair_amount(&st["stranded_on_ref"], sb.tin.id().as_str()) % AMOUNT_IN, 0);
     let stranded_before = pair_amount(&st["stranded_on_ref"], sb.tin.id().as_str());
