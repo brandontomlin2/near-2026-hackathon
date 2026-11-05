@@ -62,6 +62,7 @@ export function wrapText(text, width = WRAP) {
 
 /** Turn a style SVG into a nested <svg> placed at x,y with the given size. */
 export function nest(faceSvg, x, y, size) {
+  if (typeof faceSvg !== "string") throw new TypeError("nest: faceSvg must be an SVG string");
   return faceSvg.trim().replace(/^<\?xml[^>]*\?>\s*/, "").replace(/^<svg\b((?:[^>"']|"[^"]*"|'[^']*')*)>/, (_, attrs) => {
     const rest = attrs.replace(/\s(?:x|y|width|height)=(?:"[^"]*"|'[^']*')/g, "");
     return `<svg${rest} x="${x}" y="${y}" width="${size}" height="${size}">`;
@@ -73,6 +74,7 @@ export function nest(faceSvg, x, y, size) {
  * @returns {string} one standalone SVG document
  */
 export function renderShareCard(card) {
+  if (card === null || typeof card !== "object") throw new TypeError("renderShareCard: card must be an object");
   const agentName = cleanText(card.agentName);
   const text = clipText(cleanText(card.text));
   const mood = cleanText(card.mood);
