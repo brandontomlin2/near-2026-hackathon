@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { checkIndexHtml, checkYieldDemo } from "./yield-demo-check.mjs";
+import { VECTORS_FILE, checkAgainstVectors, checkIndexHtml, checkYieldDemo } from "./yield-demo-check.mjs";
 
 const CHECK = fileURLToPath(new URL("./yield-demo-check.mjs", import.meta.url));
 const VERIFY = fileURLToPath(new URL("./verify.sh", import.meta.url));
@@ -153,4 +153,20 @@ test("verify.sh runs the yield demo check after the yield stage and expects its 
   assert.match(text, /"round hash" "yield" "yield demo" "vault tests"/);
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
   assert.equal(pkg.scripts["yield:demo:check"], "node scripts/yield-demo-check.mjs");
+});
+
+test("checkAgainstVectors: messages are compared with the vectors file, not with the demo's own fields", () => {
+  const vectors = JSON.parse(readFileSync(VECTORS_FILE, "utf8"));
+  const name = "ERR_PAUSED: vault is paused";
+  const expect = vectors.cases.find((c) => c.name === name).expect;
+  const plan = { rule_scenarios: { scenarios: [{ id: "paused", vector: name, contract_message: expect, js_message: expect, matches_contract: true }] } };
+  assert.deepEqual(checkAgainstVectors(plan, vectors), []);
+  // A demo that agrees with itself (contract_message === js_message, matches_contract true) but not with the contract.
+  const forged = structuredClone(plan);
+  forged.rule_scenarios.scenarios[0].contract_message = forged.rule_scenarios.scenarios[0].js_message = "ERR_PAUSED: vault paused";
+  assert.match(checkAgainstVectors(forged, vectors).join("\n"), /paused message "ERR_PAUSED: vault paused" is not the contract vector's expect "ERR_PAUSED: vault is paused"/);
+  const unknown = structuredClone(plan);
+  unknown.rule_scenarios.scenarios[0].vector = "no such vector";
+  assert.match(checkAgainstVectors(unknown, vectors).join("\n"), /not in rule-vectors\.json/);
+  assert.deepEqual(checkAgainstVectors(plan, {}), ["rule-vectors.json has no cases"]);
 });

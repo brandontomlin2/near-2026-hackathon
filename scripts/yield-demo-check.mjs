@@ -83,6 +83,26 @@ export function checkYieldDemo(plan, calls) {
   return problems;
 }
 
+export const VECTORS_FILE = fileURLToPath(new URL("../contracts/yield-vault/tests/rule-vectors.json", import.meta.url));
+
+/**
+ * Problems when a rule scenario's message is not the contract vector's `expect`. Read from the
+ * vectors file here, independently of the demo, so the demo cannot vouch for itself.
+ */
+export function checkAgainstVectors(plan, vectors) {
+  const cases = isObject(vectors) && Array.isArray(vectors.cases) ? vectors.cases : null;
+  if (cases === null) return ["rule-vectors.json has no cases"];
+  const scenarios = isObject(plan) && isObject(plan.rule_scenarios) && Array.isArray(plan.rule_scenarios.scenarios) ? plan.rule_scenarios.scenarios : [];
+  const problems = [];
+  for (const s of scenarios) {
+    if (!isObject(s)) continue;
+    const c = cases.find((x) => isObject(x) && x.name === s.vector);
+    if (!c) problems.push(`rule scenario ${s.id} names vector ${JSON.stringify(s.vector)}, which is not in rule-vectors.json`);
+    else if (c.expect === "" || c.expect !== s.contract_message) problems.push(`rule scenario ${s.id} message ${JSON.stringify(s.contract_message)} is not the contract vector's expect ${JSON.stringify(c.expect)}`);
+  }
+  return problems;
+}
+
 export const DRY_RUN_NOTICE = "DRY RUN: mock inference, committed fixtures, nothing was signed or sent.";
 
 /** Problems found in the rendered index.html given the parsed plan.json. */
@@ -160,6 +180,9 @@ function main(argv) {
   const calls = readJson(join(out, "calls.json"));
   const problems = [plan.error, calls.error].filter(Boolean);
   if (problems.length === 0) problems.push(...checkYieldDemo(plan.value, calls.value));
+  const vectors = readJson(VECTORS_FILE);
+  if (vectors.error) problems.push(vectors.error);
+  else if (!plan.error) problems.push(...checkAgainstVectors(plan.value, vectors.value));
   const index = readText(join(out, "index.html"));
   if (index.error) problems.push(index.error);
   else problems.push(...checkIndexHtml(index.value, plan.value));
