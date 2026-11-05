@@ -42,7 +42,7 @@ function parseArgs(argv) {
       opts[flag.slice(2)] = Number(value);
       i++;
     } else if (flag === "--out") {
-      if (!value || value.startsWith("-")) throw new Error(`--out needs a directory, got ${value === undefined ? "no value" : JSON.stringify(value)}`);
+      if (!value?.trim() || value.startsWith("-")) throw new Error(`--out needs a directory, got ${value === undefined ? "no value" : JSON.stringify(value)}`);
       opts.out = value;
       i++;
     } else {
