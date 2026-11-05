@@ -5,28 +5,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { stateOf } from "./rule-scenarios.mjs";
 import { HARD_RULE_ORDER, checkProposal } from "./rules.mjs";
 
 const FILE = fileURLToPath(new URL("../../contracts/yield-vault/tests/rule-vectors.json", import.meta.url));
 const vectors = JSON.parse(readFileSync(FILE, "utf8"));
 
-/** A vector's state as the checkProposal state shape (the file's `recovery` is `recovery_in_flight`). */
-function stateOf(c) {
-  const s = { ...vectors.base_state, ...c.state };
-  return {
-    paused: s.paused,
-    in_flight: s.in_flight,
-    recovery_in_flight: s.recovery,
-    spent: { day: s.day, amounts: s.spent_today },
-    balances: s.balances,
-  };
-}
-
 describe("rules.mjs matches the contract's rule vectors", () => {
   for (const c of vectors.cases) {
     it(c.name, () => {
       const nowNs = BigInt(c.now_ns ?? vectors.base_state.now_ns);
-      const r = checkProposal(c.proposal, vectors.config, stateOf(c), c.runner, Number(nowNs / 1_000_000n));
+      const r = checkProposal(c.proposal, vectors.config, stateOf(c, vectors), c.runner, Number(nowNs / 1_000_000n));
       assert.equal(r.reason, c.expect);
       assert.equal(r.ok, c.expect === "");
     });

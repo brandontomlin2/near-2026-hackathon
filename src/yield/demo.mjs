@@ -14,6 +14,7 @@ import { AGENT_IDS, runRound } from "./debate.mjs";
 import { createLedger } from "./ledger.mjs";
 import { MOCK_EPOCH_MS, yieldMockResponder } from "./mock.mjs";
 import { loadPoolFixture } from "./pools.mjs";
+import { ruleScenarios, scenarioSummary } from "./rule-scenarios.mjs";
 import { DEPOSIT, GAS, METHOD, buildExecuteSwapArgv, formatCommand } from "./send.mjs";
 import { PLACEHOLDER_RUNNER, PLACEHOLDER_VAULT, defaultVaultConfig } from "./strategies.mjs";
 
@@ -98,6 +99,7 @@ export async function runDemo({ rhea, rheaSource }) {
   agents.push(planner);
   if (planner.call) calls.push(planner.call);
 
+  const scenarios = ruleScenarios();
   const doc = {
     demo: "yield-demo",
     mode: "mock",
@@ -121,13 +123,23 @@ export async function runDemo({ rhea, rheaSource }) {
         fetched: false,
       },
     },
-    personality_agents: { vault_id: vault, runner_id: runner, now_ms: record.now_ms, consensus: record.consensus },
+    personality_agents: { vault_id: vault, runner_id: runner, now_ms: record.now_ms, consensus: record.consensus, configs },
+    // The Rhea snapshot's vault config the planner checks against (rates as num/den strings).
+    planner_vault: { vault_id: rhea.vault.vault_id ?? planner.vault_id, runner_id: planner.runner_id, config: jsonConfig(rhea.vault.config) },
     agents,
+    // Proposals the on-chain rules reject, from the contract's own vectors. They add no calls.
+    rule_scenarios: scenarios,
+    rule_rejections: scenarios.scenarios.length,
     calls_planned: calls.length,
     calls_signed: 0,
     calls_sent: 0,
   };
   return { doc, calls: callsDoc(calls), plan, rhea, fixture };
+}
+
+/** A vault config with every number (BigInt included) as a string, so it is plain JSON. */
+function jsonConfig(config) {
+  return JSON.parse(JSON.stringify(config, (_k, v) => (typeof v === "bigint" ? v.toString() : v)));
 }
 
 /** calls.json: only the unsigned vault calls the run plans. */
@@ -208,9 +220,21 @@ export function renderSummary({ doc }, paths = []) {
   // Say why a proposal that passed the vault rules still does not execute (a veto), so the table reads on its own.
   for (const a of doc.agents) if (a.veto) lines.push(`  ${a.agent} vetoed by ${a.veto.by}: ${a.veto.reason}`);
   for (const c of notes) lines.push(`  optimizer candidate ${c.summary}: ${c.status === "ok" ? "OK" : c.status === "refused" ? `REFUSED ${c.rule_check.reason}` : c.status}`);
+  lines.push(...ruleLines(doc.rule_scenarios));
   lines.push("", `${doc.calls_planned} unsigned execute_swap calls planned, ${doc.calls_signed} signed, ${doc.calls_sent} sent`);
   for (const p of paths) lines.push(`wrote ${p}`);
   return lines.join("\n");
+}
+
+/** The rule-breaker block of the summary: header plus one REJECTED line per scenario, columns aligned. */
+function ruleLines(rs) {
+  const what = rs.scenarios.map(scenarioSummary);
+  const w1 = Math.max(...rs.scenarios.map((s) => s.label.length));
+  const w2 = Math.max(...what.map((x) => x.length));
+  return [
+    `on-chain rules, vectors from ${rs.source} (same message as the Rust ${rs.contract_fn}):`,
+    ...rs.scenarios.map((s, i) => `  ${s.label.padEnd(w1)}  ${what[i].padEnd(w2)}  REJECTED ${s.contract_message}`),
+  ];
 }
 
 function sameProposal(a, b) {

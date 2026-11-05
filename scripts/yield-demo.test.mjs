@@ -72,8 +72,20 @@ describe("yield:demo default run", () => {
     assert.match(summary, /^ {2}chaotic vetoed by skeptic: size is 10000 bps of max_trade, above the 8000 bps audit line$/m);
   });
 
-  it("writes exactly plan.json and calls.json", () => {
-    assert.deepEqual(files(dir), ["calls.json", "plan.json"]);
+  it("writes exactly plan.json, calls.json and index.html", () => {
+    assert.deepEqual(files(dir), ["calls.json", "index.html", "plan.json"]);
+  });
+
+  it("prints the three wrote lines in order and index.html is the dry-run page", () => {
+    const wrote = r.stdout.split("\n").filter((l) => l.startsWith("wrote "));
+    assert.equal(wrote.length, 3);
+    assert.match(wrote[0], /plan\.json$/);
+    assert.match(wrote[1], /calls\.json$/);
+    assert.match(wrote[2], /index\.html$/);
+    const html = readFileSync(join(dir, "index.html"), "utf8");
+    assert.match(html, /<h1>Yield vault demo \(dry run\)<\/h1>/);
+    assert.match(html, /DRY RUN: mock inference, committed fixtures, nothing was signed or sent\./);
+    assert.doesNotMatch(html, /<script|https?:\/\//);
   });
 
   it("plan.json is a dry-run plan with five agents", () => {
@@ -129,6 +141,35 @@ describe("yield:demo default run", () => {
     assert.equal(planner.receiver_id, "yield-vault.fixture.testnet");
   });
 
+  it("summary shows the four on-chain rule rejections with the contract's own messages", () => {
+    const vectors = readJson(fileURLToPath(new URL("../contracts/yield-vault/tests/rule-vectors.json", import.meta.url)));
+    const expectOf = (name) => vectors.cases.find((c) => c.name === name).expect;
+    const lines = r.stdout.split("\n");
+    const summary = lines.slice(0, lines.indexOf("== details ==")).join("\n");
+    assert.ok(summary.includes("on-chain rules, vectors from contracts/yield-vault/tests/rule-vectors.json (same message as the Rust check_rules):"));
+    const names = ["ERR_MAX_TRADE: amount_in one above max_trade", "ERR_DAILY_CAP: spent plus amount_in one above the daily cap", "ERR_PRICE_FLOOR: pool 0 a->b one below the floor", "ERR_PAUSED: vault is paused"];
+    const at = [];
+    for (const n of names) {
+      const msg = expectOf(n);
+      const line = lines.find((l) => l.endsWith(`REJECTED ${msg}`));
+      assert.ok(line, `no REJECTED line for ${msg}`);
+      at.push(lines.indexOf(line));
+    }
+    assert.deepEqual(at, [...at].sort((a, b) => a - b), "scenario order");
+    assert.match(summary, /\(spent today 1501\)/);
+    assert.match(summary, /\(vault paused\)/);
+    assert.match(summary, /^4 unsigned execute_swap calls planned, 0 signed, 0 sent$/m);
+  });
+
+  it("plan.json records the rule scenarios and they add no calls", () => {
+    const plan = readJson(join(dir, "plan.json"));
+    assert.equal(plan.rule_rejections, 4);
+    assert.equal(plan.calls_planned, 4);
+    assert.deepEqual(plan.rule_scenarios.scenarios.map((s) => s.id), ["max_trade", "daily_cap", "price_floor", "paused"]);
+    assert.ok(plan.rule_scenarios.scenarios.every((s) => s.outcome === "rejected" && s.matches_contract === true));
+    assert.equal(readJson(join(dir, "calls.json")).calls.length, 4);
+  });
+
   it("is byte-identical across runs", () => {
     const dir2 = join(work, "default2");
     const r2 = run(["--out", dir]);
@@ -145,7 +186,7 @@ describe("yield:demo default run", () => {
     const rel = run(["--out", "rel-out"]);
     assert.equal(rel.code, 0);
     assert.match(rel.stdout, /^wrote rel-out\/plan\.json$/m);
-    assert.deepEqual(files(join(work, "rel-out")), ["calls.json", "plan.json"]);
+    assert.deepEqual(files(join(work, "rel-out")), ["calls.json", "index.html", "plan.json"]);
   });
 });
 
@@ -161,11 +202,15 @@ describe("yield:demo --calls and --json", () => {
     assert.equal((r.stdout.match(/^ {2}sent: false$/gm) ?? []).length, 4);
     assert.match(r.stdout, /^ {2}method: execute_swap$/m);
     assert.equal(existsSync(dir), false);
+    assert.doesNotMatch(r.stdout, /index\.html/);
   });
 
-  it("--json is the same content as plan.json", () => {
-    const r = run(["--json"]);
+  it("--json is the same content as plan.json and writes no index.html", () => {
+    const dir = join(work, "json-out");
+    const r = run(["--json", "--out", dir]);
     assert.equal(r.code, 0);
+    assert.equal(existsSync(dir), false);
+    assert.equal(existsSync(join(work, "index.html")), false);
     assert.equal(r.stdout, readFileSync(join(work, "default", "plan.json"), "utf8"));
   });
 

@@ -7,7 +7,8 @@
 // The four personality agents propose one swap each (mock inference over the committed Ref
 // pool fixture) and the Yield Optimizer planner is the fifth (committed Rhea snapshot).
 // Every proposal is checked with the one JS copy of the vault rules (src/yield/rules.mjs),
-// and the unsigned execute_swap calls are printed and written to plan.json / calls.json.
+// and the unsigned execute_swap calls are printed and written to plan.json / calls.json;
+// index.html is the same dry run as one static page (no script, no external asset).
 // Always mock: no key is read, no network is used, nothing is signed or sent.
 
 import { mkdirSync, statSync, writeFileSync } from "node:fs";
@@ -15,6 +16,7 @@ import { isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assertSafeOutDir, describeWriteFailure } from "../src/util/outdir.mjs";
+import { renderDemoPage } from "../src/yield/demo-page.mjs";
 import { renderCalls, renderDetails, renderSummary, runDemo } from "../src/yield/demo.mjs";
 import { RefusalError, assertNotMainnet } from "../src/yield/send.mjs";
 import { SnapshotError, loadSnapshot } from "../src/yield-optimizer/snapshot.mjs";
@@ -24,8 +26,9 @@ const DEFAULT_OUT = "out/yield-demo";
 const DEFAULT_SNAPSHOT_LABEL = "src/yield-optimizer/fixtures/rhea-testnet-snapshot.json";
 
 const USAGE = `Usage: node scripts/yield-demo.mjs [--out DIR] [--snapshot FILE] [--calls | --json]
-  (no flag)      one-screen summary, then per-agent detail; writes DIR/plan.json and DIR/calls.json
-  --out DIR      where plan.json and calls.json go (default ${DEFAULT_OUT}; rewritten each run)
+  (no flag)      one-screen summary, then per-agent detail; writes DIR/plan.json, DIR/calls.json
+                 and DIR/index.html (the same dry run as a static page)
+  --out DIR      where plan.json, calls.json and index.html go (default ${DEFAULT_OUT}; rewritten each run)
   --snapshot FILE  use this Rhea snapshot for the planner instead of the committed fixture
   --calls        print ONLY the unsigned execute_swap calls (receiver, method, signer, args, gas,
                  deposit, signed: false, sent: false); writes no files
@@ -126,17 +129,19 @@ export async function main(argv = process.argv.slice(2), io = {}) {
 
   const planFile = join(outDir, "plan.json");
   const callsFile = join(outDir, "calls.json");
+  const indexFile = join(outDir, "index.html");
   try {
     mkdirSync(outDir, { recursive: true });
     writeFileSync(planFile, planText);
     writeFileSync(callsFile, `${JSON.stringify(result.calls, null, 2)}\n`);
+    writeFileSync(indexFile, renderDemoPage(result));
   } catch (e) {
     const msg = describeWriteFailure(display(outDir), e);
     if (!msg) throw e;
     err(`yield:demo: ${msg}`);
     return 1;
   }
-  log(renderSummary(result, [display(planFile), display(callsFile)]));
+  log(renderSummary(result, [display(planFile), display(callsFile), display(indexFile)]));
   log("");
   log(renderDetails(result));
   return 0;
