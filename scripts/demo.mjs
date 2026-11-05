@@ -2,6 +2,7 @@
 // Usage: node scripts/demo.mjs [--rounds N] [--seed N] [--every N] [--style NAME] [--out DIR]
 // Mock mode only: no keys, no network, nothing signed.
 
+import { realpathSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseMode } from "../src/inference/client.mjs";
@@ -87,6 +88,9 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     const { manifest } = run;
     const sheetCount = manifest.agents.reduce((n, a) => n + a.sheets.length, 0);
     const eventCount = manifest.roundHashes.length * manifest.agents.length;
+    log("Personality NFT: four AI characters argue in a group chat. Each NFT keeps a character sheet (rivals, allies, best line), and the sheet's hash is prepared for anchoring on NEAR so a new owner can check it was not rewritten.");
+    log("This run is mock mode: scripted chat, no AI model call, nothing sent to NEAR.");
+    log("");
     log(`[1/5] swarm: ${plural(manifest.rounds, "round")}, ${plural(eventCount, "event")}, verify: ok`);
     log(`[2/5] memory: ${plural(sheetCount, "sheet")} (a summary every ${plural(manifest.every, "round")}, ${plural(manifest.agents.length, "agent")})`);
     // One line per agent: first sheet -> latest sheet. This is what the camera sees.
@@ -106,7 +110,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     }
     log(`  3. Open ${at("transcript.txt")}. See the swarm conversation, round by round, with replies marked.`);
     log(`  4. Open ${at("memory/aloof/sheet.json")}. See Aloof's latest character sheet and its sha256 hash.`);
-    log(`     Check the hash: node -p 'require("${requirePath(at("memory/aloof/sheet.json"))}").sheet' | shasum -a 256`);
+    log(`     Check the hash: node -p 'require("${requirePath(at("memory/aloof/sheet.json"))}").sheet' | shasum -a 256  # no shasum? use sha256sum`);
     log(`  5. Open ${at("anchors.json")}. See ${sheetCount} anchor_sheet calls for testnet, each "dry-run" with a null transaction hash; Aloof's last sheet_hash is the hash from step 4.`);
     log(`  6. Run the same command again. See the same final round hash (same --rounds, --seed, --every and --style): ${run.finalRoundHash}.`);
     log("");
@@ -131,6 +135,16 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
   return 0;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// import.meta.url is a realpath; argv[1] is not when the script is run through a symlink.
+function isEntryPoint() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+  } catch {
+    return resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  }
+}
+
+if (isEntryPoint()) {
   process.exitCode = await main();
 }

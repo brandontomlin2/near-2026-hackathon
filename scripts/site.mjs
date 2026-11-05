@@ -3,6 +3,8 @@
 // and from any static host. No network, nothing signed.
 // Usage: node scripts/site.mjs [DIR]
 
+import { realpathSync } from "node:fs";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { main } from "./demo.mjs";
 
@@ -26,7 +28,17 @@ export function parseArgs(argv) {
   return { dir: argv[0] ?? DEFAULT_SITE_DIR };
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// import.meta.url is a realpath; argv[1] is not when the script is run through a symlink.
+function isEntryPoint() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+  } catch {
+    return resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  }
+}
+
+if (isEntryPoint()) {
   let opts;
   try {
     opts = parseArgs(process.argv.slice(2));

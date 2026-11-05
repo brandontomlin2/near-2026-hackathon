@@ -8,7 +8,8 @@
 // keys. Live NEAR AI Cloud only with MOCK_INFERENCE=0 (reads NEAR_AI_API_KEY).
 
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { realpathSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MAX_ROUNDS, runSwarm, verifyRounds } from "../src/swarm/runner.mjs";
 import { createInferenceClient, parseMode } from "../src/inference/client.mjs";
@@ -121,6 +122,16 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
   return 0;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// import.meta.url is a realpath; argv[1] is not when the script is run through a symlink.
+function isEntryPoint() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+  } catch {
+    return resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  }
+}
+
+if (isEntryPoint()) {
   process.exitCode = await main();
 }

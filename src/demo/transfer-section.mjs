@@ -32,7 +32,7 @@ export function transferSection(manifest) {
   const x = t.tamper;
   // alice and bob are constants in every mode: simulated accounts, never linked.
   return `<h2>Transfer: memory travels with the NFT</h2>
-<p class="mut">Simulated transfer between mock placeholder accounts (nothing sent, never linked): <code>${esc(t.from)}</code> sends every token to <code>${esc(t.to)}</code>. The new owner takes each sheet, hashes it with the official sheet hash function and compares it with the hash anchored under the token id.</p>
+<p class="mut">Simulated transfer between mock placeholder accounts (nothing sent, never linked): <code>${esc(t.from)}</code> sends every token to <code>${esc(t.to)}</code>. The new owner takes each sheet, hashes it with the official sheet hash function and compares it with the hash anchored under the token id. Here the anchored hash is the dry-run value from <code>anchors.json</code>, not read from a chain, so a match shows the hashing is consistent${x ? "; the tampered sheet below shows what a rewrite looks like" : ""}.</p>
 <table><tr><th>Token</th><th>Anchored hash</th><th>Re-hashed by ${esc(t.to)}</th><th>Result</th></tr>
 ${rows}</table>
 ${x ? `<h3>Tampered sheet</h3>
@@ -41,7 +41,7 @@ ${x ? `<h3>Tampered sheet</h3>
 <table><tr><th>Anchored hash</th><th>Re-hashed</th><th>Result</th></tr>
 <tr><td class="hash">${esc(x.anchoredHash)}</td><td class="hash">${esc(x.recomputedHash)}</td><td>${verdict(x.match)}</td></tr></table>` : ""}
 <h3>Mint metadata</h3>
-<p class="mut">The <code>nft_metadata</code> each token would mint with (NEP-177 <code>TokenMetadata</code>):</p>
+<p class="mut">A preview of the NEP-177 <code>TokenMetadata</code> fields for each token; <code>npm run mint</code> prints the exact mint call (dry run), whose title, description and extra are its own and which also includes <code>media</code> and <code>media_hash</code>.</p>
 ${meta}
 <h3>On testnet</h3>
 ${explorerLine(t)}
