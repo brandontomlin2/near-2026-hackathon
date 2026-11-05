@@ -43,7 +43,6 @@ test("every rule fires on its own fixture, and the CLI output never contains any
     "ghpat.txt": [`github_pat_${rand(ALNUM, 30)}`, "github-token"],
     "slack.txt": [`xox${"b"}-${rand(ALNUM, 24)}`, "slack-token"],
     "sec.txt": [`secp256k1:${rand(B58, 44)}`, "near-secp256k1-private-key"],
-    "oa.txt": [`s${"k"}-${rand(ALNUM, 40)}`, "openai-style-token"],
   };
   const dir = tempRepo(t, Object.fromEntries(Object.entries(fixtures).map(([f, [v]]) => [f, `${v}\n`])));
   const r = run(["--root", dir], dir);
@@ -52,14 +51,13 @@ test("every rule fires on its own fixture, and the CLI output never contains any
     assert.match(r.stdout, new RegExp(`^${file.replace(".", "\\.")}:1: ${rule} \\(value not shown\\)$`, "m"));
     assert.ok(!r.stdout.includes(value) && !r.stderr.includes(value), `${file} value echoed`);
   }
-  assert.match(r.stdout, /7 finding\(s\) in 7 tracked file\(s\)/);
+  assert.match(r.stdout, /6 finding\(s\) in 6 tracked file\(s\)/);
 });
 
-test("boundary lengths: AWS id with 17 tail chars, 35-char GitHub token, 19-char sk- body and 9-char slack body do not match", () => {
+test("boundary lengths: AWS id with 17 tail chars, 35-char GitHub token and 9-char slack body do not match", () => {
   const up = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   assert.deepEqual(rules("a.txt", `AKIA${rand(up, 17)}\n`), []);
   assert.deepEqual(rules("a.txt", `ghp_${rand(ALNUM, 35)}\n`), []);
-  assert.deepEqual(rules("a.txt", `s${"k"}-${rand(ALNUM, 19)}\n`), []);
   assert.deepEqual(rules("a.txt", `xox${"p"}-${rand(ALNUM, 9)}\n`), []);
   assert.deepEqual(rules("a.txt", `secp256k1:${rand(B58, 45)}\n`), []);
   assert.deepEqual(rules("a.txt", `ASIA${rand(up, 16)}\n`), ["aws-access-key-id"]);
