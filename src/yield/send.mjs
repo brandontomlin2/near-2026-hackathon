@@ -19,12 +19,17 @@ export class RefusalError extends Error {
   }
 }
 
+/** The one mainnet-account rule: a named account under .near. Shared with the snapshot parser. */
+export function isMainnetAccountId(v) {
+  return typeof v === "string" && /\.near$/i.test(v.trim());
+}
+
 /** Refuse mainnet before anything else: NEAR_NETWORK=mainnet, or a vault or runner id under .near. */
 export function assertNotMainnet(env) {
   if ((env.NEAR_NETWORK ?? "").trim().toLowerCase() === "mainnet") throw new RefusalError("refused: NEAR_NETWORK=mainnet. This tool only ever targets testnet.");
   for (const name of ["YIELD_VAULT_ACCOUNT_ID", "YIELD_RUNNER_ACCOUNT_ID"]) {
     const v = env[name];
-    if (typeof v === "string" && /\.near$/i.test(v.trim())) throw new RefusalError(`refused: ${name} ends in .near (mainnet). This tool only ever targets testnet.`);
+    if (isMainnetAccountId(v)) throw new RefusalError(`refused: ${name} ends in .near (mainnet). This tool only ever targets testnet.`);
   }
 }
 

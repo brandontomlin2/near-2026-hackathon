@@ -11,7 +11,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { demoArgs, parseQuickYieldStep, parseYieldCounts, parseYieldDemo, section, sh, trimmedLines } from "./readme-yield-lib.mjs";
+import { STRATEGIES, WNEAR, defaultVaultConfig, limitFor } from "../src/yield/strategies.mjs";
+import { demoArgs, numberedSteps, parseQuickYieldStep, parseYieldCounts, parseYieldDemo, section, sh, trimmedLines } from "./readme-yield-lib.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const readme = readFileSync(join(root, "README.md"), "utf8");
@@ -31,6 +32,15 @@ function runDemo(command) {
   assert.equal(r.status, 0, r.stderr);
   return r.stdout;
 }
+
+test("numberedSteps folds indented sub-bullets into their step and a non-indented line ends it", () => {
+  const md = "Intro\n1. Run `a`. See these lines:\n   - `x`, `y`,\n   - then `z`.\nplain line\n2. Open `f`. See `q`.\n  - `r`\n\n3. Last `l`";
+  assert.deepEqual(numberedSteps(md), [
+    { n: 1, text: "Run `a`. See these lines: `x`, `y`, then `z`." },
+    { n: 2, text: "Open `f`. See `q`. `r`" },
+    { n: 3, text: "Last `l`" },
+  ]);
+});
 
 test("README has the yield:demo subsection with run, --calls and plan.json steps", () => {
   assert.equal(demo.steps.length, 4, "four numbered steps");
@@ -139,6 +149,18 @@ test("README names the shared snapshot, the optimizer's pool 747 swap and one 28
   assert.match(readme, /`npm run yield:demo -- --calls --snapshot src\/yield-optimizer\/fixtures\/scenario\.hand-built\.json`/);
   assert.match(readme, /`gas: 280\.0 Tgas`/);
   assert.doesNotMatch(section(readme, "Yield Optimizer"), /\b300 ?T[Gg]as|Rhea snapshot|rhea-testnet-snapshot|pool 99/);
+});
+
+test("README's reason for Chaotic's veto matches the strategy parameters and the demo's veto line", () => {
+  const para = parseYieldDemo(readme).text;
+  const m = para.match(/Chaotic sizes a trade at (\d+) bps \(all\) of its vault's max_trade, which is (\d+) wNEAR, and Skeptic vetoes any proposal above its (\d+) bps audit line/);
+  assert.ok(m, "README explains why Chaotic is vetoed");
+  const [, sizeBps, maxTrade, auditBps] = m;
+  assert.equal(Number(sizeBps), STRATEGIES.chaotic.params.size_bps);
+  assert.equal(Number(auditBps), STRATEGIES.skeptic.params.audit.veto_size_bps);
+  assert.equal(BigInt(limitFor(defaultVaultConfig("chaotic"), WNEAR).max_trade), BigInt(maxTrade) * 10n ** 24n, "chaotic max_trade for wNEAR (24 decimals)");
+  const out = runDemo("npm run yield:demo");
+  assert.ok(trimmedLines(out).includes(`chaotic vetoed by skeptic: size is ${sizeBps} bps of max_trade, above the ${auditBps} bps audit line`));
 });
 
 function countRustTests(dir) {

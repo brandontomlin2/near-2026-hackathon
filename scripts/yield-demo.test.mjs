@@ -390,3 +390,17 @@ describe("yield:demo bad input", () => {
     assert.match(r.stderr, /pools\[0\]\.token_a must be a non-empty string/);
   });
 });
+
+describe("yield:demo refuses a mainnet snapshot", () => {
+  it("a .near vault_id exits 1, names .near and testnet, and prints no call-function", () => {
+    const raw = readJson(SCENARIO);
+    raw.vault.vault_id = "yield-vault.near";
+    const f = join(work, "mainnet-snapshot.json");
+    writeFileSync(f, JSON.stringify(raw));
+    const r = run(["--calls", "--snapshot", f, "--out", join(work, "mainnet-out")]);
+    assert.equal(r.code, 1);
+    assert.match(r.stderr, /\.near/);
+    assert.match(r.stderr, /testnet/);
+    assert.doesNotMatch(r.stdout, /call-function/);
+  });
+});

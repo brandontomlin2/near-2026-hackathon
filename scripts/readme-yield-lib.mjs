@@ -1,7 +1,8 @@
 // Shared README extraction for the yield:demo tests. No dependencies.
 //
 // README format this relies on (see "Offline demo: `npm run yield:demo`" under
-// "## Yield Optimizer"): numbered steps on ONE line each. In a step, the first
+// "## Yield Optimizer"): numbered steps, each one line or one line plus indented
+// "   - " sub-bullets that numberedSteps folds into it. In a step, the first
 // backtick span is the command (or, for "Open", the file); every backtick span
 // after the word "See" is a quoted output line. In the "Judge quick path" the
 // quoted spans are every span after the first. Quotes are compared trimmed.
@@ -15,9 +16,17 @@ export function section(readme, title) {
   return m ? m[1] : "";
 }
 
-/** Numbered one-line steps: [{ n, text }]. */
+/**
+ * Numbered steps: [{ n, text }]. A step is its first line plus any directly following
+ * indented continuation lines (2+ spaces, e.g. "   - sub-bullet"); each continuation has its
+ * indent and leading "- " removed and is joined to the step text with one space. A line that
+ * is not indented ends the step.
+ */
 export function numberedSteps(text) {
-  return [...text.matchAll(/^(\d+)\. (.*)$/gm)].map((m) => ({ n: Number(m[1]), text: m[2] }));
+  return [...text.matchAll(/^(\d+)\. (.*(?:\n {2,}\S.*)*)$/gm)].map((m) => ({
+    n: Number(m[1]),
+    text: m[2].split("\n").map((l, i) => (i === 0 ? l : l.trim().replace(/^- /, ""))).join(" "),
+  }));
 }
 
 /** The "Offline demo" subsection of "## Yield Optimizer": steps with command, kind and quotes. */

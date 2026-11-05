@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_SNAPSHOT, main, parseArgs, UsageError } from "./yield-optimizer.mjs";
+import { main, parseArgs, UsageError } from "./yield-optimizer.mjs";
 import { PLACEHOLDER_VAULT } from "../src/yield/strategies.mjs";
 
 const SCENARIO = fileURLToPath(new URL("../src/yield-optimizer/fixtures/scenario.hand-built.json", import.meta.url));
@@ -24,8 +24,7 @@ function run(argv) {
 describe("parseArgs", () => {
   it("defaults", () => {
     const a = parseArgs([]);
-    assert.equal(a.snapshot, DEFAULT_SNAPSHOT);
-    assert.equal(DEFAULT_SNAPSHOT, null, "no file: the shared Ref snapshot");
+    assert.equal(a.snapshot, null, "no file: the shared Ref snapshot");
     assert.equal(a.json, false);
     assert.deepEqual(a.opts, {});
   });
@@ -168,5 +167,24 @@ describe("process smoke test", () => {
     const r = spawnSync(process.execPath, ["scripts/yield-optimizer.mjs", "--json"], { cwd: REPO, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
     assert.equal(JSON.parse(r.stdout).dry_run, true);
+  });
+});
+
+describe("mainnet snapshot refusal", () => {
+  it("a .near vault_id exits 1 with a testnet-only message and no plan", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yopt-mainnet-"));
+    try {
+      const raw = JSON.parse(fs.readFileSync(SCENARIO, "utf8"));
+      raw.vault.vault_id = "yield-vault.near";
+      const f = path.join(dir, "mainnet.json");
+      fs.writeFileSync(f, JSON.stringify(raw));
+      const r = run(["--snapshot", f]);
+      assert.equal(r.code, 1);
+      assert.match(r.stderr, /\.near/);
+      assert.match(r.stderr, /testnet/);
+      assert.equal(r.stdout, "");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
