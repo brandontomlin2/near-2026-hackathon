@@ -568,20 +568,28 @@ fn deposit_rollback_after_day_roll_keeps_new_day_counter() {
 }
 
 #[test]
-fn swap_failed_strands_token_in_and_releases_lock() {
+fn swap_failed_starts_refund_keeps_lock_and_strands_nothing() {
     let mut v = funded();
     run(&mut v, proposal(400));
     cb_ctx(ok_result(&U128(400)), T0);
     let _ = v.handle_deposit(1, Ok(U128(400)));
     cb_ctx(PromiseResult::Failed, T0);
     let r = v.handle_swap(1, Err(PromiseError::Failed));
-    assert!(matches!(r, PromiseOrValue::Value(U128(0))));
-    assert!(!v.get_state().swap_in_flight);
-    assert_eq!(stranded(&v, &wrap()), 400);
-    assert_eq!(bal(&v, &wrap()), 9_600);
-    assert_eq!(v.get_state().stranded_on_ref, vec![(wrap(), U128(400))]);
+    assert!(matches!(r, PromiseOrValue::Promise(_)), "must withdraw token_in back");
+    drop(r); // promises are scheduled on drop
+    let calls = created_calls();
+    assert_eq!(calls[0].1, "get_deposit");
+    assert_eq!(calls[0].0, v.ref_exchange_id.to_string());
+    assert_eq!(calls[0].2["token_id"], wrap().to_string(), "snapshots token_in, not token_out");
+    assert_eq!(calls[1].1, "on_refund_pre");
+    assert!(v.get_state().swap_in_flight, "lock held across the refund hops");
+    assert_eq!(v.in_flight.as_ref().unwrap().amount_out, 0, "held() keeps reporting token_in");
+    assert_eq!(v.in_flight.as_ref().unwrap().held(), (wrap(), 400));
+    assert!(v.stranded.is_empty() && v.unverified.is_empty());
+    assert_eq!(v.consecutive_strands, 0);
+    assert_eq!(bal(&v, &wrap()), 9_600, "not credited before the refund is verified");
     let logs = get_logs().join("\n");
-    assert!(logs.contains("\"event\":\"stranded\"") && logs.contains("\"event\":\"swap_failed\""));
+    assert!(!logs.contains("\"event\":\"stranded\"") && !logs.contains("\"event\":\"swap_failed\""), "{logs}");
 }
 
 #[test]
@@ -652,8 +660,13 @@ fn callbacks_without_in_flight_are_noops() {
         v.handle_withdraw_pre(1, Ok(U128(0))),
         PromiseOrValue::Value(U128(0))
     ));
+    assert!(matches!(
+        v.handle_refund_pre(1, Ok(U128(1_000))),
+        PromiseOrValue::Value(U128(0))
+    ));
     assert_eq!(v.handle_deposit_reconciled(1, Ok(U128(0))).0, 0);
     assert_eq!(v.handle_withdraw_reconciled(1, Ok(U128(0))).0, 0);
+    assert_eq!(v.handle_refund_reconciled(1, Ok(U128(0))).0, 0);
     assert_eq!(bal(&v, &wrap()), 10_000);
 }
 
@@ -681,6 +694,22 @@ fn on_withdraw_pre_rejects_non_self() {
     let mut v = funded();
     at("owner.testnet", T0);
     let _ = v.handle_withdraw_pre(1, Ok(U128(0)));
+}
+
+#[test]
+#[should_panic(expected = "Method is private")]
+fn on_refund_pre_rejects_non_self() {
+    let mut v = funded();
+    at("owner.testnet", T0);
+    let _ = v.handle_refund_pre(1, Ok(U128(0)));
+}
+
+#[test]
+#[should_panic(expected = "Method is private")]
+fn on_refund_reconciled_rejects_non_self() {
+    let mut v = funded();
+    at("owner.testnet", T0);
+    let _ = v.handle_refund_reconciled(1, Ok(U128(0)));
 }
 
 #[test]
@@ -3063,7 +3092,7 @@ fn malformed_deposit_reconcile_reply_is_stranded_unverified() {
 }
 
 #[test]
-fn malformed_swap_reply_strands_token_in() {
+fn malformed_swap_reply_starts_the_token_in_refund() {
     for bytes in malformed_payloads() {
         let mut v = funded();
         run(&mut v, proposal(400));
@@ -3071,13 +3100,13 @@ fn malformed_swap_reply_strands_token_in() {
         let _ = v.handle_deposit(1, Ok(U128(400)));
         cb_ctx(malformed(&bytes), T0);
         let r = v.on_swap(1);
-        assert!(matches!(r, PromiseOrValue::Value(U128(0))), "{bytes:?}");
-        assert!(!v.get_state().swap_in_flight);
-        assert_eq!(stranded(&v, &wrap()), 400);
+        assert!(matches!(r, PromiseOrValue::Promise(_)), "{bytes:?}");
+        drop(r);
+        assert_eq!(created_calls().last().unwrap().1, "on_refund_pre", "{bytes:?}");
+        assert!(v.get_state().swap_in_flight, "{bytes:?}");
+        assert!(v.stranded.is_empty() && v.unverified.is_empty(), "{bytes:?}");
         assert_eq!(bal(&v, &wrap()), 9_600);
         assert_eq!(bal(&v, &rft()), 0);
-        let logs = get_logs().join("\n");
-        assert!(logs.contains("\"event\":\"stranded\"") && logs.contains("\"event\":\"swap_failed\""));
     }
 }
 
@@ -3452,8 +3481,7 @@ fn strand_keeps_spend_counted_and_rollback_restores_it() {
     let id = v.next_swap_id;
     cb_ctx(ok_result(&U128(400)), T0);
     let _ = v.handle_deposit(id, Ok(U128(400)));
-    cb_ctx(PromiseResult::Failed, T0);
-    let _ = v.handle_swap(id, Err(PromiseError::Failed));
+    fail_swap_then_refund_not_reconciled(&mut v, id, 400);
     assert_eq!(stranded(&v, &wrap()), 400);
     assert_eq!(spent_view(&v, &wrap()), 400, "strand keeps the spend");
 
@@ -3468,15 +3496,47 @@ fn strand_keeps_spend_counted_and_rollback_restores_it() {
 
 // -------------------------------------------- L-4: auto-pause after repeated strands
 
-/// One swap that ends in a strand (`ref.swap` failed).
+/// `ref.swap` failed (deposit already accepted), the refund withdraw ran, but
+/// Ref's deposit did not drop: token_in is stranded (verified) on Ref.
+fn fail_swap_then_refund_not_reconciled(v: &mut YieldVault, id: u64, amount: u128) {
+    // Ref holds earlier strands plus this deposit.
+    let pre = v.stranded_of(&v.in_flight.as_ref().unwrap().token_in) + amount;
+    cb_ctx(PromiseResult::Failed, T0);
+    let r = v.handle_swap(id, Err(PromiseError::Failed));
+    assert!(matches!(r, PromiseOrValue::Promise(_)));
+    cb_ctx(ok_result(&U128(pre)), T0);
+    let r = v.handle_refund_pre(id, Ok(U128(pre)));
+    assert!(matches!(r, PromiseOrValue::Promise(_)));
+    cb_ctx(ok_result(&U128(pre)), T0);
+    v.handle_refund_reconciled(id, Ok(U128(pre)));
+    assert!(!v.get_state().swap_in_flight);
+}
+/// `ref.swap` failed and the refund verifiably landed back in the vault.
+fn fail_swap_then_refund_verified(v: &mut YieldVault, id: u64, amount: u128) {
+    let held = v.stranded_of(&v.in_flight.as_ref().unwrap().token_in);
+    cb_ctx(PromiseResult::Failed, T0);
+    let _ = v.handle_swap(id, Err(PromiseError::Failed));
+    cb_ctx(ok_result(&U128(held + amount)), T0);
+    let _ = v.handle_refund_pre(id, Ok(U128(held + amount)));
+    cb_ctx(ok_result(&U128(held)), T0);
+    v.handle_refund_reconciled(id, Ok(U128(held)));
+    assert!(!v.get_state().swap_in_flight);
+}
+/// One swap that ends in a strand (`ref.swap` failed, refund not reconciled).
 fn strand_swap(v: &mut YieldVault) {
     run(v, proposal(100));
     let id = v.next_swap_id;
     cb_ctx(ok_result(&U128(100)), T0);
     let _ = v.handle_deposit(id, Ok(U128(100)));
-    cb_ctx(PromiseResult::Failed, T0);
-    let _ = v.handle_swap(id, Err(PromiseError::Failed));
-    assert!(!v.get_state().swap_in_flight);
+    fail_swap_then_refund_not_reconciled(v, id, 100);
+}
+/// One swap whose `ref.swap` failed and whose token_in came back (verified).
+fn refund_swap(v: &mut YieldVault) {
+    run(v, proposal(100));
+    let id = v.next_swap_id;
+    cb_ctx(ok_result(&U128(100)), T0);
+    let _ = v.handle_deposit(id, Ok(U128(100)));
+    fail_swap_then_refund_verified(v, id, 100);
 }
 /// One swap that completes (390 rft credited).
 fn good_swap(v: &mut YieldVault) {
@@ -3588,6 +3648,305 @@ fn other_strand_outcomes_count_too() {
     cb_ctx(ok_result(&U128(390)), T0);
     v.handle_withdraw_reconciled(id, Ok(U128(390))); // deposit did not drop
     assert!(v.get_state().paused);
+}
+
+// ------------------------------------------- M1: failed swap is refunded, not stranded
+
+/// Swap id 1 (400 wrap) whose `ref.swap` failed, awaiting the refund callbacks.
+fn swap_at_refund_pre() -> YieldVault {
+    let mut v = funded();
+    run(&mut v, proposal(400));
+    cb_ctx(ok_result(&U128(400)), T0);
+    let _ = v.handle_deposit(1, Ok(U128(400)));
+    cb_ctx(PromiseResult::Failed, T0);
+    let r = v.handle_swap(1, Err(PromiseError::Failed));
+    assert!(matches!(r, PromiseOrValue::Promise(_)));
+    v
+}
+/// Same, one hop later: Ref showed 400 and the refund withdraw is out.
+fn swap_at_refund_reconcile_cb() -> YieldVault {
+    let mut v = swap_at_refund_pre();
+    cb_ctx(ok_result(&U128(400)), T0);
+    let r = v.handle_refund_pre(1, Ok(U128(400)));
+    assert!(matches!(r, PromiseOrValue::Promise(_)), "must withdraw then re-read Ref");
+    v
+}
+
+#[test]
+fn refund_pre_snapshots_withdraws_token_in_and_rereads() {
+    let mut v = swap_at_refund_pre();
+    cb_ctx(ok_result(&U128(450)), T0);
+    let r = v.handle_refund_pre(1, Ok(U128(450)));
+    assert!(matches!(r, PromiseOrValue::Promise(_)));
+    drop(r);
+    assert_eq!(v.in_flight.as_ref().unwrap().ref_pre_out, 450);
+    assert_eq!(v.in_flight.as_ref().unwrap().amount_out, 0);
+    let calls = created_calls();
+    let w = calls.iter().find(|c| c.1 == "withdraw").expect("withdraw scheduled");
+    assert_eq!(w.0, v.ref_exchange_id.to_string());
+    assert_eq!(w.2["token_id"], wrap().to_string());
+    assert_eq!(w.2["amount"], "400");
+    assert_eq!(w.3, 1, "one yocto");
+    assert!(calls.iter().filter(|c| c.1 == "get_deposit").count() >= 1);
+    assert_eq!(calls.last().unwrap().1, "on_refund_reconciled");
+    assert!(v.get_state().swap_in_flight);
+    assert!(v.stranded.is_empty() && v.unverified.is_empty());
+}
+
+#[test]
+fn verified_refund_restores_balance_spend_and_releases_lock() {
+    let mut v = swap_at_refund_reconcile_cb();
+    cb_ctx(ok_result(&U128(0)), T0);
+    assert_eq!(v.handle_refund_reconciled(1, Ok(U128(0))).0, 0);
+    assert!(!v.get_state().swap_in_flight);
+    assert_eq!(bal(&v, &wrap()), 10_000, "token_in restored");
+    assert_eq!(bal(&v, &rft()), 0);
+    assert_eq!(spent_view(&v, &wrap()), 0, "the refunded spend does not burn the daily cap");
+    assert!(v.spent_today.is_empty());
+    assert!(v.stranded.is_empty() && v.unverified.is_empty());
+    assert!(v.get_state().stranded_on_ref.is_empty());
+    assert_eq!(v.get_state().swaps_executed, 0);
+    assert_eq!(v.consecutive_strands, 0);
+    let logs = get_logs().join("\n");
+    let refunded = logs.find("\"event\":\"swap_refunded\"").expect("swap_refunded");
+    let failed = logs.find("\"event\":\"swap_failed\"").expect("swap_failed");
+    assert!(refunded < failed, "swap_refunded is emitted first");
+    assert!(logs.contains("\"reason\":\"swap_failed\""));
+    assert!(logs.contains("\"amount\":\"400\""));
+    assert!(!logs.contains("\"event\":\"stranded\""), "{logs}");
+}
+
+#[test]
+fn verified_refund_lets_a_full_cap_swap_through_again() {
+    let mut v = funded();
+    for id in 1..=3u64 {
+        // Each swap wants the whole 500-wrap max_trade; the daily cap is 2_500.
+        run(&mut v, proposal(500));
+        cb_ctx(ok_result(&U128(500)), T0);
+        let _ = v.handle_deposit(id, Ok(U128(500)));
+        fail_swap_then_refund_verified(&mut v, id, 500);
+    }
+    assert_eq!(bal(&v, &wrap()), 10_000);
+    assert_eq!(spent_view(&v, &wrap()), 0);
+    // Five full-cap swaps still fit afterwards (a burnt cap would refuse them).
+    for _ in 0..5 {
+        let r = v.check_proposal(proposal(500), acct("runner.testnet"));
+        assert!(r.ok, "{}", r.reason);
+        run(&mut v, proposal(500));
+        v.in_flight = None;
+    }
+    assert_eq!(spent_view(&v, &wrap()), 2_500);
+}
+
+#[test]
+fn many_verified_refunds_never_auto_pause() {
+    let mut v = funded();
+    for _ in 0..5 {
+        refund_swap(&mut v);
+    }
+    assert!(!v.get_state().paused, "an unfillable min_amount_out cannot pause the vault");
+    assert_eq!(v.consecutive_strands, 0);
+    assert_eq!(bal(&v, &wrap()), 10_000);
+    assert_eq!(spent_view(&v, &wrap()), 0);
+    assert!(!get_logs().join("\n").contains("auto_paused"));
+}
+
+#[test]
+fn verified_refund_across_day_roll_restores_balance_not_new_day_spend() {
+    let mut v = swap_at_refund_reconcile_cb();
+    v.day = 11;
+    v.spent_today.clear();
+    v.spent_today.insert(wrap(), 50);
+    cb_ctx(ok_result(&U128(0)), T0 + DAY);
+    v.handle_refund_reconciled(1, Ok(U128(0)));
+    assert_eq!(bal(&v, &wrap()), 10_000, "balance restored");
+    assert_eq!(v.spent_today.get(&wrap()).copied(), Some(50), "new day's spend untouched");
+    assert!(!v.get_state().swap_in_flight);
+    assert!(v.stranded.is_empty());
+}
+
+#[test]
+fn verified_refund_neither_increments_nor_resets_the_strand_count() {
+    let mut v = funded();
+    strand_swap(&mut v);
+    strand_swap(&mut v);
+    assert_eq!(v.consecutive_strands, 2);
+    refund_swap(&mut v);
+    assert_eq!(v.consecutive_strands, 2, "a refund is neither a strand nor a completed swap");
+    assert!(!v.get_state().paused);
+    strand_swap(&mut v);
+    assert!(v.get_state().paused, "strand, strand, refund, strand pauses");
+}
+
+#[test]
+fn refund_pre_below_amount_in_is_stranded_unverified_and_counts() {
+    let mut v = swap_at_refund_pre();
+    cb_ctx(ok_result(&U128(399)), T0);
+    let r = v.handle_refund_pre(1, Ok(U128(399)));
+    assert!(matches!(r, PromiseOrValue::Value(U128(0))), "no withdraw attempted");
+    assert!(!v.get_state().swap_in_flight);
+    assert_eq!(unverified(&v, &wrap()), 400);
+    assert_eq!(stranded(&v, &wrap()), 0);
+    assert_eq!(bal(&v, &wrap()), 9_600, "never credited");
+    assert_eq!(spent_view(&v, &wrap()), 400, "spend stays counted");
+    assert_eq!(v.consecutive_strands, 1);
+    let logs = get_logs().join("\n");
+    assert!(logs.contains("refund_pre_mismatch") && !logs.contains("swap_refunded"), "{logs}");
+}
+
+#[test]
+fn refund_pre_read_failed_is_stranded_verified_and_counts() {
+    let mut v = swap_at_refund_pre();
+    cb_ctx(PromiseResult::Failed, T0);
+    let r = v.handle_refund_pre(1, Err(PromiseError::Failed));
+    assert!(matches!(r, PromiseOrValue::Value(U128(0))), "no blind withdraw");
+    assert!(!v.get_state().swap_in_flight);
+    assert_eq!(stranded(&v, &wrap()), 400);
+    assert_eq!(unverified(&v, &wrap()), 0);
+    assert_eq!(bal(&v, &wrap()), 9_600);
+    assert_eq!(v.consecutive_strands, 1);
+    assert!(get_logs().join("\n").contains("refund_pre_unverified"));
+}
+
+#[test]
+fn refund_withdraw_not_reconciled_strands_without_credit_or_rollback() {
+    let mut v = swap_at_refund_reconcile_cb();
+    cb_ctx(ok_result(&U128(400)), T0);
+    assert_eq!(v.handle_refund_reconciled(1, Ok(U128(400))).0, 0);
+    assert!(!v.get_state().swap_in_flight);
+    assert_eq!(stranded(&v, &wrap()), 400);
+    assert_eq!(bal(&v, &wrap()), 9_600, "no credit");
+    assert_eq!(spent_view(&v, &wrap()), 400, "spend NOT rolled back");
+    assert_eq!(v.consecutive_strands, 1);
+    let logs = get_logs().join("\n");
+    assert!(logs.contains("refund_not_reconciled") && !logs.contains("swap_refunded"), "{logs}");
+}
+
+#[test]
+fn refund_partial_drop_is_not_reconciled() {
+    let mut v = swap_at_refund_reconcile_cb();
+    cb_ctx(ok_result(&U128(1)), T0);
+    v.handle_refund_reconciled(1, Ok(U128(1))); // dropped by 399 only
+    assert_eq!(stranded(&v, &wrap()), 400);
+    assert_eq!(bal(&v, &wrap()), 9_600);
+}
+
+#[test]
+fn refund_reconcile_read_failed_is_stranded_unverified() {
+    let mut v = swap_at_refund_reconcile_cb();
+    cb_ctx(PromiseResult::Failed, T0);
+    assert_eq!(v.handle_refund_reconciled(1, Err(PromiseError::Failed)).0, 0);
+    assert!(!v.get_state().swap_in_flight);
+    assert_eq!(unverified(&v, &wrap()), 400);
+    assert_eq!(stranded(&v, &wrap()), 0);
+    assert_eq!(bal(&v, &wrap()), 9_600);
+    assert_eq!(spent_view(&v, &wrap()), 400);
+    assert_eq!(v.consecutive_strands, 1);
+    assert!(get_logs().join("\n").contains("refund_unverified"));
+}
+
+#[test]
+fn refund_baseline_ignores_stranded_records() {
+    // 50 wrap already stranded on Ref: pre snapshot 450, post 50 is a real drop
+    // of 400; post 450 is not, whatever the record says.
+    let mut v = funded();
+    v.stranded.insert(wrap(), 50);
+    run(&mut v, proposal(400));
+    cb_ctx(ok_result(&U128(400)), T0);
+    let _ = v.handle_deposit(1, Ok(U128(400)));
+    cb_ctx(PromiseResult::Failed, T0);
+    let _ = v.handle_swap(1, Err(PromiseError::Failed));
+    cb_ctx(ok_result(&U128(450)), T0);
+    let _ = v.handle_refund_pre(1, Ok(U128(450)));
+    cb_ctx(ok_result(&U128(50)), T0);
+    v.handle_refund_reconciled(1, Ok(U128(50)));
+    assert_eq!(bal(&v, &wrap()), 10_000);
+    assert_eq!(stranded(&v, &wrap()), 50, "old record untouched");
+}
+
+#[test]
+fn refund_pre_not_covering_stranded_plus_amount_in_is_not_withdrawn() {
+    // 50 wrap stranded; Ref shows 420 >= amount_in 400 but < 50 + 400. The
+    // refund must not withdraw (part of it could be the stranded 50).
+    let mut v = funded();
+    v.stranded.insert(wrap(), 50);
+    run(&mut v, proposal(400));
+    cb_ctx(ok_result(&U128(400)), T0);
+    let _ = v.handle_deposit(1, Ok(U128(400)));
+    cb_ctx(PromiseResult::Failed, T0);
+    let _ = v.handle_swap(1, Err(PromiseError::Failed));
+    cb_ctx(ok_result(&U128(420)), T0);
+    let r = v.handle_refund_pre(1, Ok(U128(420)));
+    assert!(matches!(r, PromiseOrValue::Value(_)), "no withdraw scheduled");
+    assert!(!v.get_state().swap_in_flight);
+    assert_eq!(unverified(&v, &wrap()), 400);
+    assert_eq!(stranded(&v, &wrap()), 50);
+    assert_eq!(bal(&v, &wrap()), 9_600, "nothing credited");
+    assert_eq!(v.consecutive_strands, 1);
+    assert!(get_logs().join("\n").contains("refund_pre_mismatch"));
+}
+
+#[test]
+fn stale_refund_callbacks_with_wrong_id_are_noops() {
+    let mut v = swap_at_refund_pre();
+    cb_ctx(ok_result(&U128(400)), T0);
+    assert!(matches!(
+        v.handle_refund_pre(99, Ok(U128(400))),
+        PromiseOrValue::Value(U128(0))
+    ));
+    assert_eq!(v.in_flight.as_ref().unwrap().ref_pre_out, 0);
+    cb_ctx(ok_result(&U128(0)), T0);
+    assert_eq!(v.handle_refund_reconciled(99, Ok(U128(0))).0, 0);
+    assert!(v.get_state().swap_in_flight, "lock untouched by a stale id");
+    assert_eq!(bal(&v, &wrap()), 9_600);
+    assert!(v.stranded.is_empty() && v.unverified.is_empty());
+}
+
+#[test]
+fn refund_callbacks_are_noops_while_a_force_release_is_pending() {
+    let mut v = swap_at_refund_reconcile_cb();
+    let _ = force_release(&mut v);
+    // The released swap's own late callbacks: current() refuses while release is set.
+    cb_ctx(ok_result(&U128(0)), T0 + STALE_LOCK_NS);
+    assert_eq!(v.handle_refund_reconciled(1, Ok(U128(0))).0, 0);
+    assert_eq!(bal(&v, &wrap()), 9_600, "not credited behind the release's back");
+    assert!(v.get_state().swap_in_flight && v.get_state().release_in_flight);
+    assert!(matches!(
+        v.handle_refund_pre(1, Ok(U128(400))),
+        PromiseOrValue::Value(U128(0))
+    ));
+    assert!(v.stranded.is_empty() && v.unverified.is_empty());
+}
+
+#[test]
+fn force_release_during_refund_with_token_in_back_in_vault_rolls_back() {
+    // Refund withdraw landed in the vault (10_000 on the token contract), Ref empty.
+    let mut v = swap_at_refund_reconcile_cb();
+    let id = force_release(&mut v);
+    release_cb();
+    v.resolve_release_swap(id, Ok(U128(10_000)), Ok(U128(0)), Ok(U128(0)));
+    assert!(!v.get_state().swap_in_flight && !v.get_state().release_in_flight);
+    assert_eq!(bal(&v, &wrap()), 10_000);
+    assert_eq!(spent_view(&v, &wrap()), 0);
+    assert!(v.stranded.is_empty() && v.unverified.is_empty());
+    assert!(get_logs().join("\n").contains("lock_force_released_in_vault"));
+    // The refund's own late reconcile is now a no-op (no double credit).
+    cb_ctx(ok_result(&U128(0)), T0 + STALE_LOCK_NS);
+    assert_eq!(v.handle_refund_reconciled(1, Ok(U128(0))).0, 0);
+    assert_eq!(bal(&v, &wrap()), 10_000);
+}
+
+#[test]
+fn force_release_during_refund_with_token_in_still_on_ref_strands() {
+    let mut v = swap_at_refund_reconcile_cb();
+    let id = force_release(&mut v);
+    release_cb();
+    v.resolve_release_swap(id, Ok(U128(9_600)), Ok(U128(400)), Ok(U128(0)));
+    assert!(!v.get_state().swap_in_flight);
+    assert_eq!(bal(&v, &wrap()), 9_600, "not credited");
+    assert_eq!(stranded(&v, &wrap()), 400);
+    assert_eq!(spent_view(&v, &wrap()), 400);
+    assert!(get_logs().join("\n").contains("lock_force_released"));
 }
 
 // ---------------------------------------------------------------- shared rule vectors
