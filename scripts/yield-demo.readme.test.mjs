@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { STRATEGIES, WNEAR, defaultVaultConfig, limitFor } from "../src/yield/strategies.mjs";
-import { demoArgs, parseQuickYieldStep, parseYieldCounts, parseYieldDemo, section, sh, trimmedLines } from "./readme-yield-lib.mjs";
+import { demoArgs, numberedSteps, parseQuickYieldStep, parseYieldCounts, parseYieldDemo, section, sh, trimmedLines } from "./readme-yield-lib.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const readme = readFileSync(join(root, "README.md"), "utf8");
@@ -32,6 +32,15 @@ function runDemo(command) {
   assert.equal(r.status, 0, r.stderr);
   return r.stdout;
 }
+
+test("numberedSteps folds indented sub-bullets into their step and a non-indented line ends it", () => {
+  const md = "Intro\n1. Run `a`. See these lines:\n   - `x`, `y`,\n   - then `z`.\nplain line\n2. Open `f`. See `q`.\n  - `r`\n\n3. Last `l`";
+  assert.deepEqual(numberedSteps(md), [
+    { n: 1, text: "Run `a`. See these lines: `x`, `y`, then `z`." },
+    { n: 2, text: "Open `f`. See `q`. `r`" },
+    { n: 3, text: "Last `l`" },
+  ]);
+});
 
 test("README has the yield:demo subsection with run, --calls and plan.json steps", () => {
   assert.equal(demo.steps.length, 4, "four numbered steps");
