@@ -484,7 +484,7 @@ test("mirror-shaped state: a snapshot missing paused, in_flight or spent is refu
     { ...full, balances: { [tok]: "340282366920938463463374607431768211456" } },
   ];
   for (const state of bad) {
-    const r = await run([...SEND, "--vault-state", vaultStateFile({ state })], TESTNET_ENV, { hasNear: () => true });
+    const r = await run([...SEND, "--vault-state", vaultStateFile({ state }, "chaotic")], TESTNET_ENV, { hasNear: () => true });
     assert.equal(r.code, 1, `must refuse ${JSON.stringify(state).slice(0, 120)}`);
     assert.match(r.stderr, /--vault-state state\.\S+ (must|amount)/);
     assert.match(r.stderr, /Nothing was sent/);
@@ -494,10 +494,10 @@ test("mirror-shaped state: a snapshot missing paused, in_flight or spent is refu
 
 test("mirror-shaped state: a complete snapshot is still accepted and its daily spend still counts", async () => {
   const day = Math.floor(NOW_MS / 86_400_000);
-  const ok = await run([...SEND, "--vault-state", vaultStateFile({ state: initialState() })], TESTNET_ENV, { hasNear: () => true });
+  const ok = await run([...SEND, "--vault-state", vaultStateFile({ state: initialState() }, "chaotic")], TESTNET_ENV, { hasNear: () => true });
   assert.equal(ok.code, 0, ok.stderr);
   assert.ok(ok.calls.length >= 1, "a complete, funded mirror state must still send");
-  const busy = await run([...SEND, "--vault-state", vaultStateFile({ state: { ...initialState(), in_flight: true, spent: { day, amounts: {} } } })], TESTNET_ENV, { hasNear: () => true });
+  const busy = await run([...SEND, "--vault-state", vaultStateFile({ state: { ...initialState(), in_flight: true, spent: { day, amounts: {} } } }, "chaotic")], TESTNET_ENV, { hasNear: () => true });
   assert.equal(busy.code, 0, busy.stderr);
   assert.deepEqual(busy.calls, [], "a swap in flight blocks the next one");
 });
