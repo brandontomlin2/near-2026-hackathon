@@ -262,7 +262,7 @@ export function judgePathChecks() {
     {
       step: "judge:3a ask",
       command: 'npm run ask -- chaotic "what do you think of Skeptic?"',
-      expects: [ASK_ANSWER, "Owner: 0 fights, 0 hugs, 1 shrug", ASK_LAST],
+      expects: [ASK_ANSWER, "Owner: 0 fights, 0 hugs, 1 shrug", 'Signature quote: "Skeptic?? 5 fights and counting, bro I did not read the contract...".', ASK_LAST],
       readmeOnly: ["sheet chaotic round 7 <hash> (+4 -4) -> anchor_sheet dry-run (not sent)"],
       assert(ctx) {
         const [second, last] = ctx.lastLines(ctx.output, 2);
