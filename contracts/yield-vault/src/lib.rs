@@ -65,7 +65,10 @@ pub const GAS_CB_SWAP: Gas = Gas::from_tgas(135);
 pub const GAS_CB_DEPOSIT: Gas = Gas::from_tgas(190);
 /// Minimum prepaid gas for `execute_swap` (70 + 190 + own body ~3 measured + margin). Max tx gas is 300.
 pub const MIN_EXECUTE_GAS: Gas = Gas::from_tgas(280);
-/// Consecutive swaps that end stranded before the vault pauses itself.
+/// Consecutive swaps that end with funds left on Ref before the vault pauses
+/// itself. Only a `strand`/`strand_unverified` recorded through `fail_stranded`
+/// counts; verified refunds and rollbacks (`fail`) never do and never reset the
+/// count either (see `fail_stranded`).
 pub const MAX_CONSECUTIVE_STRANDS: u32 = 3;
 /// A swap lock older than this (ns, 10 minutes) may be force-released by the owner.
 pub const STALE_LOCK_NS: u64 = 600 * 1_000_000_000;
@@ -212,9 +215,11 @@ pub struct InFlight {
     pub amount_out: u128,
     /// Block timestamp (ns) when the swap started; used by the stale-lock escape.
     pub started_at: u64,
-    /// Ref's `get_deposit` of token_out read after the swap and before the
-    /// withdraw (set by `on_withdraw_pre`). The withdraw is credited only if
-    /// Ref's deposit dropped by `amount_out` from this snapshot.
+    /// Pre-withdraw snapshot of Ref's `get_deposit` for whichever token is being
+    /// withdrawn: token_out on the happy path (set by `on_withdraw_pre`), token_in
+    /// on the refund path after a failed swap (set by `on_refund_pre`). The
+    /// withdraw is credited only if Ref's deposit dropped by the withdrawn
+    /// amount from this snapshot.
     pub ref_pre_out: u128,
 }
 
@@ -278,9 +283,11 @@ pub struct YieldVault {
     /// Its transient credit may be visible to the release's `ft_balance_of`
     /// read, so that read is not trusted (treated as failed) when it resolves.
     release_tainted: bool,
-    /// Swaps in a row that ended in a strand (not a rollback). At
+    /// Swaps in a row that ended with funds left on Ref (a `strand` or
+    /// `strand_unverified` recorded via `fail_stranded`). At
     /// `MAX_CONSECUTIVE_STRANDS` the vault pauses itself. Reset by a completed
-    /// swap and by the owner's `unpause`.
+    /// swap and by the owner's `unpause`. Rollbacks and verified refunds of a
+    /// failed swap neither increment nor reset it.
     consecutive_strands: u32,
     day: u64,
     spent_today: BTreeMap<AccountId, u128>,
@@ -736,10 +743,15 @@ impl YieldVault {
         };
         match out {
             Err(_) => {
-                // Deposit succeeded, swap failed: token_in sits in the vault's Ref account.
-                self.strand(&fl.token_in, fl.amount_in, "swap_failed");
-                self.fail_stranded(&fl, "swap_failed");
-                PromiseOrValue::Value(U128(0))
+                // Deposit succeeded, swap failed (e.g. Ref's slippage panic):
+                // token_in sits in the vault's Ref account. Withdraw it back
+                // instead of stranding it. `amount_out` stays 0, so
+                // `InFlight::held` keeps reporting token_in for a force release.
+                PromiseOrValue::Promise(self.ref_deposit_query(&fl.token_in).then(
+                    Self::ext(env::current_account_id())
+                        .with_static_gas(GAS_CB_WITHDRAW_PRE)
+                        .on_refund_pre(swap_id),
+                ))
             }
             Ok(out) if out.0 == 0 => {
                 // Not expected on Ref: `check_rules` requires `min_amount_out > 0`
@@ -881,6 +893,111 @@ impl YieldVault {
             }),
         );
         U128(fl.amount_out)
+    }
+
+    /// Refund hop 1 (after a failed Ref `swap`): records Ref's pre-withdraw
+    /// deposit of token_in, then withdraws `amount_in` and re-reads the deposit.
+    /// Mirrors `on_withdraw_pre` for token_in.
+    #[private]
+    pub fn on_refund_pre(&mut self, swap_id: u64) -> PromiseOrValue<U128> {
+        self.handle_refund_pre(swap_id, read_u128(0))
+    }
+
+    /// Body of `on_refund_pre`, taking the already-decoded (lenient) result.
+    fn handle_refund_pre(
+        &mut self,
+        swap_id: u64,
+        pre: Result<U128, PromiseError>,
+    ) -> PromiseOrValue<U128> {
+        Self::assert_self();
+        let Some(mut fl) = self.current(swap_id) else {
+            return PromiseOrValue::Value(U128(0));
+        };
+        match pre {
+            // Ref must show this deposit on top of what is already stranded, so
+            // the refund can never withdraw tokens another strand record owns
+            // (e.g. a malformed swap reply whose swap actually ran).
+            Ok(p) if self.ref_holds(&fl.token_in, fl.amount_in, &pre) => fl.ref_pre_out = p.0,
+            // Ref shows less than stranded + the deposit it accepted: ambiguous.
+            // Never credit.
+            Ok(_) => {
+                self.strand_unverified(&fl.token_in, fl.amount_in, "refund_pre_mismatch");
+                self.fail_stranded(&fl, "refund_pre_mismatch");
+                return PromiseOrValue::Value(U128(0));
+            }
+            // The deposit was confirmed by `ft_transfer_call` and Ref's swap
+            // panicked, so token_in is on Ref; only the read failed.
+            Err(_) => {
+                self.strand(&fl.token_in, fl.amount_in, "refund_pre_unverified");
+                self.fail_stranded(&fl, "refund_pre_unverified");
+                return PromiseOrValue::Value(U128(0));
+            }
+        }
+        self.in_flight = Some(fl.clone());
+        let p = Promise::new(self.ref_exchange_id.clone())
+            .function_call(
+                "withdraw".to_string(),
+                json_bytes(json!({
+                    "token_id": fl.token_in,
+                    "amount": U128(fl.amount_in),
+                    "unregister": null,
+                    "skip_unwrap_near": true,
+                })),
+                ONE_YOCTO,
+                GAS_REF_WITHDRAW,
+            )
+            .then(self.ref_deposit_query(&fl.token_in))
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(GAS_CB_RECONCILE)
+                    .on_refund_reconciled(swap_id),
+            );
+        PromiseOrValue::Promise(p)
+    }
+
+    /// Refund hop 2: credits token_in back (and un-counts the spend) only if
+    /// Ref's deposit dropped by `amount_in` from the pre-withdraw snapshot.
+    #[private]
+    pub fn on_refund_reconciled(&mut self, swap_id: u64) -> U128 {
+        self.handle_refund_reconciled(swap_id, read_u128(0))
+    }
+
+    /// Body of `on_refund_reconciled`, taking the already-decoded (lenient) result.
+    fn handle_refund_reconciled(
+        &mut self,
+        swap_id: u64,
+        deposit: Result<U128, PromiseError>,
+    ) -> U128 {
+        Self::assert_self();
+        let Some(fl) = self.current(swap_id) else {
+            return U128(0);
+        };
+        match deposit {
+            Ok(d) if d.0.saturating_add(fl.amount_in) <= fl.ref_pre_out => {
+                // Verified: the funds never left vault custody and no trade
+                // happened, so the spend is un-counted too. Not a strand and
+                // not a completed swap: `consecutive_strands` is untouched.
+                self.rollback(&fl, fl.amount_in);
+                emit(
+                    "swap_refunded",
+                    json!({
+                        "pool_id": fl.pool_id,
+                        "token_in": fl.token_in,
+                        "amount": fl.amount_in.to_string(),
+                    }),
+                );
+                self.fail(&fl, "swap_failed");
+            }
+            Ok(_) => {
+                self.strand(&fl.token_in, fl.amount_in, "refund_not_reconciled");
+                self.fail_stranded(&fl, "refund_not_reconciled");
+            }
+            Err(_) => {
+                self.strand_unverified(&fl.token_in, fl.amount_in, "refund_unverified");
+                self.fail_stranded(&fl, "refund_unverified");
+            }
+        }
+        U128(0)
     }
 
     /// Restores the balance if the owner's `ft_transfer` failed.
@@ -1279,8 +1396,9 @@ impl YieldVault {
     /// token_out). Nothing is refunded to the vault on success, so no NEAR gets
     /// stuck here. Attach the account minimum plus per-token storage for every
     /// token in `allowed_pools` (see Ref's `storage_balance_bounds`). If the
-    /// storage is short anyway, the swap fails on Ref and `on_swap` strands
-    /// token_in, which `recover_from_ref` can pull back after a top-up.
+    /// storage is short anyway, the swap fails on Ref and the vault withdraws
+    /// token_in back; if that withdraw also fails, token_in is stranded and
+    /// `recover_from_ref` can pull it back after a top-up.
     /// If `storage_deposit` fails, `on_register` forwards the deposit to the owner.
     #[payable]
     pub fn register_on_ref(&mut self) -> Promise {
@@ -1746,10 +1864,19 @@ impl YieldVault {
         }
     }
 
-    /// `fail` for a swap whose funds ended up stranded on Ref. A runner that
-    /// keeps proposing swaps Ref cannot fill (an unreachable `min_amount_out`)
-    /// strands `amount_in` each time, so after `MAX_CONSECUTIVE_STRANDS` in a
+    /// `fail` for a swap that ended with funds left on Ref (a `strand` or
+    /// `strand_unverified` was recorded). After `MAX_CONSECUTIVE_STRANDS` in a
     /// row the vault pauses itself; the owner recovers and unpauses.
+    ///
+    /// Only these swaps count. A failed Ref `swap` whose token_in is withdrawn
+    /// back and verified (`handle_refund_reconciled`) and every plain rollback go
+    /// through `fail` instead: they never increment the counter and do not reset
+    /// it either. Consequence: a runner forcing unfillable `min_amount_out`
+    /// proposals cannot move or strand funds: the funds and the daily cap come
+    /// back and the vault does not pause. It still costs the runner gas and holds
+    /// the swap lock for a few blocks per attempt, so it can delay other swaps;
+    /// `revoke_runner` is the remedy. It only pauses if the refund itself keeps
+    /// failing to land (funds really left on Ref).
     fn fail_stranded(&mut self, fl: &InFlight, reason: &str) {
         self.fail(fl, reason);
         self.consecutive_strands = self.consecutive_strands.saturating_add(1);

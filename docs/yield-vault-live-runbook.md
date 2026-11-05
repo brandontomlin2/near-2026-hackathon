@@ -319,7 +319,7 @@ near contract call-function as-read-only vault.owner.yield-demo.testnet get_stat
 - Cost: 0 NEAR.
 - Expected result: `swap_in_flight: false`, `swaps_executed: 1`, `stranded_on_ref` and `unverified_on_ref` empty, `balances` holding wrap.testnet (0.01) and rft.tokenfactory.testnet.
 - Check (the plan's expectation): no swap in flight, swaps_executed == 1, nothing stranded
-- If it fails: `swap_in_flight: true` after about 2 minutes: keep polling; after 10 minutes see force release. Non-empty `stranded_on_ref`: swap failed or output could not be withdrawn; use `recover_from_ref` (Rollback section).
+- If it fails: `swap_in_flight: true` after about 2 minutes: keep polling; after 10 minutes see force release. Non-empty `stranded_on_ref`: output or a swap refund could not be withdrawn (a plain failed swap is refunded automatically with a `swap_refunded` event and does not strand); use `recover_from_ref` (Rollback section).
 
 #### Step 21 [check] read what is left on Ref for token_out
 
