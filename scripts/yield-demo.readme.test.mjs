@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { demoArgs, parseQuickYieldStep, parseYieldCounts, parseYieldDemo, sh, trimmedLines } from "./readme-yield-lib.mjs";
+import { demoArgs, parseQuickYieldStep, parseYieldCounts, parseYieldDemo, section, sh, trimmedLines } from "./readme-yield-lib.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const readme = readFileSync(join(root, "README.md"), "utf8");
@@ -89,6 +89,48 @@ test("README judge:expect markers for the demo block are lines or substrings of 
   assert.ok(expects.length >= 4);
   const all = [runDemo("npm run yield:demo"), runDemo("npm run yield:demo -- --calls"), readFileSync(join(work, "out/yield-demo/plan.json"), "utf8")].join("\n");
   for (const e of expects) assert.ok(all.includes(e), `judge:expect text not in output: ${e}`);
+});
+
+// The "planner alone" table: `| command | expected line |` rows under "### The planner alone".
+// Each expected cell must be a full trimmed line of that command's real output, or
+// (for cells that start mid-line) a substring of one line. The planner is run
+// offline; its default run plans over the shared Ref snapshot and holds.
+function plannerRows() {
+  const sub = section(readme, "Yield Optimizer").match(/^### The planner alone[^\n]*\n([\s\S]*?)(?=^### |(?![\s\S]))/m)?.[1] ?? "";
+  return [...sub.matchAll(/^\| `([^`]+)` \| `([^`]+)` \|$/gm)].map((m) => ({ command: m[1], expected: m[2] }));
+}
+
+test("README planner table: every expected line is printed by that command", () => {
+  const rows = plannerRows();
+  assert.ok(rows.length >= 8, "a table with one row per check");
+  assert.deepEqual([...new Set(rows.map((r) => r.command))], [
+    "node scripts/yield-optimizer.mjs",
+    "node scripts/yield-optimizer.mjs --snapshot src/yield-optimizer/fixtures/scenario.hand-built.json",
+  ]);
+  const outputs = new Map();
+  for (const { command } of rows) {
+    const args = command.replace(/^node scripts\/yield-optimizer\.mjs\s*/, "").split(/\s+/).filter(Boolean).map((a) => (a.startsWith("src/") ? join(root, a) : a));
+    const env = { ...process.env, MOCK_INFERENCE: "1" };
+    delete env.NODE_TEST_CONTEXT;
+    const r = spawnSync(process.execPath, [join(root, "scripts/yield-optimizer.mjs"), ...args], { cwd: work, env, encoding: "utf8", timeout: 120_000 });
+    assert.equal(r.status, 0, r.stderr);
+    outputs.set(command, trimmedLines(r.stdout));
+  }
+  for (const { command, expected } of rows) {
+    const lines = outputs.get(command);
+    assert.ok(lines.includes(expected) || lines.some((l) => l.includes(expected)), `${command} does not print: ${expected}`);
+  }
+});
+
+test("README names the shared snapshot, the optimizer hold and one 280 TGas figure that the real output shows", () => {
+  const out = runDemo("npm run yield:demo");
+  const calls = runDemo("npm run yield:demo -- --calls");
+  assert.match(out, /snapshot: one committed Ref testnet snapshot at block 276143441/);
+  assert.match(out, /^yield-optimizer {2}HOLD: no pool passes every gate/m);
+  assert.equal([...calls.matchAll(/^ {2}gas: (.*)$/gm)].map((m) => m[1]).join("|"), "280.0 Tgas|280.0 Tgas|280.0 Tgas");
+  assert.doesNotMatch(calls, /300(\.0)? ?T[Gg]as/);
+  assert.match(readme, /`gas: 280\.0 Tgas`/);
+  assert.doesNotMatch(section(readme, "Yield Optimizer"), /\b300 ?T[Gg]as|Rhea snapshot|rhea-testnet-snapshot|pool 99/);
 });
 
 function countRustTests(dir) {
