@@ -380,7 +380,7 @@ describe("reference guard", () => {
     // ...and the sane pool 17 is chosen instead.
     assert.equal(plan.json.decision, "swap");
     assert.equal(plan.json.call.args.proposal.pool_id, 17);
-    assert.match(renderPlan(s, plan), /pool 99 wnear -> usdc: .*SKIP off reference: spot \+\d+ bps vs the mock reference price \(limit 1000 bps\); quote is [\d.]+ bps above the reference price, over the 1000 bps limit/);
+    assert.match(renderPlan(s, plan), /pool 99 wnear -> usdc: .*SKIP off reference: spot \+\d+ bps vs the mock reference price \(limit 1000 bps\): distrusted, not traded \(junk liquidity, depeg, manipulated pool or stale reference\)/);
   });
 
   it("with only the junk pool the plan holds and the reason names the guard", () => {
@@ -392,7 +392,7 @@ describe("reference guard", () => {
     const plan = buildPlan(s);
     assert.equal(plan.json.decision, "hold");
     assert.equal(plan.json.call, null);
-    assert.match(plan.json.reason, /1 off the mock reference price \(spot more than 1000 bps away, or quote more than 1000 bps above\)/);
+    assert.match(plan.json.reason, /1 off the mock reference price \(spot more than 1000 bps away\)/);
   });
 
   it("max_ref_deviation_bps is a parameter: widening it lets a 4.8% off pool through the guard", () => {

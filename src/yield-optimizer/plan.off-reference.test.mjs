@@ -23,7 +23,8 @@ const cand = (plan, id) => plan.json.candidates.find((c) => c.proposal.pool_id =
 
 describe("off-reference quotes are distrusted", () => {
   it("default limit is 1000 bps", () => {
-    assert.equal(DEFAULTS.max_edge_bps, 1000);
+    assert.equal(DEFAULTS.max_ref_deviation_bps, 1000);
+    assert.equal("max_edge_bps" in DEFAULTS, false, "one limit, not two");
   });
 
   it("the only pool quoting ~50% above reference -> hold, off_reference, no execute_swap call", () => {
@@ -32,16 +33,14 @@ describe("off-reference quotes are distrusted", () => {
     const c = cand(plan, 17);
     assert.ok(c.edge_bps > 4000, `edge ${c.edge_bps}`);
     assert.equal(c.status, "off_reference");
-    assert.match(c.note, /above the reference price/);
-    assert.match(c.note, /1000 bps limit/);
-    assert.match(c.note, /distrusted/);
+    assert.ok(c.ref_deviation_bps > 4000, `spot deviation ${c.ref_deviation_bps}`);
     assert.equal(plan.json.decision, "hold");
     assert.equal(plan.json.call, null);
     assert.equal(plan.chosen, null);
     assert.match(plan.json.reason, /^no pool passes every gate \(1 off the mock reference price/);
-    assert.match(plan.json.reason, /quote more than 1000 bps above/);
+    assert.match(plan.json.reason, /spot more than 1000 bps away\)/);
     assert.equal(plan.json.simulated_pnl_vs_hold.expected_pnl_usd, "0.0000");
-    assert.match(renderPlan(s, plan), /pool 17 wnear -> usdc: .*SKIP off reference: spot \+\d+ bps vs the mock reference price \(limit 1000 bps\); quote is [\d.]+ bps above the reference price/);
+    assert.match(renderPlan(s, plan), /pool 17 wnear -> usdc: .*SKIP off reference: spot \+\d+ bps vs the mock reference price \(limit 1000 bps\): distrusted, not traded \(junk liquidity, depeg, manipulated pool or stale reference\)/);
   });
 
   it("a wildly off-reference pool does not beat a modestly profitable one", () => {
@@ -60,27 +59,34 @@ describe("off-reference quotes are distrusted", () => {
     assert.equal(plan.json.call.args.proposal.pool_id, 17);
   });
 
-  it("boundary: edge equal to max_edge_bps is eligible, anything below it is not", () => {
+  it("boundary: spot deviation equal to max_ref_deviation_bps is eligible, anything below it is not", () => {
     const s = snap(pool17Only(100));
-    const edge = buildPlan(s).candidates.find((c) => c.proposal.token_in === WNEAR).edge_bps;
-    assert.ok(edge > 100 && edge < 200);
-    const atLimit = buildPlan(s, { max_edge_bps: edge });
+    const dev = buildPlan(s).candidates.find((c) => c.proposal.token_in === WNEAR).ref_deviation_bps;
+    assert.ok(dev > 100 && dev < 200);
+    const atLimit = buildPlan(s, { max_ref_deviation_bps: dev });
     assert.equal(cand(atLimit, 17).status, "ok");
     assert.equal(atLimit.json.decision, "swap");
-    const justOver = buildPlan(s, { max_edge_bps: edge - 1e-6 });
+    const justOver = buildPlan(s, { max_ref_deviation_bps: dev - 1e-6 });
     assert.equal(cand(justOver, 17).status, "off_reference");
     assert.equal(justOver.json.decision, "hold");
   });
 
-  it("max_edge_bps can be overridden: looser quote and spot limits trade the 50%-off pool, the report shows the limit", () => {
+  it("a pool 60% below reference is distrusted too (no direction is chased)", () => {
+    const plan = buildPlan(snap(pool17Only(40)));
+    const c = plan.json.candidates.find((x) => x.proposal.pool_id === 17);
+    assert.equal(c.status, "off_reference");
+    assert.ok(Math.abs(c.ref_deviation_bps) > 4000, `spot deviation ${c.ref_deviation_bps}`);
+    assert.equal(plan.json.decision, "hold");
+  });
+
+  it("max_ref_deviation_bps can be overridden: a looser limit trades the 50%-off pool, the report shows the limit", () => {
     const s = snap(pool17Only(150));
-    // Loosening only the quote limit is not enough: the spot guard still sees the pool ~50% off.
-    assert.equal(cand(buildPlan(s, { max_edge_bps: 10_000 }), 17).status, "off_reference");
-    const loose = buildPlan(s, { max_edge_bps: 10_000, max_ref_deviation_bps: 10_000 });
+    const loose = buildPlan(s, { max_ref_deviation_bps: 10_000 });
     assert.equal(cand(loose, 17).status, "ok");
     assert.equal(loose.json.decision, "swap");
-    assert.equal(loose.json.params.max_edge_bps, 10_000);
-    assert.equal(buildPlan(s).json.params.max_edge_bps, 1000);
+    assert.equal(loose.json.params.max_ref_deviation_bps, 10_000);
+    assert.equal(buildPlan(s).json.params.max_ref_deviation_bps, 1000);
+    assert.equal("max_edge_bps" in buildPlan(s).json.params, false);
   });
 
   it("below_min_edge keeps its own hold reason when no quote is off reference", () => {

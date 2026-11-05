@@ -66,7 +66,7 @@ describe("yield:demo default run", () => {
     assert.match(summary, /^yield-optimizer {2}pool 747: 0\.05 usdc -> min 0\.050406 usdt {2}OK {11}execute$/m);
     assert.match(summary, /^ {2}optimizer swap on pool 747, 6 other pools not chosen:$/m);
     assert.match(summary, /^ {4}no mock reference price: pool 0 wrap -> rft$/m);
-    assert.match(summary, /^ {4}off reference \(spot limit 1000 bps, quote limit 1000 bps vs the mock reference price\): pool 1 nusdt -> nusdc spot \+\d+ bps$/m);
+    assert.match(summary, /^ {4}off reference \(spot limit 1000 bps vs the mock reference price\): pool 1 nusdt -> nusdc spot \+\d+ bps$/m);
     assert.match(summary, /^ {4}refused by the vault rules, ERR_POOL_NOT_ALLOWED: pools 2, 5, 6, 8$/m);
     assert.match(summary, /^wrote .*plan\.json$/m);
     assert.equal(r.stderr, "");
