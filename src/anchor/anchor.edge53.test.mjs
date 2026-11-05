@@ -247,3 +247,8 @@ test("a synchronous sender returning a good result is accepted, and it is called
   assert.equal(calls, 1);
   assert.equal(result.transactionHash, "sync-hash");
 });
+
+test("regression: prepareAnchor(null) fails with the same coded bad_config as prepareAnchor(), not a raw TypeError", () => {
+  assert.equal(code(() => prepareAnchor(null)), code(() => prepareAnchor()));
+  assert.equal(code(() => prepareAnchor(null)), "bad_config");
+});
