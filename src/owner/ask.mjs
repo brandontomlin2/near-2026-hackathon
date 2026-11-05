@@ -230,9 +230,10 @@ export function askResponder(agent) {
       .replaceAll("{hugs}", plural(score?.hugs ?? 0, "warm moment", "warm moments"))
       .replaceAll("{total}", plural((score?.fights ?? 0) + (score?.hugs ?? 0) + (score?.shrugs ?? 0), "exchange", "exchanges"))
       .replaceAll("{name}", agent.name)
-      .replaceAll("{vibe}", vibe || `the ${agent.personality}`)
-      .replaceAll("{enemy}", facts.enemy)
-      .replaceAll("{friend}", facts.friend);
+      // Function replacers: sheet text is literal, so "$&", "$$" etc. are never patterns.
+      .replaceAll("{vibe}", () => vibe || `the ${agent.personality}`)
+      .replaceAll("{enemy}", () => facts.enemy)
+      .replaceAll("{friend}", () => facts.friend);
   };
 }
 

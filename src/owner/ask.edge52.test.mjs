@@ -445,3 +445,19 @@ describe("askAgent edges", () => {
     assert.equal(await store.readSheet("toString"), null);
   });
 });
+
+describe("askResponder: $ patterns in sheet text are echoed literally", () => {
+  test("$& in the vibe is not replaced by the {vibe} placeholder", () => {
+    const sheet = "Who I am: Chaotic, price is $& today. Public enemy #1: Skeptic (5 fights). Ride-or-die: nobody yet.";
+    const out = respond(chaotic, sheet, "hi");
+    assert.ok(out.includes("price is $& today"), out);
+    assert.ok(!out.includes("{vibe}"), out);
+  });
+
+  test("$$ and $` in the enemy and friend lines survive unchanged", () => {
+    const sheet = "Who I am: Chaotic, loud. Public enemy #1: Skeptic $$ $` (5 fights). Ride-or-die: Social $' (3 warm moments).";
+    const out = respond(chaotic, sheet, "hi");
+    assert.ok(out.includes("Skeptic $$ $` (5 fights)"), out);
+    assert.ok(out.includes("Social $' (3 warm moments)"), out);
+  });
+});
