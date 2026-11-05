@@ -302,11 +302,17 @@ export function createMemoryStore(root) {
         if (err && err.code === "ENOENT") return null;
         throw new MemoryError(`could not read the sheet file ${file}`, { code: "io_error", cause: err });
       }
+      let value;
       try {
-        return JSON.parse(raw);
+        value = JSON.parse(raw);
       } catch (err) {
         throw new MemoryError(`the sheet file ${file} is malformed`, { code: "bad_sheet", cause: err });
       }
+      if (value === null || typeof value !== "object" || Array.isArray(value)) {
+        const kind = value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
+        throw new MemoryError(`the sheet file ${file} is not a sheet record (got ${kind})`, { code: "bad_sheet" });
+      }
+      return value;
     },
 
     /** @param {string} tokenId @param {{ tokenId: string, round: number, sheet: string, sheetHash: string, throughIndex: number }} record */
