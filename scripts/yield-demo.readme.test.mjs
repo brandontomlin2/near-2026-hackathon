@@ -33,11 +33,12 @@ function runDemo(command) {
 }
 
 test("README has the yield:demo subsection with run, --calls and plan.json steps", () => {
-  assert.equal(demo.steps.length, 3, "three numbered steps");
+  assert.equal(demo.steps.length, 4, "four numbered steps");
   assert.deepEqual(demo.steps.map((s) => [s.command, s.kind]), [
     ["npm run yield:demo", "run"],
     ["npm run yield:demo -- --calls", "run"],
     ["out/yield-demo/plan.json", "file"],
+    ["out/yield-demo/index.html", "file"],
   ]);
   for (const s of demo.steps) assert.ok(s.quotes.length >= 3, `step ${s.n} quotes at least 3 lines`);
   assert.match(demo.text, /<!-- judge:run -->/, "a judge:run block");
@@ -51,13 +52,27 @@ test("README yield:demo steps: every quoted line is a full line of the real outp
 });
 
 test("README yield:demo plan.json step: quoted keys appear in the written plan.json", () => {
-  const step = demo.steps.find((s) => s.kind === "file");
+  const step = demo.steps.find((s) => s.kind === "file" && s.command.endsWith("plan.json"));
   assert.equal(step.command, "out/yield-demo/plan.json", "README path is the default out dir");
   runDemo("npm run yield:demo");
   const lines = trimmedLines(readFileSync(join(work, "out/yield-demo/plan.json"), "utf8"));
   for (const q of step.quotes) {
     assert.ok(lines.some((l) => l.replace(/,$/, "") === q.trim()), `plan.json has no line ${q}`);
   }
+});
+
+// The page's visible text: tags removed, entities decoded, whitespace collapsed.
+function pageText(html) {
+  const entities = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'" };
+  return html.replace(/<style>[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, " ").replace(/&(amp|lt|gt|quot|#39);/g, (m) => entities[m]).replace(/\s+/g, " ");
+}
+
+test("README yield:demo index.html step: every quoted text is visible on the written page", () => {
+  const step = demo.steps.find((s) => s.kind === "file" && s.command.endsWith("index.html"));
+  assert.ok(step, "an Open out/yield-demo/index.html step");
+  runDemo("npm run yield:demo");
+  const text = pageText(readFileSync(join(work, "out/yield-demo/index.html"), "utf8"));
+  for (const q of step.quotes) assert.ok(text.includes(q.trim().replace(/\s+/g, " ")), `index.html does not show: ${q}`);
 });
 
 test("Judge quick path step for yield:demo quotes real output lines", () => {
