@@ -8,6 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { HashError } from "../anchor/hash.mjs";
 import { checkAttestation } from "./attestation.mjs";
 import { MOCK_MODEL, MOCK_SIGNING_ADDRESS, TAMPERED_ADDRESS, TDX_V4_QUOTE_LENGTH, mockAttestation } from "./fixture.mjs";
 
@@ -74,7 +75,7 @@ test("edge inputs: empty body works, unicode body is deterministic, missing body
   const uni = '{"messages":[{"content":"héllo 日本語 😈"}]}';
   assert.deepEqual(mockAttestation({ requestBody: uni }), mockAttestation({ requestBody: uni }));
   assert.notEqual(mockAttestation({ requestBody: uni }).report.nonce, empty.report.nonce);
-  assert.throws(() => mockAttestation({}), TypeError);
+  assert.throws(() => mockAttestation({}), HashError);
 });
 
 test("an empty model name does not crash, and a custom model flows into the report and signature text", () => {
