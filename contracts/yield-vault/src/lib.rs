@@ -1153,6 +1153,20 @@ impl YieldVault {
                 self.fail(&fl, "lock_force_released_swapped");
                 return;
             }
+            if d > 0 {
+                // The swap ran, but a stranded record at least as large as
+                // Ref's whole token_out deposit hides it (a phantom record), so
+                // nothing new can be booked. The real tokens are still
+                // reachable: `recover_from_ref(token_out, ref_deposit)`.
+                emit(
+                    "ref_balance_untracked",
+                    json!({
+                        "token_id": fl.token_out,
+                        "ref_deposit": d.to_string(),
+                        "stranded": self.stranded_of(&fl.token_out).to_string(),
+                    }),
+                );
+            }
         }
         self.strand_unverified(&token, amount, "lock_force_released_unverified");
         self.fail(&fl, "lock_force_released_unverified");

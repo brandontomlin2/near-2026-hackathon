@@ -3215,3 +3215,53 @@ fn withdraw_ref_storage_allowed_again_after_the_lock_clears() {
     ref_storage_call(&mut v);
     assert_eq!(created_calls()[0].1, "storage_withdraw");
 }
+
+// --------------------------------- L-3: untracked token_out behind a phantom record
+
+#[test]
+fn release_swap_ran_behind_phantom_stranded_names_the_untracked_ref_balance() {
+    // Phantom stranded[rft] = 150 >= Ref's real 100 rft from the swap that ran.
+    // No new record is possible (extra == 0), so the owner is told explicitly.
+    let mut v = funded();
+    v.stranded.insert(rft(), 150);
+    run(&mut v, proposal(100));
+    let id = force_release(&mut v);
+    release_cb();
+    v.resolve_release_swap(id, Ok(U128(9_900)), Ok(U128(0)), Ok(U128(100)));
+    assert!(!v.get_state().swap_in_flight && !v.get_state().release_in_flight);
+    assert_eq!(unverified(&v, &wrap()), 100, "token_in was consumed, stays unverified");
+    assert_eq!(stranded(&v, &rft()), 150, "record unchanged, not double counted");
+    let logs = get_logs().join("\n");
+    assert!(
+        logs.contains("\"event\":\"ref_balance_untracked\"")
+            && logs.contains("\"token_id\":\"rft.tokenfactory.testnet\"")
+            && logs.contains("\"ref_deposit\":\"100\"")
+            && logs.contains("\"stranded\":\"150\""),
+        "{logs}"
+    );
+    // The phantom record still lets the owner pull the real 100 rft.
+    testing_env!(ctx1("owner.testnet").build());
+    let _ = v.recover_from_ref(rft(), U128(100));
+    assert!(v.get_state().recovery_in_flight);
+    let rid = v.recovery.as_ref().unwrap().id;
+    cb_ctx(ok_result(&U128(100)), T0 + STALE_LOCK_NS);
+    let _ = v.on_recover_pre(rid, Ok(U128(100)));
+    cb_ctx(PromiseResult::Successful(vec![]), T0 + STALE_LOCK_NS);
+    let _ = v.on_recover(rid);
+    cb_ctx(ok_result(&U128(0)), T0 + STALE_LOCK_NS);
+    assert_eq!(v.on_recover_reconciled(rid, Ok(U128(0))).0, 100);
+    assert_eq!(bal(&v, &rft()), 100, "the real tokens are recovered");
+    assert_eq!(stranded(&v, &rft()), 50);
+}
+
+#[test]
+fn release_swap_that_never_ran_emits_no_untracked_event() {
+    let mut v = funded();
+    v.stranded.insert(rft(), 150);
+    run(&mut v, proposal(100));
+    let id = force_release(&mut v);
+    release_cb();
+    v.resolve_release_swap(id, Ok(U128(9_900)), Ok(U128(0)), Ok(U128(0)));
+    assert!(!get_logs().join("\n").contains("ref_balance_untracked"));
+    assert_eq!(unverified(&v, &wrap()), 100);
+}
