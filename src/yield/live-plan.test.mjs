@@ -101,14 +101,123 @@ test("plan: phases are in order and every step has a near_cli string and expecta
   assert.deepEqual(ids.slice(-2), ["delete-vault", "delete-runner"]);
 });
 
-test("plan: rollback steps and withdraw amounts", () => {
+test("plan: withdraw amounts are run-time values read from named view steps", () => {
   const plan = buildLivePlan(example());
   const cfg = example();
-  assert.equal(callOf(plan, "withdraw-out").args.amount, cfg.swap.min_amount_out);
-  assert.equal(callOf(plan, "withdraw-rest").args.amount, (BigInt(cfg.deposit.amount) - BigInt(cfg.swap.amount_in)).toString());
+  const out = stepOf(plan, "withdraw-out");
+  assert.equal(callOf(plan, "withdraw-out").args.amount, `<READ get_balance(${cfg.swap.token_out}) at step ${out.runtime_args.amount.from_step}>`);
+  const src = stepOf(plan, out.runtime_args.amount.from_step);
+  assert.equal(src.view, true);
+  assert.deepEqual(src.actions[0].args, { token_id: cfg.swap.token_out });
+  assert.equal(out.runtime_args.amount.path, "result");
+  assert.ok(plan.steps.indexOf(src) < plan.steps.indexOf(out));
+  assert.match(out.near_cli, /<READ get_balance\(rft\.tokenfactory\.testnet\) at step view-balance-2>/);
+  const rest = stepOf(plan, "withdraw-rest");
+  assert.deepEqual(stepOf(plan, rest.runtime_args.amount.from_step).actions[0].args, { token_id: cfg.swap.token_in });
+  const near = stepOf(plan, "withdraw-near");
+  assert.equal(callOf(plan, "withdraw-near").args.amount, "<READ get_withdrawable_near() at step view-withdrawable>");
+  assert.equal(stepOf(plan, near.runtime_args.amount.from_step).actions[0].method_name, "get_withdrawable_near");
+  assert.equal(plan.steps.filter((s) => s.runtime_args).length, 3);
   assert.equal(stepOf(plan, "delete-vault").actions[0].beneficiary_id, plan.owner_id);
   assert.equal(stepOf(plan, "delete-runner").signer_id, plan.runner_id);
   assert.deepEqual(callOf(plan, "withdraw-ref-storage").args, {});
+  assert.deepEqual(validate(plan), []);
+});
+
+test("config: withdraw_near_amount_near is gone (the amount is read at run time)", () => {
+  const c = example();
+  c.funding.withdraw_near_amount_near = "0.5";
+  assert.ok(validateLiveConfig(c, { allowPlaceholders: true }).some((p) => /unknown field funding\.withdraw_near_amount_near/.test(p)));
+});
+
+test("runtime markers: accepted only where declared and backed by an earlier matching view", () => {
+  const bad = (mutate, re) => {
+    const plan = planOf();
+    mutate(plan);
+    const p = validate(plan);
+    assert.ok(p.some((x) => re.test(x)), `${re}: ${JSON.stringify(p)}`);
+  };
+  bad((pl) => delete stepOf(pl, "withdraw-out").runtime_args, /withdraw\.amount is a runtime marker but runtime_args does not declare it/);
+  bad((pl) => (callOf(pl, "withdraw-out").args.amount = "5"), /runtime_args\.amount is declared but the call holds no marker/);
+  bad((pl) => (stepOf(pl, "withdraw-out").runtime_args.amount.from_step = "nope"), /reads step nope, which does not exist|marker names/);
+  bad((pl) => (stepOf(pl, "withdraw-out").runtime_args.amount.path = "result.x"), /path must be "result"/);
+  bad((pl) => {
+    const s = stepOf(pl, "withdraw-out");
+    pl.steps.splice(pl.steps.indexOf(s), 1);
+    pl.steps.splice(pl.steps.indexOf(stepOf(pl, "view-balance-2")), 0, s);
+  }, /which does not come earlier/);
+  bad((pl) => (callOf(pl, "withdraw-out").args.token_id = "wrap.testnet"), /must read get_balance for the token being withdrawn/);
+  bad((pl) => {
+    const s = stepOf(pl, "withdraw-near");
+    s.runtime_args.amount.from_step = "view-state";
+    callOf(pl, "withdraw-near").args.amount = "<READ get_withdrawable_near() at step view-state>";
+  }, /must read a get_withdrawable_near view/);
+  bad((pl) => (callOf(pl, "withdraw-out").args.amount = "<READ nonsense"), /malformed runtime marker/);
+});
+
+/** Move step `id` to just before step `beforeId` (end of the plan when omitted). */
+function moveStep(plan, id, beforeId) {
+  const [s] = plan.steps.splice(plan.steps.findIndex((x) => x.id === id), 1);
+  plan.steps.splice(beforeId ? plan.steps.findIndex((x) => x.id === beforeId) : plan.steps.length, 0, s);
+}
+
+test("ordering: each relevant step moved out of place yields its specific problem", () => {
+  const cases = [
+    ["view-config", "deploy-init", /view-config: order: the vault is used before deploy-init/],
+    ["storage-deposit", undefined, /deposit-into-vault: order: the vault must be registered on wrap\.testnet .* before the deposit into it/], // vault on wrap
+    ["storage-deposit", undefined, /execute-swap: order: the vault must be registered on wrap\.testnet/],
+    ["storage-deposit-3", undefined, /execute-swap: order: the vault must be registered on rft\.tokenfactory\.testnet/], // vault on rft
+    ["storage-deposit-4", undefined, /withdraw-out: order: the owner must be registered on rft\.tokenfactory\.testnet/], // owner on rft
+    ["storage-deposit-2", undefined, /wrap-near: order: alice|wrap-near: order: owner\S* must be registered on wrap\.testnet .* before near_deposit/], // owner on wrap
+    ["register-on-ref", "execute-swap", /deposit-into-vault: order: register_on_ref must come before the deposit into the vault/],
+    ["register-on-ref", undefined, /execute-swap: order: register_on_ref must come before execute_swap/],
+    ["withdraw-ref-storage", undefined, /withdraw-near: order: withdraw_ref_storage must come before withdraw_near/],
+    ["pause", "delete-vault", /pause: order: pause must come before the pre-delete checks/],
+    ["revoke-runners", "delete-vault", /revoke-runners: order: revoke_all_runners must come before the pre-delete checks/],
+    ["withdraw-out", "delete-vault", /withdraw-out: order: withdraw must come before the pre-delete checks/],
+    ["pre-delete-state", undefined, /pre-delete-state: order: pre-delete checks must come before delete-vault/],
+    ["create-vault", "view-state", /the vault account must be created before the deploy/],
+  ];
+  for (const [id, before, re] of cases) {
+    const plan = planOf();
+    moveStep(plan, id, before);
+    const p = validate(plan);
+    assert.ok(p.some((x) => re.test(x)), `${id} -> ${before}: ${re}\n${p.join("\n")}`);
+  }
+});
+
+test("ordering: registrations are matched by (token, account), not by the first storage_deposit", () => {
+  const plan = planOf();
+  // The owner's wrap registration now registers someone else; the vault's wrap registration must not stand in for it.
+  plan.steps.find((s) => s.id === "storage-deposit-2").actions[0].args.account_id = "bob.testnet";
+  const p = validate(plan);
+  assert.ok(p.some((x) => /wrap-near: order: .* must be registered on wrap\.testnet/.test(x)), p.join("\n"));
+  assert.ok(!p.some((x) => /deposit-into-vault: order/.test(x)), "the vault's own registration still counts");
+});
+
+test("a deleted deploy or missing pre-delete check is a problem", () => {
+  let plan = planOf();
+  plan.steps = plan.steps.filter((s) => s.id !== "deploy-init");
+  assert.ok(validate(plan).some((p) => /no step deploys the vault wasm/.test(p)));
+  plan = planOf();
+  plan.steps = plan.steps.filter((s) => s.id !== "pre-delete-state");
+  assert.ok(validate(plan).some((p) => /no pre-delete get_state check/.test(p)));
+});
+
+test("plan: storage bounds are read before each token's storage_deposit", () => {
+  const plan = buildLivePlan(example());
+  for (const t of ["wrap.testnet", "rft.tokenfactory.testnet"]) {
+    const bounds = plan.steps.findIndex((s) => s.view && s.receiver_id === t && s.actions[0].method_name === "storage_balance_bounds");
+    const dep = plan.steps.findIndex((s) => s.receiver_id === t && s.actions[0].method_name === "storage_deposit");
+    assert.ok(bounds >= 0 && bounds < dep, t);
+    assert.match(plan.steps[bounds].expect, /min <= 0\.00125 NEAR/);
+  }
+});
+
+test("plan: delete-vault says the per-token storage deposits are forfeited", () => {
+  const d = stepOf(buildLivePlan(example()), "delete-vault");
+  assert.match(d.expect, /per-token storage deposits \(0\.00125 NEAR each\) and any Ref storage still locked by token entries are forfeited/);
+  assert.match(d.expect, /no storage_unregister step/);
 });
 
 test("every vault method in the plan exists and the example validates clean", () => {
@@ -215,15 +324,22 @@ test("config: structural problems", () => {
     mutate(c);
     assert.ok(validateLiveConfig(c, { allowPlaceholders: true }).some((p) => re.test(p)), re.toString());
   };
-  bad((c) => (c.vault_id = "vault.other.testnet"), /vault_id must be a sub-account/);
+  bad((c) => (c.vault_id = "vault.other.testnet"), /vault_id must be a direct sub-account/);
+  bad((c) => (c.vault_id = `a.b.${c.owner_id}`), /vault_id must be a direct sub-account/);
+  bad((c) => (c.runner_id = `x.y.${c.owner_id}`), /runner_id must be a direct sub-account/);
+  bad((c) => (c.runner_id = c.owner_id), /runner_id must be a direct sub-account/);
   bad((c) => (c.runner_id = c.vault_id), /runner_id must differ from vault_id/);
   bad((c) => (c.agent = "bold"), /agent must be one of/);
   bad((c) => (c.network = "localnet"), /network must be/);
   bad((c) => (c.owner_id = "Owner"), /owner_id must be a valid/);
   bad((c) => (c.surprise = 1), /unknown field surprise/);
-  bad((c) => (c.swap.amount_in = "20000000000000000000000"), /amount_in exceeds deposit|hard rules/);
-  bad((c) => (c.swap.amount_in = "2000000000000000000000000"), /ERR_MAX_TRADE|exceeds deposit/);
-  bad((c) => (c.swap.min_amount_out = "1"), /ERR_PRICE_FLOOR/);
+  bad((c) => (c.swap.amount_in = "30000000000000000000000"), /swap\.amount_in exceeds deposit\.amount/);
+  bad((c) => {
+    c.deposit.amount = "3000000000000000000000000"; // 3 wNEAR deposited, 2 wNEAR swapped: over max_trade (1 wNEAR) only
+    c.swap.amount_in = "2000000000000000000000000";
+    c.swap.min_amount_out = "100000000000"; // above the price floor
+  }, /\(ERR_MAX_TRADE\)/);
+  bad((c) => (c.swap.min_amount_out = "1"), /\(ERR_PRICE_FLOOR\)/);
   bad((c) => (c.funding.vault_initial_near = "1.5e3"), /not a NEAR amount/);
   bad((c) => (c.public_keys.vault = "ed25519:abc"), /public_keys\.vault is not a 32-byte/);
   bad((c) => (c.deposit.token_id = "nusdt.ft-fin.testnet"), /in no allowed pool/);

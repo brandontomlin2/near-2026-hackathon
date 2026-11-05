@@ -52,12 +52,13 @@ const USAGE = () => `Usage: node scripts/yield-live.mjs <dry-run|preflight> [opt
 Default config: config/yield-vault.live.example.json. Public keys only; a field that looks like a
 private key or seed is refused. Mainnet (NEAR_NETWORK=mainnet or any .near id) is refused.
 This tool never signs or sends; --send, --sign*, --i-approve, --live, --broadcast and any
-argument containing "sign" or "private" are refused with exit 2 before the config is read.`;
+flag containing "sign" or "private" are refused with exit 2 before the config is read.`;
 
 class UsageError extends Error {}
 
 function refuseSigning(argv) {
   for (const a of argv) {
+    if (!a.startsWith("-")) continue; // values (a --config path called "design.json") are not flags
     const l = a.toLowerCase();
     if (REFUSED_FLAGS.includes(l) || l.includes("sign") || l.includes("private")) {
       throw new RefusalError("refused: this tool never signs or sends; it only prints unsigned plans and offline checks. Run the printed near-cli-rs commands yourself, by hand, after review.", 2);
@@ -147,7 +148,8 @@ function dryRun(opts, { log }) {
   const wasmFile = isAbsolute(config.wasm_path) ? config.wasm_path : resolve(ROOT, config.wasm_path);
   const wasm = existsSync(wasmFile) ? { path: config.wasm_path, bytes: statSync(wasmFile).size, sha256: sha256File(wasmFile) } : { path: config.wasm_path, bytes: null, sha256: null };
   const transactions = plan.steps.map((s) => ({ ...s, actions: s.actions.map((a) => (a.type === "DeployContract" && wasm.sha256 ? { ...a, wasm_sha256: wasm.sha256 } : a)) }));
-  const doc = { network: plan.network, unsigned: true, owner_id: plan.owner_id, vault_id: plan.vault_id, runner_id: plan.runner_id, wasm, transactions, problems, warnings, manual: plan.manual, totals };
+  const runtime = plan.steps.filter((st) => st.runtime_args).flatMap((st) => Object.entries(st.runtime_args).map(([arg, r]) => ({ step: st.id, arg, from_step: r.from_step, path: r.path })));
+  const doc = { network: plan.network, unsigned: true, owner_id: plan.owner_id, vault_id: plan.vault_id, runner_id: plan.runner_id, wasm, transactions, problems, warnings, manual: plan.manual, filled_at_run_time: runtime, totals };
   if (opts.out) writeFileSync(opts.out, `${JSON.stringify(doc, null, 2)}\n`);
   if (opts.json) {
     log(JSON.stringify(doc, null, 2));
@@ -159,6 +161,10 @@ function dryRun(opts, { log }) {
   plan.steps.forEach((s, i) => log(renderStep(s, i)));
   log("");
   log(`totals: ${totals.transactions} transactions, ${totals.views} views, deposits ${formatSplit(totals.deposit_near, totals.deposit_security_yocto)}, owner outflow ${formatSplit(totals.owner_outflow_near, totals.owner_outflow_security_yocto)}, prepaid gas ${totals.gas_tgas} TGas`);
+  if (runtime.length) {
+    log("filled at run time (read the value from the named view step, then put it in the command; not a placeholder):");
+    for (const r of runtime) log(`  ${r.step}.${r.arg} <- ${r.from_step} (${r.path})`);
+  }
   for (const w of warnings) log(`warning: ${w}`);
   for (const m of plan.manual) log(`manual: ${m}`);
   if (problems.length) {
@@ -172,15 +178,18 @@ async function preflight(opts, { log, fetch: fetchFn }) {
   const checks = [];
   const add = (status, name, detail = "") => checks.push({ status, name, detail });
 
+  const config = loadLiveConfig(opts.config);
+  const configProblems = validateLiveConfig(config, { allowPlaceholders: true });
+  // The build runs only after the config loaded and validated (a refused config never reaches it).
   if (opts.build) {
+    if (configProblems.length) add("FAIL", "wasm build", "skipped: the config does not validate");
+    else {
     log("building: cargo near build non-reproducible-wasm (contracts/yield-vault)");
     const r = spawnSync("cargo", ["near", "build", "non-reproducible-wasm"], { cwd: CONTRACT_DIR, encoding: "utf8", timeout: BUILD_TIMEOUT_MS });
     if (r.error || r.status !== 0) add("FAIL", "wasm build", (r.error?.message ?? r.stderr ?? "").trim().split("\n").slice(-3).join(" | "));
     else add("PASS", "wasm build", "cargo near build non-reproducible-wasm succeeded");
+    }
   }
-
-  const config = loadLiveConfig(opts.config);
-  const configProblems = validateLiveConfig(config, { allowPlaceholders: true });
   const placeholders = findPlaceholders(config);
   if (placeholders.length) add("MISSING", "config complete (no placeholders)", `${placeholders.length} unfilled: ${placeholders.join(", ")}`);
   else add("PASS", "config complete (no placeholders)");

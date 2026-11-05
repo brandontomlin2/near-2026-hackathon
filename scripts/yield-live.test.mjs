@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { parseContractMethods } from "../src/yield/live-plan.mjs";
 import { main } from "./yield-live.mjs";
 import { tmpdir } from "node:os";
@@ -95,11 +95,49 @@ for (const flag of ["--send", "--sign-with-keychain", "--i-approve", "--private-
   });
 }
 
-test("refusal comes before the config is read, and also for arguments containing sign or private", () => {
-  const r = run(["dry-run", "--config", "/nonexistent/design.json"]);
+test("refusal comes before the config is read, for flags containing sign or private", () => {
+  const r = run(["dry-run", "--sign-it", "--config", "/nonexistent/x.json"]);
   assert.equal(r.code, 2);
   assert.match(r.stderr, /refused/);
   assert.equal(run(["preflight", "--my-private-thing"]).code, 2);
+});
+
+test("a config path containing 'design' is a value, not a flag: it works", () => {
+  const { file, dir } = filledConfig();
+  const sub = join(dir, "design-sign-private");
+  mkdirSync(sub);
+  const moved = join(sub, "live.json");
+  copyFileSync(file, moved);
+  const r = run(["dry-run", "--config", moved, "--json"]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).unsigned, true);
+  const missing = run(["dry-run", "--config", join(dir, "design.json")]);
+  assert.equal(missing.code, 2);
+  assert.doesNotMatch(missing.stderr, /refused/);
+  assert.match(missing.stderr, /config file not found/);
+});
+
+test("--build never runs before the config validated: refused and invalid configs print no build line", () => {
+  const near = filledConfig((c) => (c.owner_id = "alice.near"));
+  const r = run(["preflight", "--build", "--config", near.file]);
+  assert.equal(r.code, 2);
+  assert.equal(r.stdout, "");
+  const bad = filledConfig((c) => (c.runner_id = c.vault_id));
+  const r2 = run(["preflight", "--build", "--config", bad.file]);
+  assert.equal(r2.code, 1);
+  assert.doesNotMatch(r2.stdout, /building:/);
+  assert.match(r2.stdout, /FAIL\s+wasm build: skipped: the config does not validate/);
+});
+
+test("dry-run lists run-time values apart from placeholders and problems", () => {
+  const doc = JSON.parse(run(["dry-run", "--json"]).stdout);
+  assert.deepEqual(doc.filled_at_run_time.map((r) => `${r.step}.${r.arg}`), ["withdraw-out.amount", "withdraw-rest.amount", "withdraw-near.amount"]);
+  assert.ok(!doc.warnings.some((w) => /withdraw/.test(w)));
+  assert.deepEqual(doc.problems, []);
+  const text = run(["dry-run"]).stdout;
+  assert.match(text, /filled at run time/);
+  assert.match(text, /withdraw-out\.amount <- view-balance-2 \(result\)/);
+  assert.match(text, /<READ get_balance\(rft\.tokenfactory\.testnet\) at step view-balance-2>/);
 });
 
 test("unknown flags and commands exit 2", () => {
@@ -339,7 +377,7 @@ test("preflight without --online never calls fetch", async () => {
 });
 
 test("--rpc must be https and not mainnet (exit 2); --rpc without --online is a usage error", () => {
-  for (const url of ["http://test.rpc.fastnear.com", "https://rpc.mainnet.near.org"]) {
+  for (const url of ["http://test.rpc.fastnear.com", "https://rpc.mainnet.near.org", "https://free.rpc.fastnear.com"]) {
     const r = run(["preflight", "--online", "--rpc", url]);
     assert.equal(r.code, 2);
     assert.match(r.stderr, /refused/);

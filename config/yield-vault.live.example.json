@@ -15,8 +15,7 @@
   },
   "funding": {
     "vault_initial_near": "6",
-    "runner_initial_near": "2",
-    "withdraw_near_amount_near": "0.5"
+    "runner_initial_near": "2"
   },
   "ref_storage_deposit_near": "0.5",
   "token_storage_deposit_near": "0.00125",

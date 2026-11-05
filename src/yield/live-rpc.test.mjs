@@ -20,7 +20,7 @@ const filled = () => {
 /** A fake fetch over canned chain state. Records every request. `state` entries can be overridden per test. */
 function fakeChain(over = {}) {
   const state = {
-    accounts: { [REF]: { code_hash: "5Uk3VqDvSyGkS5pE8eWqjR9zVfXk2QxJf8cYhFZ9pQd1", amount: "1" }, "alice.testnet": { amount: (50n * 10n ** 24n).toString(), code_hash: NO_CODE_HASH } },
+    accounts: { "wrap.testnet": { code_hash: "x", amount: "1" }, [REF]: { code_hash: "5Uk3VqDvSyGkS5pE8eWqjR9zVfXk2QxJf8cYhFZ9pQd1", amount: "1" }, "alice.testnet": { amount: (50n * 10n ** 24n).toString(), code_hash: NO_CODE_HASH } },
     views: {
       [`${REF}:storage_balance_bounds`]: { min: "1020000000000000000000", max: null },
       [`${REF}:get_whitelisted_tokens`]: [WNEAR, RFT, "nusdt.ft-fin.testnet"],
@@ -81,6 +81,9 @@ test("assertRpcUrl: https only, never mainnet", () => {
   assert.throws(() => assertRpcUrl("http://test.rpc.fastnear.com"), /https/);
   assert.throws(() => assertRpcUrl("https://rpc.mainnet.near.org"), /mainnet/);
   assert.throws(() => assertRpcUrl("https://example.com/MAINNET"), /mainnet/);
+  for (const host of ["rpc.mainnet.near.org", "free.rpc.fastnear.com", "rpc.mainnet.fastnear.com", "mainnet.example.org"]) {
+    assert.throws(() => assertRpcUrl(`https://${host}`), /mainnet/, host);
+  }
   assert.throws(() => assertRpcUrl("nonsense"), /valid URL/);
   assert.throws(() => createRpc({ url: "http://x.test" }), /https/);
 });
@@ -187,9 +190,11 @@ test("online checks: token storage bounds, owner funding and existing accounts",
   chain = fakeChain();
   chain.state.accounts["vault.alice.testnet"] = { amount: "1" };
   const v = find((await run(filled(), chain)).checks, /vault_id not created/);
-  assert.equal(v.status, "WARN");
+  assert.equal(v.status, "FAIL");
   assert.match(v.detail, /already exists/);
   assert.equal(find((await run(filled(), chain)).checks, /runner_id not created/).status, "PASS");
+  chain.state.accounts["run.alice.testnet"] = { amount: "1" };
+  assert.equal(find((await run(filled(), chain)).checks, /runner_id not created/).status, "FAIL");
 });
 
 test("online checks: a failing request is a WARN, not a crash", async () => {
@@ -199,4 +204,13 @@ test("online checks: a failing request is a WARN, not a crash", async () => {
   assert.ok(checks.filter((c) => c.status === "WARN").length >= 5);
   assert.match(checks[0].detail, /could not read: request failed: offline/);
   assert.equal(chain.calls.length, 0);
+});
+
+test("online identity check: an endpoint that does not know wrap.testnet is not a testnet RPC", async () => {
+  const chain = fakeChain();
+  delete chain.state.accounts["wrap.testnet"];
+  const id = find((await run(filled(), chain)).checks, /RPC is testnet/);
+  assert.equal(id.status, "FAIL");
+  assert.match(id.detail, /not a testnet RPC/);
+  assert.equal(find((await run(filled(), fakeChain())).checks, /RPC is testnet/).status, "PASS");
 });

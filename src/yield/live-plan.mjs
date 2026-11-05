@@ -106,7 +106,7 @@ function publicKeyProblem(key, allowPlaceholder) {
 const SECTION_KEYS = {
   top: ["placeholders", "network", "owner_id", "vault_id", "runner_id", "nft_contract_id", "token_id", "agent", "ref_exchange_id", "wasm_path", "public_keys", "funding", "ref_storage_deposit_near", "token_storage_deposit_near", "deposit", "swap", "limits"],
   public_keys: ["vault", "runner"],
-  funding: ["vault_initial_near", "runner_initial_near", "withdraw_near_amount_near"],
+  funding: ["vault_initial_near", "runner_initial_near"],
   deposit: ["token_id", "amount"],
   swap: ["pool_id", "token_in", "token_out", "amount_in", "min_amount_out"],
   limits: ["max_deposit_near_per_tx", "max_total_near"],
@@ -127,6 +127,13 @@ export function findPlaceholders(config) {
   };
   walk(config, "");
   return out;
+}
+
+/** `id` is <name>.<parent> with a non-empty <name> that holds no dot (NEAR lets only a direct parent create an account). */
+function isDirectChild(parent, id) {
+  if (!id.endsWith(`.${parent}`)) return false;
+  const name = id.slice(0, -parent.length - 1);
+  return name !== "" && !name.includes(".");
 }
 
 const isTestnetId = (id) => isValidAccountId(id) && id.endsWith(".testnet");
@@ -172,8 +179,8 @@ export function validateLiveConfig(config, { allowPlaceholders = false } = {}) {
     if (!isTestnetId(config[f])) add(`${f} must be a valid named .testnet account id`);
   }
   const { owner_id: owner, vault_id: vault, runner_id: runner } = config;
-  if (isTestnetId(owner) && isTestnetId(vault) && !vault.endsWith(`.${owner}`)) add("vault_id must be a sub-account of owner_id (so the owner can create it)");
-  if (isTestnetId(owner) && isTestnetId(runner) && !runner.endsWith(`.${owner}`)) add("runner_id must be a sub-account of owner_id (so the owner can create it)");
+  if (isTestnetId(owner) && isTestnetId(vault) && !isDirectChild(owner, vault)) add("vault_id must be a direct sub-account of owner_id, <name>.<owner_id> with no dot in <name> (so the owner can create it)");
+  if (isTestnetId(owner) && isTestnetId(runner) && !isDirectChild(owner, runner)) add("runner_id must be a direct sub-account of owner_id, <name>.<owner_id> with no dot in <name> (so the owner can create it)");
   if (vault !== undefined && vault === runner) add("runner_id must differ from vault_id");
   if (owner !== undefined && (owner === vault || owner === runner)) add("owner_id must differ from vault_id and runner_id");
   if (!isPh(config.token_id) && !(typeof config.token_id === "string" && /^[a-z0-9_-]{1,64}$/.test(config.token_id))) add("token_id must be 1-64 chars of [a-z0-9_-]");
@@ -198,8 +205,6 @@ export function validateLiveConfig(config, { allowPlaceholders = false } = {}) {
   const runnerFund = nearField("funding.runner_initial_near", config.funding?.runner_initial_near);
   if (vaultFund !== null && vaultFund === 0n) add("funding.vault_initial_near must be > 0");
   if (runnerFund !== null && runnerFund === 0n) add("funding.runner_initial_near must be > 0");
-  const wn = nearField("funding.withdraw_near_amount_near", config.funding?.withdraw_near_amount_near);
-  if (wn !== null && wn === 0n) add("funding.withdraw_near_amount_near must be > 0");
   const refDep = nearField("ref_storage_deposit_near", config.ref_storage_deposit_near);
   if (refDep !== null && refDep === 0n) add("ref_storage_deposit_near must be > 0 (register_on_ref needs a deposit)");
   const tokDep = nearField("token_storage_deposit_near", config.token_storage_deposit_near);
@@ -291,6 +296,10 @@ const call = (method_name, args, tgas, deposit = 0n) => ({
 });
 const viewCall = (method_name, args = {}) => ({ type: "ViewCall", method_name, args });
 
+/** Marker for an argument only known at run time: the result of a view step. */
+export const RUNTIME_MARKER = /^<READ (\w+)\(([^)]*)\) at step ([\w-]+)>$/;
+const runtimeMarker = (method, arg, stepId) => `<READ ${method}(${arg}) at step ${stepId}>`;
+
 /** The ordered, unsigned plan for a config. Throws if the config does not validate (placeholders allowed). */
 export function buildLivePlan(config) {
   const problems = validateLiveConfig(config, { allowPlaceholders: true });
@@ -311,6 +320,7 @@ export function buildLivePlan(config) {
     const s = { id: n > 1 ? `${id}-${n}` : id, title, phase, signer_id: view ? null : signer_id, receiver_id, actions, ...(view ? { view: true } : {}), expect, cost_near: formatNear(deposit) };
     s.near_cli = nearCliFor(s, { owner_id: owner });
     steps.push({ ...s, ...extra });
+    return s.id;
   };
   const create = (id, account, fundNear, pk, who) =>
     step(id, "setup", `create and fund the ${who} account`, owner, account, [{ type: "CreateAccount" }, { type: "Transfer", deposit_yocto: parseNear(fundNear).toString() }, { type: "AddKey", public_key: pk, access: "FullAccess" }], `${account} exists with ${fundNear} NEAR and the ${who} key`);
@@ -325,6 +335,7 @@ export function buildLivePlan(config) {
   step("view-state", "check", "read the vault state", null, vault, [viewCall("get_state")], "paused == false, nothing in flight");
 
   for (const t of tokens) {
+    step("storage-bounds", "check", `read ${t}'s storage bounds`, null, t, [viewCall("storage_balance_bounds")], `min <= ${config.token_storage_deposit_near} NEAR (token_storage_deposit_near)`);
     step("storage-deposit", "fund", `register the vault on ${t}`, owner, t, [call("storage_deposit", { account_id: vault, registration_only: true }, 30, tokDep)], `${t} storage_balance_of(${vault}) is not null`);
     step("storage-deposit", "fund", `register the owner on ${t} (so withdrawals can land)`, owner, t, [call("storage_deposit", { account_id: owner, registration_only: true }, 30, tokDep)], `${t} storage_balance_of(${owner}) is not null`);
   }
@@ -343,25 +354,25 @@ export function buildLivePlan(config) {
   step("execute-swap", "swap", `runner swaps ${proposal.amount_in} ${proposal.token_in} -> ${proposal.token_out} on pool ${proposal.pool_id}`, runner, vault, [call("execute_swap", { proposal }, 300)], "swap_executed event; balance of token_out >= min_amount_out");
   step("view-state", "check", "read the vault state after the swap", null, vault, [viewCall("get_state")], "no swap in flight, swaps_executed == 1, nothing stranded");
   step("ref-deposit-out", "check", "read what is left on Ref for token_out", null, ref, [viewCall("get_deposit", { account_id: vault, token_id: proposal.token_out })], "0 (the chain withdrew it back to the vault)");
-  step("view-balance", "check", "read the vault's token_out balance", null, vault, [viewCall("get_balance", { token_id: proposal.token_out })], `>= ${proposal.min_amount_out}`);
+  const outBal = step("view-balance", "check", "read the vault's token_out balance", null, vault, [viewCall("get_balance", { token_id: proposal.token_out })], `>= ${proposal.min_amount_out}`);
+  const inBal = step("view-balance", "check", "read the vault's unswapped token_in balance", null, vault, [viewCall("get_balance", { token_id: proposal.token_in })], `${BigInt(config.deposit.amount) - BigInt(proposal.amount_in)} if the swap took exactly amount_in (Ref may accept less)`);
 
-  step("withdraw-out", "withdraw", `owner withdraws ${proposal.min_amount_out} of ${proposal.token_out} (a floor: use get_balance for the full amount)`, owner, vault, [call("withdraw", { token_id: proposal.token_out, amount: proposal.min_amount_out }, 100, 1n)], "withdraw event; owner ft_balance_of(token_out) rose");
-  if (proposal.token_in === config.deposit.token_id && BigInt(proposal.amount_in) < dep) {
-    const rest = (dep - BigInt(proposal.amount_in)).toString();
-    step("withdraw-rest", "withdraw", `owner withdraws the ${rest} of ${proposal.token_in} not swapped`, owner, vault, [call("withdraw", { token_id: proposal.token_in, amount: rest }, 100, 1n)], "withdraw event; vault get_balance(token_in) == 0");
-  }
+  // The amounts below are only knowable at run time (the swap output, whatever Ref accepted), so they are
+  // runtime values: a marker in args and a runtime_args entry naming the view step whose result fills it.
+  step("withdraw-out", "withdraw", `owner withdraws the whole token_out balance of ${proposal.token_out}`, owner, vault, [call("withdraw", { token_id: proposal.token_out, amount: runtimeMarker("get_balance", proposal.token_out, outBal) }, 100, 1n)], "withdraw event; owner ft_balance_of(token_out) rose; the vault's token_out balance is 0", { runtime_args: { amount: { from_step: outBal, path: "result" } } });
+  step("withdraw-rest", "withdraw", `owner withdraws the unswapped ${proposal.token_in} balance`, owner, vault, [call("withdraw", { token_id: proposal.token_in, amount: runtimeMarker("get_balance", proposal.token_in, inBal) }, 100, 1n)], "withdraw event; vault get_balance(token_in) == 0. Skip this step if the value read is 0 (withdraw rejects a zero amount).", { runtime_args: { amount: { from_step: inBal, path: "result" } } });
   step("owner-balance", "check", "read the owner's token_out balance", null, proposal.token_out, [viewCall("ft_balance_of", { account_id: owner })], `>= ${proposal.min_amount_out}`);
 
   step("pause", "rollback", "pause the vault", owner, vault, [call("pause", {}, 30, 1n)], "paused event");
   step("revoke-runners", "rollback", "revoke every runner", owner, vault, [call("revoke_all_runners", {}, 30, 1n)], "runner_revoked event; get_config().runners == []");
   step("withdraw-ref-storage", "rollback", "pull the Ref storage balance back to the vault account", owner, vault, [call("withdraw_ref_storage", {}, 100, 1n)], "ref_storage_withdraw event; NEAR returns to the vault account");
-  step("view-withdrawable", "check", "read how much NEAR the owner can withdraw", null, vault, [viewCall("get_withdrawable_near")], `>= ${config.funding.withdraw_near_amount_near} NEAR (else lower funding.withdraw_near_amount_near)`);
-  step("withdraw-near", "rollback", "send free NEAR from the vault to the owner", owner, vault, [call("withdraw_near", { amount: parseNear(config.funding.withdraw_near_amount_near).toString() }, 30, 1n)], "near_withdrawn event");
+  const free = step("view-withdrawable", "check", "read how much NEAR the owner can withdraw", null, vault, [viewCall("get_withdrawable_near")], "the amount withdraw_near takes next (account balance minus storage cost minus a 0.1 NEAR reserve)");
+  step("withdraw-near", "rollback", "send the free NEAR from the vault to the owner", owner, vault, [call("withdraw_near", { amount: runtimeMarker("get_withdrawable_near", "", free) }, 30, 1n)], "near_withdrawn event. Skip this step if the value read is 0. Optional: delete-vault sends the remaining NEAR to the owner anyway.", { runtime_args: { amount: { from_step: free, path: "result" } } });
   step("pre-delete-state", "check", "read the vault state before deleting it", null, vault, [viewCall("get_state")], "balances, stranded_on_ref, unverified_on_ref all empty or zero; swap_in_flight, recovery_in_flight, release_in_flight false");
   for (const t of tokens) {
     step("pre-delete-ref-deposit", "check", `read what Ref still holds of ${t} for the vault`, null, ref, [viewCall("get_deposit", { account_id: vault, token_id: t })], "0");
   }
-  step("delete-vault", "rollback", "delete the vault account (destroys any tokens it still holds on token contracts or Ref)", vault, vault, [{ type: "DeleteAccount", beneficiary_id: owner }], `${vault} no longer exists. Deleting it destroys any tokens still held for it on the token contracts or on Ref; only run it after the pre-delete checks are clean. The beneficiary ${owner} receives the remaining NEAR, so withdraw_near is only needed if you keep the account.`);
+  step("delete-vault", "rollback", "delete the vault account (destroys any tokens it still holds on token contracts or Ref)", vault, vault, [{ type: "DeleteAccount", beneficiary_id: owner }], `${vault} no longer exists. Deleting it destroys any tokens still held for it on the token contracts or on Ref; only run it after the pre-delete checks are clean. The beneficiary ${owner} receives the remaining NEAR, so withdraw_near is only needed if you keep the account. The vault's per-token storage deposits (${config.token_storage_deposit_near} NEAR each) and any Ref storage still locked by token entries are forfeited: the plan has no storage_unregister step.`);
   step("delete-runner", "rollback", "delete the runner account", runner, runner, [{ type: "DeleteAccount", beneficiary_id: owner }], `${runner} no longer exists; its NEAR went to ${owner}`);
 
   return {
@@ -562,7 +573,7 @@ export function validatePlan(plan, contractMethods, { minGas = {} } = {}) {
   };
   const checkU128 = (where, spec, args) => {
     for (const [name, type] of Object.entries(spec.argTypes ?? {})) {
-      if (/\bU128\b/.test(type) && !/^Option/.test(type) && args && name in args && !isUint(args[name])) problems.push(`${where}: argument ${name} must be a decimal string (U128)`);
+      if (/\bU128\b/.test(type) && !/^Option/.test(type) && args && name in args && !isUint(args[name]) && !(typeof args[name] === "string" && RUNTIME_MARKER.test(args[name]))) problems.push(`${where}: argument ${name} must be a decimal string (U128)`);
     }
   };
   const vaultSpec = (m) => {
@@ -570,8 +581,10 @@ export function validatePlan(plan, contractMethods, { minGas = {} } = {}) {
     return c ? { ...c, required: c.args.filter((a) => !c.optional.includes(a)) } : null;
   };
 
-  for (const s of plan.steps) {
+  const index = new Map(plan.steps.map((st, i) => [st.id, i]));
+  for (const [i, s] of plan.steps.entries()) {
     const at = (m) => `${s.id}: ${m}`;
+    problems.push(...runtimeProblems(plan, s, i, index));
     if (/\.near$/i.test(s.receiver_id ?? "") || /\.near$/i.test(s.signer_id ?? "")) problems.push(at("mainnet (.near) account"));
     if (!s.actions?.length) {
       problems.push(at("no actions"));
@@ -657,6 +670,7 @@ export function validatePlan(plan, contractMethods, { minGas = {} } = {}) {
     if (txDeposit > maxDeposit) problems.push(at(`deposit ${formatNear(txDeposit)} NEAR is above limits.max_deposit_near_per_tx (${formatNear(maxDeposit)})`));
     if (!s.view && s.signer_id === owner) outflow += txDeposit;
   }
+  problems.push(...orderingProblems(plan));
   if (outflow > maxTotal) problems.push(`NEAR leaving the owner (${formatNear(outflow)}) is above limits.max_total_near (${formatNear(maxTotal)})`);
   return problems;
 }
@@ -761,4 +775,98 @@ export function compareMethods(sourceMethods, abiMethods) {
   }
   for (const [name, a] of abiMethods) if (!a.private && !sourceMethods.has(name) && name !== "contract_source_metadata") problems.push(`${name}: in the ABI but not parsed from lib.rs (parser bug?)`);
   return problems;
+}
+
+// ------------------------------------------------------------- runtime values and ordering
+
+/** Problems with the step's runtime markers: every marker is declared, every declaration is backed by an earlier view. */
+function runtimeProblems(plan, s, i, index) {
+  const out = [];
+  const at = (m) => `${s.id}: ${m}`;
+  const declared = s.runtime_args ?? {};
+  const calls = s.actions.filter((a) => a.type === "FunctionCall");
+  for (const a of calls) {
+    for (const [name, v] of Object.entries(a.args ?? {})) {
+      if (typeof v !== "string" || !v.startsWith("<READ ")) continue;
+      const m = RUNTIME_MARKER.exec(v);
+      if (!m) {
+        out.push(at(`${a.method_name}.${name} holds a malformed runtime marker`));
+        continue;
+      }
+      const ref = declared[name];
+      if (!ref) {
+        out.push(at(`${a.method_name}.${name} is a runtime marker but runtime_args does not declare it`));
+        continue;
+      }
+      const [, method, arg, fromId] = m;
+      if (ref.from_step !== fromId) out.push(at(`runtime_args.${name} reads step ${ref.from_step} but the marker names ${fromId}`));
+      if (ref.path !== "result") out.push(at(`runtime_args.${name}.path must be "result"`));
+      const j = index.get(ref.from_step);
+      const from = j === undefined ? null : plan.steps[j];
+      if (!from) out.push(at(`runtime_args.${name} reads step ${ref.from_step}, which does not exist`));
+      else {
+        if (j >= i) out.push(at(`runtime_args.${name} reads step ${ref.from_step}, which does not come earlier`));
+        const view = from.actions[0];
+        if (!from.view || view.method_name !== method) out.push(at(`runtime_args.${name} must read a ${method} view, step ${ref.from_step} is not one`));
+        else if (from.receiver_id !== plan.vault_id) out.push(at(`runtime_args.${name} must read the vault's ${method}`));
+        else if (method === "get_balance" && (view.args.token_id !== arg || a.args.token_id !== arg)) out.push(at(`runtime_args.${name} must read get_balance for the token being withdrawn (${a.args.token_id})`));
+        else if (method === "get_withdrawable_near" && arg !== "") out.push(at(`runtime marker for get_withdrawable_near takes no argument`));
+      }
+    }
+  }
+  for (const name of Object.keys(declared)) {
+    if (!calls.some((a) => typeof a.args?.[name] === "string" && RUNTIME_MARKER.test(a.args[name]))) out.push(at(`runtime_args.${name} is declared but the call holds no marker for it`));
+  }
+  return out;
+}
+
+/** Steps that must come before others: accounts, registrations, the deploy, the rollback order. */
+function orderingProblems(plan) {
+  const out = [];
+  const { vault_id: vault, owner_id: owner, steps } = plan;
+  const calls = (i, method) => steps[i].actions.filter((a) => a.type === "FunctionCall" && (method === undefined || a.method_name === method));
+  const firstIdx = (pred) => steps.findIndex(pred);
+  const registeredBefore = (i, token, account) => steps.slice(0, i).some((s) => s.receiver_id === token && s.actions.some((a) => a.type === "FunctionCall" && a.method_name === "storage_deposit" && a.args?.account_id === account));
+  const calledBefore = (i, method, receiver) => steps.slice(0, i).some((s) => s.receiver_id === receiver && s.actions.some((a) => a.type === "FunctionCall" && a.method_name === method));
+  const deployIdx = firstIdx((s) => s.actions.some((a) => a.type === "DeployContract") && s.receiver_id === vault);
+  const createIdx = firstIdx((s) => s.receiver_id === vault && s.actions.some((a) => a.type === "CreateAccount"));
+  if (deployIdx < 0) out.push("order: no step deploys the vault wasm");
+  if (createIdx < 0) out.push("order: no step creates the vault account");
+  else if (deployIdx >= 0 && createIdx > deployIdx) out.push("order: the vault account must be created before the deploy");
+
+  for (const [i, s] of steps.entries()) {
+    const at = (m) => `${s.id}: order: ${m}`;
+    if (s.receiver_id === vault && i !== deployIdx && deployIdx >= 0 && i < deployIdx && s.actions[0].type !== "CreateAccount") out.push(at("the vault is used before deploy-init"));
+    for (const a of calls(i)) {
+      if (s.receiver_id === vault) {
+        if (a.method_name === "execute_swap") {
+          for (const t of [a.args?.proposal?.token_in, a.args?.proposal?.token_out]) {
+            if (!registeredBefore(i, t, vault)) out.push(at(`the vault must be registered on ${t} (storage_deposit) before execute_swap`));
+          }
+          if (!calledBefore(i, "register_on_ref", vault)) out.push(at("register_on_ref must come before execute_swap"));
+        }
+        if (a.method_name === "withdraw" && !registeredBefore(i, a.args?.token_id, owner)) out.push(at(`the owner must be registered on ${a.args?.token_id} (storage_deposit) before withdraw`));
+        if (a.method_name === "withdraw_near" && !calledBefore(i, "withdraw_ref_storage", vault)) out.push(at("withdraw_ref_storage must come before withdraw_near"));
+      } else if (a.method_name === "ft_transfer_call" && a.args?.receiver_id === vault) {
+        if (!registeredBefore(i, s.receiver_id, vault)) out.push(at(`the vault must be registered on ${s.receiver_id} (storage_deposit) before the deposit into it`));
+        if (!calledBefore(i, "register_on_ref", vault)) out.push(at("register_on_ref must come before the deposit into the vault"));
+      } else if (a.method_name === "near_deposit" && !registeredBefore(i, s.receiver_id, s.signer_id)) {
+        out.push(at(`${s.signer_id} must be registered on ${s.receiver_id} (storage_deposit) before near_deposit`));
+      }
+    }
+  }
+
+  const deleteIdx = firstIdx((s) => s.receiver_id === vault && s.actions.some((a) => a.type === "DeleteAccount"));
+  const pre = steps.map((s, i) => [s, i]).filter(([s]) => s.id.startsWith("pre-delete"));
+  if (deleteIdx >= 0) {
+    if (!pre.some(([s]) => s.actions[0].method_name === "get_state" && s.receiver_id === vault)) out.push("order: no pre-delete get_state check before deleting the vault");
+    for (const [s, i] of pre) if (i > deleteIdx) out.push(`${s.id}: order: pre-delete checks must come before delete-vault`);
+    const firstPre = Math.min(...pre.map(([, j]) => j));
+    for (const m of ["pause", "revoke_all_runners", "withdraw"]) {
+      steps.forEach((s, i) => {
+        if (s.receiver_id === vault && calls(i, m).length && i > firstPre) out.push(`${s.id}: order: ${m} must come before the pre-delete checks`);
+      });
+    }
+  }
+  return out;
 }

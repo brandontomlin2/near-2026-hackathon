@@ -37,6 +37,9 @@ export function assertReadOnlyRequest(body) {
   for (const k of allowed) if (typeof p[k] !== "string") fail(`param ${k} must be a string`);
 }
 
+/** Known mainnet RPC hosts that do not say "mainnet" in the name (hosts containing "mainnet" are caught by name). */
+export const MAINNET_HOSTS = Object.freeze(["rpc.mainnet.near.org", "free.rpc.fastnear.com", "rpc.mainnet.fastnear.com", "archival-rpc.mainnet.near.org", "rpc.near.org"]);
+
 /** The RPC URL must be https and must not be a mainnet endpoint. Throws RangeError otherwise. */
 export function assertRpcUrl(url) {
   let u;
@@ -46,7 +49,7 @@ export function assertRpcUrl(url) {
     throw new RangeError("rpc url is not a valid URL");
   }
   if (u.protocol !== "https:") throw new RangeError("rpc url must be https");
-  if (/mainnet/i.test(url)) throw new RangeError("rpc url must not be a mainnet endpoint");
+  if (/mainnet/i.test(url) || MAINNET_HOSTS.includes(u.hostname.toLowerCase())) throw new RangeError("rpc url must not be a mainnet endpoint");
   return u.toString();
 }
 
@@ -117,6 +120,12 @@ export async function onlineChecks(config, plan, rpc) {
   const placeholders = findPlaceholders(config);
   const isPh = (path) => placeholders.some((p) => p === path || p.startsWith(`${path}.`));
 
+  // A mainnet RPC would say wrap.testnet does not exist: the endpoint must really be testnet.
+  await guard("online: RPC is testnet (wrap.testnet exists)", async () => {
+    const w = await rpc.account("wrap.testnet");
+    add(w ? "PASS" : "FAIL", "online: RPC is testnet (wrap.testnet exists)", w ? "wrap.testnet exists" : "wrap.testnet does not exist on this endpoint: not a testnet RPC");
+  });
+
   await guard("online: Ref exchange has code", async () => {
     const a = await rpc.account(ref);
     if (!a) add("FAIL", "online: Ref exchange has code", `${ref} does not exist`);
@@ -176,7 +185,7 @@ export async function onlineChecks(config, plan, rpc) {
     else {
       await guard(name, async () => {
         const a = await rpc.account(id);
-        add(a ? "WARN" : "PASS", name, a ? `${id} already exists (create-account would fail)` : `${id} does not exist yet`);
+        add(a ? "FAIL" : "PASS", name, a ? `${id} already exists (create-account would fail)` : `${id} does not exist yet`);
       });
     }
   }
