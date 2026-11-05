@@ -5,7 +5,7 @@
 //
 // Runs `node scripts/yield-demo.mjs --out DIR` (offline, mock) with a timeout, then reads
 // DIR/plan.json, DIR/calls.json and DIR/index.html and fails unless the plan is a dry run with nothing signed
-// or sent, 4 calls planned, and the 4 vault-rule rejections match the contract. index.html must
+// or sent, 1 call planned (the optimizer's; the stable-pool agents are refused as off reference), and the 4 vault-rule rejections match the contract. index.html must
 // carry the DRY RUN notice and each rejection's contract message (HTML-escaped as rendered).
 
 import { spawnSync } from "node:child_process";
@@ -18,7 +18,7 @@ import { assertSafeOutDir } from "../src/util/outdir.mjs";
 
 export const EXPECTED_MODE = "mock";
 export const EXPECTED_AGENTS = 5;
-export const EXPECTED_CALLS = 4;
+export const EXPECTED_CALLS = 1;
 export const EXPECTED_SIGNED = 0;
 export const EXPECTED_SENT = 0;
 export const EXPECTED_REJECTIONS = 4;
@@ -61,6 +61,15 @@ export function checkYieldDemo(plan, calls) {
   (list ?? []).forEach((call, i) => {
     expect(isObject(call) && call.signed === false, `calls.json calls[${i}].signed must be false`);
     expect(isObject(call) && call.sent === false, `calls.json calls[${i}].sent must be false`);
+  });
+
+  // Pool 1 (nusdt/nusdc "stable") is far off its $1 peg: no personality agent may execute a pool 1 swap.
+  (agents ?? []).forEach((agent, i) => {
+    if (!isObject(agent) || agent.kind !== "personality" || !isObject(agent.proposal) || agent.proposal.pool_id !== 1) return;
+    const text = JSON.stringify([agent.rule_check, agent.strategy_check]);
+    expect(agent.outcome === "refused", `plan.json agents[${i}] (${agent.agent}) proposed on pool 1 and must be refused (got ${JSON.stringify(agent.outcome)})`);
+    expect(text.includes("SOFT_OFF_REFERENCE") || text.includes("ERR_PRICE_FLOOR"), `plan.json agents[${i}] (${agent.agent}) refusal must cite SOFT_OFF_REFERENCE or ERR_PRICE_FLOOR`);
+    expect(isObject(agent.reference) && typeof agent.reference.reference_deviation_bps === "number", `plan.json agents[${i}] (${agent.agent}) must carry reference.reference_deviation_bps`);
   });
 
   expect(plan.rule_rejections === EXPECTED_REJECTIONS, `plan.json rule_rejections must be ${EXPECTED_REJECTIONS} (got ${JSON.stringify(plan.rule_rejections)})`);
@@ -190,7 +199,7 @@ function main(argv) {
     for (const problem of problems) console.error(`FAIL: ${problem}`);
     return 1;
   }
-  console.log(`yield demo: dry_run true, signed false, sent false; ${EXPECTED_CALLS} calls planned, ${EXPECTED_SIGNED} signed, ${EXPECTED_SENT} sent; ${EXPECTED_REJECTIONS} rule rejections match the contract`);
+  console.log(`yield demo: dry_run true, signed false, sent false; ${EXPECTED_CALLS} call planned, ${EXPECTED_SIGNED} signed, ${EXPECTED_SENT} sent; ${EXPECTED_REJECTIONS} rule rejections match the contract`);
   return 0;
 }
 

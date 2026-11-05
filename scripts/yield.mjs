@@ -22,6 +22,7 @@ import { AGENT_IDS, runRound } from "../src/yield/debate.mjs";
 import { createLedger, formatScoreboard, formatUsd } from "../src/yield/ledger.mjs";
 import { MOCK_EPOCH_MS, yieldMockResponder } from "../src/yield/mock.mjs";
 import { loadPoolFixture } from "../src/yield/pools.mjs";
+import { referenceLine, referenceView } from "../src/yield/reference-view.mjs";
 import { dayOf, validateVaultConfig } from "../src/yield/rules.mjs";
 import { RefusalError, assertNotMainnet, assertSendAllowed, buildExecuteSwapArgv, formatCommand } from "../src/yield/send.mjs";
 import { PLACEHOLDER_RUNNER, PLACEHOLDER_VAULT, defaultVaultConfig, strategyFor } from "../src/yield/strategies.mjs";
@@ -164,7 +165,7 @@ function defaultSpawner(bin, args) {
 
 /**
  * @param {string[]} argv
- * @param {{ env?: object, log?: (s: string) => void, err?: (s: string) => void, spawner?: (bin: string, args: string[]) => number, hasNear?: () => boolean, now?: () => number }} [io]
+ * @param {{ env?: object, log?: (s: string) => void, err?: (s: string) => void, spawner?: (bin: string, args: string[]) => number, hasNear?: () => boolean, now?: () => number, responder?: import("../src/inference/client.mjs").MockResponder }} [io] responder: test seam, replaces the mock model (only used in mock mode)
  */
 export async function main(argv = process.argv.slice(2), io = {}) {
   const { env = process.env, log = console.log, err = (s) => console.error(s), spawner = defaultSpawner, now = Date.now } = io;
@@ -200,7 +201,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
 
   let client;
   try {
-    client = createInferenceClient({ env, responder: yieldMockResponder });
+    client = createInferenceClient({ env, responder: io.responder ?? yieldMockResponder });
   } catch (e) {
     if (!(e instanceof InferenceError)) throw e;
     const hint = e.code === "missing_api_key" || e.code === "missing_model" ? " (set NEAR_AI_API_KEY and NEAR_AI_MODEL, or unset MOCK_INFERENCE for mock mode)" : "";
@@ -277,7 +278,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
         round: r.round,
         now_ms: r.now_ms,
         consensus: r.consensus,
-        decisions: Object.fromEntries(shown.map((id) => [id, r.decisions[id]])),
+        decisions: Object.fromEntries(shown.map((id) => [id, withReference(r.decisions[id], fixture)])),
         executions: r.executions.filter((x) => shown.includes(x.agent)).map(({ agent, proposal, vault_args, command }) => ({ agent, proposal, vault_args, command, sent: opts.send })),
       })),
       sent, scoreboard, ledger: ledgerFile,
@@ -292,7 +293,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     log("");
     log(`== round ${r.round} ==`);
     if (r.consensus) log(`swarm consensus: pool ${r.consensus.pool_id} ${r.consensus.token_in} -> ${r.consensus.token_out}, ${r.consensus.supporters.join(" + ")}`);
-    for (const id of shown) log(...renderAgent(r.decisions[id], r, opts.send));
+    for (const id of shown) log(...renderAgent(r.decisions[id], r, opts.send, fixture));
   }
   log("");
   log(formatScoreboard(scoreboard));
@@ -300,7 +301,14 @@ export async function main(argv = process.argv.slice(2), io = {}) {
   return exitCode;
 }
 
-function renderAgent(d, round, sending) {
+/** A decision plus how far its quote is from the reference price (null fields when there is no reference). */
+function withReference(d, fixture) {
+  if (!d.proposal) return d;
+  const v = referenceView(d.proposal, fixture);
+  return { ...d, reference_deviation_bps: v.reference_deviation_bps, max_reference_deviation_bps: v.max_reference_deviation_bps };
+}
+
+function renderAgent(d, round, sending, fixture) {
   const s = strategyFor(d.agent);
   const name = AGENTS.find((a) => a.id === d.agent).name;
   const lines = [`\n[${d.agent}] ${name}: ${s.name}`];
@@ -309,6 +317,7 @@ function renderAgent(d, round, sending) {
   else {
     const p = d.proposal;
     lines.push(`  proposal: pool ${p.pool_id} ${p.token_in} -> ${p.token_out}, amount_in ${p.amount_in}, min_amount_out ${p.min_amount_out}`);
+    lines.push(`  reference: ${referenceLine(referenceView(p, fixture))}`);
     lines.push(`  why: ${p.rationale}`);
     lines.push(`  vault rules (off chain): ${d.hard.ok ? "OK" : d.hard.reason}`);
     lines.push(`  strategy checks: ${d.soft.ok ? "OK" : d.soft.violations.map((v) => `${v.code}: ${v.reason}`).join("; ")}`);

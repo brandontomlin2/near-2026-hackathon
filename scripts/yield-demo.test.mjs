@@ -53,8 +53,14 @@ describe("yield:demo default run", () => {
       assert.match(summary, new RegExp(`^${id} +pool \\d+: `, "m"));
       assert.ok(r.stdout.indexOf(`\n[${id}] `) > r.stdout.indexOf("== details =="), `${id} detail comes after the summary`);
     }
-    assert.match(summary, /^4 unsigned execute_swap calls planned, 0 signed, 0 sent$/m);
+    assert.match(summary, /^1 unsigned execute_swap call planned, 0 signed, 0 sent$/m);
     assert.match(summary, /chaotic .* OK +vetoed$/m);
+    // The stable pool 1 is ~1860x off its $1 peg: the three agents that picked it are refused, and the table says why.
+    for (const [id, bps] of [["aloof", 18590000], ["social", 18590000], ["skeptic", 18490000]]) {
+      assert.match(summary, new RegExp(`^${id} .* OK +refused: SOFT_OFF_REFERENCE \\+${bps} bps vs reference \\(limit 100\\)$`, "m"));
+    }
+    assert.match(r.stdout, /^ {2}reference: quote \+18590000 bps vs mock_usd_price reference \(limit 100 bps, stable pair: OFF REFERENCE\)$/m);
+    assert.match(r.stdout, /^ {2}reference: no reference price \(rft has none\): the floor is a spot sanity floor$/m);
     assert.match(summary, /REFUSED ERR_NO_LIMIT: no limit for dai\.fixture\.testnet/);
     assert.match(summary, /REFUSED ERR_POOL_NOT_ALLOWED: pool 99/);
     assert.match(summary, /^wrote .*plan\.json$/m);
@@ -70,6 +76,28 @@ describe("yield:demo default run", () => {
       assert.ok(summary.split("\n").includes(`  ${a.agent} vetoed by ${a.veto.by}: ${a.veto.reason}`), `${a.agent} veto line`);
     }
     assert.match(summary, /^ {2}chaotic vetoed by skeptic: size is 10000 bps of max_trade, above the 8000 bps audit line$/m);
+  });
+
+  it("plan.json carries the reference deviation and refuses every pool 1 proposal; index.html shows it", () => {
+    const plan = readJson(join(dir, "plan.json"));
+    const personalities = plan.agents.filter((a) => a.kind === "personality");
+    const pool1 = personalities.filter((a) => a.proposal?.pool_id === 1);
+    assert.deepEqual(pool1.map((a) => a.agent), ["aloof", "social", "skeptic"]);
+    for (const a of pool1) {
+      assert.equal(a.outcome, "refused", a.agent);
+      assert.equal(a.call, null, a.agent);
+      assert.deepEqual(a.strategy_check.violations.map((v) => v.code), ["SOFT_OFF_REFERENCE"], a.agent);
+      assert.equal(a.reference.max_reference_deviation_bps, 100);
+      assert.equal(a.reference.pair_kind, "stable");
+      assert.ok(a.reference.reference_deviation_bps > 18_000_000, `${a.agent}: ${a.reference.reference_deviation_bps}`);
+    }
+    const chaotic = plan.agents.find((a) => a.agent === "chaotic");
+    assert.deepEqual(chaotic.reference, { reference_deviation_bps: null, max_reference_deviation_bps: null, pair_kind: null, unpriced_token: "rft" });
+    assert.equal(plan.signed, false);
+    assert.equal(plan.sent, false);
+    const html = readFileSync(join(dir, "index.html"), "utf8");
+    assert.ok(html.includes("quote +18590000 bps vs mock_usd_price reference (limit 100 bps, stable pair: OFF REFERENCE)"));
+    assert.ok(html.includes("SOFT_OFF_REFERENCE: pool 1 quote is +18590000 bps off the reference price"));
   });
 
   it("writes exactly plan.json, calls.json and index.html", () => {
@@ -102,7 +130,7 @@ describe("yield:demo default run", () => {
     assert.equal(by.chaotic.veto.by, "skeptic");
     const refused = by["yield-optimizer"].candidates.filter((c) => c.status === "refused").map((c) => c.rule_check.reason);
     assert.deepEqual(refused, ["ERR_NO_LIMIT: no limit for dai.fixture.testnet", "ERR_POOL_NOT_ALLOWED: pool 99"]);
-    assert.equal(plan.calls_planned, 4);
+    assert.equal(plan.calls_planned, 1);
     assert.equal(plan.calls_signed, 0);
     assert.equal(plan.calls_sent, 0);
   });
@@ -114,7 +142,9 @@ describe("yield:demo default run", () => {
     assert.equal(calls.sent, false);
     const executing = plan.agents.filter((a) => a.outcome === "execute").map((a) => a.agent);
     assert.deepEqual(calls.calls.map((c) => c.agent), executing);
-    assert.equal(calls.calls.length, 4);
+    assert.equal(calls.calls.length, 1);
+    assert.deepEqual(calls.calls.map((c) => c.agent), ["yield-optimizer"]);
+    assert.ok(calls.calls.every((c) => c.args.proposal.pool_id !== 1), "no execute_swap on the off-peg pool 1");
 
     const fixture = loadPoolFixture();
     const { states } = createLedger({ fixture });
@@ -158,16 +188,16 @@ describe("yield:demo default run", () => {
     assert.deepEqual(at, [...at].sort((a, b) => a - b), "scenario order");
     assert.match(summary, /\(spent today 1501\)/);
     assert.match(summary, /\(vault paused\)/);
-    assert.match(summary, /^4 unsigned execute_swap calls planned, 0 signed, 0 sent$/m);
+    assert.match(summary, /^1 unsigned execute_swap call planned, 0 signed, 0 sent$/m);
   });
 
   it("plan.json records the rule scenarios and they add no calls", () => {
     const plan = readJson(join(dir, "plan.json"));
     assert.equal(plan.rule_rejections, 4);
-    assert.equal(plan.calls_planned, 4);
+    assert.equal(plan.calls_planned, 1);
     assert.deepEqual(plan.rule_scenarios.scenarios.map((s) => s.id), ["max_trade", "daily_cap", "price_floor", "paused"]);
     assert.ok(plan.rule_scenarios.scenarios.every((s) => s.outcome === "rejected" && s.matches_contract === true));
-    assert.equal(readJson(join(dir, "calls.json")).calls.length, 4);
+    assert.equal(readJson(join(dir, "calls.json")).calls.length, 1);
   });
 
   it("is byte-identical across runs", () => {
@@ -198,8 +228,8 @@ describe("yield:demo --calls and --json", () => {
     assert.doesNotMatch(r.stdout, /== details ==|YIELD DEMO|vault rules/);
     const ref = readJson(join(work, "default", "calls.json"));
     for (const c of ref.calls) assert.ok(r.stdout.includes(`args: ${JSON.stringify(c.args)}`), c.agent);
-    assert.equal((r.stdout.match(/^ {2}signed: false$/gm) ?? []).length, 4);
-    assert.equal((r.stdout.match(/^ {2}sent: false$/gm) ?? []).length, 4);
+    assert.equal((r.stdout.match(/^ {2}signed: false$/gm) ?? []).length, ref.calls.length);
+    assert.equal((r.stdout.match(/^ {2}sent: false$/gm) ?? []).length, ref.calls.length);
     assert.match(r.stdout, /^ {2}method: execute_swap$/m);
     assert.equal(existsSync(dir), false);
     assert.doesNotMatch(r.stdout, /index\.html/);
@@ -234,7 +264,7 @@ describe("yield:demo stays offline and keyless", () => {
   it("runs with no HOME and an empty env", () => {
     const r = run(["--out", join(work, "env-b")], { env: {} });
     assert.equal(r.code, 0, r.stderr);
-    assert.match(r.stdout, /4 unsigned execute_swap calls planned, 0 signed, 0 sent/);
+    assert.match(r.stdout, /1 unsigned execute_swap call planned, 0 signed, 0 sent/);
   });
 
   it("refuses NEAR_NETWORK=mainnet and writes nothing", () => {
