@@ -17,6 +17,14 @@ export const TESTNET_ED25519_ROOT = 'ed25519:6vSEtQxrQj6txUMh33WC4ERyCWmNMRTdufD
 const PLACEHOLDER_BLOCK_HASH = new Uint8Array(32); // live: block.header.hash from RPC
 const PLACEHOLDER_NONCE = 1n; // live: access key nonce + 1
 
+export const DEFAULT_ACCOUNTS = { agent: 'yield-agent.testnet', executor: 'yield-executor.testnet', vault: 'yield-vault.testnet' };
+export const PLACEHOLDER_LABEL = '(placeholder, not deployed)';
+export const USER_SUPPLIED_LABEL = '(user-supplied, not checked on chain)';
+export const NOTICE = 'DRY RUN. The agent, executor and vault accounts below are invented placeholders that do not exist on testnet; '
+  + 'the nonces and block hash are placeholders too. Real: the MPC signer contract and wrap.testnet. Nothing is sent.';
+
+const accountLabel = (role, id) => (id === DEFAULT_ACCOUNTS[role] ? PLACEHOLDER_LABEL : USER_SUPPLIED_LABEL);
+
 export function plan({ agent, path, executor, vault, root = TESTNET_ED25519_ROOT }) {
   const derivedKey = deriveEd25519PublicKey(root, agent, path);
   const swapArgs = { token_in: 'wrap.testnet', token_out: 'usdc.fakes.testnet', amount_in: '1000', min_amount_out: '990' };
@@ -27,15 +35,29 @@ export function plan({ agent, path, executor, vault, root = TESTNET_ED25519_ROOT
   });
   const swapHash = sha256(swapTx);
   return {
+    notice: NOTICE,
     dryRun: true,
     mpcContract: MPC_CONTRACT_TESTNET,
+    mpcContractStatus: '(real testnet contract, view calls captured in spikes/shade/evidence/testnet-mpc-views.txt)',
+    accountStatus: {
+      agent: `${agent} ${accountLabel('agent', agent)}`,
+      executor: `${executor} ${accountLabel('executor', executor)}`,
+      vault: `${vault} ${accountLabel('vault', vault)}`,
+      'wrap.testnet': '(real testnet contract)',
+      'usdc.fakes.testnet': '(testnet token id used in the example swap; not verified in spikes/shade/evidence)',
+    },
+    nonceStatus: {
+      addKeyAccessKeyNonce: '0 (placeholder, not read from chain)',
+      swapTxNonce: `${PLACEHOLDER_NONCE} (placeholder, not read from chain; live: signer access-key nonce + 1)`,
+      blockHash: '32 zero bytes (placeholder; live: block.header.hash from RPC)',
+    },
     derivation: { predecessor: agent, path, domainId: 1, rootKey: root, derivedKey },
     // One-time setup, signed by whoever owns `executor` today (a human or the factory that creates it).
     addKey: {
-      signerId: executor, receiverId: executor,
+      signerId: executor, receiverId: executor, accessKeyNonce: '0 (placeholder)',
       action: { type: 'AddKey', publicKey: derivedKey, permission: { allowance: null, receiverId: vault, methodNames: ['execute_swap'] } },
     },
-    swap: { signerId: executor, receiverId: vault, method: 'execute_swap', args: swapArgs, txSha256Base58: base58Encode(swapHash) },
+    swap: { signerId: executor, receiverId: vault, txNonce: `${PLACEHOLDER_NONCE} (placeholder)`, method: 'execute_swap', args: swapArgs, txSha256Base58: base58Encode(swapHash) },
     // What the agent contract sends: `sign` on the MPC contract, 1 yocto, >= 15 Tgas.
     mpcSignCall: {
       receiverId: MPC_CONTRACT_TESTNET, method: 'sign', depositYocto: String(SIGN_DEPOSIT_YOCTO),
@@ -68,6 +90,7 @@ if (isMain()) {
     if (args.help) {
       console.log('usage: node spikes/shade/dry-run.mjs [--agent <id>] [--path <p>] [--executor <id>] [--vault <id>]\nPrints the plan as JSON. Sends nothing.');
     } else {
+      console.error(`dry-run: ${NOTICE}`); // header on stderr so stdout stays pure JSON
       console.log(JSON.stringify(plan(args), null, 2));
     }
   } catch (e) {

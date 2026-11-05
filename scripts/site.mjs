@@ -22,7 +22,7 @@ export function parseArgs(argv) {
   const flag = argv.find((a) => a.startsWith("-"));
   if (flag !== undefined) throw new Error(`unknown argument ${JSON.stringify(flag)}; the only argument is an output directory`);
   if (argv.length > 1) throw new Error(`expected one output directory, got ${argv.length} arguments`);
-  if (argv.length === 1 && argv[0] === "") throw new Error('output directory must not be empty, got ""');
+  if (argv.length === 1 && argv[0].trim() === "") throw new Error('output directory must not be empty, got ""');
   return { dir: argv[0] ?? DEFAULT_SITE_DIR };
 }
 

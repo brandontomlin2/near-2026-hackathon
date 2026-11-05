@@ -30,18 +30,18 @@ function parseArgs(argv) {
       const pattern = flag === "--seed" ? /^(0|[1-9][0-9]*)$/ : /^[1-9][0-9]*$/;
       if (value === undefined || !pattern.test(value) || !Number.isSafeInteger(Number(value))) {
         const kind = flag === "--seed" ? "a non-negative integer" : "a positive integer";
-        throw new Error(`${flag} must be ${kind}, got ${JSON.stringify(value)}`);
+        throw new Error(`${flag} must be ${kind}, got ${value === undefined ? "no value" : JSON.stringify(value)}`);
       }
       if (flag !== "--seed" && Number(value) > MAX_ROUNDS) throw new Error(`${flag} must be at most ${MAX_ROUNDS}, got ${value}`);
       opts[flag.slice(2)] = Number(value);
       i++;
     } else if (flag === "--style") {
-      if (!value || value.startsWith("-")) throw new Error(`--style needs a name, got ${JSON.stringify(value)}`);
+      if (!value || value.startsWith("-")) throw new Error(`--style needs a name, got ${value === undefined ? "no value" : JSON.stringify(value)}`);
       getStyle(value); // throws "unknown style" with the valid names
       opts.style = value;
       i++;
     } else if (flag === "--out") {
-      if (!value || value.startsWith("-")) throw new Error(`--out needs a directory, got ${JSON.stringify(value)}`);
+      if (!value || value.startsWith("-")) throw new Error(`--out needs a directory, got ${value === undefined ? "no value" : JSON.stringify(value)}`);
       opts.out = value;
       i++;
     } else {
@@ -119,6 +119,10 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
   } catch (error) {
     if (error.code === "ENOTDIR" || error.code === "EEXIST") {
       console.error(`${name}: cannot write to ${JSON.stringify(opts.out)}: it, or a parent, is a file, not a directory. Pass a directory path that is free or does not exist yet (see --help)`);
+      return 1;
+    }
+    if (error.code === "EACCES" || error.code === "EPERM" || error.code === "EROFS") {
+      console.error(`${name}: cannot write to ${JSON.stringify(opts.out)}: permission denied or read-only. Pass a directory you can write to (see --help)`);
       return 1;
     }
     console.error(`${name}: ${error.message}`);

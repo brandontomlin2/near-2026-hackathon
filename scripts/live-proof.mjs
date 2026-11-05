@@ -215,14 +215,14 @@ function parseArgs(argv) {
     else if (a === "--update-example") opts.updateExample = true;
     else if (a === "--out") {
       const value = argv[i + 1];
-      if (!value || value.startsWith("-")) throw new UsageError(`--out needs a file path, got ${JSON.stringify(value)}`);
+      if (!value || value.startsWith("-")) throw new UsageError(`--out needs a file path, got ${value === undefined ? "no value" : JSON.stringify(value)}`);
       opts.out = value;
       opts.outLabel = OUT_LABELS.custom;
       i += 1;
       opts.outGiven = true;
     } else if (a === "--media-base") {
       const value = argv[i + 1];
-      if (!value || value.startsWith("-")) throw new UsageError(`--media-base needs a value, got ${JSON.stringify(value)}`);
+      if (!value || value.startsWith("-")) throw new UsageError(`--media-base needs a value, got ${value === undefined ? "no value" : JSON.stringify(value)}`);
       opts.mediaBase = validateMediaBase(value);
       i += 1;
     } else if (a === "-h" || a === "--help") opts.help = true;

@@ -40,6 +40,12 @@ export function canonicalJson(value) {
       if (Array.isArray(value)) {
         return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
       }
+      const proto = Object.getPrototypeOf(value);
+      if (proto !== Object.prototype && proto !== null) {
+        throw new HashError("canonicalJson: only plain objects and arrays can be hashed", {
+          code: "bad_json",
+        });
+      }
       const keys = Object.keys(value).sort();
       const parts = keys.map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`);
       return `{${parts.join(",")}}`;
@@ -56,6 +62,9 @@ export function canonicalJson(value) {
  * @returns {string} lowercase 64-char hex SHA-256 of the UTF-8 bytes
  */
 export function sha256Hex(text) {
+  if (typeof text !== "string") {
+    throw new HashError("sha256Hex: text must be a string", { code: "bad_text" });
+  }
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
