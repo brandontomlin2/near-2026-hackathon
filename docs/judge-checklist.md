@@ -30,7 +30,10 @@ bash scripts/fresh-clone-test.sh --allow-empty   # no judge:run blocks is SKIP, 
 ```
 
 It clones to a temp dir, checks `LICENSE` and `README.md`, runs `npm ci`,
-then runs the README blocks marked runnable. Only committed work is tested;
+walks the offline README judge path with `scripts/fresh-clone-judge-path.mjs`
+(demo, ask, anchors, attest:check, swarm, render; every quoted string must
+appear in both the README and the command output, and a failure names the
+drifted side), then runs the README blocks marked runnable. Only committed work is tested;
 uncommitted changes print a warning. It prints a PASS/FAIL/SKIP table and
 exits non-zero if any row is FAIL. The temp dir is removed at the end.
 
