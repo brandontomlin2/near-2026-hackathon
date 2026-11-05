@@ -25,7 +25,7 @@ export class HashError extends Error {
  * @param {unknown} value
  * @returns {string}
  */
-export function canonicalJson(value) {
+export function canonicalJson(value, path = new Set()) {
   if (value === null) return "null";
   switch (typeof value) {
     case "string":
@@ -37,12 +37,28 @@ export function canonicalJson(value) {
       }
       return JSON.stringify(value);
     case "object": {
-      if (Array.isArray(value)) {
-        return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
+      if (path.has(value)) {
+        throw new HashError("canonicalJson: cyclic value", { code: "bad_json" });
       }
-      const keys = Object.keys(value).sort();
-      const parts = keys.map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`);
-      return `{${parts.join(",")}}`;
+      path.add(value);
+      let out;
+      if (Array.isArray(value)) {
+        // Array.from visits holes as undefined, so a sparse array throws bad_json
+        // instead of rendering "[1,,3]" (map skips holes).
+        out = `[${Array.from(value, (item) => canonicalJson(item, path)).join(",")}]`;
+      } else {
+        const proto = Object.getPrototypeOf(value);
+        if (proto !== Object.prototype && proto !== null) {
+          throw new HashError("canonicalJson: only plain objects and arrays can be hashed", {
+            code: "bad_json",
+          });
+        }
+        const keys = Object.keys(value).sort();
+        const parts = keys.map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key], path)}`);
+        out = `{${parts.join(",")}}`;
+      }
+      path.delete(value);
+      return out;
     }
     default:
       throw new HashError(`canonicalJson: unsupported type ${typeof value}`, {
@@ -56,6 +72,9 @@ export function canonicalJson(value) {
  * @returns {string} lowercase 64-char hex SHA-256 of the UTF-8 bytes
  */
 export function sha256Hex(text) {
+  if (typeof text !== "string") {
+    throw new HashError("sha256Hex: text must be a string", { code: "bad_text" });
+  }
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
 

@@ -6,13 +6,13 @@
 
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { runSwarm, verifyRounds } from "../swarm/runner.mjs";
+import { MAX_ROUNDS, runSwarm, verifyRounds } from "../swarm/runner.mjs";
 import { AGENTS } from "../traits/agents.mjs";
 import { createMemoryStore, maybeSummarize } from "../memory/summarizer.mjs";
 import { createMockClient } from "../inference/client.mjs";
 import { getStyle } from "../art/styles/index.mjs";
 import { moodForText } from "../art/moods.mjs";
-import { prepareAnchor, submitAnchor } from "../anchor/anchor.mjs";
+import { isValidAccountId, AnchorError, prepareAnchor, submitAnchor } from "../anchor/anchor.mjs";
 import { sheetResponder } from "../memory/sheet-responder.mjs";
 import { renderDemoPage } from "./page.mjs";
 import { renderShareCard } from "./share.mjs";
@@ -48,6 +48,8 @@ export async function runDemo({
   swarmClient,
   sheetClient,
 } = {}) {
+  if (!Number.isInteger(rounds) || rounds < 1 || rounds > MAX_ROUNDS) throw new RangeError(`rounds must be an integer from 1 to ${MAX_ROUNDS}`);
+  if (!isValidAccountId(contractId)) throw new AnchorError("contractId is not a valid NEAR account id", { code: "bad_config" });
   if (!Number.isInteger(every) || every < 1 || every > rounds) {
     throw new RangeError(`every must be between 1 and rounds (${rounds}), got ${every}; otherwise no sheet is written`);
   }
