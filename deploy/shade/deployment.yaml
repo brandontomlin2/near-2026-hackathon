@@ -1,0 +1,59 @@
+# ============================================================================
+# NOT DEPLOYED. NOT BUILT. NOT PUSHED anywhere. Draft for review.
+# Deploying needs the owner's (Brandon's) explicit yes. All values are placeholders.
+# See docs/yield-shade-agent-plan.md.
+# ============================================================================
+# Manifest shape taken from https://raw.githubusercontent.com/NearDeFi/shade-agent-template/main/deployment.yaml
+# UNCONFIRMED: the CLI reference (docs/reference/cli.md in NearDeFi/shade-agent-framework) describes a
+# `tee_config.phala` schema instead of `deploy_to_phala`; which one the current shade-agent-cli accepts is not
+# confirmed. Run `shade plan` before anything else. The framework is deprecated since 2026-04-19:
+# https://docs.near.org/ai/shade-agents/introduction
+environment: local            # local | TEE. Keep local until the owner says otherwise.
+network: testnet
+docker_compose_path: ./docker-compose.yaml
+
+agent_contract:
+  contract_id: REPLACE_ME.testnet   # must be a unique, unused account
+  deploy_custom:
+    enabled: true
+    funding_amount: 8               # NEAR testnet, template default
+    delete_key: false
+    deploy_from_source:
+      enabled: true
+      # UNCONFIRMED: ./agent-contract does not exist in this repo (would be copied from shade-contract-template).
+      source_path: ./agent-contract
+      reproducible_build: false
+    init:
+      enabled: true
+      method_name: new
+      args:
+        requires_tee: false          # true for TEE; local mode only
+        attestation_expiration_time_ms: 604800000   # 7 days, template value
+        owner_id: REPLACE_ME.testnet
+        mpc_contract_id: v1.signer-prod.testnet     # testnet, per shade-contract-template lib.rs comment
+    approve_measurements:
+      enabled: true
+      method_name: approve_measurements
+      # UNCONFIRMED: the CLI fills real values in TEE mode from the compose file.
+    approve_ppids:
+      enabled: true
+      method_name: approve_ppids
+
+build_docker_image:
+  enabled: false                    # TEE only. Needs docker login and a push: owner's yes.
+  tag: REPLACE_ME/yield-shade-agent
+  cache: true
+  dockerfile_path: ./Dockerfile
+  reproducible_build: false
+
+deploy_to_phala:
+  enabled: false                    # TEE only. Needs Phala API key and spend: owner's yes.
+  app_name: yield-shade-agent
+  env_file_path: ./.env
+  dstack_version: 0.5.8             # 0.5.7 or 0.5.8 per cli.md
+  instance_type: tdx.small
+  public_logs: false
+  public_sysinfo: false
+
+whitelist_agent_for_local:
+  method_name: whitelist_agent_for_local

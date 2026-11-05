@@ -239,3 +239,14 @@ Open (not fixed). Severity is the impact on funds if the item happens, not its l
 - Info, the off-chain JS and Rust rule order and the JS side of the rules are outside this contract and are covered elsewhere in the repository, not here.
 
 Not deployed. No professional audit. Any deploy, funding or mainnet use needs the owner's explicit approval.
+
+---
+
+## Proposal, not built: the runner as a Shade Agent (chain signatures)
+
+Separate from everything above, and not part of the demo. It is a dry-run plan for an open go/no-go decision. Nothing here is deployed, signed or sent.
+
+- **Idea:** the runner account that calls `execute_swap` holds no private key of ours. Its access key is a function-call key (receiver = this vault, method = `execute_swap`) whose public key is derived by the NEAR MPC network (`v1.signer-prod.testnet`, ed25519, domain 1) for a Shade agent contract. The vault does not change. The owner still authorizes the runner with `add_runner` and still revokes it with `revoke_runner` / `revoke_all_runners`. `DeleteKey` on the runner account is a second, independent kill switch.
+- **Plan, sources, confirmed/unconfirmed table and go/no-go:** `docs/yield-shade-agent-plan.md`. The Shade Agent Framework has been unmaintained since 2026-04-19 (https://docs.near.org/ai/shade-agents/introduction).
+- **Try it offline:** `npm run yield:shade:dry-run` (add `-- --json` for JSON) prints the unsigned `add_runner`, `AddKey`, `execute_swap` transaction and MPC `sign` request, with `dry_run: true, signed: false, sent: false`. Tests: `node --test src/yield/shade/*.test.mjs scripts/yield-shade-dry-run.test.mjs spikes/shade/*.test.mjs`.
+- **Deploy drafts:** `deploy/shade/` contains files that have never been built, pushed or deployed.

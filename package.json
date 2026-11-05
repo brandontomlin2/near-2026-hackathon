@@ -23,6 +23,7 @@
     "yield": "node scripts/yield.mjs",
     "yield:demo": "node scripts/yield-demo.mjs",
     "yield:demo:check": "node scripts/yield-demo-check.mjs",
+    "yield:shade:dry-run": "node scripts/yield-shade-dry-run.mjs",
     "yield:live:dry-run": "node scripts/yield-live.mjs dry-run",
     "yield:live:preflight": "node scripts/yield-live.mjs preflight",
     "screenshot": "node scripts/screenshot.mjs",
