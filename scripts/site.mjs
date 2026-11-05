@@ -38,7 +38,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.log(USAGE);
   } else if (opts) {
     const code = await buildSite(opts.dir);
-    if (code === 0) console.log(`\nSite ready: ${opts.dir}/index.html (open it, or upload the folder to a static host; see docs/hosting.md)`);
+    // Drop trailing slashes so "out/site/" does not print "out/site//index.html".
+    if (code === 0) console.log(`\nSite ready: ${opts.dir.replace(/([^/])\/+$/, "$1")}/index.html (open it, or upload the folder to a static host; see docs/hosting.md)`);
     process.exitCode = code;
   }
 }

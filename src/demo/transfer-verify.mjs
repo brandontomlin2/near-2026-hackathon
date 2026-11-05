@@ -90,7 +90,7 @@ export function buildTransfer(agents, anchors, { contractId, mode }) {
   // Tamper example comes from the first token actually emitted, so an agent
   // skipped for lacking an anchor cannot break it.
   const first = tokens.find((k) => k.anchoredHash !== "");
-  const firstAgent = first && agents.find((a) => a.id === first.tokenId);
+  const firstAgent = first && agents.find((a) => a.id === first.tokenId && a.sheets?.at(-1));
   const tamperedSheet = first ? tamperSheet(firstAgent.sheets.at(-1).sheet) : null;
   const tamper = first
     ? {
