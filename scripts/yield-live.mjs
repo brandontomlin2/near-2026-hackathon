@@ -248,7 +248,8 @@ async function preflight(opts, { log, fetch: fetchFn }) {
       const rpc = createRpc({ url: opts.rpc, fetch: fetchFn });
       const online = await onlineChecks(config, plan, rpc);
       for (const c of online) add(c.status, c.name, c.detail);
-      add("PASS", "online requests", `${rpc.requests} read-only RPC requests to ${opts.rpc}`);
+      // Origin only: a provider URL may carry an API key in its path, query or userinfo.
+      add("PASS", "online requests", `${rpc.requests} read-only RPC requests to ${new URL(opts.rpc).origin}`);
     }
   }
   if (plan) {

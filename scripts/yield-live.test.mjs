@@ -288,9 +288,8 @@ async function online(argv, fetch) {
   return { code, stdout: out.join("\n"), stderr: errs.join("\n") };
 }
 
-test("preflight --online uses only the injected fetch, with read-only bodies", async () => {
-  const seen = [];
-  const fetch = async (url, init) => {
+function fakeRpc(seen) {
+  return async (url, init) => {
     const body = JSON.parse(init.body);
     seen.push({ url, body });
     if (body.params.request_type === "view_account") return { ok: true, status: 200, json: async () => ({ result: { code_hash: "5Uk3VqDvSyGkS5pE8eWqjR9zVfXk2QxJf8cYhFZ9pQd1", amount: "1" } }) };
@@ -302,7 +301,11 @@ test("preflight --online uses only the injected fetch, with read-only bodies", a
     };
     return { ok: true, status: 200, json: async () => ({ result: { result: [...Buffer.from(JSON.stringify(answers[body.params.method_name]))] } }) };
   };
-  const r = await online(["preflight", "--online", "--json"], fetch);
+}
+
+test("preflight --online uses only the injected fetch, with read-only bodies", async () => {
+  const seen = [];
+  const r = await online(["preflight", "--online", "--json"], fakeRpc(seen));
   assert.equal(r.code, 0, r.stderr);
   assert.ok(seen.length > 5 && seen.length <= 20);
   for (const s of seen) {
@@ -314,6 +317,17 @@ test("preflight --online uses only the injected fetch, with read-only bodies", a
   const doc = JSON.parse(r.stdout);
   assert.equal(doc.checks.find((c) => c.name === "online: Ref exchange has code").status, "PASS");
   assert.match(doc.checks.find((c) => c.name === "online requests").detail, /^\d+ read-only RPC requests to https:\/\/test\.rpc\.fastnear\.com/);
+});
+
+test("preflight --online prints only the RPC origin, never a credential in the URL", async () => {
+  const sentinel = "apikeyVLIVE64sentinel";
+  const seen = [];
+  const url = `https://user:${sentinel}@rpc.example.test/v1/${sentinel}?token=${sentinel}`;
+  const r = await online(["preflight", "--online", "--rpc", url], fakeRpc(seen));
+  assert.equal(r.code, 0, r.stderr);
+  assert.ok(seen.length > 0);
+  assert.ok(!r.stdout.includes(sentinel) && !r.stderr.includes(sentinel), "credential leaked into output");
+  assert.match(r.stdout, /read-only RPC requests to https:\/\/rpc\.example\.test\b/);
 });
 
 test("preflight without --online never calls fetch", async () => {
