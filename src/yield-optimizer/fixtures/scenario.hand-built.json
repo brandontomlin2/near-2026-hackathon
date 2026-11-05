@@ -1,32 +1,40 @@
 {
-  "source": "hand-built fixture shaped like Rhea testnet get_pool views; not fetched, prices are fixture values",
+  "_source": "hand-built test scenario, not fetched from any network",
+  "_note": "Hand-built, not fetched, test-only. Every id is in the *.fixture.testnet namespace and every price is invented. Pool 17 is deliberately priced about 2% above the mock reference so the planner has an edge to find; this is NOT the yield:demo market (that is src/yield/fixtures/ref-testnet-pools.json). Same shape as that file plus a vault section and a clock.",
   "exchange": "ref-finance-101.testnet",
   "taken_at": "2026-11-04T12:00:00Z",
   "tokens": {
-    "wrap.testnet": { "symbol": "wNEAR", "decimals": 24, "price_usd": "3.10" },
-    "usdc.fixture.testnet": { "symbol": "USDC", "decimals": 6, "price_usd": "1.00" },
-    "dai.fixture.testnet": { "symbol": "DAI", "decimals": 18, "price_usd": "1.00" }
+    "wnear.fixture.testnet": { "decimals": 24, "stable": false, "mock_usd_price": "3.10" },
+    "usdc.fixture.testnet": { "decimals": 6, "stable": true, "mock_usd_price": "1.00" },
+    "dai.fixture.testnet": { "decimals": 18, "stable": true, "mock_usd_price": "1.00" },
+    "ghost.fixture.testnet": { "decimals": 8, "stable": false, "mock_usd_price": null }
   },
   "pools": [
     {
       "pool_id": 17,
       "pool_kind": "SIMPLE_POOL",
-      "token_account_ids": ["wrap.testnet", "usdc.fixture.testnet"],
-      "amounts": ["50000000000000000000000000000", "158000000000"],
+      "token_a": "wnear.fixture.testnet",
+      "token_b": "usdc.fixture.testnet",
+      "reserve_a": "50000000000000000000000000000",
+      "reserve_b": "158000000000",
       "total_fee": 30
     },
     {
       "pool_id": 23,
       "pool_kind": "SIMPLE_POOL",
-      "token_account_ids": ["usdc.fixture.testnet", "dai.fixture.testnet"],
-      "amounts": ["100000000000", "98000000000000000000000"],
+      "token_a": "usdc.fixture.testnet",
+      "token_b": "dai.fixture.testnet",
+      "reserve_a": "100000000000",
+      "reserve_b": "98000000000000000000000",
       "total_fee": 5
     },
     {
       "pool_id": 99,
       "pool_kind": "SIMPLE_POOL",
-      "token_account_ids": ["wrap.testnet", "usdc.fixture.testnet"],
-      "amounts": ["100000000000000000000000000000", "325000000000"],
+      "token_a": "wnear.fixture.testnet",
+      "token_b": "usdc.fixture.testnet",
+      "reserve_a": "100000000000000000000000000000",
+      "reserve_b": "325000000000",
       "total_fee": 30
     }
   ],
@@ -38,7 +46,7 @@
       "allowed_pools": [
         {
           "pool_id": 17,
-          "token_a": "wrap.testnet",
+          "token_a": "wnear.fixture.testnet",
           "token_b": "usdc.fixture.testnet",
           "min_rate_a_to_b": { "num": "3000000", "den": "1000000000000000000000000" },
           "min_rate_b_to_a": { "num": "300000000000000000", "den": "1" }
@@ -53,7 +61,7 @@
       ],
       "limits": [
         {
-          "token_id": "wrap.testnet",
+          "token_id": "wnear.fixture.testnet",
           "max_trade": "200000000000000000000000000",
           "daily_cap": "500000000000000000000000000"
         },
@@ -70,9 +78,9 @@
       "swap_in_flight": false,
       "recovery_in_flight": false,
       "day": 20761,
-      "spent_today": [["wrap.testnet", "100000000000000000000000000"]],
+      "spent_today": [["wnear.fixture.testnet", "100000000000000000000000000"]],
       "balances": [
-        ["wrap.testnet", "1000000000000000000000000000"],
+        ["wnear.fixture.testnet", "1000000000000000000000000000"],
         ["usdc.fixture.testnet", "500000000"],
         ["dai.fixture.testnet", "300000000000000000000"]
       ]

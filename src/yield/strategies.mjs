@@ -118,15 +118,10 @@ export function limitFor(config, tokenId) {
   return (config.limits ?? []).find((l) => l.token_id === tokenId);
 }
 
-/**
- * Example VaultConfig (v2) for an agent (mirrors the contract's VaultConfig).
- * @returns {{ strategy: string, allowed_pools: object[], limits: object[], runners: string[] }}
- */
-export function defaultVaultConfig(agentId, { runner = PLACEHOLDER_RUNNER, fixture = loadPoolFixture() } = {}) {
-  strategyFor(agentId);
-  const c = CONFIG_TABLE[agentId];
+/** The VaultConfig (v2) JSON for a strategy name, a table row ({ pools, limits }) and a runner. */
+function buildVaultConfig(strategy, c, { runner, fixture }) {
   return {
-    strategy: agentId,
+    strategy,
     allowed_pools: c.pools.map((id) => {
       const pair = POOL_PAIRS[id];
       const pool = poolById(id, fixture);
@@ -135,6 +130,28 @@ export function defaultVaultConfig(agentId, { runner = PLACEHOLDER_RUNNER, fixtu
     limits: Object.entries(c.limits).map(([token_id, [max, cap]]) => ({ token_id, max_trade: toBaseUnits(max, token_id, fixture), daily_cap: toBaseUnits(cap, token_id, fixture) })),
     runners: [runner],
   };
+}
+
+/**
+ * Example VaultConfig (v2) for an agent (mirrors the contract's VaultConfig).
+ * @returns {{ strategy: string, allowed_pools: object[], limits: object[], runners: string[] }}
+ */
+export function defaultVaultConfig(agentId, { runner = PLACEHOLDER_RUNNER, fixture = loadPoolFixture() } = {}) {
+  strategyFor(agentId);
+  return buildVaultConfig(agentId, CONFIG_TABLE[agentId], { runner, fixture });
+}
+
+// The Yield Optimizer planner is a rule-based fifth agent, not a fifth contract strategy: the
+// vault's validate_config accepts only the four strategy names, so its vault config carries
+// the closest one (aloof: a price-disciplined, small-size trader) and the planner's own
+// identity lives in the plan ("agent": "yield-optimizer"). Pools 0 and 1 are the two pools
+// the personality vaults can use; the floors come from the same floorRate maths.
+export const PLANNER_STRATEGY = "aloof";
+const PLANNER_TABLE = { pools: [0, 1], limits: { [WNEAR]: ["1", "2"], [RFT]: ["10", "20"], [NUSDT]: ["0.01", "0.02"], [NUSDC]: ["1", "2"] } };
+
+/** VaultConfig (v2) for the Yield Optimizer planner's vault: pools 0 and 1, limits for wrap, rft, nusdt and nusdc. */
+export function plannerVaultConfig({ runner = PLACEHOLDER_RUNNER, fixture = loadPoolFixture() } = {}) {
+  return buildVaultConfig(PLANNER_STRATEGY, PLANNER_TABLE, { runner, fixture });
 }
 
 /** The strategy block that goes into the NFT's token metadata `extra` JSON. */

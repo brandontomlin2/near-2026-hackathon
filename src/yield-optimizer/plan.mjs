@@ -1,16 +1,23 @@
 // Yield Optimizer: the fifth personality. DRY RUN ONLY.
 //
-// Reads a snapshot (snapshot.mjs), finds the pool whose price beats the
-// reference price by the most, sizes a trade, clips it to the vault's limits,
-// runs the vault's own check_rules mirror (src/yield/rules.mjs) as the final gate, and
-// returns a plan: hold, or one `execute_swap` call with its exact args.
+// Reads a snapshot (snapshot.mjs: by default the same Ref testnet pools the four
+// personality agents trade on), finds the pool whose price beats the mock reference
+// price by the most, sizes a trade, clips it to the vault's limits, runs the vault's
+// own check_rules mirror (src/yield/rules.mjs) as the final gate, and returns a plan:
+// hold, or one `execute_swap` call with its exact args. Quotes come from
+// src/yield/pools.mjs; the rules are src/yield/rules.mjs; this file holds neither copy.
+// A reference guard keeps junk pools out: a pool whose spot price is far from the
+// reference (max_ref_deviation_bps) is `off_reference` and is never chosen, and a token
+// with no mock reference price makes its candidates `no_reference_price`.
 // It never signs, never sends, never reads keys and never uses the network.
 
+import { EXECUTE_SWAP_GAS_CLI, EXECUTE_SWAP_TGAS } from "../yield/gas.mjs";
+import { otherToken, quoteOut } from "../yield/pools.mjs";
 import { checkProposal, dayOf, spentOn } from "../yield/rules.mjs";
 import { rulesView } from "./snapshot.mjs";
 
-/** lib.rs `MIN_EXECUTE_GAS` (280 TGas), checked by `execute_swap` after `check_rules`. */
-export const MIN_EXECUTE_GAS_TGAS = 280;
+/** The execute_swap prepaid gas, from the one source (src/yield/gas.mjs), in TGas. */
+export const MIN_EXECUTE_GAS_TGAS = EXECUTE_SWAP_TGAS;
 
 export const DRY_RUN_NOTICE = "DRY RUN: nothing was signed or sent.";
 
@@ -26,18 +33,12 @@ export const DEFAULTS = Object.freeze({
   min_edge_bps: 25,
   /** Share of the token_in balance the agent wants to move in one trade, before clipping. */
   position_pct: 50,
+  /**
+   * Reference guard: a pool whose spot price (reserves, before fee) is further than this from
+   * the mock reference price ratio is junk or stale, not an opportunity. It is never chosen.
+   */
+  max_ref_deviation_bps: 1000,
 });
-
-const FEE_DIVISOR = 10_000n;
-
-/**
- * Ref (Rhea) SIMPLE_POOL constant-product quote with the fee taken from the
- * input, in base units: out = in*(D-fee)*R_out / (R_in*D + in*(D-fee)), D = 10000.
- */
-export function quoteOut(amountIn, reserveIn, reserveOut, feeBps) {
-  const inWithFee = amountIn * (FEE_DIVISOR - BigInt(feeBps));
-  return (inWithFee * reserveOut) / (reserveIn * FEE_DIVISOR + inWithFee);
-}
 
 /** Base units -> number of whole tokens (display and USD maths only). */
 function toUnits(amount, decimals) {
@@ -56,12 +57,15 @@ export function formatUnits(amount, decimals, frac = 6) {
 
 const usd = (n) => n.toFixed(4);
 const signedUsd = (n) => `${n >= 0 ? "+" : "-"}$${Math.abs(n).toFixed(4)}`;
-const signedBps = (n) => `${n >= 0 ? "+" : ""}${n.toFixed(1)} bps`;
+const signedBps = (n) => `${n >= 0 ? "+" : "-"}${Math.abs(n) >= 1e9 ? Math.abs(n).toExponential(2) : Math.abs(n).toFixed(1)} bps`;
 
+/** Mock reference value of an amount in USD; 0 for a token without a reference price (callers check first). */
 function valueUsd(snap, token, amount) {
   const t = snap.tokens[token];
-  return t ? toUnits(amount, t.decimals) * t.price_usd : 0;
+  return t && t.ref_price !== null ? toUnits(amount, t.decimals) * t.ref_price : 0;
 }
+
+const hasPrice = (snap, token) => snap.tokens[token]?.ref_price != null;
 
 /** Edge of trading amountIn for amountOut against reference prices, in bps. */
 function edgeBps(snap, tokenIn, amountIn, tokenOut, amountOut) {
@@ -70,14 +74,19 @@ function edgeBps(snap, tokenIn, amountIn, tokenOut, amountOut) {
   return (valueUsd(snap, tokenOut, amountOut) / vin - 1) * 10_000;
 }
 
-/** Spot edge (an infinitesimal trade after fee) for selling `i` into the pool. */
-function spotEdgeBps(snap, pool, i) {
-  const [rin, rout] = [pool.reserves[i], pool.reserves[1 - i]];
-  const [tin, tout] = [pool.token_account_ids[i], pool.token_account_ids[1 - i]];
-  const tIn = snap.tokens[tin];
-  const tOut = snap.tokens[tout];
-  const price = (toUnits(rout, tOut.decimals) / toUnits(rin, tIn.decimals)) * (1 - pool.total_fee / 10_000);
-  return ((price * tOut.price_usd) / tIn.price_usd - 1) * 10_000;
+/**
+ * How far the pool's spot price (reserves, before fee) for selling `tokenIn` is from the
+ * mock reference price ratio, in bps; null when either token has no reference price.
+ */
+function refDeviationBps(snap, pool, tokenIn) {
+  const tokenOut = otherToken(pool, tokenIn);
+  if (!hasPrice(snap, tokenIn) || !hasPrice(snap, tokenOut)) return null;
+  const [rin, rout] = tokenIn === pool.token_a ? [pool.reserve_a, pool.reserve_b] : [pool.reserve_b, pool.reserve_a];
+  const tIn = snap.tokens[tokenIn];
+  const tOut = snap.tokens[tokenOut];
+  const spot = toUnits(rout, tOut.decimals) / toUnits(rin, tIn.decimals);
+  const ref = tIn.ref_price / tOut.ref_price;
+  return (spot / ref - 1) * 10_000;
 }
 
 /**
@@ -118,40 +127,47 @@ function proposalJson(p) {
   };
 }
 
-const STATUS_RANK = { ok: 2, below_min_edge: 1, refused: 0 };
+/** Best first. A candidate that passes everything is "ok"; the others say which gate stopped them. */
+const STATUS_ORDER = ["ok", "below_min_edge", "off_reference", "no_reference_price", "refused"];
+const STATUS_RANK = Object.fromEntries(STATUS_ORDER.map((s, i) => [s, STATUS_ORDER.length - i]));
 
 /**
  * One candidate per market pool. Both directions are sized, clipped and checked
- * against the vault rules; the best one that passes wins (so a direction the
- * vault refuses never hides the other). Ties on status go to the better spot edge.
+ * against the vault rules; the best one wins (so a direction the vault refuses never
+ * hides the other). Ties on status go to the better edge.
  */
 function evaluatePool(snap, pool, opts) {
-  const cands = [0, 1].map((i) => ({ c: evaluateDirection(snap, pool, opts, i), spot: spotEdgeBps(snap, pool, i) }));
-  cands.sort((a, b) => STATUS_RANK[b.c.status] - STATUS_RANK[a.c.status] || b.spot - a.spot);
-  return cands[0].c;
+  const cands = [pool.token_a, pool.token_b].map((token_in) => evaluateDirection(snap, pool, opts, token_in));
+  const byEdge = (a, b) => (b.edge_bps > a.edge_bps ? 1 : b.edge_bps < a.edge_bps ? -1 : 0);
+  cands.sort((a, b) => STATUS_RANK[b.status] - STATUS_RANK[a.status] || byEdge(a, b));
+  return cands[0];
 }
 
-/** One pool sold into in direction `i` (0 = first token in), sized, clipped and checked. */
-function evaluateDirection(snap, pool, opts, i) {
-  const token_in = pool.token_account_ids[i];
-  const token_out = pool.token_account_ids[1 - i];
+/** One pool sold into with `token_in`, sized, clipped and checked. Quotes come from src/yield/pools.mjs. */
+function evaluateDirection(snap, pool, opts, token_in) {
+  const token_out = otherToken(pool, token_in);
   const balance = snap.vault.state.balances.get(token_in) ?? 0n;
   const wanted = (balance * BigInt(opts.position_pct)) / 100n;
   const { amount: amount_in, clipped_by, blocked_by } = clipToLimits(snap, token_in, wanted);
-  const expected_out = quoteOut(amount_in, pool.reserves[i], pool.reserves[1 - i], pool.total_fee);
+  const expected_out = quoteOut(pool, token_in, amount_in);
   const min_amount_out = (expected_out * BigInt(10_000 - opts.slippage_bps)) / 10_000n;
   const proposal = { pool_id: pool.pool_id, token_in, token_out, amount_in, min_amount_out };
   const view = rulesView(snap);
   const { ok, reason } = checkProposal(proposal, view.config, view.state, snap.runner_id, view.nowMs);
   const check = { ok, reason };
-  const edge = edgeBps(snap, token_in, amount_in, token_out, expected_out);
+  const ref_deviation_bps = refDeviationBps(snap, pool, token_in);
+  const priced = ref_deviation_bps !== null;
+  const edge = priced ? edgeBps(snap, token_in, amount_in, token_out, expected_out) : -Infinity;
   // The worst case the vault would accept: the trade fills at exactly min_amount_out.
-  const worst = edgeBps(snap, token_in, amount_in, token_out, min_amount_out);
+  const worst = priced ? edgeBps(snap, token_in, amount_in, token_out, min_amount_out) : -Infinity;
+  const unpriced = [token_in, token_out].filter((t) => !hasPrice(snap, t));
   let status;
   if (!check.ok) status = "refused";
+  else if (!priced) status = "no_reference_price";
+  else if (Math.abs(ref_deviation_bps) > opts.max_ref_deviation_bps) status = "off_reference";
   else if (!(worst >= opts.min_edge_bps)) status = "below_min_edge";
   else status = "ok";
-  return { proposal, wanted, clipped_by, blocked_by, expected_out, edge_bps: edge, worst_edge_bps: worst, check, status };
+  return { proposal, wanted, clipped_by, blocked_by, expected_out, edge_bps: edge, worst_edge_bps: worst, ref_deviation_bps, unpriced, check, status };
 }
 
 /** Portfolio value at reference prices, over every token the vault holds that has a price. */
@@ -175,6 +191,25 @@ function pnl(snap, chosen) {
   return { hold_usd: hold, expected_usd: after(chosen.expected_out), worst_usd: after(p.min_amount_out) };
 }
 
+const STATUS_WORDS = {
+  below_min_edge: (o) => `below the ${o.min_edge_bps} bps min edge`,
+  off_reference: (o) => `off the mock reference price by more than ${o.max_ref_deviation_bps} bps`,
+  no_reference_price: () => "without a mock reference price",
+  refused: () => "refused by the vault rules",
+};
+
+/** Why nothing was chosen, naming every gate that stopped a candidate. */
+function holdReason(candidates, o) {
+  if (candidates.length === 0) return "snapshot has no pools";
+  const parts = Object.keys(STATUS_WORDS)
+    .map((st) => [st, candidates.filter((c) => c.status === st).length])
+    .filter(([, n]) => n > 0)
+    .map(([st, n]) => `${n} ${STATUS_WORDS[st](o)}`);
+  return `no pool passes every gate (${parts.join(", ")})`;
+}
+
+const finiteOrNull = (x, digits) => (Number.isFinite(x) ? Number(x.toFixed(digits)) : null);
+
 /**
  * Builds the plan. `opts` overrides DEFAULTS. Returns
  * { json, candidates, chosen } where `json` is the machine plan.
@@ -186,22 +221,25 @@ export function buildPlan(snap, opts = {}) {
   const chosen = ok[0] ?? null;
   const v = pnl(snap, chosen);
   const bps = (x) => (v.hold_usd > 0 ? ((x - v.hold_usd) / v.hold_usd) * 10_000 : 0);
-  let reason;
-  if (chosen) reason = `best edge that passes every vault rule: pool ${chosen.proposal.pool_id}`;
-  else if (candidates.length === 0) reason = "snapshot has no pools";
-  else if (candidates.some((c) => c.status === "below_min_edge")) reason = `no allowed trade beats the reference price by ${o.min_edge_bps} bps at min_amount_out`;
-  else reason = "every candidate is refused by the vault rules";
+  const reason = chosen ? `best edge that passes every vault rule and the reference guard: pool ${chosen.proposal.pool_id}` : holdReason(candidates, o);
   const json = {
     dry_run: true,
     signed: false,
     sent: false,
     notice: DRY_RUN_NOTICE,
     agent: "yield-optimizer",
-    snapshot: { exchange: snap.exchange, taken_at: snap.taken_at, source: snap.source },
+    snapshot: {
+      exchange: snap.exchange,
+      block_height: snap.block_height,
+      source: snap.source,
+      taken_at: snap.taken_at,
+      now_ms: snap.now_ms,
+      reference_prices: "mock_usd_price from the snapshot (mock reference price, not an oracle)",
+    },
     vault_id: snap.vault_id,
     runner_id: snap.runner_id,
-    utc_day: dayOf(rulesView(snap).nowMs),
-    params: { slippage_bps: o.slippage_bps, min_edge_bps: o.min_edge_bps, position_pct: o.position_pct },
+    utc_day: dayOf(snap.now_ms),
+    params: { slippage_bps: o.slippage_bps, min_edge_bps: o.min_edge_bps, position_pct: o.position_pct, max_ref_deviation_bps: o.max_ref_deviation_bps },
     decision: chosen ? "swap" : "hold",
     reason,
     // The call a runner would make. Field names match lib.rs `execute_swap(proposal: SwapProposal)`.
@@ -210,7 +248,8 @@ export function buildPlan(snap, opts = {}) {
           receiver_id: snap.vault_id,
           method_name: "execute_swap",
           args: { proposal: proposalJson(chosen.proposal) },
-          gas_tgas: MIN_EXECUTE_GAS_TGAS,
+          gas_tgas: EXECUTE_SWAP_TGAS,
+          gas: EXECUTE_SWAP_GAS_CLI,
           deposit_yocto: "0",
         }
       : null,
@@ -222,13 +261,15 @@ export function buildPlan(snap, opts = {}) {
       clipped_by: c.clipped_by,
       blocked_by: c.blocked_by,
       expected_amount_out: c.expected_out.toString(),
-      edge_bps: Number.isFinite(c.edge_bps) ? Number(c.edge_bps.toFixed(2)) : null,
-      worst_case_edge_bps: Number.isFinite(c.worst_edge_bps) ? Number(c.worst_edge_bps.toFixed(2)) : null,
+      edge_bps: finiteOrNull(c.edge_bps, 2),
+      worst_case_edge_bps: finiteOrNull(c.worst_edge_bps, 2),
+      ref_deviation_bps: finiteOrNull(c.ref_deviation_bps ?? NaN, 1),
+      unpriced_tokens: c.unpriced,
       status: c.status,
       check: c.check,
     })),
     simulated_pnl_vs_hold: {
-      basis: "snapshot reference prices; ignores gas, Ref storage and price moves after the snapshot",
+      basis: "mock reference prices (tokens without one are not valued); ignores gas, Ref storage and price moves after the snapshot",
       hold_usd: usd(v.hold_usd),
       after_swap_expected_usd: usd(v.expected_usd),
       after_swap_worst_case_usd: usd(v.worst_usd),
@@ -241,23 +282,43 @@ export function buildPlan(snap, opts = {}) {
   return { json, candidates, chosen, pnl: v };
 }
 
+/** Why a candidate got its verdict, as one phrase (shared by the plan text and the demo). */
+export function verdictText(c, snap, maxRefDeviationBps = DEFAULTS.max_ref_deviation_bps) {
+  const sym = (t) => snap.tokens[t]?.symbol ?? t;
+  switch (c.status) {
+    case "ok":
+      return "OK";
+    case "below_min_edge":
+      return "SKIP below min edge";
+    case "off_reference":
+      return `SKIP off reference: spot ${c.ref_deviation_bps >= 0 ? "+" : ""}${Math.round(c.ref_deviation_bps)} bps vs the mock reference price (limit ${maxRefDeviationBps} bps)`;
+    case "no_reference_price":
+      return `SKIP no mock reference price for ${c.unpriced.map(sym).join(", ")}`;
+    default:
+      return `REFUSED ${c.check.reason}`;
+  }
+}
+
 /** Human-readable plan. Starts and ends with DRY RUN. */
 export function renderPlan(snap, plan) {
+  const sym = (token) => snap.tokens[token]?.symbol ?? token;
   const fmt = (token, amount) => {
     const t = snap.tokens[token];
     return t ? `${formatUnits(amount, t.decimals)} ${t.symbol}` : `${amount} (base units of ${token})`;
   };
-  const sym = (token) => snap.tokens[token]?.symbol ?? token;
   const j = plan.json;
   const lines = [];
   lines.push("DRY RUN - Yield Optimizer plan. Nothing is signed or sent.");
-  lines.push(`Snapshot: ${snap.exchange} pools at ${snap.taken_at} (UTC day ${j.utc_day})${snap.source ? ` - ${snap.source}` : ""}`);
+  const where = snap.block_height !== null ? `at block ${snap.block_height}` : snap.taken_at ? `taken ${snap.taken_at}` : "(no block height)";
+  lines.push(`Snapshot: ${snap.exchange} pools ${where}${snap.source ? ` - ${snap.source}` : ""}`);
+  lines.push(`Clock: ${new Date(snap.now_ms).toISOString()} (UTC day ${j.utc_day}). Prices: mock reference price from the snapshot, not an oracle.`);
   lines.push(`Vault: ${snap.vault_id}  runner: ${snap.runner_id}`);
-  lines.push("Holdings (reference prices):");
+  lines.push("Holdings (mock reference prices):");
   for (const [t, a] of snap.vault.state.balances) {
-    lines.push(`  ${fmt(t, a)}  ($${usd(valueUsd(snap, t, a))})`);
+    const worth = hasPrice(snap, t) ? `$${usd(valueUsd(snap, t, a))}` : "no mock reference price";
+    lines.push(`  ${fmt(t, a)}  (${worth})`);
   }
-  lines.push(`Candidates, checked with the vault's check_rules (slippage ${j.params.slippage_bps} bps, min edge ${j.params.min_edge_bps} bps):`);
+  lines.push(`Candidates, checked with the vault's check_rules (slippage ${j.params.slippage_bps} bps, min edge ${j.params.min_edge_bps} bps, max ${j.params.max_ref_deviation_bps} bps off the reference):`);
   if (plan.candidates.length === 0) lines.push("  (none: the snapshot has no pools)");
   for (const c of plan.candidates) {
     const p = c.proposal;
@@ -265,12 +326,8 @@ export function renderPlan(snap, plan) {
     if (c.clipped_by.length) notes.push(`clipped from ${fmt(p.token_in, c.wanted)} by ${c.clipped_by.join(", ")}`);
     if (c.blocked_by) notes.push(`nothing left under ${c.blocked_by}`);
     const clip = notes.length ? ` (${notes.join("; ")})` : "";
-    const edge = Number.isFinite(c.edge_bps)
-      ? `${signedBps(c.edge_bps)} (worst ${signedBps(c.worst_edge_bps)})`
-      : "n/a";
-    const verdict =
-      c.status === "ok" ? "OK" : c.status === "below_min_edge" ? "SKIP below min edge" : `REFUSED ${c.check.reason}`;
-    lines.push(`  pool ${p.pool_id} ${sym(p.token_in)} -> ${sym(p.token_out)}: ${fmt(p.token_in, p.amount_in)}${clip}, edge ${edge}: ${verdict}`);
+    const edge = Number.isFinite(c.edge_bps) ? `${signedBps(c.edge_bps)} (worst ${signedBps(c.worst_edge_bps)})` : "n/a";
+    lines.push(`  pool ${p.pool_id} ${sym(p.token_in)} -> ${sym(p.token_out)}: ${fmt(p.token_in, p.amount_in)}${clip}, edge ${edge}: ${verdictText(c, snap, j.params.max_ref_deviation_bps)}`);
   }
   if (plan.chosen) {
     const p = plan.chosen.proposal;
@@ -281,7 +338,7 @@ export function renderPlan(snap, plan) {
     lines.push(
       `Simulated P&L vs holding: expected ${signedUsd(Number(s.expected_pnl_usd))} (${signedBps(s.expected_pnl_bps)}), worst case at min_amount_out ${signedUsd(Number(s.worst_case_pnl_usd))} (${signedBps(s.worst_case_pnl_bps)}), on $${s.hold_usd} held. Before gas.`,
     );
-    lines.push(`Would call ${j.call.method_name} on ${j.call.receiver_id} with ${j.call.gas_tgas} TGas and 0 yocto. Not sent.`);
+    lines.push(`Would call ${j.call.method_name} on ${j.call.receiver_id} with ${j.call.gas} and 0 yocto. Not sent.`);
   } else {
     lines.push(`Decision: HOLD - ${j.reason}. Simulated P&L vs holding: $0.0000.`);
   }

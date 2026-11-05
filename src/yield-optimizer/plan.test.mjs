@@ -3,9 +3,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { buildPlan, clipToLimits, MIN_EXECUTE_GAS_TGAS, DRY_RUN_NOTICE, formatUnits, quoteOut, renderPlan } from "./plan.mjs";
+import { buildPlan, clipToLimits, MIN_EXECUTE_GAS_TGAS, DRY_RUN_NOTICE, DEFAULTS, formatUnits, renderPlan } from "./plan.mjs";
+import { EXECUTE_SWAP_GAS_CLI, EXECUTE_SWAP_TGAS } from "../yield/gas.mjs";
+import { quoteOut } from "../yield/pools.mjs";
 import { checkProposal } from "../yield/rules.mjs";
-import { rulesView } from "./snapshot.mjs";
+import { PLACEHOLDER_RUNNER, PLACEHOLDER_VAULT } from "../yield/strategies.mjs";
+import { MOCK_EPOCH_MS } from "../yield/mock.mjs";
+import { loadSnapshot, rulesView } from "./snapshot.mjs";
 
 /** The vault's rules on a snapshot, as `{ ok, reason }` (the contract's CheckResult). */
 const checkRules = (snap, proposal) => {
@@ -15,8 +19,8 @@ const checkRules = (snap, proposal) => {
 };
 import { parseSnapshot } from "./snapshot.mjs";
 
-const FIXTURE = fileURLToPath(new URL("./fixtures/rhea-testnet-snapshot.json", import.meta.url));
-const WNEAR = "wrap.testnet";
+const FIXTURE = fileURLToPath(new URL("./fixtures/scenario.hand-built.json", import.meta.url));
+const WNEAR = "wnear.fixture.testnet";
 const USDC = "usdc.fixture.testnet";
 const DAI = "dai.fixture.testnet";
 const E26 = 10n ** 26n;
@@ -27,7 +31,8 @@ function snap(mutate) {
   if (mutate) mutate(r);
   return parseSnapshot(r);
 }
-const onlyPool17 = (r) => (r.pools = r.pools.filter((p) => p.pool_id === 17));
+const onlyPool = (r, id) => (r.pools = r.pools.filter((p) => p.pool_id === id));
+const onlyPool17 = (r) => onlyPool(r, 17);
 const cand = (plan, poolId) => plan.json.candidates.find((c) => c.proposal.pool_id === poolId);
 
 describe("buildPlan on the fixture", () => {
@@ -54,7 +59,8 @@ describe("buildPlan on the fixture", () => {
     assert.equal(typeof p.pool_id, "number");
     assert.equal(j.call.method_name, "execute_swap");
     assert.equal(j.call.receiver_id, "yield-vault.fixture.testnet");
-    assert.equal(j.call.gas_tgas, 280);
+    assert.equal(j.call.gas_tgas, EXECUTE_SWAP_TGAS);
+    assert.equal(j.call.gas, EXECUTE_SWAP_GAS_CLI);
     assert.equal(j.call.deposit_yocto, "0");
   });
 
@@ -90,10 +96,12 @@ describe("buildPlan on the fixture", () => {
     assert.ok(Number(j.simulated_pnl_vs_hold.expected_pnl_usd) >= Number(j.simulated_pnl_vs_hold.worst_case_pnl_usd));
   });
 
-  it("min_amount_out is the quote less slippage", () => {
+  it("min_amount_out is the pools.mjs quote less slippage (the one quote function)", () => {
     const pool = s.pools.find((p) => p.pool_id === 17);
-    const out = quoteOut(2n * E26, pool.reserves[0], pool.reserves[1], pool.total_fee);
+    const out = quoteOut(pool, WNEAR, 2n * E26);
+    assert.ok(out > 0n);
     assert.equal(plan.chosen.expected_out, out);
+    assert.equal(j.candidates.find((c) => c.proposal.pool_id === 17).expected_amount_out, out.toString());
     assert.equal(plan.chosen.proposal.min_amount_out, (out * 9950n) / 10000n);
     const tight = buildPlan(s, { slippage_bps: 0 });
     assert.equal(tight.chosen.proposal.min_amount_out, out);
@@ -106,7 +114,7 @@ describe("buildPlan holds", () => {
     assert.equal(plan.json.decision, "hold");
     assert.equal(plan.json.call, null);
     assert.equal(plan.json.check, null);
-    assert.equal(plan.json.reason, "every candidate is refused by the vault rules");
+    assert.equal(plan.json.reason, "no pool passes every gate (3 refused by the vault rules)");
     for (const c of plan.json.candidates) assert.match(c.check.reason, /^ERR_PAUSED/);
     assert.equal(plan.pnl.expected_usd, plan.pnl.hold_usd);
     assert.equal(plan.pnl.worst_usd, plan.pnl.hold_usd);
@@ -129,7 +137,7 @@ describe("buildPlan holds", () => {
     const plan = buildPlan(snap(), { min_edge_bps: 10_000 });
     assert.equal(plan.json.decision, "hold");
     assert.equal(cand(plan, 17).status, "below_min_edge");
-    assert.match(plan.json.reason, /^no allowed trade beats the reference price by 10000 bps at min_amount_out/);
+    assert.match(plan.json.reason, /^no pool passes every gate \(1 below the 10000 bps min edge, 2 refused by the vault rules\)$/);
     assert.equal(plan.json.simulated_pnl_vs_hold.expected_pnl_usd, "0.0000");
   });
 
@@ -200,7 +208,7 @@ describe("buildPlan holds", () => {
     // Looser min edge: the allowed direction wins even though wNEAR -> USDC has the better spot edge.
     const plan = buildPlan(s, { min_edge_bps: -500 });
     const c = plan.json.candidates[0];
-    assert.equal(pool.token_account_ids[0], WNEAR);
+    assert.equal(pool.token_a, WNEAR);
     assert.equal(c.status, "ok");
     assert.equal(c.proposal.token_in, USDC);
     assert.equal(c.proposal.token_out, WNEAR);
@@ -304,13 +312,7 @@ describe("clipToLimits", () => {
   });
 });
 
-describe("quoteOut and formatUnits", () => {
-  it("constant product with the fee taken from the input", () => {
-    // in=1000, reserves 1e6/1e6, fee 30bps: 1000*9970*1e6 / (1e6*1e4 + 1000*9970)
-    assert.equal(quoteOut(1000n, 1_000_000n, 1_000_000n, 30), (1000n * 9970n * 1_000_000n) / (1_000_000n * 10_000n + 1000n * 9970n));
-    assert.equal(quoteOut(0n, 5n, 5n, 30), 0n);
-    assert.ok(quoteOut(10n ** 30n, 10n ** 6n, 10n ** 6n, 30) < 10n ** 6n); // never drains the pool
-  });
+describe("formatUnits", () => {
   it("formatUnits trims zeros and truncates to 6 decimals", () => {
     assert.equal(formatUnits(1_500_000n, 6), "1.5");
     assert.equal(formatUnits(1_000_000n, 6), "1");
@@ -328,26 +330,155 @@ describe("renderPlan", () => {
     assert.ok(text.startsWith("DRY RUN"));
     assert.ok(text.includes(DRY_RUN_NOTICE));
     assert.ok(text.endsWith(DRY_RUN_NOTICE));
-    assert.match(text, /Decision: SWAP .*wNEAR.*USDC.* on pool 17/);
+    assert.match(text, /Decision: SWAP .*wnear.*usdc.* on pool 17/);
     assert.match(text, /REFUSED ERR_NO_LIMIT/);
     assert.match(text, /REFUSED ERR_POOL_NOT_ALLOWED/);
-    assert.match(text, /Would call execute_swap on yield-vault\.fixture\.testnet with 280 TGas/);
+    assert.match(text, /Would call execute_swap on yield-vault\.fixture\.testnet with 280\.0 Tgas/);
   });
   it("renders a hold", () => {
     const s = snap((r) => (r.vault.state.paused = true));
     const text = renderPlan(s, buildPlan(s));
     assert.ok(text.startsWith("DRY RUN"));
     assert.ok(text.includes(DRY_RUN_NOTICE));
-    assert.match(text, /Decision: HOLD - every candidate is refused/);
+    assert.match(text, /Decision: HOLD - no pool passes every gate \(3 refused by the vault rules\)/);
     assert.match(text, /\$0\.0000/);
   });
 });
 
-describe("gas matches the contract", () => {
-  it("MIN_EXECUTE_GAS_TGAS equals lib.rs MIN_EXECUTE_GAS, so the planned call would not fail the gas check", () => {
+describe("gas", () => {
+  it("MIN_EXECUTE_GAS_TGAS is the one figure from src/yield/gas.mjs, equal to lib.rs MIN_EXECUTE_GAS", () => {
     const lib = readFileSync(fileURLToPath(new URL("../../contracts/yield-vault/src/lib.rs", import.meta.url)), "utf8");
     const m = lib.match(/pub const MIN_EXECUTE_GAS: Gas = Gas::from_tgas\((\d+)\);/);
     assert.ok(m, "MIN_EXECUTE_GAS not found in lib.rs");
     assert.equal(MIN_EXECUTE_GAS_TGAS, Number(m[1]));
+    assert.equal(MIN_EXECUTE_GAS_TGAS, EXECUTE_SWAP_TGAS);
+  });
+  it("plan.mjs holds no gas literal of its own", () => {
+    const src = readFileSync(fileURLToPath(new URL("./plan.mjs", import.meta.url)), "utf8");
+    assert.doesNotMatch(src, /\b280\b/);
+  });
+});
+
+describe("reference guard", () => {
+  // Pool 99 (same pair as pool 17, 4.8% off the reference) is made allowed, then moved far off.
+  const allowPool99 = (r) => {
+    r.vault.config.allowed_pools.push({ ...r.vault.config.allowed_pools[0], pool_id: 99 });
+  };
+
+  it("a pool far from the reference is off_reference and never chosen, even with the biggest raw edge", () => {
+    const s = snap((r) => {
+      allowPool99(r);
+      r.pools.find((p) => p.pool_id === 99).reserve_b = "650000000000"; // 6.50 USDC per wNEAR vs 3.10 reference
+    });
+    const plan = buildPlan(s);
+    const junk = cand(plan, 99);
+    assert.equal(junk.status, "off_reference");
+    assert.ok(junk.ref_deviation_bps > DEFAULTS.max_ref_deviation_bps, `deviation ${junk.ref_deviation_bps}`);
+    // Its raw edge really is the biggest of all candidates...
+    assert.ok(junk.edge_bps > cand(plan, 17).edge_bps, "the junk pool would win on raw edge");
+    // ...and the sane pool 17 is chosen instead.
+    assert.equal(plan.json.decision, "swap");
+    assert.equal(plan.json.call.args.proposal.pool_id, 17);
+    assert.match(renderPlan(s, plan), /pool 99 wnear -> usdc: .*SKIP off reference: spot \+\d+ bps vs the mock reference price \(limit 1000 bps\)/);
+  });
+
+  it("with only the junk pool the plan holds and the reason names the guard", () => {
+    const s = snap((r) => {
+      allowPool99(r);
+      onlyPool(r, 99);
+      r.pools[0].reserve_b = "650000000000";
+    });
+    const plan = buildPlan(s);
+    assert.equal(plan.json.decision, "hold");
+    assert.equal(plan.json.call, null);
+    assert.match(plan.json.reason, /1 off the mock reference price by more than 1000 bps/);
+  });
+
+  it("max_ref_deviation_bps is a parameter: widening it lets a 4.8% off pool through the guard", () => {
+    const s = snap((r) => {
+      allowPool99(r);
+      onlyPool(r, 99);
+    });
+    assert.equal(cand(buildPlan(s), 99).status, "ok"); // 4.8% is inside the default 10%
+    assert.equal(cand(buildPlan(s, { max_ref_deviation_bps: 100 }), 99).status, "off_reference");
+  });
+
+  it("a token without a mock reference price gives no_reference_price, no edge and no fake price", () => {
+    const s = snap((r) => {
+      r.tokens["usdc.fixture.testnet"].mock_usd_price = null;
+    });
+    const plan = buildPlan(s);
+    const c = cand(plan, 17);
+    assert.equal(c.status, "no_reference_price");
+    assert.equal(c.edge_bps, null);
+    assert.equal(c.ref_deviation_bps, null);
+    assert.deepEqual(c.unpriced_tokens, ["usdc.fixture.testnet"]);
+    assert.equal(plan.json.decision, "hold");
+    assert.match(renderPlan(s, plan), /SKIP no mock reference price for usdc/);
+    assert.match(renderPlan(s, plan), /\(no mock reference price\)/); // holdings line
+  });
+
+  it("a vault-refused candidate stays refused (the rules are the hard truth), not no_reference_price", () => {
+    const s = snap((r) => {
+      r.tokens["wnear.fixture.testnet"].mock_usd_price = null;
+    });
+    assert.equal(cand(buildPlan(s), 99).status, "refused");
+  });
+});
+
+describe("the default snapshot: the shared Ref market and the demo vault", () => {
+  const s = loadSnapshot(null);
+  const plan = buildPlan(s);
+
+  it("uses the demo vault and runner ids, the mock round's clock and labels the snapshot by block", () => {
+    assert.equal(plan.json.vault_id, PLACEHOLDER_VAULT);
+    assert.equal(plan.json.runner_id, PLACEHOLDER_RUNNER);
+    assert.equal(plan.json.snapshot.now_ms, MOCK_EPOCH_MS);
+    assert.equal(plan.json.snapshot.block_height, 276143441);
+    assert.equal(plan.json.snapshot.taken_at, null);
+    assert.match(plan.json.snapshot.source, /ref-finance-101\.testnet/);
+    assert.match(plan.json.snapshot.reference_prices, /mock reference price, not an oracle/);
+  });
+
+  it("honestly holds on the thin real pools and names why each one was stopped", () => {
+    assert.equal(plan.json.decision, "hold");
+    const by = Object.fromEntries(plan.json.candidates.map((c) => [c.proposal.pool_id, c]));
+    assert.equal(by[0].status, "no_reference_price"); // rft has no mock price
+    assert.deepEqual(by[0].unpriced_tokens, ["rft.tokenfactory.testnet"]);
+    assert.equal(by[1].status, "off_reference"); // 0.237 nusdt vs 444 nusdc
+    assert.ok(by[1].ref_deviation_bps > 1_000_000);
+    assert.ok(by[1].edge_bps > 1_000_000, "the raw edge of the junk pool is enormous and must not win");
+    for (const id of [2, 5, 6, 8]) {
+      assert.equal(by[id].status, "refused", `pool ${id}`);
+      assert.match(by[id].check.reason, /^ERR_POOL_NOT_ALLOWED/);
+    }
+    assert.match(plan.json.reason, /^no pool passes every gate \(1 off the mock reference price by more than 1000 bps, 1 without a mock reference price, 4 refused by the vault rules\)$/);
+  });
+
+  it("every candidate's expected_amount_out is exactly the pools.mjs quote of its proposal", () => {
+    for (const c of plan.candidates) {
+      const pool = s.pools.find((p) => p.pool_id === c.proposal.pool_id);
+      assert.equal(c.expected_out, quoteOut(pool, c.proposal.token_in, c.proposal.amount_in), `pool ${pool.pool_id}`);
+    }
+  });
+
+  it("symbols are the token id before the first dot, as the personality side prints them", () => {
+    const text = renderPlan(s, plan);
+    assert.match(text, /pool 0 wrap -> rft: 1 wrap/);
+    assert.match(text, /pool 1 nusdt -> nusdc/);
+  });
+
+  it("the planner pools can actually win: a sane priced pool on the real market is chosen and its check passes", () => {
+    // wrap/nusdc pool 6 made sane (3 USDC-ish per wrap) and allowed in the vault config.
+    const t = loadSnapshot(null);
+    const pool6 = t.pools.find((p) => p.pool_id === 6);
+    pool6.reserve_a = 10n ** 27n; // 1000 wrap
+    pool6.reserve_b = 309_000n; // 3090.00 nusdc (2 decimals) per 1000 wrap: 3.09 vs the 3.00 reference, 3% above
+    t.vault.config.allowed_pools.push({ pool_id: 6, token_a: pool6.token_a, token_b: pool6.token_b, min_rate_a_to_b: { num: "1", den: "10000000000000000000000" }, min_rate_b_to_a: { num: "1", den: "1" } });
+    const p = buildPlan(t);
+    const c = p.json.candidates.find((x) => x.proposal.pool_id === 6);
+    assert.equal(c.status, "ok", JSON.stringify(c));
+    assert.equal(p.chosen.expected_out, quoteOut(pool6, c.proposal.token_in, c.proposal.amount_in));
+    assert.deepEqual(checkRules(t, p.chosen.proposal), { ok: true, reason: "" });
   });
 });
