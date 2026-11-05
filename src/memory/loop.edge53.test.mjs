@@ -426,3 +426,27 @@ test("regression: events authored by or replying to prototype-named ids are skip
   const result = await runMemoryLoop({ swarm: makeSwarm(1, events), agents, client: recorder() });
   assert.equal(result.tokens.length, 1);
 });
+
+test("regression: bad round counts and a round-hash list of the wrong length are refused with bad_config before any model call", async () => {
+  const isBadConfig = (err) => err instanceof MemoryError && err.code === "bad_config";
+  const bad = [
+    { ...makeSwarm(2), rounds: 0 },
+    { ...makeSwarm(2), rounds: -1 },
+    { ...makeSwarm(2), rounds: Number.NaN },
+    { ...makeSwarm(2), rounds: 2.5 },
+    { ...makeSwarm(2), rounds: Infinity },
+    { ...makeSwarm(3), roundHashes: makeSwarm(1).roundHashes },
+    { ...makeSwarm(1), roundHashes: makeSwarm(2).roundHashes },
+  ];
+  for (const swarm of bad) {
+    const client = recorder();
+    await assert.rejects(runMemoryLoop({ swarm, agents: [AGENTS[0]], client }), isBadConfig, JSON.stringify(swarm.rounds));
+    assert.equal(client.calls.length, 0);
+  }
+});
+
+test("regression: sheetRounds refuses an unbounded round count at once instead of looping until it runs out of memory", () => {
+  const started = Date.now();
+  assert.throws(() => sheetRounds(Infinity, 1), (err) => err instanceof MemoryError && err.code === "bad_config");
+  assert.ok(Date.now() - started < 1000);
+});
