@@ -208,19 +208,29 @@ test("--send with an unreadable or incomplete --vault-state is refused and nothi
   assert.deepEqual(noState.calls, []);
 });
 
+// chaotic, not skeptic: with a funded, unpaused snapshot chaotic sends exactly one swap (the control),
+// so a zero-call result below can only come from the snapshot's state or config. skeptic sends nothing
+// in round 1 either way, which made these assertions pass even when --send ignored the snapshot.
 test("--send checks proposals against the vault's real state: a paused vault gets no transaction", async () => {
+  const control = await run([...CHAOTIC_SEND, "--vault-state", vaultStateFile({}, "chaotic")], TESTNET_ENV, { hasNear: () => true });
+  assert.equal(control.code, 0, control.stderr);
+  assert.equal(control.calls.length, 1, "control: the same snapshot unpaused sends chaotic's swap");
   const paused = { ...initialState(), paused: true };
-  const r = await run(["--send", "--i-approve", "--agent", "skeptic", "--vault-state", vaultStateFile({ state: paused })], TESTNET_ENV, { hasNear: () => true });
+  const r = await run([...CHAOTIC_SEND, "--json", "--vault-state", vaultStateFile({ state: paused }, "chaotic")], TESTNET_ENV, { hasNear: () => true });
   assert.equal(r.code, 0, r.stderr);
-  assert.deepEqual(r.calls, []);
-  assert.doesNotMatch(r.stdout, /execute_swap/);
+  assert.deepEqual(r.calls, [], "the snapshot's paused flag must block the swap");
+  assert.match(r.stdout, /ERR_PAUSED/);
 });
 
 test("--send checks proposals against the vault's real config: a vault with no limits gets no transaction", async () => {
-  const config = { ...defaultVaultConfig("skeptic", { runner: "runner.x.testnet" }), limits: [] };
-  const r = await run(["--send", "--i-approve", "--agent", "skeptic", "--vault-state", vaultStateFile({ config })], TESTNET_ENV, { hasNear: () => true });
+  const config = { ...defaultVaultConfig("chaotic", { runner: "runner.x.testnet" }), limits: [] };
+  const r = await run([...CHAOTIC_SEND, "--json", "--vault-state", vaultStateFile({ config }, "chaotic")], TESTNET_ENV, { hasNear: () => true });
   assert.equal(r.code, 0, r.stderr);
-  assert.deepEqual(r.calls, []);
+  assert.deepEqual(r.calls, [], "the snapshot's empty limits must block the swap (the demo config would allow it)");
+  // The agent sizes off its limits, so with none it proposes nothing sendable; the vault rules say so.
+  const d = JSON.parse(r.stdout).rounds[0].decisions.chaotic;
+  assert.equal(d.hard.ok, false, "the off-chain hard rules reject it under the snapshot's config");
+  assert.equal(d.outcome, "rejected_hard");
 });
 
 test("--send checks proposals against the snapshot's config, not the demo config: a vault that has not approved this runner gets no transaction", async () => {
