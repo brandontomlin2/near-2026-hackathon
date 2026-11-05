@@ -84,29 +84,60 @@ async fn receiver_refunds_all_rolls_back() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Verifies README: "| `ref.swap` failed | token_in is on Ref | `stranded_on_ref[token_in] += amount`,
-/// `stranded` event |". Adds over happy_path.rs: the `stranded` + `swap_failed` events, day spend
-/// is NOT rolled back (funds are on Ref, not with the vault), real FT balances.
+/// A failed `ref.swap` (swap-panic knob) no longer strands token_in: the vault withdraws it back
+/// from Ref (`on_refund_pre` -> `ref.withdraw` -> `on_refund_reconciled`) and rolls the debit and
+/// the day spend back. Same chain shape as the happy path, at MIN_EXECUTE_GAS.
 #[tokio::test]
-async fn ref_swap_panic_strand_events_and_spend() -> anyhow::Result<()> {
+async fn ref_swap_panic_self_heals_via_refund() -> anyhow::Result<()> {
     let sb = Sb::new().await?;
     sb.register_and_deposit(DEPOSIT).await?;
     knob(&sb, &sb.rf, "set_swap_panic", true).await?;
     let ref_tin_before = sb.ft_balance(&sb.tin, sb.rf.id()).await?;
 
-    let r = run_swap(&sb, "execute_swap, ref.swap panics", &["ref.swap"]).await?;
+    // Only ref.swap may fail: every vault callback and the refund's ft_transfer succeed.
+    let r = run_swap(&sb, "execute_swap, ref.swap panics (refund path)", &["ref.swap"]).await?;
     let logs = r.logs();
-    assert!(has_event(&logs, "stranded"), "stranded event: {logs:?}");
-    assert!(has_event(&logs, "swap_failed"), "swap_failed event: {logs:?}");
+    assert!(has_event(&logs, "swap_refunded"), "swap_refunded event: {logs:?}");
+    assert!(has_event_with(&logs, "swap_failed", "\"reason\":\"swap_failed\""), "swap_failed event: {logs:?}");
+    assert!(!has_event(&logs, "stranded"), "no strand: {logs:?}");
+    assert!(!has_event(&logs, "swap_executed"));
 
     let s = sb.state().await?;
     assert_idle(&s);
-    assert_eq!(pair_amount(&s["stranded_on_ref"], sb.tin.id().as_str()), AMOUNT_IN);
-    assert_eq!(pair_amount(&s["spent_today"], sb.tin.id().as_str()), AMOUNT_IN, "spend stays booked: funds are on Ref");
-    assert_eq!(sb.vault_balance(&sb.tin).await?, DEPOSIT - AMOUNT_IN);
-    assert_eq!(sb.ref_deposit(sb.vault.id(), &sb.tin).await?, AMOUNT_IN);
-    assert_eq!(sb.ft_balance(&sb.tin, sb.vault.id()).await?, DEPOSIT - AMOUNT_IN);
-    assert_eq!(sb.ft_balance(&sb.tin, sb.rf.id()).await?, ref_tin_before + AMOUNT_IN);
+    assert_eq!(s["swaps_executed"], 0);
+    assert_eq!(s["paused"], false);
+    assert!(s["stranded_on_ref"].as_array().unwrap().is_empty());
+    assert!(s["unverified_on_ref"].as_array().unwrap().is_empty());
+    assert_eq!(sb.vault_balance(&sb.tin).await?, DEPOSIT, "debit rolled back");
+    assert_eq!(pair_amount(&s["spent_today"], sb.tin.id().as_str()), 0, "day spend rolled back");
+    assert_eq!(sb.vault_balance(&sb.tout).await?, 0);
+    // The tokens really came back: vault FT balance, Ref inner deposit, Ref FT balance.
+    assert_eq!(sb.ft_balance(&sb.tin, sb.vault.id()).await?, DEPOSIT);
+    assert_eq!(sb.ref_deposit(sb.vault.id(), &sb.tin).await?, 0);
+    assert_eq!(sb.ft_balance(&sb.tin, sb.rf.id()).await?, ref_tin_before);
+    Ok(())
+}
+
+/// Refund chain gas table row: same shape as the happy path, completes at MIN_EXECUTE_GAS.
+#[tokio::test]
+async fn refund_chain_hops_and_gas_at_min_execute_gas() -> anyhow::Result<()> {
+    let sb = Sb::new().await?;
+    sb.register_and_deposit(DEPOSIT).await?;
+    knob(&sb, &sb.rf, "set_swap_panic", true).await?;
+    let r = run_swap(&sb, "REFUND CHAIN: execute_swap @ MIN_EXECUTE_GAS, ref.swap panics", &["ref.swap"]).await?;
+    let hash = r.outcome().transaction_hash.to_string();
+    let (rows, total) = gas_table(&sb, &hash, sb.runner.id()).await?;
+    for hop in ["vault.execute_swap", "tin.ft_transfer_call", "ref.ft_on_transfer", "vault.on_deposit",
+        "ref.swap", "vault.on_swap", "ref.get_deposit", "vault.on_refund_pre", "ref.withdraw",
+        "tin.ft_transfer", "ref.exchange_callback_post_withdraw", "vault.on_refund_reconciled"] {
+        assert!(rows.iter().any(|x| x.label == hop), "missing hop {hop}: {:?}", rows.iter().map(|x| &x.label).collect::<Vec<_>>());
+    }
+    let failed: Vec<&str> = rows.iter().filter(|x| !x.ok).map(|x| x.label.as_str()).collect();
+    assert_eq!(failed, ["ref.swap"], "only ref.swap may fail in the chain");
+    let c = lib_gas_constants();
+    assert!(total < c["MIN_EXECUTE_GAS"] * TGAS, "chain burnt {total} within MIN_EXECUTE_GAS");
+    let ex = rows.iter().find(|x| x.label == "vault.execute_swap").unwrap();
+    assert!(ex.subtree <= c["MIN_EXECUTE_GAS"] * TGAS);
     Ok(())
 }
 

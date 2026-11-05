@@ -243,6 +243,34 @@ impl Sb {
         Ok(s.parse()?)
     }
 
+    /// Calls an owner-only bool knob (`{"v": ..}`) on a mock-ref.
+    pub async fn ref_knob(&self, method: &str, v: bool) -> Result<()> {
+        self.admin.call(self.rf.id(), method).args_json(json!({"v": v})).transact().await?.into_result()?;
+        Ok(())
+    }
+
+    /// Calls an owner-only bool knob (`{"fail": ..}`) on a mock-ft.
+    pub async fn ft_knob(&self, t: &Contract, method: &str, fail: bool) -> Result<()> {
+        self.admin.call(t.id(), method).args_json(json!({"fail": fail})).transact().await?.into_result()?;
+        Ok(())
+    }
+
+    /// Produces a real, VERIFIED token_in strand on Ref now that a failed `ref.swap` self-heals:
+    /// Ref's swap panics AND token_in's `ft_transfer` (Ref's refund withdraw) fails, so Ref
+    /// re-credits the deposit and `on_refund_reconciled` records `refund_not_reconciled`.
+    /// Both knobs are cleared again before returning. Must have `register_and_deposit` done.
+    pub async fn strand_token_in(&self, amount_in: u128, min_out: u128) -> Result<near_workspaces::result::ExecutionFinalResult> {
+        let c = lib_gas_constants();
+        self.ref_knob("set_swap_panic", true).await?;
+        self.ft_knob(&self.tin, "set_fail_transfers", true).await?;
+        let r = self.runner.call(self.vault.id(), "execute_swap")
+            .args_json(self.swap_args(amount_in, min_out))
+            .gas(tgas(c["MIN_EXECUTE_GAS"])).transact().await?;
+        self.ref_knob("set_swap_panic", false).await?;
+        self.ft_knob(&self.tin, "set_fail_transfers", false).await?;
+        Ok(r)
+    }
+
     pub async fn state(&self) -> Result<Value> {
         Ok(self.vault.view("get_state").await?.json()?)
     }
@@ -279,8 +307,8 @@ fn constant_for(role_exec: &str, method: &str, role_pred: &str) -> Option<&'stat
         ("vault", "execute_swap") => "MIN_EXECUTE_GAS",
         ("vault", "on_deposit") => "GAS_CB_DEPOSIT",
         ("vault", "on_swap") => "GAS_CB_SWAP",
-        ("vault", "on_withdraw_pre") => "GAS_CB_WITHDRAW_PRE",
-        ("vault", "on_withdraw_reconciled") | ("vault", "on_deposit_reconciled") => "GAS_CB_RECONCILE",
+        ("vault", "on_withdraw_pre") | ("vault", "on_refund_pre") => "GAS_CB_WITHDRAW_PRE",
+        ("vault", "on_withdraw_reconciled") | ("vault", "on_deposit_reconciled") | ("vault", "on_refund_reconciled") => "GAS_CB_RECONCILE",
         ("vault", "withdraw") => "MIN_WITHDRAW_GAS",
         ("vault", "on_owner_withdraw") => "GAS_CB_FINAL",
         ("vault", "recover_from_ref") => "MIN_RECOVER_GAS",
