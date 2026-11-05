@@ -10,10 +10,10 @@
 
 ## Cost and time
 
-- Owner outflow for the full path: 8.525 NEAR plus 7 yocto (the 1 yocto security deposits). Of that, 6 NEAR funds the vault account (about 2.62 NEAR is its wasm storage), 2 NEAR funds the runner, 0.5 NEAR goes to Ref storage, and 0.02 NEAR becomes wNEAR. Most of it comes back through the rollback steps (Ref storage via step 26, vault and runner balances via the account deletions in steps 32 and 33).
-- 19 transactions and 14 read-only calls, 1140 TGas prepaid in total. Prepaid gas is an upper bound; unused gas is refunded. The real gas cost was not measured (UNCONFIRMED); at the usual testnet gas price it is a small fraction of 1 NEAR.
+- Owner outflow for the full path: 8.525 NEAR plus 7 yocto (the 1 yocto security deposits). Of that, 6 NEAR funds the vault account (about 2.62 NEAR is its wasm storage), 2 NEAR funds the runner, 0.5 NEAR goes to Ref storage, and 0.02 NEAR becomes wNEAR. Most of it comes back through the rollback steps (Ref storage via step 29, vault and runner balances via the account deletions in steps 35 and 36).
+- 19 transactions and 17 read-only calls, 1140 TGas prepaid in total. Prepaid gas is an upper bound; unused gas is refunded. The real gas cost was not measured (UNCONFIRMED); at the usual testnet gas price it is a small fraction of 1 NEAR.
 - The owner needs the outflow above plus gas. Have at least 10 NEAR in the owner account.
-- Time estimate (not measured): 45 to 90 minutes of operator time for the full path, mostly spent confirming each step. The swap chain (step 17) settles in under a few minutes if nothing fails; a stuck swap adds a 10 minute wait for force release.
+- Time estimate (not measured): 45 to 90 minutes of operator time for the full path, mostly spent confirming each step. The swap chain (step 19) settles in under a few minutes if nothing fails; a stuck swap adds a 10 minute wait for force release.
 
 ## Before you start
 
@@ -23,7 +23,7 @@
 npm run yield:live:preflight
 ```
 
-   The same checks plus read-only chain lookups (existing accounts, balances, Ref and token reads) are available as `npm run yield:live:preflight -- --online`. It makes only read-only view calls and uses no keys.
+   The same checks plus read-only chain lookups (existing accounts, balances, Ref and token reads) are available as `npm run yield:live:preflight -- --online`. It makes only read-only view calls and uses no keys. Online it also confirms the RPC is testnet (wrap.testnet exists) and FAILs if the vault or runner account already exists. `vault_id` and `runner_id` must be direct sub-accounts of the owner (for example `vault.<owner>`).
 2. Copy the example config to a path that git ignores (`out/` is in `.gitignore`) and fill it in. Do not edit the tracked example.
 
 ```bash
@@ -48,9 +48,11 @@ npm run yield:live:preflight
 node scripts/yield-live.mjs dry-run
 ```
 
-Expected with the example config: preflight prints PASS for config ids, plan validity, wasm present and size, storage estimate, wasm newer than src/lib.rs, cargo and cargo-near; MISSING for the unfilled placeholders; MANUAL for owner funds, keychain keys, the NFT and Ref's storage bound; and ends with `READY FOR LIVE: no`. With your filled config the MISSING line must disappear. The MANUAL items need your own confirmation. `dry-run` prints 33 steps and the totals line `19 transactions, 14 views`, then `plan valid against contracts/yield-vault/src/lib.rs`. Do not continue unless both say the plan is valid.
+Expected with the example config: preflight prints PASS for config ids, plan validity, wasm present and size, storage estimate, wasm newer than src/lib.rs, the lib.rs parse and the plan agreeing with the built ABI, cargo and cargo-near; MISSING for the unfilled placeholders; MANUAL for owner funds, keychain keys, the NFT and Ref's storage bound; and ends with `READY FOR LIVE: no`. With your filled config the MISSING line must disappear. The MANUAL items need your own confirmation. `dry-run` prints 36 steps and the totals line `19 transactions, 17 views`, then a "filled at run time" list of 3 amounts (the two withdraw steps and withdraw_near) and `plan valid against contracts/yield-vault/src/lib.rs`. Do not continue unless both say the plan is valid.
 
 ## Plan steps
+
+Three amounts are not fixed in advance: the withdraw steps and the `withdraw_near` step carry a marker such as `<READ get_balance(TOKEN) at step ID>` that you replace with the value the referenced view step returned (the tool lists them under "filled at run time"). `withdraw` rejects a zero amount, so skip a withdraw whose value is 0.
 
 Each step below shows the exact near-cli-rs command, the expected result, the cost, what the plan expects, and what to do if it fails. Failure handling for the swap chain is in `contracts/yield-vault/README.md` ("Failure handling", "Force release"). Read-only steps use `as-read-only` and cost nothing.
 
@@ -66,7 +68,7 @@ near account create-account fund-myself vault.owner.yield-demo.testnet '6 NEAR' 
 - Cost: 6 NEAR.
 - Expected result: near-cli-rs prints the signed transaction result and a success line. Account creation is final once the transaction executes.
 - Check (the plan's expectation): vault.owner.yield-demo.testnet exists with 6 NEAR and the vault key
-- If it fails: If the id is taken or the owner balance is too low, the transaction fails and nothing is created; fix the config or fund the owner and re-run. Do not re-run after success (the account exists). The vault key is the only key on this account: if `public_keys.vault` does not match the keychain, steps 3 and 32 cannot be signed, so check it before this step.
+- If it fails: If the id is taken or the owner balance is too low, the transaction fails and nothing is created; fix the config or fund the owner and re-run. Do not re-run after success (the account exists). The vault key is the only key on this account: if `public_keys.vault` does not match the keychain, steps 3 and 35 cannot be signed, so check it before this step.
 
 #### Step 2 [setup] create and fund the runner account
 
@@ -78,7 +80,7 @@ near account create-account fund-myself runner.owner.yield-demo.testnet '2 NEAR'
 - Cost: 2 NEAR.
 - Expected result: Same as step 1 for the runner account.
 - Check (the plan's expectation): runner.owner.yield-demo.testnet exists with 2 NEAR and the runner key
-- If it fails: Same as step 1. The runner key must match `public_keys.runner`; execute_swap in step 17 is signed with it.
+- If it fails: Same as step 1. The runner key must match `public_keys.runner`; execute_swap in step 19 is signed with it.
 
 #### Step 3 [setup] deploy the vault wasm and call new in one transaction
 
@@ -118,9 +120,21 @@ near contract call-function as-read-only vault.owner.yield-demo.testnet get_stat
 - Check (the plan's expectation): paused == false, nothing in flight
 - If it fails: Any in-flight flag true here means state is not fresh; stop and inspect before continuing.
 
+#### Step 6 [check] read wrap.testnet's storage bounds
+
+```bash
+near contract call-function as-read-only wrap.testnet storage_balance_bounds json-args '{}' network-config testnet now
+```
+
+- Signer: none (read-only); receiver: `wrap.testnet`.
+- Cost: 0 NEAR.
+- Expected result: JSON `{"min":"1250000000000000000000","max":"1250000000000000000000"}` (0.00125 NEAR, as read on 2026-11-05).
+- Check (the plan's expectation): min <= 0.00125 NEAR (token_storage_deposit_near)
+- If it fails: If the bounds differ from `token_storage_deposit_near` in the config, the next step attaches the wrong amount; fix the config and re-run `dry-run` before continuing.
+
 ### Phase: Fund
 
-#### Step 6 [fund] register the vault on wrap.testnet
+#### Step 7 [fund] register the vault on wrap.testnet
 
 ```bash
 near contract call-function as-transaction wrap.testnet storage_deposit json-args '{"account_id":"vault.owner.yield-demo.testnet","registration_only":true}' prepaid-gas '30 Tgas' attached-deposit '0.00125 NEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
@@ -132,7 +146,7 @@ near contract call-function as-transaction wrap.testnet storage_deposit json-arg
 - Check (the plan's expectation): wrap.testnet storage_balance_of(vault.owner.yield-demo.testnet) is not null
 - If it fails: If this is skipped or fails, `ft_transfer` and `ft_transfer_call` to the vault fail on this token. Re-run is harmless: an already registered account is refunded the attached deposit.
 
-#### Step 7 [fund] register the owner on wrap.testnet (so withdrawals can land)
+#### Step 8 [fund] register the owner on wrap.testnet (so withdrawals can land)
 
 ```bash
 near contract call-function as-transaction wrap.testnet storage_deposit json-args '{"account_id":"owner.yield-demo.testnet","registration_only":true}' prepaid-gas '30 Tgas' attached-deposit '0.00125 NEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
@@ -140,11 +154,27 @@ near contract call-function as-transaction wrap.testnet storage_deposit json-arg
 
 - Signer: `owner.yield-demo.testnet`; receiver: `wrap.testnet`.
 - Cost: 0.00125 NEAR.
-- Expected result: Same as step 6 for the owner account. Needed so `withdraw` can pay the owner.
+- Expected result: Same as step 7 for the owner account. Needed so `withdraw` can pay the owner.
 - Check (the plan's expectation): wrap.testnet storage_balance_of(owner.yield-demo.testnet) is not null
 - If it fails: If skipped, the vault `withdraw` ft_transfer fails and `on_owner_withdraw` restores the vault balance.
 
-#### Step 8 [fund] register the vault on rft.tokenfactory.testnet
+### Phase: Check
+
+#### Step 9 [check] read rft.tokenfactory.testnet's storage bounds
+
+```bash
+near contract call-function as-read-only rft.tokenfactory.testnet storage_balance_bounds json-args '{}' network-config testnet now
+```
+
+- Signer: none (read-only); receiver: `rft.tokenfactory.testnet`.
+- Cost: 0 NEAR.
+- Expected result: Same shape as the previous bounds read, for rft.tokenfactory.testnet (0.00125 NEAR).
+- Check (the plan's expectation): min <= 0.00125 NEAR (token_storage_deposit_near)
+- If it fails: Same as the previous bounds read.
+
+### Phase: Fund
+
+#### Step 10 [fund] register the vault on rft.tokenfactory.testnet
 
 ```bash
 near contract call-function as-transaction rft.tokenfactory.testnet storage_deposit json-args '{"account_id":"vault.owner.yield-demo.testnet","registration_only":true}' prepaid-gas '30 Tgas' attached-deposit '0.00125 NEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
@@ -152,11 +182,11 @@ near contract call-function as-transaction rft.tokenfactory.testnet storage_depo
 
 - Signer: `owner.yield-demo.testnet`; receiver: `rft.tokenfactory.testnet`.
 - Cost: 0.00125 NEAR.
-- Expected result: Same as step 6 for rft.tokenfactory.testnet (the swap output token).
+- Expected result: Same as step 7 for rft.tokenfactory.testnet (the swap output token).
 - Check (the plan's expectation): rft.tokenfactory.testnet storage_balance_of(vault.owner.yield-demo.testnet) is not null
 - If it fails: If skipped, Ref cannot pay the vault on `withdraw`, the reconcile sees no drop, and the output is stranded on Ref (`withdraw_not_reconciled`). Recoverable with `recover_from_ref` after registering.
 
-#### Step 9 [fund] register the owner on rft.tokenfactory.testnet (so withdrawals can land)
+#### Step 11 [fund] register the owner on rft.tokenfactory.testnet (so withdrawals can land)
 
 ```bash
 near contract call-function as-transaction rft.tokenfactory.testnet storage_deposit json-args '{"account_id":"owner.yield-demo.testnet","registration_only":true}' prepaid-gas '30 Tgas' attached-deposit '0.00125 NEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
@@ -164,11 +194,11 @@ near contract call-function as-transaction rft.tokenfactory.testnet storage_depo
 
 - Signer: `owner.yield-demo.testnet`; receiver: `rft.tokenfactory.testnet`.
 - Cost: 0.00125 NEAR.
-- Expected result: Same as step 6 for the owner on rft.tokenfactory.testnet.
+- Expected result: Same as step 7 for the owner on rft.tokenfactory.testnet.
 - Check (the plan's expectation): rft.tokenfactory.testnet storage_balance_of(owner.yield-demo.testnet) is not null
-- If it fails: If skipped, step 21 fails and the vault restores its balance.
+- If it fails: If skipped, step 24 fails and the vault restores its balance.
 
-#### Step 10 [fund] wrap 0.02 NEAR into wNEAR
+#### Step 12 [fund] wrap 0.02 NEAR into wNEAR
 
 ```bash
 near contract call-function as-transaction wrap.testnet near_deposit json-args '{}' prepaid-gas '30 Tgas' attached-deposit '0.02 NEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
@@ -178,11 +208,11 @@ near contract call-function as-transaction wrap.testnet near_deposit json-args '
 - Cost: 0.02 NEAR.
 - Expected result: wrap.testnet mints wNEAR to the owner. `near_deposit` is UNCONFIRMED (see Known gaps): the method name is the standard w-near one but wrap.testnet was not inspected.
 - Check (the plan's expectation): owner holds at least 20000000000000000000000 wNEAR (ft_balance_of)
-- If it fails: If the method does not exist or the call fails, the owner has no wNEAR; use the Ref testnet UI to swap NEAR for wNEAR, or pick a different input token in the config. If the owner is not registered on wrap.testnet (step 7 skipped), this fails.
+- If it fails: If the method does not exist or the call fails, the owner has no wNEAR; use the Ref testnet UI to swap NEAR for wNEAR, or pick a different input token in the config. If the owner is not registered on wrap.testnet (step 8 skipped), this fails.
 
 ### Phase: Check
 
-#### Step 11 [check] read Ref's storage bounds
+#### Step 13 [check] read Ref's storage bounds
 
 ```bash
 near contract call-function as-read-only ref-finance-101.testnet storage_balance_bounds json-args '{}' network-config testnet now
@@ -192,11 +222,11 @@ near contract call-function as-read-only ref-finance-101.testnet storage_balance
 - Cost: 0 NEAR.
 - Expected result: JSON `{"min":"1020000000000000000000","max":null}` as read on 2026-11-05: 0.00102 NEAR minimum, no maximum.
 - Check (the plan's expectation): min <= ref_storage_deposit_near; note per-token storage Ref needs
-- If it fails: If `min` is above `ref_storage_deposit_near` (0.5 NEAR), do not run step 12 with that value; raise the config value.
+- If it fails: If `min` is above `ref_storage_deposit_near` (0.5 NEAR), do not run step 14 with that value; raise the config value.
 
 ### Phase: Fund
 
-#### Step 12 [fund] pay the vault's Ref storage
+#### Step 14 [fund] pay the vault's Ref storage
 
 ```bash
 near contract call-function as-transaction vault.owner.yield-demo.testnet register_on_ref json-args '{}' prepaid-gas '100 Tgas' attached-deposit '0.5 NEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
@@ -206,11 +236,11 @@ near contract call-function as-transaction vault.owner.yield-demo.testnet regist
 - Cost: 0.5 NEAR.
 - Expected result: The vault calls Ref `storage_deposit { registration_only: false }` with the whole 0.5 NEAR and logs a `registered_on_ref` event. The 0.5 NEAR stays on Ref as the vault storage balance.
 - Check (the plan's expectation): registered_on_ref event; Ref storage_balance_of(vault) is not null
-- If it fails: On a failed Ref call the protocol refunds the vault and `on_register` forwards it to the owner (`register_failed` event); if the forward fails the NEAR sits on the vault and `withdraw_ref_storage` / `withdraw_near` (steps 26, 28) move it. Needs 60 TGas minimum (MIN_REGISTER_GAS); the plan attaches 100 TGas. The per-token storage Ref needs is UNCONFIRMED; 0.5 NEAR is deliberately generous, and the unused part is recoverable with step 26.
+- If it fails: On a failed Ref call the protocol refunds the vault and `on_register` forwards it to the owner (`register_failed` event); if the forward fails the NEAR sits on the vault and `withdraw_ref_storage` / `withdraw_near` (steps 29 and 31) move it. Needs 60 TGas minimum (MIN_REGISTER_GAS); the plan attaches 100 TGas. The per-token storage Ref needs is UNCONFIRMED; 0.5 NEAR is deliberately generous, and the unused part is recoverable with step 29.
 
 ### Phase: Check
 
-#### Step 13 [check] read the vault's Ref storage balance
+#### Step 15 [check] read the vault's Ref storage balance
 
 ```bash
 near contract call-function as-read-only ref-finance-101.testnet storage_balance_of json-args '{"account_id":"vault.owner.yield-demo.testnet"}' network-config testnet now
@@ -220,11 +250,11 @@ near contract call-function as-read-only ref-finance-101.testnet storage_balance
 - Cost: 0 NEAR.
 - Expected result: JSON `{"total":"500000000000000000000000","available":"..."}`; `available` is what `withdraw_ref_storage` can pull back.
 - Check (the plan's expectation): total >= storage_balance_bounds.min
-- If it fails: null means registration did not happen: repeat step 12 or read the vault README "Ref storage".
+- If it fails: null means registration did not happen: repeat step 14 or read the vault README "Ref storage".
 
 ### Phase: Fund
 
-#### Step 14 [fund] deposit 20000000000000000000000 of wrap.testnet into the vault
+#### Step 16 [fund] deposit 20000000000000000000000 of wrap.testnet into the vault
 
 ```bash
 near contract call-function as-transaction wrap.testnet ft_transfer_call json-args '{"receiver_id":"vault.owner.yield-demo.testnet","amount":"20000000000000000000000","msg":""}' prepaid-gas '100 Tgas' attached-deposit '1 yoctoNEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
@@ -238,7 +268,7 @@ near contract call-function as-transaction wrap.testnet ft_transfer_call json-ar
 
 ### Phase: Check
 
-#### Step 15 [check] read the vault's tracked balance
+#### Step 17 [check] read the vault's tracked balance
 
 ```bash
 near contract call-function as-read-only vault.owner.yield-demo.testnet get_balance json-args '{"token_id":"wrap.testnet"}' network-config testnet now
@@ -248,9 +278,9 @@ near contract call-function as-read-only vault.owner.yield-demo.testnet get_bala
 - Cost: 0 NEAR.
 - Expected result: The string "20000000000000000000000".
 - Check (the plan's expectation): == 20000000000000000000000
-- If it fails: A smaller value or "0" means the deposit was refunded; look at the step 14 receipts.
+- If it fails: A smaller value or "0" means the deposit was refunded; look at the step 16 receipts.
 
-#### Step 16 [check] run the swap rules without side effects
+#### Step 18 [check] run the swap rules without side effects
 
 ```bash
 near contract call-function as-read-only vault.owner.yield-demo.testnet check_proposal json-args '{"proposal":{"pool_id":0,"token_in":"wrap.testnet","token_out":"rft.tokenfactory.testnet","amount_in":"10000000000000000000000","min_amount_out":"50000000"},"runner_id":"runner.owner.yield-demo.testnet"}' network-config testnet now
@@ -260,11 +290,11 @@ near contract call-function as-read-only vault.owner.yield-demo.testnet check_pr
 - Cost: 0 NEAR.
 - Expected result: JSON `{"ok":true,"reason":""}`.
 - Check (the plan's expectation): ok == true
-- If it fails: When `ok` is false, `reason` is "ERR_CODE: detail" (for example ERR_NO_LIMIT, ERR_MAX_TRADE, ERR_PRICE_FLOOR, ERR_DAILY_CAP). Fix the config or the amounts (`update_config`) before step 17. Do not run step 17 with `ok: false`; it would panic and lose only gas.
+- If it fails: When `ok` is false, `reason` is "ERR_CODE: detail" (for example ERR_NO_LIMIT, ERR_MAX_TRADE, ERR_PRICE_FLOOR, ERR_DAILY_CAP). Fix the config or the amounts (`update_config`) before step 19. Do not run step 19 with `ok: false`; it would panic and lose only gas.
 
 ### Phase: Swap
 
-#### Step 17 [swap] runner swaps 10000000000000000000000 wrap.testnet -> rft.tokenfactory.testnet on pool 0
+#### Step 19 [swap] runner swaps 10000000000000000000000 wrap.testnet -> rft.tokenfactory.testnet on pool 0
 
 ```bash
 near contract call-function as-transaction vault.owner.yield-demo.testnet execute_swap json-args '{"proposal":{"pool_id":0,"token_in":"wrap.testnet","token_out":"rft.tokenfactory.testnet","amount_in":"10000000000000000000000","min_amount_out":"50000000"}}' prepaid-gas '300.0 Tgas' attached-deposit '0 NEAR' sign-as runner.owner.yield-demo.testnet network-config testnet sign-with-keychain send
@@ -272,13 +302,13 @@ near contract call-function as-transaction vault.owner.yield-demo.testnet execut
 
 - Signer: `runner.owner.yield-demo.testnet`; receiver: `vault.owner.yield-demo.testnet`.
 - Cost: 0 NEAR.
-- Expected result: The transaction itself returns after the first receipt; the swap chain (ft_transfer_call to Ref, on_deposit, Ref swap, on_swap, pre-withdraw read, Ref withdraw, reconcile) takes several more blocks. Poll step 18 until `swap_in_flight` is false. Logs end in a `swap_executed` event.
+- Expected result: The transaction itself returns after the first receipt; the swap chain (ft_transfer_call to Ref, on_deposit, Ref swap, on_swap, pre-withdraw read, Ref withdraw, reconcile) takes several more blocks. Poll step 20 until `swap_in_flight` is false. Logs end in a `swap_executed` event.
 - Check (the plan's expectation): swap_executed event; balance of token_out >= min_amount_out
 - If it fails: This is the step most likely to fail and the least tested: no gas figure has been measured on Ref. 300 TGas attached against a 280 TGas minimum (MIN_EXECUTE_GAS); NEAR allows up to 1 PGas per transaction, so you may attach more, but the near-cli-rs skill documents 300 Tgas as its maximum (UNCONFIRMED against upstream). Read the vault README "Failure handling" table. If funds are stranded on Ref the vault records them in `stranded_on_ref` / `unverified_on_ref`. If a callback never ran, wait 10 minutes, then use the force release procedure in the Rollback section.
 
 ### Phase: Check
 
-#### Step 18 [check] read the vault state after the swap
+#### Step 20 [check] read the vault state after the swap
 
 ```bash
 near contract call-function as-read-only vault.owner.yield-demo.testnet get_state json-args '{}' network-config testnet now
@@ -290,7 +320,7 @@ near contract call-function as-read-only vault.owner.yield-demo.testnet get_stat
 - Check (the plan's expectation): no swap in flight, swaps_executed == 1, nothing stranded
 - If it fails: `swap_in_flight: true` after about 2 minutes: keep polling; after 10 minutes see force release. Non-empty `stranded_on_ref`: swap failed or output could not be withdrawn; use `recover_from_ref` (Rollback section).
 
-#### Step 19 [check] read what is left on Ref for token_out
+#### Step 21 [check] read what is left on Ref for token_out
 
 ```bash
 near contract call-function as-read-only ref-finance-101.testnet get_deposit json-args '{"account_id":"vault.owner.yield-demo.testnet","token_id":"rft.tokenfactory.testnet"}' network-config testnet now
@@ -302,7 +332,7 @@ near contract call-function as-read-only ref-finance-101.testnet get_deposit jso
 - Check (the plan's expectation): 0 (the chain withdrew it back to the vault)
 - If it fails: A non-zero value means the output is still on Ref (and should appear in `stranded_on_ref`). Do not delete the vault until it is zero.
 
-#### Step 20 [check] read the vault's token_out balance
+#### Step 22 [check] read the vault's token_out balance
 
 ```bash
 near contract call-function as-read-only vault.owner.yield-demo.testnet get_balance json-args '{"token_id":"rft.tokenfactory.testnet"}' network-config testnet now
@@ -310,39 +340,51 @@ near contract call-function as-read-only vault.owner.yield-demo.testnet get_bala
 
 - Signer: none (read-only); receiver: `vault.owner.yield-demo.testnet`.
 - Cost: 0 NEAR.
-- Expected result: A string at or above 50000000 (0.5 rft at 8 decimals).
+- Expected result: A U128 string at or above 50000000 (0.5 rft at 8 decimals): the whole token_out balance. Write the value down: the withdraw step needs it.
 - Check (the plan's expectation): >= 50000000
 - If it fails: Below the floor cannot happen after `swap_executed` (the contract enforces min_amount_out); 0 means the swap did not complete.
 
+#### Step 23 [check] read the vault's unswapped token_in balance
+
+```bash
+near contract call-function as-read-only vault.owner.yield-demo.testnet get_balance json-args '{"token_id":"wrap.testnet"}' network-config testnet now
+```
+
+- Signer: none (read-only); receiver: `vault.owner.yield-demo.testnet`.
+- Cost: 0 NEAR.
+- Expected result: A U128 string: the unswapped wrap.testnet balance, 10000000000000000000000 (0.01 wNEAR) in the example. Write the value down: the next step needs it.
+- Check (the plan's expectation): 10000000000000000000000 if the swap took exactly amount_in (Ref may accept less)
+- If it fails: A value other than the deposit minus `amount_in` means the swap or an earlier withdraw did not do what was expected; read `get_state` before withdrawing.
+
 ### Phase: Withdraw
 
-#### Step 21 [withdraw] owner withdraws 50000000 of rft.tokenfactory.testnet (a floor: use get_balance for the full amount)
+#### Step 24 [withdraw] owner withdraws the whole token_out balance of rft.tokenfactory.testnet
 
 ```bash
-near contract call-function as-transaction vault.owner.yield-demo.testnet withdraw json-args '{"token_id":"rft.tokenfactory.testnet","amount":"50000000"}' prepaid-gas '100 Tgas' attached-deposit '1 yoctoNEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
+near contract call-function as-transaction vault.owner.yield-demo.testnet withdraw json-args '{"token_id":"rft.tokenfactory.testnet","amount":"<READ get_balance(rft.tokenfactory.testnet) at step view-balance-2>"}' prepaid-gas '100 Tgas' attached-deposit '1 yoctoNEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
 ```
 
 - Signer: `owner.yield-demo.testnet`; receiver: `vault.owner.yield-demo.testnet`.
 - Cost: 0.000000000000000000000001 NEAR.
-- Expected result: The vault debits, calls `ft_transfer` to the owner, and `on_owner_withdraw` confirms; a `withdraw` event is logged. 50000000 is only a floor: to take everything, pass the exact value read in step 20.
-- Check (the plan's expectation): withdraw event; owner ft_balance_of(token_out) rose
-- If it fails: Needs 80 TGas minimum (MIN_WITHDRAW_GAS); the plan attaches 100. On a failed `ft_transfer` the callback restores the vault balance. Refused with ERR_RELEASE_PENDING while a force release reconciles.
+- Expected result: RUN-TIME VALUE. The amount in this command is a marker, not a literal. Before running it, replace the whole marker text (including the angle brackets) with the value returned by step 22 (`get_balance` of rft.tokenfactory.testnet), as a plain string of digits, keeping the quotes around it. The tool lists these in the "filled at run time" part of the `dry-run` output. The vault debits, calls `ft_transfer` to the owner, and `on_owner_withdraw` confirms; a `withdraw` event is logged. Afterward the vault balance of rft.tokenfactory.testnet is 0.
+- Check (the plan's expectation): withdraw event; owner ft_balance_of(token_out) rose; the vault's token_out balance is 0
+- If it fails: If the value read is 0 there is nothing to withdraw (the swap did not credit it). Needs 80 TGas minimum (MIN_WITHDRAW_GAS); the plan attaches 100. On a failed `ft_transfer` the callback restores the vault balance. Refused with ERR_RELEASE_PENDING while a force release reconciles; ERR_ZERO_AMOUNT for a zero amount.
 
-#### Step 22 [withdraw] owner withdraws the 10000000000000000000000 of wrap.testnet not swapped
+#### Step 25 [withdraw] owner withdraws the unswapped wrap.testnet balance
 
 ```bash
-near contract call-function as-transaction vault.owner.yield-demo.testnet withdraw json-args '{"token_id":"wrap.testnet","amount":"10000000000000000000000"}' prepaid-gas '100 Tgas' attached-deposit '1 yoctoNEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
+near contract call-function as-transaction vault.owner.yield-demo.testnet withdraw json-args '{"token_id":"wrap.testnet","amount":"<READ get_balance(wrap.testnet) at step view-balance-3>"}' prepaid-gas '100 Tgas' attached-deposit '1 yoctoNEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
 ```
 
 - Signer: `owner.yield-demo.testnet`; receiver: `vault.owner.yield-demo.testnet`.
 - Cost: 0.000000000000000000000001 NEAR.
-- Expected result: Same as step 21 for the unswapped 0.01 wNEAR. The vault passes `skip_unwrap_near: true` to Ref, so output tokens stay wNEAR; this withdraw also pays wNEAR, not NEAR.
-- Check (the plan's expectation): withdraw event; vault get_balance(token_in) == 0
-- If it fails: Same as step 21. Afterward `get_balance(wrap.testnet)` should be "0".
+- Expected result: RUN-TIME VALUE. The amount in this command is a marker, not a literal. Before running it, replace the whole marker text (including the angle brackets) with the value returned by step 23 (`get_balance` of wrap.testnet), as a plain string of digits, keeping the quotes around it. The tool lists these in the "filled at run time" part of the `dry-run` output. SKIP this step if that value is 0, because `withdraw` rejects a zero amount. The vault passes `skip_unwrap_near: true` to Ref, so tokens stay wNEAR; this withdraw also pays wNEAR, not NEAR.
+- Check (the plan's expectation): withdraw event; vault get_balance(token_in) == 0. Skip this step if the value read is 0 (withdraw rejects a zero amount).
+- If it fails: Same as the previous withdraw. Afterward `get_balance(wrap.testnet)` should be "0".
 
 ### Phase: Check
 
-#### Step 23 [check] read the owner's token_out balance
+#### Step 26 [check] read the owner's token_out balance
 
 ```bash
 near contract call-function as-read-only rft.tokenfactory.testnet ft_balance_of json-args '{"account_id":"owner.yield-demo.testnet"}' network-config testnet now
@@ -352,11 +394,11 @@ near contract call-function as-read-only rft.tokenfactory.testnet ft_balance_of 
 - Cost: 0 NEAR.
 - Expected result: A string at or above 50000000 (more if the owner held rft before).
 - Check (the plan's expectation): >= 50000000
-- If it fails: If unchanged, the step 21 transfer failed; check owner registration on rft.tokenfactory.testnet (step 9).
+- If it fails: If unchanged, the step 24 transfer failed; check owner registration on rft.tokenfactory.testnet (step 11).
 
 ### Phase: Rollback
 
-#### Step 24 [rollback] pause the vault
+#### Step 27 [rollback] pause the vault
 
 ```bash
 near contract call-function as-transaction vault.owner.yield-demo.testnet pause json-args '{}' prepaid-gas '30 Tgas' attached-deposit '1 yoctoNEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
@@ -368,7 +410,7 @@ near contract call-function as-transaction vault.owner.yield-demo.testnet pause 
 - Check (the plan's expectation): paused event
 - If it fails: Needs exactly 1 yocto and the owner key; ERR_NOT_OWNER otherwise.
 
-#### Step 25 [rollback] revoke every runner
+#### Step 28 [rollback] revoke every runner
 
 ```bash
 near contract call-function as-transaction vault.owner.yield-demo.testnet revoke_all_runners json-args '{}' prepaid-gas '30 Tgas' attached-deposit '1 yoctoNEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
@@ -380,7 +422,7 @@ near contract call-function as-transaction vault.owner.yield-demo.testnet revoke
 - Check (the plan's expectation): runner_revoked event; get_config().runners == []
 - If it fails: Needs exactly 1 yocto and the owner key.
 
-#### Step 26 [rollback] pull the Ref storage balance back to the vault account
+#### Step 29 [rollback] pull the Ref storage balance back to the vault account
 
 ```bash
 near contract call-function as-transaction vault.owner.yield-demo.testnet withdraw_ref_storage json-args '{}' prepaid-gas '100 Tgas' attached-deposit '1 yoctoNEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
@@ -390,11 +432,11 @@ near contract call-function as-transaction vault.owner.yield-demo.testnet withdr
 - Cost: 0.000000000000000000000001 NEAR.
 - Expected result: The vault calls Ref `storage_withdraw`; Ref returns its available storage balance to the vault account; an `ref_storage_withdraw` event is logged. Not run against Ref yet.
 - Check (the plan's expectation): ref_storage_withdraw event; NEAR returns to the vault account
-- If it fails: Needs 40 TGas minimum (MIN_STORAGE_WITHDRAW_GAS). Ref may return less than the full 0.5 NEAR if it must keep storage for the vault token entries (UNCONFIRMED; compare `storage_balance_of` from step 13 before and after). Read step 13 again afterwards; NEAR left on Ref is not returned by deleting the vault.
+- If it fails: Needs 40 TGas minimum (MIN_STORAGE_WITHDRAW_GAS). Ref may return less than the full 0.5 NEAR if it must keep storage for the vault token entries (UNCONFIRMED; compare `storage_balance_of` from step 15 before and after). Read step 15 again afterwards; NEAR left on Ref is not returned by deleting the vault.
 
 ### Phase: Check
 
-#### Step 27 [check] read how much NEAR the owner can withdraw
+#### Step 30 [check] read how much NEAR the owner can withdraw
 
 ```bash
 near contract call-function as-read-only vault.owner.yield-demo.testnet get_withdrawable_near json-args '{}' network-config testnet now
@@ -402,27 +444,27 @@ near contract call-function as-read-only vault.owner.yield-demo.testnet get_with
 
 - Signer: none (read-only); receiver: `vault.owner.yield-demo.testnet`.
 - Cost: 0 NEAR.
-- Expected result: A U128 string: account balance minus storage cost minus a 0.1 NEAR reserve.
-- Check (the plan's expectation): >= 0.5 NEAR (else lower funding.withdraw_near_amount_near)
-- If it fails: If it is below 0.5 NEAR, lower `funding.withdraw_near_amount_near` in the config or skip step 28 (the account deletion in step 32 sends the remainder to the owner anyway).
+- Expected result: A U128 string: account balance minus storage cost minus a 0.1 NEAR reserve. Write the value down: the withdraw_near step needs it.
+- Check (the plan's expectation): the amount withdraw_near takes next (account balance minus storage cost minus a 0.1 NEAR reserve)
+- If it fails: If it is 0, skip `withdraw_near`; the account deletion later sends the remainder to the owner anyway.
 
 ### Phase: Rollback
 
-#### Step 28 [rollback] send free NEAR from the vault to the owner
+#### Step 31 [rollback] send the free NEAR from the vault to the owner
 
 ```bash
-near contract call-function as-transaction vault.owner.yield-demo.testnet withdraw_near json-args '{"amount":"500000000000000000000000"}' prepaid-gas '30 Tgas' attached-deposit '1 yoctoNEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
+near contract call-function as-transaction vault.owner.yield-demo.testnet withdraw_near json-args '{"amount":"<READ get_withdrawable_near() at step view-withdrawable>"}' prepaid-gas '30 Tgas' attached-deposit '1 yoctoNEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
 ```
 
 - Signer: `owner.yield-demo.testnet`; receiver: `vault.owner.yield-demo.testnet`.
 - Cost: 0.000000000000000000000001 NEAR.
-- Expected result: The vault transfers 0.5 NEAR to the owner and logs `near_withdrawn`.
-- Check (the plan's expectation): near_withdrawn event
-- If it fails: ERR_INSUFFICIENT_NEAR when the amount exceeds step 27. Optional if you are about to delete the vault.
+- Expected result: RUN-TIME VALUE. The amount in this command is a marker, not a literal. Before running it, replace the whole marker text (including the angle brackets) with the value returned by step 30 (`get_withdrawable_near`), as a plain string of digits, keeping the quotes around it. The tool lists these in the "filled at run time" part of the `dry-run` output. SKIP this step if that value is 0. The vault transfers that NEAR to the owner and logs `near_withdrawn`. Optional if you are about to delete the vault, which sends the remainder to the owner.
+- Check (the plan's expectation): near_withdrawn event. Skip this step if the value read is 0. Optional: delete-vault sends the remaining NEAR to the owner anyway.
+- If it fails: ERR_INSUFFICIENT_NEAR when the amount exceeds the value read; read the view again right before running, since the balance can change.
 
 ### Phase: Check
 
-#### Step 29 [check] read the vault state before deleting it
+#### Step 32 [check] read the vault state before deleting it
 
 ```bash
 near contract call-function as-read-only vault.owner.yield-demo.testnet get_state json-args '{}' network-config testnet now
@@ -432,9 +474,9 @@ near contract call-function as-read-only vault.owner.yield-demo.testnet get_stat
 - Cost: 0 NEAR.
 - Expected result: Everything empty or zero: `balances`, `stranded_on_ref`, `unverified_on_ref`, and all of `swap_in_flight`, `recovery_in_flight`, `release_in_flight` false.
 - Check (the plan's expectation): balances, stranded_on_ref, unverified_on_ref all empty or zero; swap_in_flight, recovery_in_flight, release_in_flight false
-- If it fails: Do not run step 32 until this is clean. Use the Rollback section to clear each non-empty item.
+- If it fails: Do not run step 35 until this is clean. Use the Rollback section to clear each non-empty item.
 
-#### Step 30 [check] read what Ref still holds of wrap.testnet for the vault
+#### Step 33 [check] read what Ref still holds of wrap.testnet for the vault
 
 ```bash
 near contract call-function as-read-only ref-finance-101.testnet get_deposit json-args '{"account_id":"vault.owner.yield-demo.testnet","token_id":"wrap.testnet"}' network-config testnet now
@@ -446,7 +488,7 @@ near contract call-function as-read-only ref-finance-101.testnet get_deposit jso
 - Check (the plan's expectation): 0
 - If it fails: Non-zero: tokens are still on Ref for the vault; recover them first. Deleting the account would destroy them.
 
-#### Step 31 [check] read what Ref still holds of rft.tokenfactory.testnet for the vault
+#### Step 34 [check] read what Ref still holds of rft.tokenfactory.testnet for the vault
 
 ```bash
 near contract call-function as-read-only ref-finance-101.testnet get_deposit json-args '{"account_id":"vault.owner.yield-demo.testnet","token_id":"rft.tokenfactory.testnet"}' network-config testnet now
@@ -456,11 +498,11 @@ near contract call-function as-read-only ref-finance-101.testnet get_deposit jso
 - Cost: 0 NEAR.
 - Expected result: The string "0".
 - Check (the plan's expectation): 0
-- If it fails: Same as step 30.
+- If it fails: Same as step 33.
 
 ### Phase: Rollback
 
-#### Step 32 [rollback] delete the vault account (destroys any tokens it still holds on token contracts or Ref)
+#### Step 35 [rollback] delete the vault account (destroys any tokens it still holds on token contracts or Ref)
 
 ```bash
 near account delete-account vault.owner.yield-demo.testnet beneficiary owner.yield-demo.testnet network-config testnet sign-with-keychain send
@@ -468,11 +510,11 @@ near account delete-account vault.owner.yield-demo.testnet beneficiary owner.yie
 
 - Signer: `vault.owner.yield-demo.testnet`; receiver: `vault.owner.yield-demo.testnet`.
 - Cost: 0 NEAR.
-- Expected result: The account is removed and its remaining NEAR is sent to the owner.
-- Check (the plan's expectation): vault.owner.yield-demo.testnet no longer exists. Deleting it destroys any tokens still held for it on the token contracts or on Ref; only run it after the pre-delete checks are clean. The beneficiary owner.yield-demo.testnet receives the remaining NEAR, so withdraw_near is only needed if you keep the account.
-- If it fails: IRREVERSIBLE. Tokens still recorded for the vault on any token contract or on Ref are destroyed with it. Run only after steps 29 to 31 are clean and the vault holds no token balance on the token contracts (`ft_balance_of` of each token for the vault is 0).
+- Expected result: The account is removed and its remaining NEAR is sent to the owner. The vault per-token storage deposits (0.00125 NEAR each) and any Ref storage still locked by token entries are forfeited: the plan has no storage_unregister step.
+- Check (the plan's expectation): vault.owner.yield-demo.testnet no longer exists. Deleting it destroys any tokens still held for it on the token contracts or on Ref; only run it after the pre-delete checks are clean. The beneficiary owner.yield-demo.testnet receives the remaining NEAR, so withdraw_near is only needed if you keep the account. The vault's per-token storage deposits (0.00125 NEAR each) and any Ref storage still locked by token entries are forfeited: the plan has no storage_unregister step.
+- If it fails: IRREVERSIBLE. Tokens still recorded for the vault on any token contract or on Ref are destroyed with it. Run only after steps 32 to 34 are clean and the vault holds no token balance on the token contracts (`ft_balance_of` of each token for the vault is 0).
 
-#### Step 33 [rollback] delete the runner account
+#### Step 36 [rollback] delete the runner account
 
 ```bash
 near account delete-account runner.owner.yield-demo.testnet beneficiary owner.yield-demo.testnet network-config testnet sign-with-keychain send
@@ -488,7 +530,7 @@ near account delete-account runner.owner.yield-demo.testnet beneficiary owner.yi
 
 ### Fastest safe stop
 
-Two owner calls, 1 yocto each, 30 TGas each. They are steps 24 and 25 above; run them alone, in this order, at any point after step 3:
+Two owner calls, 1 yocto each, 30 TGas each. They are steps 27 and 28 above; run them alone, in this order, at any point after step 3:
 
 ```bash
 near contract call-function as-transaction vault.owner.yield-demo.testnet pause json-args '{}' prepaid-gas '30 Tgas' attached-deposit '1 yoctoNEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
@@ -500,18 +542,18 @@ After this no runner can start a swap. It blocks swaps only: owner deposits are 
 ### Full teardown order
 
 1. Wait for `get_state` to show `swap_in_flight`, `recovery_in_flight` and `release_in_flight` all false. If a swap or recovery is stuck, use the recovery procedures below first.
-2. Pause and revoke all runners (steps 24, 25).
-3. Withdraw every token balance to the owner with `withdraw` (steps 21, 22 pattern; read each amount with `get_balance`).
+2. Pause and revoke all runners (steps 27 and 28).
+3. Withdraw every token balance to the owner with `withdraw` (steps 24 and 25 pattern; read each amount with `get_balance`).
 4. Recover anything on Ref (`stranded_on_ref`, `unverified_on_ref`, or a non-zero `get_deposit`) with `recover_from_ref`, then `withdraw` again.
-5. Pull Ref storage back with `withdraw_ref_storage` (step 26), then optionally `withdraw_near` (step 28).
-6. Run the pre-delete checks (steps 29 to 31): everything empty or zero.
-7. Delete the vault account (step 32), then the runner account (step 33).
+5. Pull Ref storage back with `withdraw_ref_storage` (step 29), then optionally `withdraw_near` (step 31).
+6. Run the pre-delete checks (steps 32 to 34): everything empty or zero.
+7. Delete the vault account (step 35), then the runner account (step 36).
 
-WARNING: deleting the vault account strands, and in practice loses, any tokens still held for it on the token contracts and on Ref. Those balances stay recorded under the account id, but nothing can move them until someone re-creates that id (for `vault.<owner>` only the owner can) and deploys code that can, and the vault's own bookkeeping is gone with its state. Never run step 32 while any balance, `stranded_on_ref`, `unverified_on_ref` or Ref `get_deposit` is non-zero. Also check each token directly (`ft_balance_of` for the vault on wrap.testnet and rft.tokenfactory.testnet) because the vault's own bookkeeping can miss tokens sent to it outside `ft_transfer_call`; `sync_balance` credits them so `withdraw` can move them.
+WARNING: deleting the vault account strands, and in practice loses, any tokens still held for it on the token contracts and on Ref. Those balances stay recorded under the account id, but nothing can move them until someone re-creates that id (for `vault.<owner>` only the owner can) and deploys code that can, and the vault's own bookkeeping is gone with its state. Never run step 35 while any balance, `stranded_on_ref`, `unverified_on_ref` or Ref `get_deposit` is non-zero. Also check each token directly (`ft_balance_of` for the vault on wrap.testnet and rft.tokenfactory.testnet) because the vault's own bookkeeping can miss tokens sent to it outside `ft_transfer_call`; `sync_balance` credits them so `withdraw` can move them.
 
 ### Recovery commands the plan does not print
 
-These are not produced by `yield-live.mjs` (they only apply after a failure). They use the same call-function syntax as step 24 with a different method and gas. The method names, gas minimums and argument shapes below are checked against `contracts/yield-vault/src/lib.rs` by the test; the near-cli-rs syntax is UNCONFIRMED against upstream.
+These are not produced by `yield-live.mjs` (they only apply after a failure). They use the same call-function syntax as step 27 with a different method and gas. The method names, gas minimums and argument shapes below are checked against `contracts/yield-vault/src/lib.rs` by the test; the near-cli-rs syntax is UNCONFIRMED against upstream.
 
 | Situation | Method (owner, 1 yocto unless noted) | Minimum gas | Args |
 | --- | --- | --- | --- |
@@ -573,7 +615,7 @@ Status meanings: CONFIRMED means checked against the source named in the last co
 | T3 | token | `ft_transfer`, `ft_balance_of` | standard NEP-141 | 1 yocto / view | vault passes 30 TGas | CONFIRMED (NEP-141 standard) |
 | W1 | wrap.testnet | `near_deposit` | none | NEAR to wrap | 30 TGas | UNCONFIRMED: payable methods cannot be RPC-checked. Inspect the deployed wrap.testnet code or run the step with 0.02 NEAR and read `ft_balance_of` |
 | N1 | near-cli-rs | every command shape in this document | n/a | n/a | n/a | UNCONFIRMED against upstream: shapes come from the repo skill `.agents/skills/near-cli-rs/SKILL.md` (v0.14+), not checked against the near-cli-rs README or `near --help`. Run `near --version` and `near contract call-function as-transaction --help` before the first send |
-| N2 | near-cli-rs | step 17 gas `'300.0 Tgas'` | n/a | n/a | 300 TGas | The skill lists 300 Tgas as the maximum; NEAR itself allows 1 PGas per transaction (CONFIRMED, docs.near.org gas page and testnet protocol config) |
+| N2 | near-cli-rs | step 19 gas `'300.0 Tgas'` | n/a | n/a | 300 TGas | The skill lists 300 Tgas as the maximum; NEAR itself allows 1 PGas per transaction (CONFIRMED, docs.near.org gas page and testnet protocol config) |
 | N3 | RPC | https://test.rpc.fastnear.com | n/a | n/a | n/a | CONFIRMED in the official provider list (docs.near.org). near-cli-rs `network-config testnet` uses its own default RPC; the provider it picks was not checked |
 
 ## Known gaps

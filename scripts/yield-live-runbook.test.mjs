@@ -78,6 +78,33 @@ test('gas minimums stated for recovery methods match lib.rs', () => {
   assert.match(table, new RegExp(`sync_balance\`[^\\n]*\\| ${tgas('MIN_SYNC_GAS')} TGas`));
 });
 
+test('every run-time marker in the plan is explained in the runbook', () => {
+  const markers = [];
+  for (const t of plan.transactions) {
+    for (const m of t.near_cli.matchAll(/<READ [^>]*>/g)) markers.push({ id: t.id, marker: m[0] });
+  }
+  assert.ok(markers.length >= 3, 'expected run-time markers in the plan');
+  assert.deepEqual(
+    markers.map((m) => m.id).sort(),
+    (plan.filled_at_run_time || []).map((f) => f.step).sort(),
+    'markers and the tool\'s filled-at-run-time list disagree',
+  );
+  for (const { id, marker } of markers) {
+    assert.ok(runbook.includes(marker), `marker for ${id} missing: ${marker}`);
+    const i = plan.transactions.findIndex((t) => t.id === id);
+    const section = runbook.split(/^#### Step /m)[i + 1];
+    assert.match(section, /RUN-TIME VALUE/, `step ${id} does not explain its marker`);
+  }
+  assert.match(runbook, /SKIP this step if that value is 0/);
+});
+
+test('totals and step count in the runbook match the plan', () => {
+  assert.ok(runbook.includes(`${plan.totals.transactions} transactions, ${plan.totals.views} views`));
+  assert.ok(runbook.includes(`prints ${plan.transactions.length} steps`));
+  assert.ok(runbook.includes(`${plan.totals.owner_outflow_near} NEAR`));
+  assert.ok(runbook.includes(`${plan.totals.gas_tgas} TGas`));
+});
+
 test('vault README links to the runbook and the target exists', () => {
   const m = /\]\((\.\.\/\.\.\/docs\/yield-vault-live-runbook\.md)\)/.exec(vaultReadme);
   assert.ok(m, 'link missing');
