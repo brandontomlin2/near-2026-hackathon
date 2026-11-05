@@ -4,7 +4,7 @@ What it is: a near-sdk Rust smart contract that holds NEP-141 token balances for
 
 A per-personality-NFT trading vault. Each personality NFT (aloof, chaotic, social, skeptic) is an AI agent running a strategy off chain. The agent acts only through approved **runner** accounts, and this contract enforces hard limits on chain regardless of what the strategy proposes. Approved swaps run on the Rhea (Ref Finance) testnet exchange `ref-finance-101.testnet` with the deposit -> swap -> withdraw pattern. wNEAR is `wrap.testnet`.
 
-**Status: NOT deployed.** A testnet deploy needs the human's explicit yes. Tested with unit tests (`cargo test`, PENDING_CARGO tests) and 14 integration tests in a throwaway local sandbox against a mock Ref and mock NEP-141 tokens (`sandbox/`, see "Sandbox measurements"). See "Known risks".
+**Status: NOT deployed.** A testnet deploy needs the human's explicit yes. Tested with unit tests (`cargo test`, 254 tests) and 14 integration tests in a throwaway local sandbox against a mock Ref and mock NEP-141 tokens (`sandbox/`, see "Sandbox measurements"). See "Known risks".
 
 Live testnet runbook (every step, cost, failure handling, verification table): [../../docs/yield-vault-live-runbook.md](../../docs/yield-vault-live-runbook.md).
 
@@ -221,7 +221,7 @@ NEP-297, `standard: "yield_vault"`, `version: "1.0.0"`: `deposit`, `withdraw`, `
 
 ```
 cd contracts/yield-vault
-cargo test                                          # PENDING_CARGO unit tests
+cargo test                                          # 254 unit tests
 (cd sandbox && cargo test -- --test-threads=1)      # 14 local sandbox tests, see "Sandbox measurements"
 cargo clippy --all-targets
 cargo build --target wasm32-unknown-unknown --release
@@ -241,7 +241,7 @@ Fixed after the audit:
 - Medium, no escape from a stuck `in_flight` lock: `started_at` plus owner `force_release_lock` after 10 minutes, with swap ids so late callbacks cannot touch a newer swap.
 - Medium, `recover_from_ref` during a swap: rejected with `ERR_SWAP_IN_FLIGHT`. `update_config` is rejected the same way. A follow-up review found the reverse case (a swap or second recovery starting while a recovery's reconcile was still pending, so the two reconciles misread each other's Ref balance); a recovery now holds its own lock until its reconcile runs.
 - Low, dead `_reserved` storage map: removed.
-- The audit found zero tests; there are now PENDING_CARGO unit tests and 14 local sandbox tests against a mock Ref. No testnet test exists.
+- The audit found zero tests; there are now 254 unit tests and 14 local sandbox tests against a mock Ref. No testnet test exists.
 
 Fixed after a second review (`/tmp/yrev26-report.md`):
 

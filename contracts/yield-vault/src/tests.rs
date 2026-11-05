@@ -3419,11 +3419,11 @@ fn release_swap_ran_behind_phantom_stranded_names_the_untracked_ref_balance() {
     assert!(v.get_state().recovery_in_flight);
     let rid = v.recovery.as_ref().unwrap().id;
     cb_ctx(ok_result(&U128(100)), T0 + STALE_LOCK_NS);
-    let _ = v.on_recover_pre(rid, Ok(U128(100)));
+    let _ = v.handle_recover_pre(rid, Ok(U128(100)));
     cb_ctx(PromiseResult::Successful(vec![]), T0 + STALE_LOCK_NS);
     let _ = v.on_recover(rid);
     cb_ctx(ok_result(&U128(0)), T0 + STALE_LOCK_NS);
-    assert_eq!(v.on_recover_reconciled(rid, Ok(U128(0))).0, 100);
+    assert_eq!(v.handle_recover_reconciled(rid, Ok(U128(0))).0, 100);
     assert_eq!(bal(&v, &rft()), 100, "the real tokens are recovered");
     assert_eq!(stranded(&v, &rft()), 50);
 }
@@ -3451,9 +3451,9 @@ fn strand_keeps_spend_counted_and_rollback_restores_it() {
     run(&mut v, proposal(400));
     let id = v.next_swap_id;
     cb_ctx(ok_result(&U128(400)), T0);
-    let _ = v.on_deposit(id, Ok(U128(400)));
+    let _ = v.handle_deposit(id, Ok(U128(400)));
     cb_ctx(PromiseResult::Failed, T0);
-    let _ = v.on_swap(id, Err(PromiseError::Failed));
+    let _ = v.handle_swap(id, Err(PromiseError::Failed));
     assert_eq!(stranded(&v, &wrap()), 400);
     assert_eq!(spent_view(&v, &wrap()), 400, "strand keeps the spend");
 
@@ -3461,7 +3461,7 @@ fn strand_keeps_spend_counted_and_rollback_restores_it() {
     assert_eq!(spent_view(&v, &wrap()), 700);
     let id = v.next_swap_id;
     cb_ctx(ok_result(&U128(0)), T0);
-    let _ = v.on_deposit(id, Ok(U128(0)));
+    let _ = v.handle_deposit(id, Ok(U128(0)));
     assert_eq!(bal(&v, &wrap()), 9_600);
     assert_eq!(spent_view(&v, &wrap()), 400, "rollback restores only its own, same-day spend");
 }
@@ -3473,9 +3473,9 @@ fn strand_swap(v: &mut YieldVault) {
     run(v, proposal(100));
     let id = v.next_swap_id;
     cb_ctx(ok_result(&U128(100)), T0);
-    let _ = v.on_deposit(id, Ok(U128(100)));
+    let _ = v.handle_deposit(id, Ok(U128(100)));
     cb_ctx(PromiseResult::Failed, T0);
-    let _ = v.on_swap(id, Err(PromiseError::Failed));
+    let _ = v.handle_swap(id, Err(PromiseError::Failed));
     assert!(!v.get_state().swap_in_flight);
 }
 /// One swap that completes (390 rft credited).
@@ -3483,13 +3483,13 @@ fn good_swap(v: &mut YieldVault) {
     run(v, proposal(100));
     let id = v.next_swap_id;
     cb_ctx(ok_result(&U128(100)), T0);
-    let _ = v.on_deposit(id, Ok(U128(100)));
+    let _ = v.handle_deposit(id, Ok(U128(100)));
     cb_ctx(ok_result(&U128(390)), T0);
-    let _ = v.on_swap(id, Ok(U128(390)));
+    let _ = v.handle_swap(id, Ok(U128(390)));
     cb_ctx(ok_result(&U128(390)), T0);
-    let _ = v.on_withdraw_pre(id, Ok(U128(390)));
+    let _ = v.handle_withdraw_pre(id, Ok(U128(390)));
     cb_ctx(ok_result(&U128(0)), T0);
-    v.on_withdraw_reconciled(id, Ok(U128(0)));
+    v.handle_withdraw_reconciled(id, Ok(U128(0)));
     assert!(!v.get_state().swap_in_flight);
 }
 fn unpause(v: &mut YieldVault) {
@@ -3548,7 +3548,7 @@ fn rolled_back_failures_do_not_count_as_strands() {
         run(&mut v, proposal(100));
         let id = v.next_swap_id;
         cb_ctx(ok_result(&U128(0)), T0);
-        let _ = v.on_deposit(id, Ok(U128(0))); // nothing left the vault
+        let _ = v.handle_deposit(id, Ok(U128(0))); // nothing left the vault
     }
     assert!(!v.get_state().paused);
     assert_eq!(bal(&v, &wrap()), 10_000);
@@ -3564,29 +3564,29 @@ fn other_strand_outcomes_count_too() {
     run(&mut v, p);
     let id = v.next_swap_id;
     cb_ctx(ok_result(&U128(100)), T0);
-    let _ = v.on_deposit(id, Ok(U128(100)));
+    let _ = v.handle_deposit(id, Ok(U128(100)));
     cb_ctx(ok_result(&U128(390)), T0);
-    let _ = v.on_swap(id, Ok(U128(390)));
+    let _ = v.handle_swap(id, Ok(U128(390)));
     assert_eq!(stranded(&v, &rft()), 390);
 
     run(&mut v, proposal(100));
     let id = v.next_swap_id;
     cb_ctx(PromiseResult::Failed, T0);
-    let _ = v.on_deposit(id, Err(PromiseError::Failed));
+    let _ = v.handle_deposit(id, Err(PromiseError::Failed));
     cb_ctx(PromiseResult::Failed, T0);
-    v.on_deposit_reconciled(id, Err(PromiseError::Failed));
+    v.handle_deposit_reconciled(id, Err(PromiseError::Failed));
     assert!(!v.get_state().paused);
 
     run(&mut v, proposal(100));
     let id = v.next_swap_id;
     cb_ctx(ok_result(&U128(100)), T0);
-    let _ = v.on_deposit(id, Ok(U128(100)));
+    let _ = v.handle_deposit(id, Ok(U128(100)));
     cb_ctx(ok_result(&U128(390)), T0);
-    let _ = v.on_swap(id, Ok(U128(390)));
+    let _ = v.handle_swap(id, Ok(U128(390)));
     cb_ctx(ok_result(&U128(390)), T0);
-    let _ = v.on_withdraw_pre(id, Ok(U128(390)));
+    let _ = v.handle_withdraw_pre(id, Ok(U128(390)));
     cb_ctx(ok_result(&U128(390)), T0);
-    v.on_withdraw_reconciled(id, Ok(U128(390))); // deposit did not drop
+    v.handle_withdraw_reconciled(id, Ok(U128(390))); // deposit did not drop
     assert!(v.get_state().paused);
 }
 
