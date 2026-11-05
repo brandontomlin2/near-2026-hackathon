@@ -96,6 +96,18 @@ test("Judge quick path step for yield:demo quotes real output lines", () => {
   for (const q of quick.quotes) assert.ok(lines.includes(q.trim()), `quick path quotes a line it does not print: ${q}`);
 });
 
+test("README's note on the --calls command line matches the output: it is the last line, a near-cli-rs command printed as text", () => {
+  const step = demo.steps.find((s) => s.command === "npm run yield:demo -- --calls");
+  assert.ok(step, "Offline demo has a --calls step");
+  const raw = numberedSteps(section(readme, "Yield Optimizer")).find((s) => s.text.startsWith("Run `npm run yield:demo -- --calls`"));
+  assert.match(raw.text, /The last line, starting with command:, is the near-cli-rs command an owner would run by hand after review; the demo prints it as text and never runs it/);
+  const lines = runDemo(step.command).split("\n").filter((l) => l.trim());
+  const last = lines.at(-1).trim();
+  assert.match(last, /^command: near contract call-function as-transaction vault\.yield-demo\.testnet execute_swap /);
+  assert.equal(lines.filter((l) => l.trim().startsWith("command: ")).length, 1, "exactly one command line, for the one planned call");
+  assert.ok(lines.some((l) => l.trim() === "signed: false") && lines.some((l) => l.trim() === "sent: false"));
+});
+
 test("README judge:expect markers for the demo block are lines or substrings of the real output", () => {
   const expects = [...demo.text.matchAll(/<!-- judge:expect (.*?) -->/g)].map((m) => m[1]);
   assert.ok(expects.length >= 4);
