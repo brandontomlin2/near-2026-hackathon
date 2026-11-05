@@ -170,6 +170,13 @@ export async function runSwarm({
         }],
         seed: seed * 1000003 + events.length,
       });
+      // A missing or non-text reply would otherwise be stored as "null" or "[object Object]".
+      // Empty and whitespace-only strings and numbers are accepted, as before.
+      const got = response?.content;
+      if (typeof got !== "string" && typeof got !== "number") {
+        const seen = got === null || got === undefined ? String(got) : typeof got;
+        throw new TypeError(`agent ${agent.id} returned no reply text (got ${seen}) in round ${round} turn ${turn}`);
+      }
       // Whatever client produced it, stored text has no control or bidi characters
       // (they would otherwise reach the terminal through the transcript), is one line
       // (a live reply ending in "\n[Skeptic] ..." must not read as another agent's
