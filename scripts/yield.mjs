@@ -265,7 +265,7 @@ function renderAgent(d, round, sending) {
     const p = d.proposal;
     lines.push(`  proposal: pool ${p.pool_id} ${p.token_in} -> ${p.token_out}, amount_in ${p.amount_in}, min_amount_out ${p.min_amount_out}`);
     lines.push(`  why: ${p.rationale}`);
-    lines.push(`  vault rules (off chain): ${d.hard.ok ? "OK" : `${d.hard.code}: ${d.hard.reason}`}`);
+    lines.push(`  vault rules (off chain): ${d.hard.ok ? "OK" : d.hard.reason}`);
     lines.push(`  strategy checks: ${d.soft.ok ? "OK" : d.soft.violations.map((v) => `${v.code}: ${v.reason}`).join("; ")}`);
   }
   if (d.veto) lines.push(`  VETOED by ${d.veto.by}: ${d.veto.reason}`);

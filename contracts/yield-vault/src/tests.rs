@@ -2993,3 +2993,64 @@ fn withdraw_ref_storage_rejects_low_gas() {
     testing_env!(c.build());
     let _ = v.withdraw_ref_storage(Some(U128(1)));
 }
+
+// ---------------------------------------------------------------- shared rule vectors
+
+/// Runs tests/rule-vectors.json, the same file src/yield/rules.parity.test.mjs runs through the
+/// JavaScript rules, against the `check_proposal` view. Expected strings live only in that file.
+#[test]
+fn rule_vectors_match_check_proposal() {
+    let doc: Value = serde_json::from_str(include_str!("../tests/rule-vectors.json")).unwrap();
+    let config: VaultConfig = serde_json::from_value(doc["config"].clone()).unwrap();
+    let base = &doc["base_state"];
+    let cases = doc["cases"].as_array().unwrap();
+    assert!(!cases.is_empty());
+    for c in cases {
+        let name = c["name"].as_str().unwrap();
+        // A state override replaces the same key of base_state.
+        let field = |k: &str| c["state"].get(k).unwrap_or(&base[k]);
+        let amounts = |v: &Value| -> BTreeMap<AccountId, u128> {
+            v.as_object()
+                .unwrap()
+                .iter()
+                .map(|(t, a)| (acct(t), a.as_str().unwrap().parse().unwrap()))
+                .collect()
+        };
+        let mut v = new_vault_with(config.clone());
+        v.paused = field("paused").as_bool().unwrap();
+        v.day = field("day").as_u64().unwrap();
+        v.spent_today = amounts(field("spent_today"));
+        v.balances = amounts(field("balances"));
+        if field("in_flight").as_bool().unwrap() {
+            v.in_flight = Some(InFlight {
+                id: 1,
+                pool_id: 0,
+                token_in: wrap(),
+                token_out: rft(),
+                amount_in: 1,
+                min_amount_out: 1,
+                day: v.day,
+                amount_out: 0,
+                started_at: T0,
+                ref_pre_out: 0,
+            });
+        }
+        if field("recovery").as_bool().unwrap() {
+            v.recovery = Some(Recovery {
+                id: 2,
+                token_id: wrap(),
+                amount: 1,
+                started_at: T0,
+                pre: 0,
+                unv: 0,
+            });
+        }
+        let now_ns = c.get("now_ns").unwrap_or(&base["now_ns"]).as_u64().unwrap();
+        at("anyone.testnet", now_ns);
+        let proposal: SwapProposal = serde_json::from_value(c["proposal"].clone()).unwrap();
+        let got = v.check_proposal(proposal, acct(c["runner"].as_str().unwrap()));
+        let expect = c["expect"].as_str().unwrap();
+        assert_eq!(got.reason, expect, "vector: {name}");
+        assert_eq!(got.ok, expect.is_empty(), "vector: {name}");
+    }
+}

@@ -28,7 +28,7 @@ export const VAULT_STRATEGIES = Object.freeze(["aloof", "chaotic", "social", "sk
 
 const DAY_SECONDS = 86400;
 
-/** day = floor(unix_seconds / 86400) */
+/** day = floor(unix_seconds / 86400), the contract's day_of (block_timestamp ns / NS_PER_DAY) taken from milliseconds */
 export function dayOf(nowMs) {
   return Math.floor(nowMs / 1000 / DAY_SECONDS);
 }
@@ -38,33 +38,38 @@ export function spentOn(state, token, today) {
   return state.spent && state.spent.day === today ? BigInt(state.spent.amounts?.[token] ?? "0") : 0n;
 }
 
+/** Largest value a u128 can hold; the contract's checked_add on the daily total fails above it. */
+export const U128_MAX = (1n << 128n) - 1n;
+
 /**
- * Config v2 validation, mirroring the contract's validate_config: strategy is one of the
- * four, nonzero rates, token_a != token_b, unique pools, runners and limit tokens,
- * max_trade > 0 and max_trade <= daily_cap. Returns a list of problems (empty = valid).
+ * Config v2 validation, mirroring the contract's validate_config with its exact
+ * ERR_BAD_CONFIG messages: strategy is one of the four, per limit max_trade > 0,
+ * daily_cap >= max_trade and a unique token, per pool nonzero rates, token_a != token_b
+ * and a unique pool_id, unique runners. The contract panics on the first failure; this
+ * returns every failure in the order the contract would meet them (empty = valid), so
+ * problems[0] is the contract's panic message.
  */
 export function validateVaultConfig(config) {
   const problems = [];
-  if (!VAULT_STRATEGIES.includes(config.strategy)) problems.push(`strategy must be one of ${VAULT_STRATEGIES.join(", ")}`);
-  const poolIds = new Set();
-  for (const p of config.allowed_pools ?? []) {
-    if (poolIds.has(p.pool_id)) problems.push(`duplicate pool ${p.pool_id}`);
-    poolIds.add(p.pool_id);
-    if (p.token_a === p.token_b) problems.push(`pool ${p.pool_id} token_a must differ from token_b`);
-    for (const key of ["min_rate_a_to_b", "min_rate_b_to_a"]) {
-      const r = p[key];
-      if (!r || BigInt(r.num) === 0n || BigInt(r.den) === 0n) problems.push(`pool ${p.pool_id} ${key} must have nonzero num and den`);
+  if (!VAULT_STRATEGIES.includes(config.strategy)) problems.push("ERR_BAD_CONFIG: strategy must be aloof, chaotic, social or skeptic");
+  const limits = config.limits ?? [];
+  limits.forEach((l, i) => {
+    if (BigInt(l.max_trade) === 0n) problems.push("ERR_BAD_CONFIG: max_trade must be > 0");
+    if (BigInt(l.daily_cap) < BigInt(l.max_trade)) problems.push("ERR_BAD_CONFIG: daily_cap must be >= max_trade");
+    if (limits.slice(0, i).some((q) => q.token_id === l.token_id)) problems.push("ERR_BAD_CONFIG: duplicate limit token");
+  });
+  const pools = config.allowed_pools ?? [];
+  pools.forEach((p, i) => {
+    for (const r of [p.min_rate_a_to_b, p.min_rate_b_to_a]) {
+      if (!r || BigInt(r.num) === 0n || BigInt(r.den) === 0n) problems.push("ERR_BAD_CONFIG: rate num and den must be > 0");
     }
-  }
-  const seen = new Set();
-  for (const l of config.limits ?? []) {
-    if (seen.has(l.token_id)) problems.push(`duplicate limit for ${l.token_id}`);
-    seen.add(l.token_id);
-    if (BigInt(l.max_trade) === 0n) problems.push(`${l.token_id} max_trade is zero`);
-    if (BigInt(l.max_trade) > BigInt(l.daily_cap)) problems.push(`${l.token_id} max_trade exceeds daily_cap`);
-  }
+    if (p.token_a === p.token_b) problems.push("ERR_BAD_CONFIG: token_a must differ from token_b");
+    if (pools.slice(0, i).some((q) => q.pool_id === p.pool_id)) problems.push("ERR_BAD_CONFIG: duplicate pool");
+  });
   const runners = config.runners ?? [];
-  if (new Set(runners).size !== runners.length) problems.push("duplicate runner");
+  runners.forEach((r, i) => {
+    if (runners.slice(0, i).includes(r)) problems.push("ERR_BAD_CONFIG: duplicate runner");
+  });
   return problems;
 }
 
@@ -72,43 +77,52 @@ export function validateVaultConfig(config) {
  * @typedef {object} VaultState
  * @property {boolean} [paused]
  * @property {boolean} [in_flight] a swap is already in flight
- * @property {{ day: number, amounts: Record<string, string> }} [spent] per token_in units spent on `day` (decimal strings)
- * @property {Record<string, string>} [balances] vault balance per token (decimal strings)
+ * @property {boolean} [recovery_in_flight] a Ref recovery is in flight
+ * @property {{ day: number, amounts: Record<string, string | bigint> }} [spent] per token_in units spent on `day`
+ * @property {Record<string, string | bigint>} [balances] vault balance per token
  */
 
 /**
- * Hard rules, mirroring the on-chain check_proposal(proposal, runner_id) -> { ok, reason }.
- * @returns {{ ok: boolean, code: string | null, reason: string }}
+ * Hard rules: the one JavaScript copy of the contract's check_rules (lib.rs), same checks in
+ * the same order with the contract's exact `ERR_CODE: detail` strings, so a proposal that
+ * would panic on chain is never sent. Amounts and rates may be decimal strings or BigInt.
+ * contracts/yield-vault/tests/rule-vectors.json pins this file to the Rust.
+ * @returns {{ ok: boolean, code: string | null, reason: string }} reason is "" when ok
  */
 export function checkProposal(proposal, config, state, runnerId, nowMs) {
-  const fail = (code, reason) => ({ ok: false, code, reason });
-  if (!config.runners.includes(runnerId)) return fail("ERR_NOT_RUNNER", `${runnerId} is not in the vault's runners`);
-  if (state.paused) return fail("ERR_PAUSED", "the vault is paused");
+  const fail = (code, detail) => ({ ok: false, code, reason: `${code}: ${detail}` });
+  if (!config.runners.includes(runnerId)) return fail("ERR_NOT_RUNNER", `${runnerId} is not an approved runner`);
+  if (state.paused) return fail("ERR_PAUSED", "vault is paused");
   if (state.in_flight) return fail("ERR_SWAP_IN_FLIGHT", "another swap is in flight");
+  if (state.recovery_in_flight) return fail("ERR_SWAP_IN_FLIGHT", "a Ref recovery is in flight");
   const pool = config.allowed_pools.find((p) => p.pool_id === proposal.pool_id);
-  if (!pool) return fail("ERR_POOL_NOT_ALLOWED", `pool ${proposal.pool_id} is not in allowed_pools`);
-  const pairOk = proposal.token_in !== proposal.token_out
-    && ((proposal.token_in === pool.token_a && proposal.token_out === pool.token_b)
-      || (proposal.token_in === pool.token_b && proposal.token_out === pool.token_a));
-  if (!pairOk) return fail("ERR_TOKEN_NOT_IN_POOL", `token_in and token_out must be the two different tokens of pool ${pool.pool_id}`);
+  if (!pool) return fail("ERR_POOL_NOT_ALLOWED", `pool ${proposal.pool_id}`);
+  const fwd = proposal.token_in === pool.token_a && proposal.token_out === pool.token_b;
+  const rev = proposal.token_in === pool.token_b && proposal.token_out === pool.token_a;
+  if (!(fwd || rev)) return fail("ERR_TOKEN_NOT_IN_POOL", `tokens must be the pair of pool ${proposal.pool_id}`);
   const amountIn = BigInt(proposal.amount_in);
-  if (amountIn === 0n) return fail("ERR_ZERO_AMOUNT", "amount_in is zero");
+  if (amountIn === 0n) return fail("ERR_ZERO_AMOUNT", "amount_in must be > 0");
   const minOut = BigInt(proposal.min_amount_out);
-  if (minOut === 0n) return fail("ERR_ZERO_MIN_OUT", "min_amount_out is zero");
-  const rate = proposal.token_in === pool.token_a ? pool.min_rate_a_to_b : pool.min_rate_b_to_a;
-  if (minOut * BigInt(rate.den) < amountIn * BigInt(rate.num)) {
-    return fail("ERR_PRICE_FLOOR", `min_amount_out ${minOut} for amount_in ${amountIn} is below the pool's minimum rate ${rate.num}/${rate.den}`);
+  if (minOut === 0n) return fail("ERR_ZERO_MIN_OUT", "min_amount_out must be > 0");
+  const rate = fwd ? pool.min_rate_a_to_b : pool.min_rate_b_to_a;
+  const num = BigInt(rate.num);
+  const den = BigInt(rate.den);
+  if (minOut * den < amountIn * num) {
+    return fail("ERR_PRICE_FLOOR", `min_amount_out ${minOut} below floor ${num}/${den} of amount_in ${amountIn}`);
   }
   const limit = limitFor(config, proposal.token_in);
-  if (!limit) return fail("ERR_NO_LIMIT", `${proposal.token_in} has no entry in limits`);
+  if (!limit) return fail("ERR_NO_LIMIT", `no limit for ${proposal.token_in}`);
   const maxTrade = BigInt(limit.max_trade);
-  if (amountIn > maxTrade) return fail("ERR_MAX_TRADE", `amount_in ${amountIn} exceeds max_trade ${maxTrade} for ${proposal.token_in}`);
+  if (amountIn > maxTrade) return fail("ERR_MAX_TRADE", `${amountIn} exceeds max_trade ${maxTrade}`);
   const spent = spentOn(state, proposal.token_in, dayOf(nowMs));
   const dailyCap = BigInt(limit.daily_cap);
-  if (spent + amountIn > dailyCap) return fail("ERR_DAILY_CAP", `spent today ${spent} + ${amountIn} exceeds daily_cap ${dailyCap} for ${proposal.token_in}`);
+  const total = spent + amountIn;
+  if (total > U128_MAX || total > dailyCap) {
+    return fail("ERR_DAILY_CAP", `spent ${spent} + ${amountIn} exceeds daily_cap ${dailyCap}`);
+  }
   const balance = BigInt(state.balances?.[proposal.token_in] ?? "0");
-  if (balance < amountIn) return fail("ERR_INSUFFICIENT_BALANCE", `vault holds ${balance} of ${proposal.token_in}, needs ${amountIn}`);
-  return { ok: true, code: null, reason: "ok" };
+  if (balance < amountIn) return fail("ERR_INSUFFICIENT_BALANCE", `have ${balance} need ${amountIn}`);
+  return { ok: true, code: null, reason: "" };
 }
 
 /**
