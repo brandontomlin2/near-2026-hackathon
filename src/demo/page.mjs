@@ -204,6 +204,7 @@ ${securityMetaTags(CSS)}
 <div class="faces">${hero}</div>
 </header>
 <p class="notice">Mock mode, dry run: inference is mocked and nothing is signed, sent or deployed. ${plural(esc(manifest.rounds), "round")}, seed ${esc(manifest.seed)}, a sheet every ${plural(esc(manifest.every), "round")}, art style ${esc(manifest.style ?? "default")}.</p>
+<p class="mut">See also: <a href="yield-demo/index.html">Yield vault demo</a> (run <code>npm run yield:demo</code> first).</p>
 <ol>
 <li>Four AI personalities talk on one shared channel. Each round has a hash that chains to the one before.</li>
 <li>${Number(manifest.every) === 1 ? "Every round" : `Every ${esc(manifest.every)} rounds`} each agent rewrites its character sheet, and its memory depth goes up by one, which changes its art.</li>

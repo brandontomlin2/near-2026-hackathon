@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { checkYieldDemo } from "./yield-demo-check.mjs";
+import { checkIndexHtml, checkYieldDemo } from "./yield-demo-check.mjs";
 
 const CHECK = fileURLToPath(new URL("./yield-demo-check.mjs", import.meta.url));
 const VERIFY = fileURLToPath(new URL("./verify.sh", import.meta.url));
@@ -80,6 +80,22 @@ test("checkYieldDemo rejects non-object input instead of throwing", () => {
   assert.ok(checkYieldDemo(fixture().plan, null).some((p) => /calls\.json/.test(p)));
 });
 
+const NOTICE = "DRY RUN: mock inference, committed fixtures, nothing was signed or sent.";
+const pageFor = (plan) => `<p>${NOTICE}</p>${plan.rule_scenarios.scenarios.map((s) => `<code>${s.contract_message.replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</code>`).join("")}`;
+
+test("checkIndexHtml accepts a page with the notice and every message", () => {
+  const { plan } = fixture();
+  assert.deepEqual(checkIndexHtml(pageFor(plan), plan), []);
+});
+
+test("checkIndexHtml reports a missing notice and a missing contract message", () => {
+  const { plan } = fixture();
+  assert.ok(checkIndexHtml(pageFor(plan).replace(NOTICE, "hello"), plan).some((p) => /DRY RUN notice/.test(p)));
+  const missing = checkIndexHtml(pageFor(plan).replace("E_paused: nope", "x"), plan);
+  assert.ok(missing.some((p) => /paused/.test(p)), JSON.stringify(missing));
+  assert.ok(checkIndexHtml(null, plan).length > 0);
+});
+
 function runCheck(args) {
   return spawnSync(process.execPath, [CHECK, ...args], { encoding: "utf8", env: { PATH: process.env.PATH }, timeout: 180000 });
 }
@@ -112,6 +128,18 @@ test("CLI: the real demo passes and prints the success line", () => {
       r.stdout.split("\n").includes("yield demo: dry_run true, signed false, sent false; 4 calls planned, 0 signed, 0 sent; 4 rule rejections match the contract"),
       r.stdout,
     );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("CLI: the real demo run leaves an index.html carrying the notice", () => {
+  const dir = mkdtempSync(join(tmpdir(), "yield-demo-check-"));
+  try {
+    const out = join(dir, "out");
+    assert.equal(runCheck(["--out", out]).status, 0);
+    assert.ok(readFileSync(join(out, "index.html"), "utf8").includes(NOTICE));
+    assert.deepEqual(checkIndexHtml(readFileSync(join(out, "index.html"), "utf8"), JSON.parse(readFileSync(join(out, "plan.json"), "utf8"))), []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

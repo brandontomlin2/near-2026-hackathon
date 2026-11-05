@@ -4,14 +4,16 @@
 //   node scripts/yield-demo-check.mjs [--out DIR] [--timeout-ms N]
 //
 // Runs `node scripts/yield-demo.mjs --out DIR` (offline, mock) with a timeout, then reads
-// DIR/plan.json and DIR/calls.json and fails unless the plan is a dry run with nothing signed
-// or sent, 4 calls planned, and the 4 vault-rule rejections match the contract.
+// DIR/plan.json, DIR/calls.json and DIR/index.html and fails unless the plan is a dry run with nothing signed
+// or sent, 4 calls planned, and the 4 vault-rule rejections match the contract. index.html must
+// carry the DRY RUN notice and each rejection's contract message (HTML-escaped as rendered).
 
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { escapeHtml } from "../src/viewer/render.mjs";
 import { assertSafeOutDir } from "../src/util/outdir.mjs";
 
 export const EXPECTED_MODE = "mock";
@@ -81,6 +83,22 @@ export function checkYieldDemo(plan, calls) {
   return problems;
 }
 
+export const DRY_RUN_NOTICE = "DRY RUN: mock inference, committed fixtures, nothing was signed or sent.";
+
+/** Problems found in the rendered index.html given the parsed plan.json. */
+export function checkIndexHtml(html, plan) {
+  if (typeof html !== "string") return ["index.html is not text"];
+  const problems = [];
+  if (!html.includes(escapeHtml(DRY_RUN_NOTICE))) problems.push("index.html is missing the DRY RUN notice");
+  const scenarios = isObject(plan) && isObject(plan.rule_scenarios) && Array.isArray(plan.rule_scenarios.scenarios) ? plan.rule_scenarios.scenarios : [];
+  for (const s of scenarios) {
+    if (isObject(s) && typeof s.contract_message === "string" && !html.includes(escapeHtml(s.contract_message))) {
+      problems.push(`index.html is missing the contract message for ${s.id}: ${s.contract_message}`);
+    }
+  }
+  return problems;
+}
+
 function parseArgs(argv) {
   const opts = { out: DEFAULT_OUT, timeoutMs: DEFAULT_TIMEOUT_MS };
   for (let i = 0; i < argv.length; i++) {
@@ -101,6 +119,14 @@ function parseArgs(argv) {
 function readJson(file) {
   try {
     return { value: JSON.parse(readFileSync(file, "utf8")) };
+  } catch (error) {
+    return { error: `cannot read ${file}: ${String(error.message).split("\n")[0]}` };
+  }
+}
+
+function readText(file) {
+  try {
+    return { value: readFileSync(file, "utf8") };
   } catch (error) {
     return { error: `cannot read ${file}: ${String(error.message).split("\n")[0]}` };
   }
@@ -134,6 +160,9 @@ function main(argv) {
   const calls = readJson(join(out, "calls.json"));
   const problems = [plan.error, calls.error].filter(Boolean);
   if (problems.length === 0) problems.push(...checkYieldDemo(plan.value, calls.value));
+  const index = readText(join(out, "index.html"));
+  if (index.error) problems.push(index.error);
+  else problems.push(...checkIndexHtml(index.value, plan.value));
   if (problems.length > 0) {
     for (const problem of problems) console.error(`FAIL: ${problem}`);
     return 1;

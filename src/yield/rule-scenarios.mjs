@@ -61,3 +61,13 @@ export function ruleScenarios(vectors = loadVectors()) {
   });
   return { source: VECTORS_SOURCE, contract_fn: "check_rules", scenarios };
 }
+
+/** One scenario as a short line in base units, e.g. "pool 0: 1000 wrap -> min 1500 rft (spent today 1501)". */
+export function scenarioSummary(s) {
+  const p = s.proposal;
+  const sym = (t) => String(t).split(".")[0];
+  let ctx = "";
+  if (s.id === "daily_cap") ctx = ` (spent today ${s.state?.spent_today?.[p.token_in] ?? 0})`;
+  else if (s.id === "paused") ctx = " (vault paused)";
+  return `pool ${p.pool_id}: ${p.amount_in} ${sym(p.token_in)} -> min ${p.min_amount_out} ${sym(p.token_out)}${ctx}`;
+}

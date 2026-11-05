@@ -72,8 +72,20 @@ describe("yield:demo default run", () => {
     assert.match(summary, /^ {2}chaotic vetoed by skeptic: size is 10000 bps of max_trade, above the 8000 bps audit line$/m);
   });
 
-  it("writes exactly plan.json and calls.json", () => {
-    assert.deepEqual(files(dir), ["calls.json", "plan.json"]);
+  it("writes exactly plan.json, calls.json and index.html", () => {
+    assert.deepEqual(files(dir), ["calls.json", "index.html", "plan.json"]);
+  });
+
+  it("prints the three wrote lines in order and index.html is the dry-run page", () => {
+    const wrote = r.stdout.split("\n").filter((l) => l.startsWith("wrote "));
+    assert.equal(wrote.length, 3);
+    assert.match(wrote[0], /plan\.json$/);
+    assert.match(wrote[1], /calls\.json$/);
+    assert.match(wrote[2], /index\.html$/);
+    const html = readFileSync(join(dir, "index.html"), "utf8");
+    assert.match(html, /<h1>Yield vault demo \(dry run\)<\/h1>/);
+    assert.match(html, /DRY RUN: mock inference, committed fixtures, nothing was signed or sent\./);
+    assert.doesNotMatch(html, /<script|https?:\/\//);
   });
 
   it("plan.json is a dry-run plan with five agents", () => {
@@ -174,7 +186,7 @@ describe("yield:demo default run", () => {
     const rel = run(["--out", "rel-out"]);
     assert.equal(rel.code, 0);
     assert.match(rel.stdout, /^wrote rel-out\/plan\.json$/m);
-    assert.deepEqual(files(join(work, "rel-out")), ["calls.json", "plan.json"]);
+    assert.deepEqual(files(join(work, "rel-out")), ["calls.json", "index.html", "plan.json"]);
   });
 });
 
@@ -190,11 +202,15 @@ describe("yield:demo --calls and --json", () => {
     assert.equal((r.stdout.match(/^ {2}sent: false$/gm) ?? []).length, 4);
     assert.match(r.stdout, /^ {2}method: execute_swap$/m);
     assert.equal(existsSync(dir), false);
+    assert.doesNotMatch(r.stdout, /index\.html/);
   });
 
-  it("--json is the same content as plan.json", () => {
-    const r = run(["--json"]);
+  it("--json is the same content as plan.json and writes no index.html", () => {
+    const dir = join(work, "json-out");
+    const r = run(["--json", "--out", dir]);
     assert.equal(r.code, 0);
+    assert.equal(existsSync(dir), false);
+    assert.equal(existsSync(join(work, "index.html")), false);
     assert.equal(r.stdout, readFileSync(join(work, "default", "plan.json"), "utf8"));
   });
 
