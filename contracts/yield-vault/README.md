@@ -4,7 +4,7 @@ What it is: a near-sdk Rust smart contract that holds NEP-141 token balances for
 
 A trading vault, one per personality (aloof, chaotic, social, skeptic), each driven by an AI agent running a strategy off chain. The vault is owned by a fixed `owner_id` account set at `new`. It records the personality NFT's `nft_contract_id` and `token_id` as metadata only and does not check them: owner checks ignore NFT ownership, so transferring the NFT does not transfer the vault. The agent acts only through approved **runner** accounts, and this contract enforces hard limits on chain regardless of what the strategy proposes. Approved swaps run on the Rhea (Ref Finance) testnet exchange `ref-finance-101.testnet` with the deposit -> swap -> withdraw pattern. wNEAR is `wrap.testnet`.
 
-**Status: NOT deployed.** A testnet deploy needs the human's explicit yes. Tested with unit tests (`cargo test`, 276 tests) and 14 integration tests in a throwaway local sandbox against a mock Ref and mock NEP-141 tokens (`sandbox/`, see "Sandbox measurements"). See "Known risks".
+**Status: NOT deployed.** A testnet deploy needs the human's explicit yes. Tested with unit tests (`cargo test`, 276 tests) and 22 integration tests in a throwaway local sandbox against a mock Ref and mock NEP-141 tokens (`sandbox/`, see "Sandbox measurements"). See "Known risks".
 
 Live testnet runbook (every step, cost, failure handling, verification table): [../../docs/yield-vault-live-runbook.md](../../docs/yield-vault-live-runbook.md).
 
@@ -121,7 +121,7 @@ Integration tests live in a separate crate, `sandbox/`, so the fast `cargo test`
 
 ```
 cd contracts/yield-vault/sandbox
-gtimeout 1800 cargo test -- --nocapture --test-threads=1   # 14 tests, about 12 minutes (headroom.rs is most of it)
+gtimeout 1800 cargo test -- --nocapture --test-threads=1   # 22 tests, about 18 minutes (headroom.rs is most of it)
 ```
 
 Each test prints a per-receipt gas table (from the sandbox RPC `EXPERIMENTAL_tx_status`); the `lib.rs` constants are parsed from the source, so tables cannot drift from the code. Full tables are in `sandbox/README.md`.
@@ -139,6 +139,9 @@ Gas burnt, Ref inner withdraw gas 20 + 20 (TGas; subtree = the receipt plus ever
 | `on_withdraw_pre` | `GAS_CB_WITHDRAW_PRE` 115 | 13.0 |
 | `ref.withdraw` | `GAS_REF_WITHDRAW` 80 | 6.1 (mock body) |
 | `on_withdraw_reconciled` | `GAS_CB_RECONCILE` 15 | 2.1 |
+| `execute_swap` whose `ref.swap` fails (refund chain, 14 receipts) | `MIN_EXECUTE_GAS` 280 | 31.0 |
+| `on_refund_pre` | `GAS_CB_WITHDRAW_PRE` 115 | 13.2 |
+| `on_refund_reconciled` | `GAS_CB_RECONCILE` 15 | 2.2 |
 | `recover_from_ref` (whole chain) | `MIN_RECOVER_GAS` 170 | 19.6 |
 | `on_recover_pre` | `GAS_CB_RECOVER_PRE` 130 | 15.2 |
 | `on_recover` | `GAS_CB_WITHDRAW_DONE` 40 | 6.5 |
@@ -153,13 +156,13 @@ Headroom (`sandbox/tests/headroom.rs`): a mock knob makes one Ref hop burn extra
 
 What the sandbox changed: `GAS_REF_WITHDRAW` was 40. With Ref's inner 20 + 20 that left nothing for Ref's own body, and every `ref.withdraw` failed with "Exceeded the prepaid gas", so no swap or recovery could finish (funds were stranded, not lost). It is now 80, and the chain above it was rebudgeted: `on_withdraw_pre` 80 -> 115, `on_swap` 110 -> 135, `on_deposit` 180 -> 190, `on_recover_pre` 100 -> 130, `recover_from_ref` minimum 150 -> 170. `execute_swap` stays at 280.
 
-Failure paths run end to end (`sandbox/tests/refunds.rs`, `failure_paths.rs`, `happy_path.rs`), each matching the "Failure handling" table: Ref refunds the whole deposit (rolled back), `ref.swap` panics (token_in stranded, then `recover_from_ref`), token_out's `ft_transfer` fails inside Ref's withdraw (Ref re-credits, vault strands, then recovers), token_in's `ft_transfer_call` fails (reconciled rollback), owner `withdraw`'s `ft_transfer` fails (re-credited), deposits from non-owners or of non-allowed tokens (refunded in full), and malformed `get_deposit` replies (before and after the withdraw: the chain ends cleanly, the lock is released, the amount is stranded or unverified, never credited; then `recover_from_ref` or `sync_balance` books it). `force_release_lock` is covered by the unit tests only: with malformed replies handled, no sandbox flow at the documented minimum gas leaves the lock stuck any more.
+Failure paths run end to end (`sandbox/tests/refunds.rs`, `failure_paths.rs`, `happy_path.rs`, `failed_swap_refund.rs`), each matching the "Failure handling" table: Ref refunds the whole deposit (rolled back), `ref.swap` panics, including a real `E68: slippage error` from the mock's pool rate (token_in withdrawn back and credited, spend given back, no strand, no auto-pause however often it repeats), `ref.swap` panics and the refund's `ft_transfer` also fails (strand `refund_not_reconciled`, then `recover_from_ref`; 3 in a row auto-pause), malformed or failed `get_deposit` replies around the refund (`refund_unverified`, `refund_pre_unverified`), a verified refund between strands neither adds to nor resets the count, token_out's `ft_transfer` fails inside Ref's withdraw (Ref re-credits, vault strands, then recovers), token_in's `ft_transfer_call` fails (reconciled rollback), owner `withdraw`'s `ft_transfer` fails (re-credited), deposits from non-owners or of non-allowed tokens (refunded in full), and malformed `get_deposit` replies (before and after the withdraw: the chain ends cleanly, the lock is released, the amount is stranded or unverified, never credited; then `recover_from_ref` or `sync_balance` books it). `force_release_lock` is covered by the unit tests only: with malformed replies handled, no sandbox flow at the documented minimum gas leaves the lock stuck any more.
 
 Still only a mock: Ref's real body costs, pool math, token whitelist, storage byte sizes and wNEAR unwrap. The method names, argument shapes and the 20 + 20 inner gas come from a public fork, not from deployed Ref. A testnet run against `ref-finance-101.testnet` would close that, and needs the owner's explicit approval.
 
 ## Ref storage
 
-Funding the vault account: the vault account itself needs NEAR for its contract storage (1e19 yoctoNEAR per byte, so 1 NEAR per 100 KB of wasm, plus state) and, through `register_on_ref`, the Ref storage deposit (read Ref's `storage_balance_bounds` first). Gas for swaps is paid by the caller, not the vault. Measured wasm size: `cargo build --release --target wasm32-unknown-unknown` (rustc 1.95.0, 2026-11-05) produces `target/wasm32-unknown-unknown/release/yield_vault.wasm` of 444425 bytes, about 4.44 NEAR of storage. `cargo near build non-reproducible-wasm` additionally optimizes the wasm; the live runbook records 261718 bytes (about 2.62 NEAR) for that output, which was not re-measured here. Deploy the `cargo near build` output and size the funding from the file you will actually deploy: wasm storage plus state; `withdraw_near` additionally always leaves 0.1 NEAR on the account. The runbook (`docs/yield-vault-live-runbook.md`) funds the vault with 6 NEAR. No vault is deployed, so no on-chain storage figure exists.
+Funding the vault account: the vault account itself needs NEAR for its contract storage (1e19 yoctoNEAR per byte, so 1 NEAR per 100 KB of wasm, plus state) and, through `register_on_ref`, the Ref storage deposit (read Ref's `storage_balance_bounds` first). Gas for swaps is paid by the caller, not the vault. Measured wasm size: `cargo build --release --target wasm32-unknown-unknown` (rustc 1.95.0, 2026-11-05) produces `target/wasm32-unknown-unknown/release/yield_vault.wasm` of 453202 bytes, about 4.53 NEAR of storage. `cargo near build non-reproducible-wasm` additionally optimizes the wasm; the live runbook records 261718 bytes (about 2.62 NEAR) for that output, which was not re-measured here. Deploy the `cargo near build` output and size the funding from the file you will actually deploy: wasm storage plus state; `withdraw_near` additionally always leaves 0.1 NEAR on the account. The runbook (`docs/yield-vault-live-runbook.md`) funds the vault with 6 NEAR. No vault is deployed, so no on-chain storage figure exists.
 
 The owner must call `register_on_ref` once before the first swap. It calls Ref's `storage_deposit` with `registration_only: false`, so the whole attached deposit becomes the vault's storage balance on Ref. On success nothing is refunded to the vault, so no NEAR gets stuck on the vault account. That balance also pays for the storage Ref needs each time a new token first lands in the vault's Ref account: the first deposit of a token_in and the first swap into a new token_out. Attach enough for the account plus every token in `allowed_pools`; read Ref's `storage_balance_bounds` and `storage_balance_of(vault)` first (these amounts are not checked here). Calling `register_on_ref` again tops up the balance.
 
@@ -220,7 +223,7 @@ Balance is credited after a withdraw only once `get_deposit` shows Ref's deposit
 
 Auto-pause: only swaps that end with funds left on Ref, or lost (`amount_out_zero`), count. After 3 such swaps in a row (`MAX_CONSECUTIVE_STRANDS`: `amount_out_below_min`, `amount_out_zero`, `deposit_landed_on_ref`, `deposit_unverified`, `refund_pre_mismatch`, `refund_pre_unverified`, `refund_not_reconciled`, `refund_unverified`, `withdraw_pre_*`, `withdraw_not_reconciled`, `withdraw_unverified`) the vault pauses itself and emits `auto_paused` (`reason: consecutive_strands`). A completed swap and the owner's `unpause` reset the count. A verified refund after a failed `ref.swap`, a rolled-back failure (`deposit_failed`) and force-release outcomes neither add to the count nor reset it. The swap in flight is not cancelled.
 
-Why a verified refund gives the spend back: no trade happened and the funds never left the vault's custody; the drop in Ref's deposit proves it. An unverified or ambiguous outcome keeps the spend counted (fail-safe). A runner that sends an unreachable `min_amount_out` now only costs itself gas: Ref's slippage panic is refunded, nothing is stranded and the daily cap is not used up.
+Why a verified refund gives the spend back: no trade happened and the funds never left the vault's custody; the drop in Ref's deposit proves it. An unverified or ambiguous outcome keeps the spend counted (fail-safe). A runner that sends an unreachable `min_amount_out` can no longer strand funds or pause the vault: Ref's slippage panic is refunded, nothing is stranded and the daily cap is not used up. Each attempt still holds the swap lock for a few blocks, so it can delay other swaps; `revoke_runner` is the remedy.
 
 The owner recovers stranded funds with `recover_from_ref(token_id, amount)`, only while no swap or other recovery is in flight, and no swap can start until the recovery's reconcile has run. The stranded record is reduced up front. `on_recover_pre` reads Ref's deposit first. If Ref holds less than `amount`, or the read fails, the recovery stops and the record is restored (`recover_refused`). A failed withdraw restores it too. After a withdraw that reports success, the vault credits only if Ref's deposit fell by at least `amount` since the first read. Otherwise it strands the amount again (`withdraw_not_reconciled` or `withdraw_unverified`). The recovery lock keeps every other vault operation off Ref meanwhile, so the drop can only come from this withdraw. Success credits the balance and emits `recovered`.
 
@@ -235,7 +238,7 @@ NEP-297, `standard: "yield_vault"`, `version: "1.0.0"`: `deposit`, `withdraw`, `
 ```
 cd contracts/yield-vault
 cargo test                                          # 276 unit tests
-(cd sandbox && cargo test -- --test-threads=1)      # 14 local sandbox tests, see "Sandbox measurements"
+(cd sandbox && cargo test -- --test-threads=1)      # 22 local sandbox tests, see "Sandbox measurements"
 cargo clippy --all-targets
 cargo build --target wasm32-unknown-unknown --release
 ```
@@ -254,7 +257,7 @@ Fixed after the first AI review:
 - Medium, no escape from a stuck `in_flight` lock: `started_at` plus owner `force_release_lock` after 10 minutes, with swap ids so late callbacks cannot touch a newer swap.
 - Medium, `recover_from_ref` during a swap: rejected with `ERR_SWAP_IN_FLIGHT`. `update_config` is rejected the same way. A follow-up review found the reverse case (a swap or second recovery starting while a recovery's reconcile was still pending, so the two reconciles misread each other's Ref balance); a recovery now holds its own lock until its reconcile runs.
 - Low, dead `_reserved` storage map: removed.
-- The first AI review found zero tests; there are now 276 unit tests and 14 local sandbox tests against a mock Ref. No testnet test exists.
+- The first AI review found zero tests; there are now 276 unit tests and 22 local sandbox tests against a mock Ref. No testnet test exists.
 
 Fixed after a second AI review (report not in the repository):
 

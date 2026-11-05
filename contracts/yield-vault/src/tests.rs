@@ -3920,8 +3920,11 @@ fn refund_partial_drop_is_not_reconciled() {
     let mut v = swap_at_refund_reconcile_cb();
     cb_ctx(ok_result(&U128(1)), T0);
     v.handle_refund_reconciled(1, Ok(U128(1))); // dropped by 399 only
+    assert!(!v.get_state().swap_in_flight, "lock released");
     assert_eq!(stranded(&v, &wrap()), 400);
     assert_eq!(bal(&v, &wrap()), 9_600);
+    assert_eq!(spent_view(&v, &wrap()), 400, "spend NOT rolled back");
+    assert_eq!(v.consecutive_strands, 1);
 }
 
 #[test]

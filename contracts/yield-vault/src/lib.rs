@@ -1872,8 +1872,10 @@ impl YieldVault {
     /// back and verified (`handle_refund_reconciled`) and every plain rollback go
     /// through `fail` instead: they never increment the counter and do not reset
     /// it either. Consequence: a runner forcing unfillable `min_amount_out`
-    /// proposals only wastes its own gas; the funds and the daily cap come back
-    /// and the vault does not pause. It only pauses if the refund itself keeps
+    /// proposals cannot move or strand funds: the funds and the daily cap come
+    /// back and the vault does not pause. It still costs the runner gas and holds
+    /// the swap lock for a few blocks per attempt, so it can delay other swaps;
+    /// `revoke_runner` is the remedy. It only pauses if the refund itself keeps
     /// failing to land (funds really left on Ref).
     fn fail_stranded(&mut self, fl: &InFlight, reason: &str) {
         self.fail(fl, reason);
