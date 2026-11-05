@@ -10,7 +10,7 @@
 // The summary call goes through src/inference/client.mjs, so mock mode (the
 // default) stays deterministic and needs no keys.
 
-import { mkdir, readFile, rename, writeFile, appendFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile, appendFile, truncate } from "node:fs/promises";
 import { join } from "node:path";
 
 import { hashSheet } from "../anchor/hash.mjs";
@@ -227,6 +227,37 @@ export function createMemoryStore(root) {
       await mkdir(dir, { recursive: true });
       await appendFile(join(dir, "log.jsonl"), `${JSON.stringify(checked)}\n`, "utf8");
       return checked;
+    },
+
+    /**
+     * Cut the log back to its first `count` events, to undo appends after a failed
+     * sheet write. Truncates in place, so it works even in a read-only directory.
+     * @param {string} tokenId @param {number} count
+     */
+    async truncateLog(tokenId, count) {
+      if (!Number.isInteger(count) || count < 0) {
+        throw new MemoryError("count must be a non-negative integer", { code: "bad_request" });
+      }
+      const file = join(dirFor(tokenId), "log.jsonl");
+      let raw;
+      try {
+        raw = await readFile(file);
+      } catch (err) {
+        if (err && err.code === "ENOENT" && count === 0) return;
+        throw new MemoryError("could not read the event log", { code: "io_error", cause: err });
+      }
+      // Count events the way readLog() does: blank lines are skipped, not counted,
+      // so "event one, blank line, event two" keeps event two when count is 2.
+      let offset = 0;
+      let seen = 0;
+      while (seen < count) {
+        if (offset >= raw.length) return; // fewer than `count` events: nothing to cut
+        const nl = raw.indexOf(0x0a, offset);
+        const end = nl === -1 ? raw.length : nl;
+        if (end > offset) seen += 1;
+        offset = nl === -1 ? raw.length : nl + 1;
+      }
+      await truncate(file, offset);
     },
 
     /** @param {string} tokenId @returns {Promise<object[]>} */

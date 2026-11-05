@@ -272,9 +272,19 @@ export async function askAgent({ agent, question, store, answerClient, sheetClie
   const asked = makeEvent({ round, kind: "mention", from: OWNER_NAME, text: clean });
   const answered = makeEvent({ round, kind: "reply", from: agent.name, text: answer });
   const next = await summarize({ client: sheetClient, tokenId: agent.id, name: agent.name, round, log: [...log, asked, answered], previous });
-  await store.appendEvent(agent.id, asked);
-  await store.appendEvent(agent.id, answered);
-  await store.writeSheet(agent.id, next);
+  try {
+    await store.appendEvent(agent.id, asked);
+    await store.appendEvent(agent.id, answered);
+    await store.writeSheet(agent.id, next);
+  } catch (err) {
+    // Keep log and sheet in agreement: undo the appends (best effort), then rethrow the original error.
+    try {
+      await store.truncateLog(agent.id, log.length);
+    } catch {
+      // the original error is the one that matters
+    }
+    throw err;
+  }
 
   const prepared = prepareAnchor({
     contractId,

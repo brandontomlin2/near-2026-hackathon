@@ -199,6 +199,10 @@ function main(argv) {
     console.error("usage: fresh-clone-lib.mjs run --readme <file> --cwd <dir> [--pre <tsv>] [--allow-empty] [--timeout-ms <n>]");
     return 2;
   }
+  if (opts.pre && fs.existsSync(opts.pre) && fs.statSync(opts.pre).isDirectory()) {
+    console.error(`--pre must be a file, but is a directory: ${opts.pre}`);
+    return 2;
+  }
   const rows = readPre(opts.pre);
   let blocks = [];
   try {
