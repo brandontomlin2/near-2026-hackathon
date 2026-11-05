@@ -1,6 +1,6 @@
 // Locks the README's yield:shade:dry-run claims to the real output of the script.
-// Every backticked line quoted in the Shade subsection (and in Judge quick path
-// step 5) must be a full trimmed line of what the command really prints, under
+// Every backticked line quoted in the Shade subsection (and in the Judge quick path
+// Shade line) must be a full trimmed line of what the command really prints, under
 // the `== header ==` the README names. The checks are functions of (readme text,
 // output), so a negative test can run them on a mutated README and expect failure.
 import assert from "node:assert/strict";
@@ -34,8 +34,10 @@ function parseShade(text) {
   return { text: sub, steps, expects, blockCommands };
 }
 
+// The quick path keeps at most 4 numbered steps (scripts/readme-commands.test.mjs), so the
+// Shade pointer is the unnumbered paragraph there whose first command is yield:shade:dry-run.
 function parseQuickShadeStep(text) {
-  for (const { text: t } of numberedSteps(section(text, "Judge quick path"))) {
+  for (const t of section(text, "Judge quick path").split(/\n\s*\n/)) {
     const [command, ...quotes] = spans(t);
     if (command === "npm run yield:shade:dry-run") return { command, quotes, text: t };
   }
@@ -116,7 +118,7 @@ function checkStep3(shade, { status, stdout, stderr }) {
   assert.ok(trimmedLines(stderr).includes(refusal), `README refusal is not a full line of stderr: ${refusal}`);
 }
 
-/** Quick path step 5: first and last quoted lines are stdout's first and last non-empty lines. */
+/** Quick path Shade line: first and last quoted lines are stdout's first and last non-empty lines. */
 function checkQuick(text, stdout) {
   const quick = parseQuickShadeStep(text);
   assert.ok(quick, "Judge quick path has the yield:shade:dry-run step");
@@ -183,7 +185,7 @@ test("step 3: the other listed flags, NEAR_NETWORK=mainnet and a .near account a
   }
 });
 
-test("Judge quick path step 5 quotes stdout's first and last non-empty lines", () => {
+test("Judge quick path Shade line quotes stdout's first and last non-empty lines", () => {
   checkQuick(readme, outputs().plain.stdout);
 });
 

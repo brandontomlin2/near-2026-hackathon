@@ -20,7 +20,8 @@ Everything here is mock or dry-run. Nothing is signed or sent, no key or account
 2. `open out/index.html` (or open the file in any browser) shows the headline `Your NFT remembers who you are` over the four agents.
 3. `bash scripts/verify.sh` (about 1 to 2 minutes once the Rust build is cached; the first run with Rust installed also compiles near-sdk for the `vault tests` stage, which adds a few minutes) ends with a 16-row `STATUS / STAGE / DETAIL` table with no `FAIL` row, then `result: PASS`. It includes the row `PASS      demo            npm run demo (mock)`.
 4. `npm run yield:demo` runs the Yield Optimizer vault demo offline (mock inference, committed snapshots, placeholder account ids) and prints `YIELD DEMO - DRY RUN - mock inference, offline - nothing signed, nothing sent`, then four proposals the vault's on-chain rules reject, under `on-chain rules, vectors from contracts/yield-vault/tests/rule-vectors.json (same message as the Rust check_rules):`, and `4 unsigned execute_swap calls planned, 0 signed, 0 sent`. Then open out/yield-demo/index.html in a browser for the same run as one page.
-5. `npm run yield:shade:dry-run` prints how a Shade Agent runner would sign that vault's first planned `execute_swap` without holding a key, offline and unsigned: first `SHADE AGENT RUNNER PLAN - DRY RUN - offline, nothing signed, nothing sent`, last `dry_run: true, signed: false, sent: false`.
+
+Optional, same rules: `npm run yield:shade:dry-run` prints how a Shade Agent runner would sign that vault's first planned `execute_swap` without holding a key, offline and unsigned: first `SHADE AGENT RUNNER PLAN - DRY RUN - offline, nothing signed, nothing sent`, last `dry_run: true, signed: false, sent: false` (steps in [Shade Agent runner plan](#shade-agent-runner-plan-npm-run-yieldshadedry-run)).
 
 The numbered steps in the next section go deeper.
 
