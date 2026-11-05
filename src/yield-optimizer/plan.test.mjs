@@ -380,7 +380,7 @@ describe("reference guard", () => {
     // ...and the sane pool 17 is chosen instead.
     assert.equal(plan.json.decision, "swap");
     assert.equal(plan.json.call.args.proposal.pool_id, 17);
-    assert.match(renderPlan(s, plan), /pool 99 wnear -> usdc: .*SKIP off reference: spot \+\d+ bps vs the mock reference price \(limit 1000 bps\); quote is [\d.]+ bps above the reference price, over the 1000 bps limit/);
+    assert.match(renderPlan(s, plan), /pool 99 wnear -> usdc: .*SKIP off reference: spot \+\d+ bps vs the mock reference price \(limit 1000 bps\): distrusted, not traded \(junk liquidity, depeg, manipulated pool or stale reference\)/);
   });
 
   it("with only the junk pool the plan holds and the reason names the guard", () => {
@@ -392,7 +392,7 @@ describe("reference guard", () => {
     const plan = buildPlan(s);
     assert.equal(plan.json.decision, "hold");
     assert.equal(plan.json.call, null);
-    assert.match(plan.json.reason, /1 off the mock reference price \(spot more than 1000 bps away, or quote more than 1000 bps above\)/);
+    assert.match(plan.json.reason, /1 off the mock reference price \(spot more than 1000 bps away\)/);
   });
 
   it("max_ref_deviation_bps is a parameter: widening it lets a 4.8% off pool through the guard", () => {
@@ -435,14 +435,16 @@ describe("the default snapshot: the shared Ref market and the demo vault", () =>
     assert.equal(plan.json.vault_id, PLACEHOLDER_VAULT);
     assert.equal(plan.json.runner_id, PLACEHOLDER_RUNNER);
     assert.equal(plan.json.snapshot.now_ms, MOCK_EPOCH_MS);
-    assert.equal(plan.json.snapshot.block_height, 276143441);
+    assert.equal(plan.json.snapshot.block_height, 276332963);
     assert.equal(plan.json.snapshot.taken_at, null);
     assert.match(plan.json.snapshot.source, /ref-finance-101\.testnet/);
     assert.match(plan.json.snapshot.reference_prices, /mock reference price, not an oracle/);
   });
 
-  it("honestly holds on the thin real pools and names why each one was stopped", () => {
-    assert.equal(plan.json.decision, "hold");
+  it("plans one small swap on pool 747 and names why each other pool was stopped", () => {
+    assert.equal(plan.json.decision, "swap");
+    assert.deepEqual(plan.json.call.args.proposal, { pool_id: 747, token_in: "usdc.fakes.testnet", token_out: "usdt.fakes.testnet", amount_in: "50000", min_amount_out: "50406" });
+    assert.equal(plan.json.reason, "best edge that passes every vault rule and the reference guard: pool 747");
     const by = Object.fromEntries(plan.json.candidates.map((c) => [c.proposal.pool_id, c]));
     assert.equal(by[0].status, "no_reference_price"); // rft has no mock price
     assert.deepEqual(by[0].unpriced_tokens, ["rft.tokenfactory.testnet"]);
@@ -453,7 +455,10 @@ describe("the default snapshot: the shared Ref market and the demo vault", () =>
       assert.equal(by[id].status, "refused", `pool ${id}`);
       assert.match(by[id].check.reason, /^ERR_POOL_NOT_ALLOWED/);
     }
-    assert.match(plan.json.reason, /^no pool passes every gate \(1 off the mock reference price \(spot more than 1000 bps away, or quote more than 1000 bps above\), 1 without a mock reference price, 4 refused by the vault rules\)$/);
+    // Pool 747: a priced stable pair 264 bps off its peg; the quote beats the peg by ~132 bps and even the worst case (fill at min_amount_out) clears min_edge.
+    assert.equal(by[747].status, "ok");
+    assert.ok(Math.abs(by[747].ref_deviation_bps) < 1000);
+    assert.ok(by[747].edge_bps >= 25 && by[747].edge_bps < 1000);
   });
 
   it("every candidate's expected_amount_out is exactly the pools.mjs quote of its proposal", () => {

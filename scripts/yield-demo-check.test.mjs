@@ -16,8 +16,9 @@ const IDS = ["max_trade", "daily_cap", "price_floor", "paused"];
 const VAULT = "vault.yield-demo.testnet";
 const RUNNER = "runner.yield-demo.testnet";
 
-/** An unsigned call as the demo would write it, for the cases that add one. */
-const CALL = Object.freeze({ signed: false, sent: false, method: "execute_swap", receiver_id: VAULT, signer_id: RUNNER, gas: "280.0 Tgas" });
+/** The planner's real call on pool 747 (it must pass checkProposal on the default snapshot's planner vault). */
+const PROPOSAL = Object.freeze({ pool_id: 747, token_in: "usdc.fakes.testnet", token_out: "usdt.fakes.testnet", amount_in: "50000", min_amount_out: "50406" });
+const CALL = Object.freeze({ signed: false, sent: false, method_name: "execute_swap", receiver_id: VAULT, signer_id: RUNNER, gas: "280.0 Tgas", args: { proposal: PROPOSAL } });
 
 function fixture() {
   const row = (extra = {}) => ({ kind: "personality", vault_id: VAULT, runner_id: RUNNER, ...extra });
@@ -26,22 +27,30 @@ function fixture() {
     snapshot: { shared_by_agents_and_planner: true, fetched: false },
     personality_agents: { vault_id: VAULT, runner_id: RUNNER },
     planner_vault: { vault_id: VAULT, runner_id: RUNNER },
-    // The real demo: the pool 1 agents are refused as off reference, chaotic is vetoed and the optimizer holds.
+    // The real demo: the pool 1 agents are refused as off reference, chaotic is vetoed and the optimizer swaps on pool 747.
     agents: [
       row({ agent: "aloof", proposal: { pool_id: 1 }, outcome: "refused", rule_check: { ok: true }, strategy_check: { ok: false, violations: [{ code: "SOFT_OFF_REFERENCE" }] }, reference: { reference_deviation_bps: 18590000 }, call: null }),
       row({ agent: "chaotic", proposal: { pool_id: 0 }, outcome: "vetoed", call: null }),
       row({ agent: "social", proposal: null, outcome: "skipped", call: null }),
       row({ agent: "skeptic", proposal: { pool_id: 1 }, outcome: "refused", rule_check: { ok: false, code: "ERR_PRICE_FLOOR" }, strategy_check: { ok: false, violations: [] }, reference: { reference_deviation_bps: -9994 }, call: null }),
-      { agent: "yield-optimizer", kind: "planner", vault_id: VAULT, runner_id: RUNNER, decision: "hold", reason: "no pool passes every gate", call: null, candidates: [{ status: "off_reference" }, { status: "refused" }] },
+      {
+        agent: "yield-optimizer", kind: "planner", vault_id: VAULT, runner_id: RUNNER, decision: "swap", outcome: "execute", reason: "best edge that passes every vault rule and the reference guard: pool 747",
+        call: { ...CALL },
+        candidates: [
+          { pool_id: 1, status: "off_reference", ref_deviation_bps: 18703866.7 },
+          { pool_id: 2, status: "refused", ref_deviation_bps: null },
+          { pool_id: 747, status: "ok", ref_deviation_bps: 264.4 },
+        ],
+      },
     ],
-    calls_planned: 0, calls_signed: 0, calls_sent: 0, rule_rejections: 4,
+    calls_planned: 1, calls_signed: 0, calls_sent: 0, rule_rejections: 4,
     rule_scenarios: {
       scenarios: IDS.map((id) => ({
         id, outcome: "rejected", code: `E_${id}`, contract_message: `E_${id}: nope`, js_message: `E_${id}: nope`, matches_contract: true,
       })),
     },
   };
-  const calls = { dry_run: true, signed: false, sent: false, calls: [] };
+  const calls = { dry_run: true, signed: false, sent: false, calls: [{ ...CALL }] };
   return { plan, calls };
 }
 
@@ -64,7 +73,7 @@ const CASES = [
   ["a pool 1 personality proposal that executes", (p) => { p.agents[0].outcome = "execute"; }, /aloof.*must be refused/],
   ["a pool 1 refusal that cites no reference or floor", (p) => { p.agents[0].strategy_check.violations = [{ code: "SOFT_SLIPPAGE" }]; }, /aloof.*SOFT_OFF_REFERENCE or ERR_PRICE_FLOOR/],
   ["a pool 1 refusal without the deviation number", (p) => { delete p.agents[0].reference; }, /aloof.*reference_deviation_bps/],
-  ["calls_planned 1", (p) => { p.calls_planned = 1; }, /calls_planned must be 0/],
+  ["calls_planned 0", (p) => { p.calls_planned = 0; }, /calls_planned must be 1/],
   ["calls_signed 1", (p) => { p.calls_signed = 1; }, /calls_signed/],
   ["calls_sent 1", (p) => { p.calls_sent = 1; }, /calls_sent/],
   ["four agents", (p) => { p.agents.pop(); }, /agents/],
@@ -76,8 +85,16 @@ const CASES = [
   ["calls.json length mismatch", (p, c) => { c.calls.push({ ...CALL }); }, /calls length/],
   ["calls.json call signed", (p, c) => { c.calls = [{ ...CALL, signed: true }]; }, /calls\[0\]\.signed/],
   ["calls.json call sent", (p, c) => { c.calls = [{ ...CALL }, { ...CALL }, { ...CALL, sent: true }]; }, /calls\[2\]\.sent/],
+  ["the planner call removed (planner holds)", (p, c) => { Object.assign(p.agents[4], { decision: "hold", outcome: "hold", call: null }); c.calls = []; p.calls_planned = 0; }, /planner decision must be swap on the committed snapshot \(got "hold"\)/],
+  ["the planner call removed from the planner row only", (p) => { p.agents[4].call = null; }, /planner must carry an execute_swap call/],
+  ["a planner call that calls.json does not contain", (p, c) => { c.calls = [{ ...CALL, args: { proposal: { ...PROPOSAL, min_amount_out: "50407" } } }]; }, /calls\.json must contain the planner's call/],
+  ["a planner call on a pool with no reference price", (p) => { p.agents[4].candidates[2].ref_deviation_bps = null; }, /pool 747, which has no reference price/],
+  ["a planner call whose candidate is off reference", (p) => { p.agents[4].candidates[2].status = "off_reference"; }, /status is "off_reference", not ok/],
+  ["a planner call on a pool that is not a candidate", (p) => { p.agents[4].candidates.pop(); }, /not among its candidates/],
+  ["a planner call that fails the vault rules (over max_trade)", (p, c) => { const bad = { ...CALL, args: { proposal: { ...PROPOSAL, amount_in: "50001" } } }; p.agents[4].call = bad; c.calls = [bad]; }, /does not pass checkProposal.*ERR_MAX_TRADE/],
+  ["a planner call below the price floor", (p, c) => { const bad = { ...CALL, args: { proposal: { ...PROPOSAL, min_amount_out: "1" } } }; p.agents[4].call = bad; c.calls = [bad]; }, /does not pass checkProposal.*ERR_PRICE_FLOOR/],
+  ["a planner call on a pool the vault does not allow", (p, c) => { const bad = { ...CALL, args: { proposal: { ...PROPOSAL, pool_id: 2 } } }; p.agents[4].call = bad; c.calls = [bad]; }, /does not pass checkProposal.*ERR_POOL_NOT_ALLOWED/],
   ["no personality agent on pool 1", (p) => { p.agents[0].proposal = { pool_id: 0 }; p.agents[3].proposal = { pool_id: 0 }; }, /at least one personality agent proposing on pool 1/],
-  ["the planner swaps on the committed snapshot", (p) => { p.agents[4].decision = "swap"; }, /planner decision must be hold on the committed snapshot \(got "swap"\)/],
   ["rule_rejections 3", (p) => { p.rule_rejections = 3; }, /rule_rejections/],
   ["scenario matches_contract false", (p) => { p.rule_scenarios.scenarios[1].matches_contract = false; }, /daily_cap.*matches_contract/],
   ["scenario outcome accepted", (p) => { p.rule_scenarios.scenarios[0].outcome = "accepted"; }, /max_trade.*outcome/],
@@ -93,14 +110,15 @@ const CASES = [
   ["a call with another gas string", (p, c) => { c.calls = [{ ...CALL }, { ...CALL }, { ...CALL, gas: "300.0 Tgas" }]; }, /one gas string \(got 2: 280\.0 Tgas, 300\.0 Tgas\)/],
   ["an agent call with another gas string", (p, c) => { c.calls = [{ ...CALL }]; p.agents[0].call = { ...CALL, gas: "280 TGas" }; }, /one gas string \(got 2/],
   ["one call with a gas figure that is not the shared one", (p, c) => { c.calls = [{ ...CALL, gas: "300.0 Tgas" }]; }, /"300\.0 Tgas" is not the shared execute_swap figure 280\.0 Tgas/],
-  ["no call but an agent row carries a gas string", (p) => { p.agents[1].call = { ...CALL }; }, /no gas string when no call is planned \(got 1: 280\.0 Tgas\)/],
+  ["an agent row carries a call that is not in the plan (second gas string)", (p) => { p.agents[1].call = { ...CALL, gas: "300.0 Tgas" }; }, /one gas string \(got 2/],
   ["a snapshots pair", (p) => { p.snapshots = { ref_pools: {}, rhea: {} }; }, /one snapshot, not a snapshots pair/],
   ["snapshot not shared", (p) => { p.snapshot.shared_by_agents_and_planner = false; }, /shared_by_agents_and_planner/],
   ["no planner row", (p) => { p.agents[4].kind = "personality"; }, /no planner row/],
   ["planner without a reason", (p) => { p.agents[4].reason = ""; }, /planner reason/],
-  ["planner holds but carries a call", (p) => { p.agents[4].call = { signed: false, sent: false, gas: "280.0 Tgas" }; }, /holds must carry no call/],
+  ["planner holds but carries a call", (p) => { p.agents[4].decision = "hold"; }, /holds must carry no call/],
+  ["planner swaps but its outcome is not execute", (p) => { p.agents[4].outcome = "refused"; }, /swaps must carry its call and the outcome execute/],
   ["planner candidate with an unknown status", (p) => { p.agents[4].candidates[0].status = "great"; }, /candidates\[0\] has an unknown status/],
-  ["planner swaps with no ok candidate", (p) => { p.agents[4].decision = "swap"; p.agents[4].call = null; }, /swaps must have an ok candidate/],
+  ["planner swaps with no ok candidate", (p) => { p.agents[4].candidates[2].status = "refused"; }, /swaps must have an ok candidate/],
   ["rule_scenarios absent", (p) => { delete p.rule_scenarios; }, /rule_scenarios\.scenarios is missing/],
 ];
 
@@ -161,7 +179,7 @@ test("CLI: the real demo passes and prints the success line", () => {
     const r = runCheck(["--out", join(dir, "out")]);
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.ok(
-      r.stdout.split("\n").includes("yield demo: dry_run true, signed false, sent false; one vault, no gas figure (no call); 0 calls planned, 0 signed, 0 sent; 4 rule rejections match the contract"),
+      r.stdout.split("\n").includes("yield demo: dry_run true, signed false, sent false; one vault, one gas figure; 1 call planned, 0 signed, 0 sent; 4 rule rejections match the contract"),
       r.stdout,
     );
   } finally {

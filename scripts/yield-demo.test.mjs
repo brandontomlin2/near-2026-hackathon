@@ -52,7 +52,7 @@ describe("yield:demo default run", () => {
       assert.match(summary, new RegExp(`^${id} +(pool \\d+: |HOLD)`, "m"));
       assert.ok(r.stdout.indexOf(`\n[${id}] `) > r.stdout.indexOf("== details =="), `${id} detail comes after the summary`);
     }
-    assert.match(summary, /^0 unsigned execute_swap calls planned, 0 signed, 0 sent$/m);
+    assert.match(summary, /^1 unsigned execute_swap call planned, 0 signed, 0 sent$/m);
     assert.match(summary, /chaotic .* OK +vetoed$/m);
     // The stable pool 1 is ~1860x off its $1 peg: the three agents that picked it are refused, and the table says why.
     for (const [id, bps] of [["aloof", 18590000], ["social", 18590000], ["skeptic", 18490000]]) {
@@ -60,13 +60,13 @@ describe("yield:demo default run", () => {
     }
     assert.match(r.stdout, /^ {2}reference: quote \+18590000 bps vs mock_usd_price reference \(limit 100 bps, stable pair: OFF REFERENCE\)$/m);
     assert.match(r.stdout, /^ {2}reference: no reference price \(rft has none\): the floor is a spot sanity floor$/m);
-    // One market, one story: the planner is on the same Ref snapshot and says why it holds.
-    assert.match(lines[1], /^snapshot: one committed Ref testnet snapshot at block 276143441, not fetched, shared by the four agents and the optimizer \(vault vault\.yield-demo\.testnet\)$/);
+    // One market, one story: the planner is on the same Ref snapshot and swaps on the one pool that passes every gate.
+    assert.match(lines[1], /^snapshot: one committed Ref testnet snapshot at block 276332963, not fetched, shared by the four agents and the optimizer \(vault vault\.yield-demo\.testnet\)$/);
     assert.doesNotMatch(summary, /Rhea|fixture\.testnet|snapshots:/);
-    assert.match(summary, /^yield-optimizer +HOLD: no pool passes every gate +- +hold$/m);
-    assert.match(summary, /^ {2}optimizer HOLD, 6 pools checked, none usable:$/m);
+    assert.match(summary, /^yield-optimizer {2}pool 747: 0\.05 usdc -> min 0\.050406 usdt {2}OK {11}execute$/m);
+    assert.match(summary, /^ {2}optimizer swap on pool 747, 6 other pools not chosen:$/m);
     assert.match(summary, /^ {4}no mock reference price: pool 0 wrap -> rft$/m);
-    assert.match(summary, /^ {4}off reference \(spot limit 1000 bps, quote limit 1000 bps vs the mock reference price\): pool 1 nusdt -> nusdc spot \+\d+ bps$/m);
+    assert.match(summary, /^ {4}off reference \(spot limit 1000 bps vs the mock reference price\): pool 1 nusdt -> nusdc spot \+\d+ bps$/m);
     assert.match(summary, /^ {4}refused by the vault rules, ERR_POOL_NOT_ALLOWED: pools 2, 5, 6, 8$/m);
     assert.match(summary, /^wrote .*plan\.json$/m);
     assert.equal(r.stderr, "");
@@ -132,7 +132,7 @@ describe("yield:demo default run", () => {
     assert.equal(plan.snapshot.fetched, false);
     assert.equal(plan.snapshot.shared_by_agents_and_planner, true);
     assert.equal(plan.snapshot.file, "src/yield/fixtures/ref-testnet-pools.json");
-    assert.equal(plan.snapshot.block_height, 276143441);
+    assert.equal(plan.snapshot.block_height, 276332963);
     assert.equal(plan.planner_vault.vault_id, plan.personality_agents.vault_id);
     assert.equal(plan.planner_vault.runner_id, plan.personality_agents.runner_id);
     assert.equal(plan.planner_vault.same_as_agents, true);
@@ -140,26 +140,31 @@ describe("yield:demo default run", () => {
     assert.equal(by.chaotic.outcome, "vetoed");
     assert.equal(by.chaotic.veto.by, "skeptic");
     const opt = by["yield-optimizer"];
-    assert.equal(opt.decision, "hold");
-    assert.equal(opt.outcome, "hold");
-    assert.equal(opt.call, null);
-    assert.match(opt.reason, /^no pool passes every gate \(1 off the mock reference price \(spot more than 1000 bps away, or quote more than 1000 bps above\), 1 without a mock reference price, 4 refused by the vault rules\)$/);
-    assert.deepEqual(opt.candidates.map((c) => [c.pool_id, c.status]), [[0, "no_reference_price"], [1, "off_reference"], [2, "refused"], [5, "refused"], [6, "refused"], [8, "refused"]]);
+    assert.equal(opt.decision, "swap");
+    assert.equal(opt.outcome, "execute");
+    assert.equal(opt.rule_check.ok, true);
+    assert.deepEqual(opt.proposal, { pool_id: 747, token_in: "usdc.fakes.testnet", token_out: "usdt.fakes.testnet", amount_in: "50000", min_amount_out: "50406" });
+    assert.equal(opt.reason, "best edge that passes every vault rule and the reference guard: pool 747");
+    assert.deepEqual(opt.candidates.map((c) => [c.pool_id, c.status]), [[0, "no_reference_price"], [1, "off_reference"], [2, "refused"], [5, "refused"], [6, "refused"], [8, "refused"], [747, "ok"]]);
     assert.equal(opt.candidates[1].ref_deviation_bps > 1_000_000, true);
-    assert.equal(plan.calls_planned, 0);
+    assert.equal(opt.candidates[6].edge_bps > 25, true);
+    assert.equal(plan.calls_planned, 1);
     assert.equal(plan.calls_signed, 0);
     assert.equal(plan.calls_sent, 0);
   });
 
-  it("calls.json holds exactly the executable calls: none, since no agent and not the optimizer may execute", () => {
+  it("calls.json holds exactly the executable calls: the optimizer's one swap on pool 747, no personality agent", () => {
     const plan = readJson(join(dir, "plan.json"));
     const calls = readJson(join(dir, "calls.json"));
     assert.equal(calls.signed, false);
     assert.equal(calls.sent, false);
     const executing = plan.agents.filter((a) => a.outcome === "execute").map((a) => a.agent);
-    assert.deepEqual(executing, []);
-    assert.deepEqual(calls.calls, []);
-    for (const a of plan.agents) assert.equal(a.call, null, `${a.agent} (${a.outcome}) carries no call`);
+    assert.deepEqual(executing, ["yield-optimizer"]);
+    assert.equal(calls.calls.length, 1);
+    assert.equal(calls.calls[0].agent, "yield-optimizer");
+    assert.deepEqual(calls.calls[0].args.proposal, { pool_id: 747, token_in: "usdc.fakes.testnet", token_out: "usdt.fakes.testnet", amount_in: "50000", min_amount_out: "50406" });
+    assert.deepEqual(plan.agents.find((a) => a.agent === "yield-optimizer").call, calls.calls[0]);
+    for (const a of plan.agents.filter((x) => x.agent !== "yield-optimizer")) assert.equal(a.call, null, `${a.agent} (${a.outcome}) carries no call`);
   });
 
   it("the planner is on the same market: its quotes are the pools.mjs quotes of the Ref snapshot", () => {
@@ -190,16 +195,16 @@ describe("yield:demo default run", () => {
     assert.deepEqual(at, [...at].sort((a, b) => a - b), "scenario order");
     assert.match(summary, /\(spent today 1501\)/);
     assert.match(summary, /\(vault paused\)/);
-    assert.match(summary, /^0 unsigned execute_swap calls planned, 0 signed, 0 sent$/m);
+    assert.match(summary, /^1 unsigned execute_swap call planned, 0 signed, 0 sent$/m);
   });
 
   it("plan.json records the rule scenarios and they add no calls", () => {
     const plan = readJson(join(dir, "plan.json"));
     assert.equal(plan.rule_rejections, 4);
-    assert.equal(plan.calls_planned, 0);
+    assert.equal(plan.calls_planned, 1); // the optimizer's swap; the four rule scenarios add none
     assert.deepEqual(plan.rule_scenarios.scenarios.map((s) => s.id), ["max_trade", "daily_cap", "price_floor", "paused"]);
     assert.ok(plan.rule_scenarios.scenarios.every((s) => s.outcome === "rejected" && s.matches_contract === true));
-    assert.equal(readJson(join(dir, "calls.json")).calls.length, 0);
+    assert.equal(readJson(join(dir, "calls.json")).calls.length, 1);
   });
 
   it("is byte-identical across runs", () => {
@@ -232,17 +237,20 @@ describe("yield:demo --calls and --json", () => {
     for (const c of ref.calls) assert.ok(r.stdout.includes(`args: ${JSON.stringify(c.args)}`), c.agent);
     assert.equal((r.stdout.match(/^ {2}signed: false$/gm) ?? []).length, ref.calls.length);
     assert.equal((r.stdout.match(/^ {2}sent: false$/gm) ?? []).length, ref.calls.length);
-    assert.equal(ref.calls.length, 0);
-    assert.equal(r.stdout, "no calls planned (DRY RUN: nothing signed, nothing sent)\n");
+    assert.equal(ref.calls.length, 1);
+    assert.match(r.stdout, /^call 1 of 1 \(yield-optimizer\)$/m);
+    assert.equal((r.stdout.match(/^ {2}method: execute_swap$/gm) ?? []).length, 1);
+    assert.match(r.stdout, /^ {2}gas: 280\.0 Tgas$/m);
+    assert.match(r.stdout, /"pool_id":747/);
     assert.equal(existsSync(dir), false);
-    // With a market where the optimizer swaps, --calls prints that one unsigned call.
-    const one = run(["--calls", "--snapshot", SCENARIO, "--out", dir]);
-    assert.equal(one.code, 0, one.stderr);
-    assert.match(one.stdout, /^call 1 of 1 \(yield-optimizer\)$/m);
-    assert.equal((one.stdout.match(/^ {2}method: execute_swap$/gm) ?? []).length, 1);
-    assert.match(one.stdout, /^ {2}gas: 280\.0 Tgas$/m);
-    assert.match(one.stdout, /^ {2}signed: false$/m);
-    assert.match(one.stdout, /^ {2}sent: false$/m);
+    // On a market where nothing passes every gate (the hand-built scenario with a paused vault) --calls prints the one-line no-call message.
+    const paused = join(work, "paused-scenario.json");
+    const raw = readJson(SCENARIO);
+    raw.vault.state.paused = true;
+    writeFileSync(paused, JSON.stringify(raw));
+    const none = run(["--calls", "--snapshot", paused, "--out", dir]);
+    assert.equal(none.code, 0, none.stderr);
+    assert.equal(none.stdout, "no calls planned (DRY RUN: nothing signed, nothing sent)\n");
     assert.equal(existsSync(dir), false);
     assert.doesNotMatch(r.stdout, /index\.html/);
   });
@@ -276,7 +284,7 @@ describe("yield:demo stays offline and keyless", () => {
   it("runs with no HOME and an empty env", () => {
     const r = run(["--out", join(work, "env-b")], { env: {} });
     assert.equal(r.code, 0, r.stderr);
-    assert.match(r.stdout, /0 unsigned execute_swap calls planned, 0 signed, 0 sent/);
+    assert.match(r.stdout, /1 unsigned execute_swap call planned, 0 signed, 0 sent/);
   });
 
   it("refuses NEAR_NETWORK=mainnet and writes nothing", () => {

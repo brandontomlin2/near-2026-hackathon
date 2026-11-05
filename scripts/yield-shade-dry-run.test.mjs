@@ -8,8 +8,7 @@ import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { runDemo } from "../src/yield/demo.mjs";
-import { loadSnapshot } from "../src/yield-optimizer/snapshot.mjs";
-import { SHADE_SCENARIO } from "./yield-shade-dry-run.mjs";
+import { SHADE_MARKET } from "./yield-shade-dry-run.mjs";
 
 const SCRIPT = fileURLToPath(new URL("./yield-shade-dry-run.mjs", import.meta.url));
 const PKG = fileURLToPath(new URL("../package.json", import.meta.url));
@@ -48,7 +47,7 @@ describe("yield:shade:dry-run --json", () => {
   let demoFirst;
   before(async () => {
     plan = JSON.parse(run(["--json"]).stdout);
-    demoFirst = (await runDemo({ snapshot: loadSnapshot(fileURLToPath(new URL(`../${SHADE_SCENARIO}`, import.meta.url))) })).calls.calls[0];
+    demoFirst = (await runDemo()).calls.calls[0];
   });
   it("is dry run, unsigned, unsent", () => {
     assert.equal(plan.dry_run, true);
@@ -61,21 +60,28 @@ describe("yield:shade:dry-run --json", () => {
     assert.equal(plan.execute_swap.actions[0].gas, "280000000000000");
     assert.equal(plan.execute_swap.actions[0].deposit, "0");
   });
-  it("the proposal is the first rule-checked yield:demo call on the hand-built scenario, with its source recorded", () => {
+  it("the proposal is the first rule-checked yield:demo call on the real default snapshot, with its source recorded", () => {
     assert.equal(demoFirst.agent, "yield-optimizer");
     assert.deepEqual(plan.execute_swap.actions[0].args.proposal, demoFirst.args.proposal);
     assert.deepEqual(plan.proposal_source, {
-      from: "npm run yield:demo -- --snapshot src/yield-optimizer/fixtures/scenario.hand-built.json",
-      market: "hand-built test scenario, not real data (on the committed Ref snapshot yield:demo plans no call)",
+      from: "npm run yield:demo",
+      market: SHADE_MARKET,
       agent: "yield-optimizer",
       rule_check: "ok",
     });
   });
-  it("the human output says the market is hand-built", () => {
-    assert.match(run([]).stdout, /^ {2}market +hand-built test scenario, not real data \(on the committed Ref snapshot yield:demo plans no call\)$/m);
+  it("the human output names the real snapshot as the market", () => {
+    assert.match(run([]).stdout, /^ {2}market +committed Ref testnet snapshot at block 276332963, not fetched \(pool 747: shallow liquidity of fake test tokens\)$/m);
   });
-  it("uses the scenario because the committed Ref snapshot plans no call", async () => {
-    assert.deepEqual((await runDemo()).calls.calls, []);
+  it("uses the real snapshot's call: pool 747, block 276332963, not the hand-built scenario", async () => {
+    const demo = await runDemo();
+    assert.equal(demo.calls.calls.length, 1);
+    assert.equal(demo.doc.snapshot.block_height, 276332963);
+    const proposal = plan.execute_swap.actions[0].args.proposal;
+    assert.equal(proposal.pool_id, 747);
+    assert.equal(proposal.token_in, "usdc.fakes.testnet");
+    assert.deepEqual(proposal, demo.calls.calls[0].args.proposal);
+    assert.doesNotMatch(JSON.stringify(plan), /fixture\.testnet|hand-built/);
   });
   it("derives the evidence-backed key for yield-agent.testnet / yield-vault-1", () => {
     const p = JSON.parse(run(["--json", "--agent-contract", "yield-agent.testnet", "--path", "yield-vault-1"]).stdout);

@@ -32,7 +32,7 @@ test("only src/yield/rules.mjs defines checkProposal, and every caller imports i
   assert.deepEqual(filesMatching(/function checkProposal\s*\(/), ["src/yield/rules.mjs"]);
   const callers = filesMatching(/\bcheckProposal\s*\(/).filter((f) => f !== "src/yield/rules.mjs");
   assert.ok(callers.length >= 3, `callers: ${callers.join(", ")}`);
-  for (const f of callers) assert.match(source(f), /import \{[^}]*\bcheckProposal\b[^}]*\} from "[./]*(yield\/)?rules\.mjs"/, f);
+  for (const f of callers) assert.match(source(f), /import \{[^}]*\bcheckProposal\b[^}]*\} from "[./]*(src\/)?(yield\/)?rules\.mjs"/, f);
 });
 
 test("only src/yield/pools.mjs defines quoteOut", () => {

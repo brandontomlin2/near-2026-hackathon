@@ -40,9 +40,11 @@ describe("renderDemoPage", () => {
     assert.ok(html.includes(`<code>${result.doc.planner_vault.vault_id}</code>`));
   });
 
-  it("lists all five agents and the planner's HOLD with every candidate's reason", () => {
+  it("lists all five agents and the planner's pool 747 swap with every other candidate's reason", () => {
     for (const id of ["aloof", "chaotic", "social", "skeptic", "yield-optimizer"]) assert.ok(html.includes(`<td class="who">${id}<`), id);
-    assert.ok(html.includes("HOLD: no pool passes every gate"));
+    assert.ok(html.includes("pool 747: 0.05 usdc -&gt; min 0.050406 usdt"));
+    assert.ok(html.includes("swap: best edge that passes every vault rule and the reference guard: pool 747"));
+    assert.doesNotMatch(html, /HOLD: no pool passes every gate/);
     assert.ok(html.includes("REFUSED ERR_POOL_NOT_ALLOWED: pool 6"));
     assert.match(html, /SKIP off reference: spot \+\d+ bps vs the mock reference price \(limit 1000 bps\)/);
     assert.ok(html.includes("SKIP no mock reference price for rft"));
@@ -66,10 +68,13 @@ describe("renderDemoPage", () => {
   });
 
   it("shows each unsigned call and the totals line", () => {
-    assert.equal(result.calls.calls.length, 0);
-    assert.equal((html.match(/signed: false/g) ?? []).length, 0);
-    assert.ok(html.includes("0 unsigned execute_swap calls planned, 0 signed, 0 sent"));
-    assert.ok(html.includes("<h2>Unsigned calls</h2>\n<p class=\"mut\">No calls planned.</p>"));
+    assert.equal(result.calls.calls.length, 1);
+    assert.equal(result.calls.calls[0].args.proposal.pool_id, 747);
+    assert.equal((html.match(/signed: false/g) ?? []).length, 1);
+    assert.equal((html.match(/sent: false/g) ?? []).length, 1);
+    assert.ok(html.includes("1 unsigned execute_swap call planned, 0 signed, 0 sent"));
+    assert.ok(html.includes("<h3>call 1 of 1 (yield-optimizer)</h3>"));
+    assert.doesNotMatch(html, /No calls planned/);
     for (const c of result.calls.calls) assert.ok(html.includes(escapeHtml(JSON.stringify(c.args, null, 2))), c.agent);
   });
 

@@ -76,13 +76,16 @@ export function initialState() {
     paused: false,
     in_flight: false,
     spent: { day: 0, amounts: {} }, // per token_in, decimal strings
-    // Whole-token figures: 1000 wNEAR (24 decimals), 10000 rft (8), 1000 nusdt (6), 1000 nusdc (2).
+    // Whole-token figures: 1000 wNEAR (24 decimals), 10000 rft (8), 1000 nusdt (6), 1000 nusdc (2),
+    // 1000 usdc.fakes (6) and 1000 usdt.fakes (6; only the planner vault trades these, pool 747).
     // Each covers the largest daily_cap in strategies.mjs, so balance never decides an outcome.
     balances: {
       "wrap.testnet": "1000000000000000000000000000",
       "rft.tokenfactory.testnet": "1000000000000",
       "nusdt.ft-fin.testnet": "1000000000",
       "nusdc.ft-fin.testnet": "100000",
+      "usdc.fakes.testnet": "1000000000",
+      "usdt.fakes.testnet": "1000000000",
     },
   };
 }

@@ -1,8 +1,18 @@
 {
-  "_source": "Ref/Rhea testnet exchange ref-finance-101.testnet, view get_pools {from_index:0,limit:300}, via https://test.rpc.fastnear.com (query/call_function, finality final).",
-  "_block_height": 276143441,
-  "_block_hash": "8uFVJpEaF5Bwf1caRZSq7TDWgadPA7XYbQdASRAPUgAj",
-  "_note": "Decoded snapshot of selected pools. Testnet liquidity is thin and some reserves are junk (pool 1, nusdt/nusdc, both stable at a $1 reference, has reserves 237316 : 44411 base units, i.e. 0.237 USDT vs 444.11 USDC: about 99.9% off the peg on this snapshot, so the off-chain peg check (SOFT_OFF_REFERENCE) refuses it; on chain the vault has no peg check and only its owner-set floor, which the example config derives from the reference, refuses the losing direction); used only for constant-product quotes and mock fills. Amounts are base units (decimal strings). total_fee is in bps (of 10000).",
+  "_source": "Ref/Rhea testnet exchange ref-finance-101.testnet, view get_pool per pool id and ft_metadata per token, via https://rpc.testnet.fastnear.com (JSON-RPC query/call_function, block_id 276332963). Regenerate with: node scripts/yield-snapshot.mjs",
+  "_block_height": 276332963,
+  "_block_hash": "pBjrE7hQR6F5CoVHPgTeqUtDupCdqvTvaJ38LPDUR6P",
+  "_taken_at": "2026-11-05T11:06:25Z",
+  "_pool_ids": [
+    0,
+    1,
+    2,
+    5,
+    6,
+    8,
+    747
+  ],
+  "_note": "Decoded snapshot of selected pools. Amounts are base units (decimal strings); total_fee is in bps (of 10000); decimals come from each token's ft_metadata. mock_usd_price is the demo's reference price, not an oracle: stable tokens use the $1 peg, wrap.testnet a fixed mock $3.00, null means no reference price. Testnet liquidity is thin and most reserves are junk (e.g. pool 1, nusdt/nusdc, is far off the peg); pool 747 (usdc.fakes/usdt.fakes) is shallow but near the peg. Read the reserves below, not this note: it is regenerated unchanged. ref_get_return records Ref's own get_return view at the same block, so the constant-product quote can be checked against the exchange.",
   "exchange": "ref-finance-101.testnet",
   "tokens": {
     "wrap.testnet": {
@@ -26,9 +36,19 @@
       "mock_usd_price": null
     },
     "banana.ft-fin.testnet": {
-      "decimals": 18,
+      "decimals": 6,
       "stable": false,
       "mock_usd_price": null
+    },
+    "usdc.fakes.testnet": {
+      "decimals": 6,
+      "stable": true,
+      "mock_usd_price": "1.00"
+    },
+    "usdt.fakes.testnet": {
+      "decimals": 6,
+      "stable": true,
+      "mock_usd_price": "1.00"
     }
   },
   "pools": [
@@ -85,6 +105,24 @@
       "reserve_a": "9077430456",
       "reserve_b": "13780356513507131835149548",
       "total_fee": 20
+    },
+    {
+      "pool_id": 747,
+      "pool_kind": "SIMPLE_POOL",
+      "token_a": "usdc.fakes.testnet",
+      "token_b": "usdt.fakes.testnet",
+      "reserve_a": "4976689",
+      "reserve_b": "5108251",
+      "total_fee": 30
+    }
+  ],
+  "ref_get_return": [
+    {
+      "pool_id": 747,
+      "token_in": "usdc.fakes.testnet",
+      "amount_in": "50000",
+      "token_out": "usdt.fakes.testnet",
+      "amount_out": "50660"
     }
   ]
 }

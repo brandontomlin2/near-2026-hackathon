@@ -6,10 +6,12 @@
 // own check_rules mirror (src/yield/rules.mjs) as the final gate, and returns a plan:
 // hold, or one `execute_swap` call with its exact args. Quotes come from
 // src/yield/pools.mjs; the rules are src/yield/rules.mjs; this file holds neither copy.
-// Two reference guards keep junk pools out, and both give `off_reference`: a quote that
-// beats the reference by more than max_edge_bps is distrusted, not chased, and a pool
-// whose spot price is further than max_ref_deviation_bps from the reference is never
-// chosen. A token with no mock reference price makes its candidates `no_reference_price`.
+// One reference guard keeps junk pools out: a pool whose spot price is further than
+// max_ref_deviation_bps from the reference, either way, is distrusted, not chased, and
+// gets `off_reference`. The spot price bounds the quote's edge (for a constant-product
+// pool with fee >= 0 the quote beats the reference by at most the spot deviation), so
+// a separate limit on the quote could never trip alone. A token with no mock reference
+// price makes its candidates `no_reference_price`.
 // It never signs, never sends, never reads keys and never uses the network.
 
 import { EXECUTE_SWAP_GAS_CLI, EXECUTE_SWAP_TGAS } from "../yield/gas.mjs";
@@ -32,24 +34,15 @@ export const DEFAULTS = Object.freeze({
    * worst fill the vault would accept still beats holding by this much.
    */
   min_edge_bps: 25,
-  /**
-   * Largest edge over the reference price the planner will believe, measured
-   * on the quote (expected output, before slippage). 1000 bps = 10%. The
-   * reference price is the only oracle here, so an edge this big is far more
-   * likely junk liquidity, a depeg, a manipulated pool or a stale reference
-   * than a real opportunity: the planner distrusts the quote and will not
-   * trade it (status `off_reference`). Real venue-to-venue spreads on liquid
-   * pairs are tens of bps; the fixture's best pool is ~430 bps. The quote edge
-   * is used, not the edge at min_amount_out, because the quote is the pool's
-   * actual claim; the slippage haircut would let a pool sit up to
-   * slippage_bps further off reference than the limit says.
-   */
-  max_edge_bps: 1000,
   /** Share of the token_in balance the agent wants to move in one trade, before clipping. */
   position_pct: 50,
   /**
    * Reference guard: a pool whose spot price (reserves, before fee) is further than this from
-   * the mock reference price ratio is junk or stale, not an opportunity. It is never chosen.
+   * the mock reference price ratio, either way, is distrusted and never chosen (status
+   * `off_reference`). The reference price is the only oracle here, so a gap this big is far more
+   * likely junk liquidity, a depeg, a manipulated pool or a stale reference than a real
+   * opportunity. 1000 bps = 10%. Real venue-to-venue spreads on liquid pairs are tens of bps.
+   * The spot measure also bounds the quote's edge, so no separate quote limit is needed.
    */
   max_ref_deviation_bps: 1000,
 });
@@ -180,19 +173,12 @@ function evaluateDirection(snap, pool, opts, token_in) {
   const worst = priced ? edgeBps(snap, token_in, amount_in, token_out, min_amount_out) : -Infinity;
   const unpriced = [token_in, token_out].filter((t) => !hasPrice(snap, t));
   let status;
-  let note;
   if (!check.ok) status = "refused";
   else if (!priced) status = "no_reference_price";
-  else if (edge > opts.max_edge_bps || Math.abs(ref_deviation_bps) > opts.max_ref_deviation_bps) {
-    // One gate, two measures of the same thing: the spot price is too far from the reference
-    // either way, or the quote beats it by more than any real spread would.
-    status = "off_reference";
-    if (edge > opts.max_edge_bps) {
-      note = `quote is ${edge.toFixed(1)} bps above the reference price, over the ${opts.max_edge_bps} bps limit: the quote is distrusted (junk liquidity, depeg, manipulated pool or stale reference), not traded`;
-    }
-  } else if (!(worst >= opts.min_edge_bps)) status = "below_min_edge";
+  else if (Math.abs(ref_deviation_bps) > opts.max_ref_deviation_bps) status = "off_reference";
+  else if (!(worst >= opts.min_edge_bps)) status = "below_min_edge";
   else status = "ok";
-  return { proposal, wanted, clipped_by, blocked_by, expected_out, edge_bps: edge, worst_edge_bps: worst, ref_deviation_bps, unpriced, check, status, note };
+  return { proposal, wanted, clipped_by, blocked_by, expected_out, edge_bps: edge, worst_edge_bps: worst, ref_deviation_bps, unpriced, check, status };
 }
 
 /** Portfolio value at reference prices, over every token the vault holds that has a price. */
@@ -218,7 +204,7 @@ function pnl(snap, chosen) {
 
 const STATUS_WORDS = {
   below_min_edge: (o) => `below the ${o.min_edge_bps} bps min edge`,
-  off_reference: (o) => `off the mock reference price (spot more than ${o.max_ref_deviation_bps} bps away, or quote more than ${o.max_edge_bps} bps above)`,
+  off_reference: (o) => `off the mock reference price (spot more than ${o.max_ref_deviation_bps} bps away)`,
   no_reference_price: () => "without a mock reference price",
   refused: () => "refused by the vault rules",
 };
@@ -264,7 +250,7 @@ export function buildPlan(snap, opts = {}) {
     vault_id: snap.vault_id,
     runner_id: snap.runner_id,
     utc_day: dayOf(snap.now_ms),
-    params: { slippage_bps: o.slippage_bps, min_edge_bps: o.min_edge_bps, max_edge_bps: o.max_edge_bps, position_pct: o.position_pct, max_ref_deviation_bps: o.max_ref_deviation_bps },
+    params: { slippage_bps: o.slippage_bps, min_edge_bps: o.min_edge_bps, position_pct: o.position_pct, max_ref_deviation_bps: o.max_ref_deviation_bps },
     decision: chosen ? "swap" : "hold",
     reason,
     // The call a runner would make. Field names match lib.rs `execute_swap(proposal: SwapProposal)`.
@@ -291,7 +277,6 @@ export function buildPlan(snap, opts = {}) {
       ref_deviation_bps: finiteOrNull(c.ref_deviation_bps ?? NaN, 1),
       unpriced_tokens: c.unpriced,
       status: c.status,
-      ...(c.note ? { note: c.note } : {}),
       check: c.check,
     })),
     simulated_pnl_vs_hold: {
@@ -316,14 +301,8 @@ export function verdictText(c, snap, maxRefDeviationBps = DEFAULTS.max_ref_devia
       return "OK";
     case "below_min_edge":
       return "SKIP below min edge";
-    case "off_reference": {
-      const parts = [];
-      if (Math.abs(c.ref_deviation_bps) > maxRefDeviationBps) {
-        parts.push(`spot ${c.ref_deviation_bps >= 0 ? "+" : ""}${Math.round(c.ref_deviation_bps)} bps vs the mock reference price (limit ${maxRefDeviationBps} bps)`);
-      }
-      if (c.note) parts.push(c.note);
-      return `SKIP off reference: ${parts.join("; ")}`;
-    }
+    case "off_reference":
+      return `SKIP off reference: spot ${c.ref_deviation_bps >= 0 ? "+" : ""}${Math.round(c.ref_deviation_bps)} bps vs the mock reference price (limit ${maxRefDeviationBps} bps): distrusted, not traded (junk liquidity, depeg, manipulated pool or stale reference)`;
     case "no_reference_price":
       return `SKIP no mock reference price for ${c.unpriced.map(sym).join(", ")}`;
     default:
@@ -350,7 +329,7 @@ export function renderPlan(snap, plan) {
     const worth = hasPrice(snap, t) ? `$${usd(valueUsd(snap, t, a))}` : "no mock reference price";
     lines.push(`  ${fmt(t, a)}  (${worth})`);
   }
-  lines.push(`Candidates, checked with the vault's check_rules (slippage ${j.params.slippage_bps} bps, min edge ${j.params.min_edge_bps} bps, spot at most ${j.params.max_ref_deviation_bps} bps and quote at most ${j.params.max_edge_bps} bps off the reference):`);
+  lines.push(`Candidates, checked with the vault's check_rules (slippage ${j.params.slippage_bps} bps, min edge ${j.params.min_edge_bps} bps, spot at most ${j.params.max_ref_deviation_bps} bps off the reference):`);
   if (plan.candidates.length === 0) lines.push("  (none: the snapshot has no pools)");
   for (const c of plan.candidates) {
     const p = c.proposal;
