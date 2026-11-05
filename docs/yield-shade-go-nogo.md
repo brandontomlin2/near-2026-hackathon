@@ -66,6 +66,27 @@ Each item needs its own yes. Costs come from the plan; "unknown, see plan sectio
 
 Not yes-gated but a decision: plan step 3 (accept the deprecated, unaudited Shade Agent Framework, plan section 0). If that is not acceptable, Partial can call the agent contract and MPC contract directly.
 
+## If Brandon says yes
+
+Nothing in this section has been done. It describes what the owner would run by hand after a yes; it decides nothing and ticks nothing. Each signing or sending step still needs its own explicit yes from Brandon (checklist items 1 to 8 above, by number; the vault steps need the yes of items 1 and 2, the Shade steps items 3 to 8). Testnet only. Placeholders: `<OWNER>.testnet`, `vault.<OWNER>.testnet`, `runner.<OWNER>.testnet`; for Partial also `<sponsor>`, `<agent-contract>` and `<executor>` as in plan section 7. The `near` commands in the runbook are copied from the tool output, and near-cli-rs syntax is UNCONFIRMED against upstream (runbook row N1): run `near --version` and `near contract call-function as-transaction --help` first. The owner needs at least 10 NEAR testnet (outflow 8.525 NEAR + 7 yocto, most of it returned by rollback).
+
+1. Copy the config out of git's way and fill it: `mkdir -p out && cp config/yield-vault.live.example.json out/yield-vault.live.json`. Replace every `<FILL_ME>`, `owner_id`, `vault_id`, `runner_id`, `nft_contract_id`, `token_id`, set `"placeholders": false`. Public keys only. Stop if the tool refuses a field.
+2. Run `npm run yield:live:preflight -- --config out/yield-vault.live.json`. It must end with `READY FOR LIVE: yes`. MANUAL items (owner funds, keychain keys, the NFT) are for the owner to confirm. Stop on any FAIL or `READY FOR LIVE: no`.
+3. In the shell, `export NEAR_NETWORK=testnet`, `export YIELD_VAULT_ACCOUNT_ID=vault.<OWNER>.testnet`, `export YIELD_RUNNER_ACCOUNT_ID=runner.<OWNER>.testnet`. Then run `npm run yield:live:dry-run -- --config out/yield-vault.live.json --require-ready`. Exit 0 means ready; the PREFLIGHT table shows placeholders filled, the three env names set (values never printed), snapshot fresh (limit 72 h, else `npm run yield:snapshot`). Exit 3 lists what is missing: stop and fix it.
+4. Runbook steps 1 to 18 in [`yield-vault-live-runbook.md`](yield-vault-live-runbook.md), one at a time, using the command from your own `dry-run --config` output (the runbook shows the example ids). They create the vault and runner accounts, deploy and `new` the vault, register on both tokens, wrap 0.02 NEAR, pay Ref storage, deposit 0.02 wNEAR, and end with step 18, the swap rules run without side effects. Stop at the first result that differs from the step's "Expected result".
+5. Step 19, the one `execute_swap`: runner `runner.<OWNER>.testnet` to `vault.<OWNER>.testnet`, swap 0.01 wNEAR, 280 TGas, deposit 0, shown as step 19 in the dry-run output. Do not send it before step 18 is clean. After it, wait for `swap_in_flight` to read false in the step 20 view.
+6. Steps 20 to 26: read the state and balances, then `withdraw` the token_out and unswapped token_in balances to the owner (1 yocto each). Fill the amounts from the view steps; skip a withdraw whose value is 0.
+
+Only if the decision was Partial, after step 6 or in its own window: follow checklist items 1 to 8 in order, with plan section 7 steps 4, 5, 7, 8, 9, 10 and 11. Item 7 replaces the keychain-signed runner of step 19 with the MPC-signed `execute_swap`. Costs and checkpoints (2026-11-09, 2026-11-11) are in the Decision table; unknown figures stay unknown, see plan section 6.
+
+### How to stop or roll back
+
+- Fastest safe stop: runbook "Fastest safe stop", which is steps 27 and 28: `pause`, then `revoke_all_runners`, owner, 1 yocto each, 30 TGas each. It blocks new swaps only; owner deposits and withdrawals still work.
+- Shade executor key: `DeleteKey` of the derived key on `<executor>` (checklist item 8). It is independent of the vault.
+- Full teardown: runbook "Full teardown order" (steps 27 to 36); never delete the vault (step 35) while any token balance, `stranded_on_ref`, `unverified_on_ref` or Ref deposit is non-zero. For Partial, also item 3's `remove_agent`.
+- A swap already in flight cannot be stopped. If it is stuck, wait 10 minutes, then the owner runs `force_release_lock` (1 yocto, at least 100 TGas).
+- If any check prints something unexpected, stop and fall back to No-go.
+
 ## No-go fallback
 
 If the decision is No-go, or a checkpoint is missed, what ships is the dry-run evidence and nothing live:
