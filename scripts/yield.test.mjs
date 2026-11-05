@@ -20,7 +20,7 @@ const TESTNET_ENV = {
 /** Write a --vault-state file (the target vault's get_config()/get_state()) and return its path. */
 function vaultStateFile(overrides = {}, agent = "skeptic") {
   const dir = mkdtempSync(join(tmpdir(), "yield-vs-"));
-  const doc = { config: defaultVaultConfig(agent, { runner: "runner.x.testnet" }), state: initialState(), fetched_at: new Date(NOW_MS - 60_000).toISOString(), block_height: 123456, ...overrides };
+  const doc = { config: defaultVaultConfig(agent, { runner: "runner.x.testnet" }), state: initialState(), vault_id: "vault.x.testnet", fetched_at: new Date(NOW_MS - 60_000).toISOString(), block_height: 123456, ...overrides };
   const file = join(dir, "vault.json");
   writeFileSync(file, JSON.stringify(doc));
   return file;
@@ -220,6 +220,24 @@ test("--send checks proposals against the vault's real config: a vault with no l
   const config = { ...defaultVaultConfig("skeptic", { runner: "runner.x.testnet" }), limits: [] };
   const r = await run(["--send", "--i-approve", "--agent", "skeptic", "--vault-state", vaultStateFile({ config })], TESTNET_ENV, { hasNear: () => true });
   assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.calls, []);
+});
+
+test("--send refuses a vault-state that does not name the target vault, or names another one", async () => {
+  for (const [vault_id, why] of [[undefined, /needs "vault_id"/], ["other.x.testnet", /vault_id other\.x\.testnet is not the target vault vault\.x\.testnet/]]) {
+    const r = await run(["--send", "--i-approve", "--agent", "skeptic", "--vault-state", vaultStateFile({ vault_id })], TESTNET_ENV, { hasNear: () => true });
+    assert.equal(r.code, 1);
+    assert.match(r.stderr, why);
+    assert.match(r.stderr, /Nothing was sent/);
+    assert.deepEqual(r.calls, []);
+  }
+});
+
+test("--send refuses a vault-state whose config strategy is not the --agent's", async () => {
+  const config = defaultVaultConfig("chaotic", { runner: "runner.x.testnet" });
+  const r = await run(["--send", "--i-approve", "--agent", "skeptic", "--vault-state", vaultStateFile({ config })], TESTNET_ENV, { hasNear: () => true });
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /config\.strategy chaotic is not --agent skeptic/);
   assert.deepEqual(r.calls, []);
 });
 
@@ -443,6 +461,45 @@ test("raw get_state(): a day in the future is refused", async () => {
   const r = await sendRaw(rawState({ day: TODAY + 1 }));
   assert.equal(r.code, 1);
   assert.deepEqual(r.calls, []);
+});
+
+test("mirror-shaped state: a snapshot missing paused, in_flight or spent is refused, never read as unpaused, idle and unspent", async () => {
+  const full = initialState();
+  const [tok] = Object.keys(full.balances);
+  const day = Math.floor(NOW_MS / 86_400_000);
+  const bad = [
+    { balances: full.balances }, // the bare balances: every lock and the cap would default open
+    { ...full, paused: undefined },
+    { ...full, paused: "false" },
+    { ...full, in_flight: undefined },
+    { ...full, in_flight: 0 },
+    { ...full, spent: undefined },
+    { ...full, spent: { day } },
+    { ...full, spent: { day: "1", amounts: {} } },
+    { ...full, spent: { day, amounts: { [tok]: 5 } } },
+    { ...full, spent: { day, amounts: [] } },
+    { ...full, balances: undefined },
+    { ...full, balances: [] },
+    { ...full, balances: { [tok]: "-1" } },
+    { ...full, balances: { [tok]: "340282366920938463463374607431768211456" } },
+  ];
+  for (const state of bad) {
+    const r = await run([...SEND, "--vault-state", vaultStateFile({ state })], TESTNET_ENV, { hasNear: () => true });
+    assert.equal(r.code, 1, `must refuse ${JSON.stringify(state).slice(0, 120)}`);
+    assert.match(r.stderr, /--vault-state state\.\S+ (must|amount)/);
+    assert.match(r.stderr, /Nothing was sent/);
+    assert.deepEqual(r.calls, []);
+  }
+});
+
+test("mirror-shaped state: a complete snapshot is still accepted and its daily spend still counts", async () => {
+  const day = Math.floor(NOW_MS / 86_400_000);
+  const ok = await run([...SEND, "--vault-state", vaultStateFile({ state: initialState() })], TESTNET_ENV, { hasNear: () => true });
+  assert.equal(ok.code, 0, ok.stderr);
+  assert.ok(ok.calls.length >= 1, "a complete, funded mirror state must still send");
+  const busy = await run([...SEND, "--vault-state", vaultStateFile({ state: { ...initialState(), in_flight: true, spent: { day, amounts: {} } } })], TESTNET_ENV, { hasNear: () => true });
+  assert.equal(busy.code, 0, busy.stderr);
+  assert.deepEqual(busy.calls, [], "a swap in flight blocks the next one");
 });
 
 test("raw get_state(): malformed pairs, amounts, flags or duplicates are refused and nothing is sent", async () => {

@@ -39,8 +39,9 @@ const USAGE = `Usage: node scripts/yield.mjs [--agent ID] [--rounds N] [--json] 
   --json        print one JSON document instead of text
   --out DIR     where the track record goes: DIR/yield/ledger.json (default out; rewritten each run)
   --vault-state FILE  JSON {"config": <get_config()>, "state": <get_state()>} of the target vault
-                (state: the raw get_state() JSON; balances and spent_today are [token, amount] pairs), plus "fetched_at" (ISO time) and
-                "block_height" of the view calls. Required with --send: proposals are checked against
+                (state: the raw get_state() JSON; balances and spent_today are [token, amount] pairs), plus
+                "vault_id" (must equal YIELD_VAULT_ACCOUNT_ID; config.strategy must equal --agent),
+                "fetched_at" (ISO time) and "block_height" of the view calls. Required with --send: proposals are checked against
                 it, never against the built-in demo config. Refused if older than 10 minutes. It is
                 only a cache: the chain is the authority and re-checks every rule on execute_swap.
   --send        really send the accepted execute_swap calls with near-cli-rs (one round only:
@@ -108,16 +109,45 @@ function pairsToRecord(pairs, name) {
   return out;
 }
 
+/** { token: amount } as the JS mirror holds it -> the same record, each amount checked as a decimal U128 string. */
+function checkAmountRecord(record, name) {
+  if (!record || typeof record !== "object" || Array.isArray(record)) throw new Error(`--vault-state state.${name} must be an object of token -> decimal U128 string`);
+  for (const [token, amount] of Object.entries(record)) {
+    if (typeof amount !== "string" || !/^(0|[1-9][0-9]*)$/.test(amount) || BigInt(amount) > U128_MAX) {
+      throw new Error(`--vault-state state.${name} amount for ${token} must be a decimal U128 string`);
+    }
+  }
+  return record;
+}
+
+/**
+ * A state already in the mirror shape must still carry every field checkProposal reads: a missing
+ * `paused`, `in_flight` or `spent` would otherwise read as unpaused, idle and nothing spent today.
+ */
+function validateMirrorState(state) {
+  for (const k of ["paused", "in_flight"]) {
+    if (typeof state[k] !== "boolean") throw new Error(`--vault-state state.${k} must be a boolean`);
+  }
+  const { spent } = state;
+  if (!spent || typeof spent !== "object" || !Number.isSafeInteger(spent.day) || spent.day < 0) {
+    throw new Error("--vault-state state.spent must be { day: non-negative integer, amounts: { token: amount } }");
+  }
+  checkAmountRecord(spent.amounts, "spent.amounts");
+  checkAmountRecord(state.balances, "balances");
+  return state;
+}
+
 /**
  * Convert the contract's get_state() JSON (VaultState: balances and spent_today as [token, amount]
  * pairs, day, and the swap/recovery/release_in_flight booleans) into the mirror that checkProposal
  * reads ({ paused, in_flight, spent: { day, amounts }, balances: { token: amount } }).
  * Any of the three locks blocks swaps, as on chain. A state already in the mirror shape (no raw
- * fields, balances an object) is passed through unchanged. Throws on a malformed raw state.
+ * fields, balances an object) is validated (every field checkProposal reads must be present) and passed
+ * through. Throws on a malformed state of either shape.
  */
 export function normalizeContractState(state, nowMs) {
   const isRaw = Array.isArray(state.balances) || RAW_STATE_KEYS.some((k) => Object.hasOwn(state, k));
-  if (!isRaw) return state;
+  if (!isRaw) return validateMirrorState(state);
   for (const k of ["paused", "swap_in_flight", "recovery_in_flight", "release_in_flight"]) {
     if (typeof state[k] !== "boolean") throw new Error(`--vault-state state.${k} must be a boolean`);
   }
@@ -135,15 +165,18 @@ export function normalizeContractState(state, nowMs) {
 }
 
 /** Read the target vault's real config and state; throws an Error with a clear message. */
-function loadVaultState(file, nowMs) {
+function loadVaultState(file, nowMs, { vault, agent }) {
   let doc;
   try {
     doc = JSON.parse(readFileSync(file, "utf8"));
   } catch (e) {
     throw new Error(`cannot read --vault-state ${file}: ${e.message.split("\n")[0]}`);
   }
-  const { config, state, fetched_at: fetchedAt, block_height: blockHeight } = doc ?? {};
+  const { config, state, vault_id: vaultId, fetched_at: fetchedAt, block_height: blockHeight } = doc ?? {};
   if (!config || typeof config !== "object" || !state || typeof state !== "object") throw new Error(`--vault-state ${file} needs both "config" and "state" objects`);
+  if (typeof vaultId !== "string" || vaultId === "") throw new Error(`--vault-state ${file} needs "vault_id": the account the view calls were made against`);
+  if (vaultId !== vault) throw new Error(`--vault-state vault_id ${vaultId} is not the target vault ${vault} (YIELD_VAULT_ACCOUNT_ID)`);
+  if (config.strategy !== agent) throw new Error(`--vault-state config.strategy ${config.strategy} is not --agent ${agent}: each vault belongs to one agent`);
   const problems = validateVaultConfig(config);
   if (problems.length) throw new Error(`--vault-state config is invalid: ${problems.join("; ")}`);
   const fetchedMs = typeof fetchedAt === "string" ? Date.parse(fetchedAt) : NaN;
@@ -222,7 +255,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
       return 1;
     }
     try {
-      const v = loadVaultState(opts.vaultState, now());
+      const v = loadVaultState(opts.vaultState, now(), { vault, agent: opts.agent });
       configs[opts.agent] = v.config;
       ledger.states[opts.agent] = v.state;
     } catch (e) {
