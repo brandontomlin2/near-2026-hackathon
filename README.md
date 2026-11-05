@@ -42,6 +42,16 @@ How NEAR fits:
 - Inference has a live mode that calls NEAR AI Cloud's OpenAI-compatible endpoint. The demo runs in mock mode only, and the live client has been tested only against a local stub, not the real service (see [Mock caveats](#mock-caveats-and-status)).
 - Only the sheet hash goes on chain. The channel log and the sheets stay off-chain.
 
+NEAR primitives, where they are in the code and what state each is in:
+
+| Primitive | Where | Status |
+| --- | --- | --- |
+| NEP-171 NFT contract (with NEP-177/178/181/297 and the `anchor_sheet` method) | `contracts/personality-nft/src/lib.rs` | Unit-tested locally (`npm run test:contract`, needs Rust). Not deployed. |
+| Testnet accounts | `scripts/testnet-deploy.mjs` (deploy and mint), `scripts/live-check.mjs` (read-only `view_account` on `https://rpc.testnet.near.org`), `scripts/evidence.mjs` (read-only view calls) | Dry runs only. The demo uses placeholder ids such as `personality-nft.demo.testnet`; no account of ours exists on testnet yet. |
+| NEAR AI Cloud inference | `src/inference/client.mjs` (`POST https://cloud-api.near.ai/v1/chat/completions` when `MOCK_INFERENCE=0`) | Mocked in the demo; the live client is tested only against a local stub. |
+| Anchoring the sheet hash on the token | `src/anchor/hash.mjs` (`hashSheet`), `src/anchor/anchor.mjs` and `scripts/anchor.mjs` (dry-run `anchor_sheet` calls), `scripts/live-proof.mjs` (the only path that can send, behind `--send --i-approve`) | Dry runs only, `"signed": false`. |
+| NEAR Intents (dry quotes) | Not used. No code in `src/`, `scripts/` or `contracts/` calls Intents or the 1Click API. | Out of scope (see `PRODUCT.md`). |
+
 ## Try it (judge path)
 
 One command, offline, run from the repository root (every path below is relative to it). No account, no API key, no network after `npm install`, and nothing is signed. Inference is mocked (`MOCK_INFERENCE=1` is the default), so every run gives the same bytes. Needs Node 22 or later.
