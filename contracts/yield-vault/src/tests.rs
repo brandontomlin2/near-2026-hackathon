@@ -2901,3 +2901,95 @@ fn owner_force_release_after_completed_release_has_nothing_to_release() {
     assert_eq!(bal(&v, &wrap()), 10_000, "never left the vault: rolled back");
     let _ = force_release(&mut v);
 }
+
+// ------------------------------------------------- NEAR and Ref storage out
+
+const ONE_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
+
+fn near_ctx(pred: &str, balance: u128) {
+    let mut c = ctx1(pred);
+    c.account_balance(NearToken::from_yoctonear(balance))
+        .prepaid_gas(MIN_STORAGE_WITHDRAW_GAS);
+    testing_env!(c.build());
+}
+
+#[test]
+fn withdraw_near_sends_free_balance_to_owner() {
+    let mut v = funded();
+    near_ctx("owner.testnet", 5 * ONE_NEAR);
+    let free = v.get_withdrawable_near().0;
+    let storage = env::storage_usage() as u128 * env::storage_byte_cost().as_yoctonear();
+    // The unit VM counts the attached 1 yocto in the account balance.
+    assert_eq!(free, 5 * ONE_NEAR + 1 - storage - NEAR_STORAGE_RESERVE);
+    let _ = v.withdraw_near(U128(free));
+    assert!(get_logs().join("\n").contains("\"event\":\"near_withdrawn\""));
+    assert_eq!(bal(&v, &wrap()), 10_000, "token accounting untouched");
+}
+
+#[test]
+#[should_panic(expected = "ERR_INSUFFICIENT_NEAR")]
+fn withdraw_near_cannot_dip_into_storage_or_reserve() {
+    let mut v = funded();
+    near_ctx("owner.testnet", 5 * ONE_NEAR);
+    let free = v.get_withdrawable_near().0;
+    let _ = v.withdraw_near(U128(free + 1));
+}
+
+#[test]
+fn withdrawable_near_is_zero_when_balance_below_storage() {
+    let v = funded();
+    near_ctx("owner.testnet", 1);
+    assert_eq!(v.get_withdrawable_near().0, 0);
+}
+
+#[test]
+#[should_panic(expected = "ERR_NOT_OWNER")]
+fn withdraw_near_rejects_non_owner() {
+    let mut v = funded();
+    near_ctx("mallory.testnet", 5 * ONE_NEAR);
+    let _ = v.withdraw_near(U128(1));
+}
+
+#[test]
+#[should_panic(expected = "Requires attached deposit of exactly 1 yoctoNEAR")]
+fn withdraw_near_requires_one_yocto() {
+    let mut v = funded();
+    let mut c = ctx("owner.testnet", T0);
+    c.account_balance(NearToken::from_yoctonear(5 * ONE_NEAR));
+    testing_env!(c.build());
+    let _ = v.withdraw_near(U128(1));
+}
+
+#[test]
+#[should_panic(expected = "ERR_ZERO_AMOUNT")]
+fn withdraw_near_rejects_zero() {
+    let mut v = funded();
+    near_ctx("owner.testnet", 5 * ONE_NEAR);
+    let _ = v.withdraw_near(U128(0));
+}
+
+#[test]
+fn withdraw_ref_storage_calls_ref_storage_withdraw() {
+    let mut v = funded();
+    near_ctx("owner.testnet", 5 * ONE_NEAR);
+    let _ = v.withdraw_ref_storage(None);
+    assert!(get_logs().join("\n").contains("\"event\":\"ref_storage_withdraw\""));
+}
+
+#[test]
+#[should_panic(expected = "ERR_NOT_OWNER")]
+fn withdraw_ref_storage_rejects_non_owner() {
+    let mut v = funded();
+    near_ctx("mallory.testnet", 5 * ONE_NEAR);
+    let _ = v.withdraw_ref_storage(None);
+}
+
+#[test]
+#[should_panic(expected = "ERR_INSUFFICIENT_GAS")]
+fn withdraw_ref_storage_rejects_low_gas() {
+    let mut v = funded();
+    let mut c = ctx1("owner.testnet");
+    c.prepaid_gas(Gas::from_tgas(39));
+    testing_env!(c.build());
+    let _ = v.withdraw_ref_storage(Some(U128(1)));
+}

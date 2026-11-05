@@ -84,6 +84,12 @@ pub const GAS_CB_RELEASE: Gas = Gas::from_tgas(20);
 /// + own body + four receipts' fees + margin (70 is too little even in the unit-test VM).
 pub const MIN_FORCE_RELEASE_GAS: Gas = Gas::from_tgas(100);
 
+/// Minimum prepaid gas for `withdraw_ref_storage`: Ref `storage_withdraw` (30) + body + fees.
+pub const MIN_STORAGE_WITHDRAW_GAS: Gas = Gas::from_tgas(40);
+/// NEAR kept on the vault account above its current storage cost (0.1 NEAR,
+/// about 10 KB of future state) so `withdraw_near` cannot starve state writes.
+pub const NEAR_STORAGE_RESERVE: u128 = 100_000_000_000_000_000_000_000;
+
 /// `on_sync_balance` body.
 pub const GAS_CB_SYNC: Gas = Gas::from_tgas(15);
 /// Minimum prepaid gas for `sync_balance`: view (10) + callback (15) + body + fees + margin.
@@ -1209,6 +1215,55 @@ impl YieldVault {
             .detach();
     }
 
+    /// Owner withdraws NEAR from the vault account (for example a
+    /// `register_failed` refund that could not be forwarded, or NEAR returned
+    /// by `withdraw_ref_storage`). Owner only, 1 yocto. Never goes below the
+    /// account's storage cost plus `NEAR_STORAGE_RESERVE`, so state writes keep
+    /// working. NEAR is not part of the token accounting.
+    #[payable]
+    pub fn withdraw_near(&mut self, amount: U128) -> Promise {
+        self.owner_one_yocto();
+        require!(amount.0 > 0, "ERR_ZERO_AMOUNT: amount must be > 0");
+        let free = withdrawable_near();
+        require!(
+            amount.0 <= free,
+            format!("ERR_INSUFFICIENT_NEAR: at most {free} yoctoNEAR is withdrawable")
+        );
+        emit(
+            "near_withdrawn",
+            json!({ "amount": amount.0.to_string(), "owner_id": self.owner_id }),
+        );
+        Promise::new(self.owner_id.clone()).transfer(NearToken::from_yoctonear(amount.0))
+    }
+
+    /// NEAR the owner can withdraw right now (see `withdraw_near`).
+    pub fn get_withdrawable_near(&self) -> U128 {
+        U128(withdrawable_near())
+    }
+
+    /// Owner pulls the vault's Ref storage balance back to the vault account
+    /// with Ref's NEP-145 `storage_withdraw` (1 yocto; `amount: None` takes
+    /// everything Ref considers available). Ref keeps what it needs for the
+    /// vault's registered tokens. Then `withdraw_near` moves it to the owner.
+    #[payable]
+    pub fn withdraw_ref_storage(&mut self, amount: Option<U128>) -> Promise {
+        self.owner_one_yocto();
+        require!(
+            env::prepaid_gas() >= MIN_STORAGE_WITHDRAW_GAS,
+            "ERR_INSUFFICIENT_GAS: attach at least 40 TGas"
+        );
+        emit(
+            "ref_storage_withdraw",
+            json!({ "amount": amount.map(|a| a.0.to_string()) }),
+        );
+        Promise::new(self.ref_exchange_id.clone()).function_call(
+            "storage_withdraw".to_string(),
+            json_bytes(json!({ "amount": amount })),
+            ONE_YOCTO,
+            GAS_STORAGE_DEPOSIT,
+        )
+    }
+
     /// Pulls stranded funds from the vault's Ref account back into the vault.
     #[payable]
     pub fn recover_from_ref(&mut self, token_id: AccountId, amount: U128) -> Promise {
@@ -1637,4 +1692,14 @@ impl YieldVault {
 
 fn json_bytes(v: Value) -> Vec<u8> {
     serde_json::to_vec(&v).expect("json")
+}
+
+/// Account balance minus storage cost minus `NEAR_STORAGE_RESERVE`, floored at 0.
+fn withdrawable_near() -> u128 {
+    let storage = (env::storage_usage() as u128)
+        .saturating_mul(env::storage_byte_cost().as_yoctonear());
+    env::account_balance()
+        .as_yoctonear()
+        .saturating_sub(storage)
+        .saturating_sub(NEAR_STORAGE_RESERVE)
 }
