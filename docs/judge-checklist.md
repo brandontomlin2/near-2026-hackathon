@@ -2,7 +2,11 @@
 
 What an AI screener checks on this repository, in order. Everything runs
 offline with no keys and no chain writes. Nothing here needs a testnet
-account.
+account. Inference is mock (`MOCK_INFERENCE=1`) and anchor calls are dry runs;
+no testnet deployment, NEAR AI Cloud call or on-chain anchor has been run or
+is evidenced in this repository. Live paths exist in code (`src/inference/client.mjs`,
+`scripts/testnet-deploy.mjs`, `scripts/live-proof.mjs`) but need keys and a
+human's explicit approval. See `docs/tracks.md`.
 
 ## Checks
 
