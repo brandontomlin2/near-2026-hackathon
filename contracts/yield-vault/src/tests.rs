@@ -607,9 +607,98 @@ fn amount_out_zero_releases_without_stranding() {
     cb_ctx(ok_result(&U128(400)), T0);
     let _ = v.handle_deposit(1, Ok(U128(400)));
     cb_ctx(ok_result(&U128(0)), T0);
-    let _ = v.handle_swap(1, Ok(U128(0)));
+    let r = v.handle_swap(1, Ok(U128(0)));
+    assert!(matches!(r, PromiseOrValue::Value(U128(0))), "no withdraw is issued");
     assert!(!v.get_state().swap_in_flight);
     assert!(v.stranded.is_empty());
+    assert!(v.unverified.is_empty());
+    // rev65 L4: the loss is logged explicitly, not silently dropped.
+    let logs = get_logs().join("\n");
+    assert!(logs.contains("\"event\":\"swap_zero_out\""), "{logs}");
+    assert!(logs.contains("\"amount_in\":\"400\""), "{logs}");
+    assert!(logs.contains("\"reason\":\"amount_out_zero\""), "{logs}");
+    // token_in stays debited (it left for Ref) and the attempt counts as a strand.
+    assert_eq!(bal(&v, &wrap()), 10_000 - 400);
+    assert_eq!(v.consecutive_strands, 1);
+}
+
+#[test]
+fn three_zero_out_swaps_auto_pause() {
+    let mut v = funded();
+    for id in 1..=3u64 {
+        run(&mut v, proposal(100));
+        cb_ctx(ok_result(&U128(100)), T0);
+        let _ = v.handle_deposit(id, Ok(U128(100)));
+        cb_ctx(ok_result(&U128(0)), T0);
+        let _ = v.handle_swap(id, Ok(U128(0)));
+    }
+    assert!(v.get_state().paused);
+    let logs = get_logs().join("\n");
+    assert!(logs.contains("\"event\":\"auto_paused\""), "{logs}");
+    assert!(logs.contains("\"last_reason\":\"amount_out_zero\""), "{logs}");
+}
+
+#[test]
+fn spent_today_stays_spent_after_recovering_a_stranded_swap() {
+    // rev65 L2 (documented behaviour): recovering a strand credits the vault
+    // but does not give back today's cap; the next UTC day does.
+    let mut c = config();
+    c.limits[0] = limit(wrap(), 1_000, 1_000);
+    let mut v = new_vault_with(c);
+    deposit(&mut v, wrap(), 10_000);
+    run(&mut v, proposal(400));
+    cb_ctx(ok_result(&U128(400)), T0);
+    let _ = v.handle_deposit(1, Ok(U128(400)));
+    cb_ctx(PromiseResult::Failed, T0);
+    let _ = v.handle_swap(1, Err(PromiseError::Failed));
+    assert_eq!(stranded(&v, &wrap()), 400);
+    assert_eq!(spent_view(&v, &wrap()), 400);
+
+    testing_env!(ctx1("owner.testnet").build());
+    let _ = v.recover_from_ref(wrap(), U128(400));
+    cb_ctx(ok_result(&U128(400)), T0);
+    // Swaps and recoveries share one id counter: the swap was 1, this is 2.
+    let _ = v.handle_recover_pre(2, Ok(U128(400)));
+    cb_ctx(PromiseResult::Successful(vec![]), T0);
+    let _ = v.on_recover(2);
+    cb_ctx(ok_result(&U128(0)), T0);
+    assert_eq!(v.handle_recover_reconciled(2, Ok(U128(0))).0, 400);
+
+    assert_eq!(bal(&v, &wrap()), 10_000, "value is back in the vault");
+    assert_eq!(stranded(&v, &wrap()), 0);
+    assert_eq!(spent_view(&v, &wrap()), 400, "cap is not given back on recovery");
+    // daily_cap 1_000 with 400 still counted: 600 more fits today, 601 does not.
+    at("runner.testnet", T0);
+    let runner = acct("runner.testnet");
+    assert!(v.check_proposal(proposal(600), runner.clone()).ok);
+    let r = v.check_proposal(proposal(601), runner.clone());
+    assert!(!r.ok && r.reason.starts_with("ERR_DAILY_CAP"), "{}", r.reason);
+    at("runner.testnet", T0 + DAY);
+    assert!(v.check_proposal(proposal(1_000), runner).ok, "next UTC day the cap is free again");
+}
+
+#[test]
+fn nft_contract_and_token_are_metadata_only_for_owner_checks() {
+    // rev65 M2 (documented behaviour): owner checks look at owner_id only.
+    // The NFT contract (or anyone holding the NFT) gets no owner rights.
+    let mut v = funded();
+    let s = v.get_state();
+    assert_eq!(s.nft_contract_id, acct("nft.testnet"));
+    assert_eq!(s.token_id, "1");
+    testing_env!(ctx1("nft.testnet").build());
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = v.withdraw(wrap(), U128(1));
+    }));
+    let msg = r.expect_err("the NFT contract account is not the owner");
+    let msg = msg
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| msg.downcast_ref::<&str>().map(|s| s.to_string()))
+        .unwrap_or_default();
+    assert!(msg.contains("ERR_NOT_OWNER"), "{msg}");
+    testing_env!(ctx1("owner.testnet").build());
+    let _ = v.withdraw(wrap(), U128(1));
+    assert_eq!(bal(&v, &wrap()), 10_000 - 1, "owner_id can withdraw regardless of NFT");
 }
 
 #[test]

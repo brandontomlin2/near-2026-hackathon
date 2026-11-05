@@ -2,9 +2,9 @@
 
 What it is: a near-sdk Rust smart contract that holds NEP-141 token balances for one agent and swaps them on Rhea (Ref Finance) through cross-contract promises (`ft_transfer_call` to deposit, `swap`, `withdraw`), with callbacks that read Ref's `get_deposit` before crediting or rolling back.
 
-A per-personality-NFT trading vault. Each personality NFT (aloof, chaotic, social, skeptic) is an AI agent running a strategy off chain. The agent acts only through approved **runner** accounts, and this contract enforces hard limits on chain regardless of what the strategy proposes. Approved swaps run on the Rhea (Ref Finance) testnet exchange `ref-finance-101.testnet` with the deposit -> swap -> withdraw pattern. wNEAR is `wrap.testnet`.
+A trading vault, one per personality (aloof, chaotic, social, skeptic), each driven by an AI agent running a strategy off chain. The vault is owned by a fixed `owner_id` account set at `new`. It records the personality NFT's `nft_contract_id` and `token_id` as metadata only and does not check them: owner checks ignore NFT ownership, so transferring the NFT does not transfer the vault. The agent acts only through approved **runner** accounts, and this contract enforces hard limits on chain regardless of what the strategy proposes. Approved swaps run on the Rhea (Ref Finance) testnet exchange `ref-finance-101.testnet` with the deposit -> swap -> withdraw pattern. wNEAR is `wrap.testnet`.
 
-**Status: NOT deployed.** A testnet deploy needs the human's explicit yes. Tested with unit tests (`cargo test`, 254 tests) and 14 integration tests in a throwaway local sandbox against a mock Ref and mock NEP-141 tokens (`sandbox/`, see "Sandbox measurements"). See "Known risks".
+**Status: NOT deployed.** A testnet deploy needs the human's explicit yes. Tested with unit tests (`cargo test`, 257 tests) and 14 integration tests in a throwaway local sandbox against a mock Ref and mock NEP-141 tokens (`sandbox/`, see "Sandbox measurements"). See "Known risks".
 
 Live testnet runbook (every step, cost, failure handling, verification table): [../../docs/yield-vault-live-runbook.md](../../docs/yield-vault-live-runbook.md).
 
@@ -14,7 +14,7 @@ Live testnet runbook (every step, cost, failure handling, verification table): [
 
 ## Interface
 
-Init: `new(owner_id, nft_contract_id, token_id, ref_exchange_id, config: VaultConfig)`. The caller must be the contract account itself (`ERR_PRIVATE_INIT`), so deploy and init belong in one batch transaction signed by the contract account.
+Init: `new(owner_id, nft_contract_id, token_id, ref_exchange_id, config: VaultConfig)`. The caller must be the contract account itself (`ERR_PRIVATE_INIT`), so deploy and init belong in one batch transaction signed by the contract account. `nft_contract_id` and `token_id` are recorded, not enforced: they are never read, and every owner check is `predecessor == owner_id`.
 
 ```
 VaultConfig   { strategy, allowed_pools: [AllowedPool], limits: [TokenLimit], runners: [AccountId] }
@@ -31,6 +31,8 @@ VaultState    { owner_id, nft_contract_id, token_id, ref_exchange_id, paused, sw
 ```
 
 A token with no `limits` entry cannot be sold (`ERR_NO_LIMIT`). `spent_today` is tracked per token. Each pool carries an owner-set price floor per direction.
+
+When a swap strands funds on Ref and the owner later recovers them with `recover_from_ref`, that day's `spent_today` is not reduced; only the immediate rollback paths give spend back. Stranded attempts therefore keep counting against that token's daily cap even after the funds are back in the vault, and the cap frees up at the next UTC day. This is intentional and conservative.
 
 `daily_cap` is per UTC calendar day (`block_timestamp / 86_400 s`), not a rolling 24 hours. `spent_today` resets at 00:00 UTC, so a runner can spend up to `daily_cap` just before midnight and another `daily_cap` just after: up to 2x `daily_cap` within minutes. Set `daily_cap` with that in mind. A rolling window would need a per-trade history in state and is not done.
 
@@ -199,7 +201,8 @@ A failed promise result is not trusted as proof of what happened. The vault asks
 | Deposit reported used amount 0 | still with the vault | roll back the debit and day spend; `deposit_failed` |
 | Deposit used less than `amount_in` | remainder with the vault | refund the remainder, swap only the used part |
 | `ref.swap` failed | token_in is on Ref | `stranded_on_ref[token_in] += amount`, `stranded` event |
-| `amount_out < min_amount_out` (or 0) | token_out is on Ref | `stranded_on_ref[token_out] += amount_out` |
+| `amount_out < min_amount_out` | token_out is on Ref | `stranded_on_ref[token_out] += amount_out` |
+| `amount_out == 0` (not expected: `min_amount_out > 0` and Ref panics below it) | Ref took token_in for nothing; nothing to recover | no strand; emits `swap_zero_out`, `swap_failed` reason `amount_out_zero`, counts toward auto-pause |
 | pre-withdraw `get_deposit` failed | token_out is on Ref (the swap reported it) | `stranded_on_ref[token_out] += amount_out`; reason `withdraw_pre_unverified`; nothing withdrawn |
 | pre-withdraw `get_deposit` below `amount_out` | unknown | `unverified_on_ref[token_out] += amount_out`; reason `withdraw_pre_mismatch`; nothing withdrawn |
 | `ref.withdraw` failed, or ok but Ref deposit fell by less than `amount_out` from the snapshot | token_out still on Ref | strand, reason `withdraw_not_reconciled`; no credit |
@@ -208,7 +211,7 @@ A failed promise result is not trusted as proof of what happened. The vault asks
 
 Balance is credited after a withdraw only once `get_deposit` shows Ref's deposit fell by `amount_out` from the snapshot taken just before the withdraw. The swap lock keeps every other vault operation off Ref meanwhile, so the drop can only come from this withdraw. This covers Ref's `withdraw`, which can re-credit its internal balance and still return success when the token transfer fails.
 
-Auto-pause: a runner picks `min_amount_out`, so a value Ref cannot fill makes every swap end stranded. After 3 swaps in a row that end stranded (`MAX_CONSECUTIVE_STRANDS`: `swap_failed`, `amount_out_below_min`, `deposit_landed_on_ref`, `deposit_unverified`, `withdraw_pre_*`, `withdraw_not_reconciled`, `withdraw_unverified`) the vault pauses itself and emits `auto_paused` (`reason: consecutive_strands`). A completed swap and the owner's `unpause` reset the count. Rolled-back failures (`deposit_failed`) and force-release outcomes do not count. The swap in flight is not cancelled.
+Auto-pause: a runner picks `min_amount_out`, so a value Ref cannot fill makes every swap end stranded. After 3 swaps in a row that end stranded (`MAX_CONSECUTIVE_STRANDS`: `swap_failed`, `amount_out_below_min`, `amount_out_zero`, `deposit_landed_on_ref`, `deposit_unverified`, `withdraw_pre_*`, `withdraw_not_reconciled`, `withdraw_unverified`) the vault pauses itself and emits `auto_paused` (`reason: consecutive_strands`). A completed swap and the owner's `unpause` reset the count. Rolled-back failures (`deposit_failed`) and force-release outcomes do not count. The swap in flight is not cancelled.
 
 The owner recovers stranded funds with `recover_from_ref(token_id, amount)`, only while no swap or other recovery is in flight, and no swap can start until the recovery's reconcile has run. The stranded record is reduced up front. `on_recover_pre` reads Ref's deposit first. If Ref holds less than `amount`, or the read fails, the recovery stops and the record is restored (`recover_refused`). A failed withdraw restores it too. After a withdraw that reports success, the vault credits only if Ref's deposit fell by at least `amount` since the first read. Otherwise it strands the amount again (`withdraw_not_reconciled` or `withdraw_unverified`). The recovery lock keeps every other vault operation off Ref meanwhile, so the drop can only come from this withdraw. Success credits the balance and emits `recovered`.
 
@@ -216,13 +219,13 @@ Other limitation: there is no on-chain market price. Slippage is bounded only by
 
 ## Events
 
-NEP-297, `standard: "yield_vault"`, `version: "1.0.0"`: `deposit`, `withdraw`, `withdraw_failed`, `swap_proposed`, `swap_executed`, `swap_failed`, `stranded`, `recovered`, `recover_refused`, `force_release_started`, `force_release_aborted`, `ref_balance_untracked`, `balance_synced`, `sync_failed`, `sync_invalidated`, `registered_on_ref`, `register_failed`, `near_withdrawn`, `ref_storage_withdraw`, `paused`, `auto_paused`, `unpaused`, `runner_added`, `runner_revoked`, `config_updated`.
+NEP-297, `standard: "yield_vault"`, `version: "1.0.0"`: `deposit`, `withdraw`, `withdraw_failed`, `swap_proposed`, `swap_executed`, `swap_failed`, `swap_zero_out`, `stranded`, `recovered`, `recover_refused`, `force_release_started`, `force_release_aborted`, `ref_balance_untracked`, `balance_synced`, `sync_failed`, `sync_invalidated`, `registered_on_ref`, `register_failed`, `near_withdrawn`, `ref_storage_withdraw`, `paused`, `auto_paused`, `unpaused`, `runner_added`, `runner_revoked`, `config_updated`.
 
 ## Develop
 
 ```
 cd contracts/yield-vault
-cargo test                                          # 254 unit tests
+cargo test                                          # 257 unit tests
 (cd sandbox && cargo test -- --test-threads=1)      # 14 local sandbox tests, see "Sandbox measurements"
 cargo clippy --all-targets
 cargo build --target wasm32-unknown-unknown --release
@@ -242,7 +245,7 @@ Fixed after the first AI review:
 - Medium, no escape from a stuck `in_flight` lock: `started_at` plus owner `force_release_lock` after 10 minutes, with swap ids so late callbacks cannot touch a newer swap.
 - Medium, `recover_from_ref` during a swap: rejected with `ERR_SWAP_IN_FLIGHT`. `update_config` is rejected the same way. A follow-up review found the reverse case (a swap or second recovery starting while a recovery's reconcile was still pending, so the two reconciles misread each other's Ref balance); a recovery now holds its own lock until its reconcile runs.
 - Low, dead `_reserved` storage map: removed.
-- The first AI review found zero tests; there are now 254 unit tests and 14 local sandbox tests against a mock Ref. No testnet test exists.
+- The first AI review found zero tests; there are now 257 unit tests and 14 local sandbox tests against a mock Ref. No testnet test exists.
 
 Fixed after a second AI review (report not in the repository):
 

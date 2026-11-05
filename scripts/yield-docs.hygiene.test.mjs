@@ -91,3 +91,19 @@ test('README VaultState lists exactly the fields of lib.rs VaultState, in order'
   assert.ok(rust.includes('unverified_on_ref'));
   assert.deepEqual(documented, rust);
 });
+
+test('docs do not claim the vault follows or belongs to the NFT', () => {
+  for (const rel of [VAULT_README, 'README.md']) {
+    const text = read(rel);
+    assert.doesNotMatch(text, /per-personality-NFT trading vault/i, rel);
+    assert.doesNotMatch(text, /Each of the four agents can run its own trading vault/i, rel);
+  }
+});
+
+test('vault README says nft_contract_id/token_id are not checked and recovery keeps spent_today', () => {
+  const text = read(VAULT_README);
+  assert.match(text, /nft_contract_id[^.]*(not|never) (checked|enforced)/is);
+  assert.match(text, /transferring the NFT does not transfer the vault/i);
+  assert.match(text, /recovers them with `recover_from_ref`, that day's `spent_today` is not reduced/);
+  assert.match(text, /## Events\n\n[^\n]*`swap_zero_out`/, 'event list includes swap_zero_out');
+});
