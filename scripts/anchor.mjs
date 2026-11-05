@@ -5,6 +5,7 @@
 //
 //   npm run anchor -- --dry-run [--check]
 
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { prepareAnchor, submitAnchor } from "../src/anchor/anchor.mjs";
@@ -84,7 +85,17 @@ export async function main(argv = process.argv.slice(2), out = console.log) {
   return 0;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// import.meta.url is a realpath; argv[1] is not when the script is run through a symlink.
+function isEntryPoint() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+  } catch {
+    return path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  }
+}
+
+if (isEntryPoint()) {
   main().then((code) => process.exit(code), (err) => {
     console.error(`anchor: ${err instanceof Error ? err.message : err}`);
     process.exit(1);

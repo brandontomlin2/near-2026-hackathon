@@ -9,6 +9,7 @@
 // the key.
 
 import { InferenceError, createInferenceClient } from "../src/inference/client.mjs";
+import { capUtf8Bytes, replaceUnsafeChars } from "../src/util/text.mjs";
 
 const USAGE = `usage: node scripts/infer.mjs [--system TEXT] [--seed N] [--json] <prompt>
 
@@ -45,6 +46,12 @@ function parseArgs(argv) {
   return options;
 }
 
+// NEAR_AI_MODEL is operator-supplied text that is printed (mode line, --json): no control or
+// bidi characters, no line breaks, bounded.
+function cleanLabel(value) {
+  return capUtf8Bytes(replaceUnsafeChars(value).replace(/[\r\n\t]/g, " "), 200);
+}
+
 async function main() {
   let options;
   try {
@@ -64,13 +71,13 @@ async function main() {
   }
 
   const client = createInferenceClient();
-  process.stderr.write(`mode: ${client.mode} model: ${client.model}\n`);
+  process.stderr.write(`mode: ${client.mode} model: ${cleanLabel(client.model)}\n`);
   const reply = await client.chat({
     system: options.system,
     messages: [{ role: "user", content: prompt }],
     seed: options.seed,
   });
-  process.stdout.write(options.json ? `${JSON.stringify(reply, null, 2)}\n` : `${reply.content}\n`);
+  process.stdout.write(options.json ? `${JSON.stringify({ ...reply, model: cleanLabel(reply.model) }, null, 2)}\n` : `${reply.content}\n`);
   return 0;
 }
 
