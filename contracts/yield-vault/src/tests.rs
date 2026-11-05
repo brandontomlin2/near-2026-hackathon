@@ -2818,3 +2818,86 @@ fn abort_release_then_new_swap_then_late_old_callbacks_are_noops() {
     assert_eq!((fl.id, fl.amount_in, fl.amount_out), (3, 50, 0));
     assert_eq!(v.get_state().swaps_executed, 0);
 }
+
+// ------------------------------------------- owner force release, end to end
+
+/// A swap stuck after `on_swap` recorded 390 rft (its `on_withdraw_pre` never
+/// ran). The owner forces the lock release; the real `on_force_release_swap`
+/// callback parses the three raw reads; the lock clears; late callbacks of
+/// the stuck swap are no-ops; the vault works again.
+#[test]
+fn owner_force_release_lock_end_to_end_swap() {
+    let mut v = funded();
+    run(&mut v, proposal(400));
+    cb_ctx(ok_result(&U128(400)), T0);
+    let _ = v.on_deposit(1, Ok(U128(400)));
+    cb_ctx(ok_result(&U128(390)), T0);
+    let _ = v.on_swap(1, Ok(U128(390)));
+    assert_eq!(v.in_flight.as_ref().unwrap().amount_out, 390);
+
+    // Owner, 1 yocto, after STALE_LOCK_NS: the release starts and holds the lock.
+    let t = T0 + STALE_LOCK_NS;
+    let release_id = force_release(&mut v);
+    assert!(get_logs().join("\n").contains("\"event\":\"force_release_started\""));
+    assert!(v.get_state().swap_in_flight);
+
+    // While the release is pending, owner deposits are refunded.
+    testing_env!(ctx(wrap().as_str(), t).build());
+    let r = v.ft_on_transfer(acct("owner.testnet"), U128(5), String::new());
+    assert!(matches!(r, PromiseOrValue::Value(U128(5))), "deposit refunded during release");
+    assert_eq!(bal(&v, &wrap()), 9_600);
+
+    // Reads: vault ft_balance_of(rft) = 0, Ref get_deposit(rft) = 390 (held),
+    // Ref get_deposit(token_out = rft) = 390.
+    cb_ctx_many(
+        vec![ok_result(&U128(0)), ok_result(&U128(390)), ok_result(&U128(390))],
+        t,
+    );
+    v.on_force_release_swap(release_id);
+    let s = v.get_state();
+    assert!(!s.swap_in_flight && !s.release_in_flight, "lock and release cleared");
+    assert_eq!(stranded(&v, &rft()), 390, "token_out recorded on Ref, recoverable");
+    assert_eq!(bal(&v, &rft()), 0, "not credited while on Ref");
+    assert_eq!(bal(&v, &wrap()), 9_600, "token_in not rolled back: it was swapped");
+    assert!(get_logs().join("\n").contains("lock_force_released"));
+
+    // Late callbacks of the stuck swap change nothing.
+    let snapshot = (v.balances.clone(), v.stranded.clone(), v.unverified.clone());
+    cb_ctx(ok_result(&U128(390)), t);
+    assert!(matches!(v.on_withdraw_pre(1, Ok(U128(390))), PromiseOrValue::Value(U128(0))));
+    cb_ctx(ok_result(&U128(0)), t);
+    assert_eq!(v.on_withdraw_reconciled(1, Ok(U128(0))).0, 0);
+    assert_eq!(snapshot, (v.balances.clone(), v.stranded.clone(), v.unverified.clone()));
+
+    // The vault accepts a new swap.
+    run_at(&mut v, proposal(100), t);
+    assert!(v.get_state().swap_in_flight);
+    assert_eq!(v.in_flight.as_ref().unwrap().id, release_id + 1);
+}
+
+#[test]
+#[should_panic(expected = "ERR_RELEASE_PENDING")]
+fn owner_withdraw_refused_while_force_release_pending() {
+    let mut v = funded();
+    run(&mut v, proposal(400));
+    let _ = force_release(&mut v);
+    let mut c = ctx1("owner.testnet");
+    c.block_timestamp(T0 + STALE_LOCK_NS).prepaid_gas(MIN_WITHDRAW_GAS);
+    testing_env!(c.build());
+    let _ = v.withdraw(wrap(), U128(1));
+}
+
+#[test]
+#[should_panic(expected = "ERR_NO_SWAP_IN_FLIGHT")]
+fn owner_force_release_after_completed_release_has_nothing_to_release() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    let id = force_release(&mut v);
+    cb_ctx_many(
+        vec![ok_result(&U128(10_000)), ok_result(&U128(0)), ok_result(&U128(0))],
+        T0 + STALE_LOCK_NS,
+    );
+    v.on_force_release_swap(id);
+    assert_eq!(bal(&v, &wrap()), 10_000, "never left the vault: rolled back");
+    let _ = force_release(&mut v);
+}
