@@ -42,8 +42,9 @@ pub const GAS_REF_SWAP: Gas = Gas::from_tgas(50);
 /// `ref.withdraw` (includes its inner ft_transfer and callback). Ref attaches
 /// 20 TGas to its inner `ft_transfer` and 20 to its post-withdraw callback, so
 /// 40 left nothing for Ref's own body: measured in the local sandbox, it failed
-/// with "Exceeded the prepaid gas" (see sandbox/README.md).
-pub const GAS_REF_WITHDRAW: Gas = Gas::from_tgas(60);
+/// with "Exceeded the prepaid gas". At 60 a Ref body could burn only ~15 TGas
+/// (sandbox/tests/headroom.rs); 80 leaves ~35 (see sandbox/README.md).
+pub const GAS_REF_WITHDRAW: Gas = Gas::from_tgas(80);
 /// `on_recover` / `on_owner_withdraw` bodies.
 pub const GAS_CB_FINAL: Gas = Gas::from_tgas(15);
 /// Ref view `get_deposit`.
@@ -52,13 +53,14 @@ pub const GAS_REF_VIEW: Gas = Gas::from_tgas(10);
 pub const GAS_CB_RECONCILE: Gas = Gas::from_tgas(15);
 /// `on_recover`: own body (~10) + `get_deposit` (10) + reconcile (15) + margin.
 pub const GAS_CB_WITHDRAW_DONE: Gas = Gas::from_tgas(40);
-/// `on_withdraw_pre`: own body (~10) + withdraw (60) + `get_deposit` (10) + reconcile (15).
-pub const GAS_CB_WITHDRAW_PRE: Gas = Gas::from_tgas(95);
-/// `on_swap`: own body (~10) + `get_deposit` (10) + `on_withdraw_pre` (95) + margin.
-pub const GAS_CB_SWAP: Gas = Gas::from_tgas(120);
-/// `on_deposit`: own body (~10) + swap (50) + `on_swap` (120) + margin.
-pub const GAS_CB_DEPOSIT: Gas = Gas::from_tgas(185);
-/// Minimum prepaid gas for `execute_swap` (70 + 185 + own body + margin). Max tx gas is 300.
+/// `on_withdraw_pre`: own body (~10, measured ~3) + withdraw (80) + `get_deposit` (10) + reconcile (15).
+pub const GAS_CB_WITHDRAW_PRE: Gas = Gas::from_tgas(115);
+/// `on_swap`: own body (~10, measured ~2.5) + `get_deposit` (10) + `on_withdraw_pre` (115).
+pub const GAS_CB_SWAP: Gas = Gas::from_tgas(135);
+/// `on_deposit`: own body (measured ~2.5, 5 allowed) + swap (50) + `on_swap` (135).
+/// Capped by `MIN_EXECUTE_GAS`: 195 does not fit in 280 in the unit-test VM.
+pub const GAS_CB_DEPOSIT: Gas = Gas::from_tgas(190);
+/// Minimum prepaid gas for `execute_swap` (70 + 190 + own body ~3 measured + margin). Max tx gas is 300.
 pub const MIN_EXECUTE_GAS: Gas = Gas::from_tgas(280);
 /// A swap lock older than this (ns, 10 minutes) may be force-released by the owner.
 pub const STALE_LOCK_NS: u64 = 600 * 1_000_000_000;
@@ -71,10 +73,10 @@ pub const GAS_FT_TRANSFER: Gas = Gas::from_tgas(30);
 pub const MIN_WITHDRAW_GAS: Gas = Gas::from_tgas(80);
 /// Gas for `ref.storage_deposit`.
 pub const GAS_STORAGE_DEPOSIT: Gas = Gas::from_tgas(30);
-/// `on_recover_pre`: own body (~10) + Ref withdraw (60) + `on_recover` (40) + margin.
-pub const GAS_CB_RECOVER_PRE: Gas = Gas::from_tgas(115);
-/// Minimum prepaid gas for `recover_from_ref`: `get_deposit` (10) + `on_recover_pre` (115) + body + fees + margin.
-pub const MIN_RECOVER_GAS: Gas = Gas::from_tgas(160);
+/// `on_recover_pre`: own body (~10) + Ref withdraw (80) + `on_recover` (40).
+pub const GAS_CB_RECOVER_PRE: Gas = Gas::from_tgas(130);
+/// Minimum prepaid gas for `recover_from_ref`: `get_deposit` (10) + `on_recover_pre` (130) + body + fees + margin.
+pub const MIN_RECOVER_GAS: Gas = Gas::from_tgas(170);
 /// `on_register` body (may create one transfer).
 pub const GAS_CB_REGISTER: Gas = Gas::from_tgas(10);
 /// Minimum prepaid gas for `register_on_ref`: storage_deposit (30) + on_register (10) + fees + margin.

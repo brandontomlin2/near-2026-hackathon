@@ -11,16 +11,17 @@
 //! the mock's own ~1.6 TGas body; `get_deposit` is searched in 1 TGas steps, the rest in 5;
 //! `get_deposit` knob hits both get_deposit calls in the chain):
 //!
-//! | hop                              | attached | swap @ 280 | recover @ 160 | floor asserted |
+//! | hop                              | attached | swap @ 280 | recover @ 170 | floor asserted |
 //! |----------------------------------|----------|-----------|---------------|----------------|
 //! | ft_on_transfer                   | 40       | 35        | n/a           | 30             |
 //! | swap                             | 50       | 45        | n/a           | 40             |
 //! | get_deposit (each of 2 calls)    | 10       | 9         | 9             | 8              |
-//! | withdraw                         | 60       | 15        | 15            | 10             |
-//! | exchange_callback_post_withdraw  | 20 (+rest)| 35       | 35            | 30             |
+//! | withdraw                         | 80       | 35        | 35            | 30             |
+//! | exchange_callback_post_withdraw  | 20 (+rest)| 55       | 55            | 50             |
 //!
-//! `withdraw` is the tight one: 60 TGas minus Ref's inner 20+20 leaves about 20 TGas for Ref's
-//! own body and fees. At the limit the failing hop runs out of gas and the vault stays
+//! History: with GAS_REF_WITHDRAW = 60 (commit 7a1d70e) `withdraw` tolerated only +15 and the
+//! post-withdraw callback +35; lib.rs now attaches 80, leaving about 40 TGas for Ref's own
+//! withdraw body and fees on top of its inner 20+20. At the limit the failing hop runs out of gas and the vault stays
 //! consistent (asserted): lock released, value explained by credited + stranded + unverified.
 mod common;
 use common::*;
@@ -127,11 +128,11 @@ async fn fresh() -> anyhow::Result<Sb> {
 /// (hop, floor): the chain must complete with this hop burning at least `floor` extra TGas.
 /// Floor = measured maximum minus one step (see the MEASURED block in the header).
 const SWAP_HOPS: [(&str, u64); 5] = [
-    ("ft_on_transfer", 30), ("swap", 40), ("get_deposit", GET_DEPOSIT_SWAP_FLOOR), ("withdraw", 10),
-    ("exchange_callback_post_withdraw", 30),
+    ("ft_on_transfer", 30), ("swap", 40), ("get_deposit", GET_DEPOSIT_SWAP_FLOOR), ("withdraw", 30),
+    ("exchange_callback_post_withdraw", 50),
 ];
 const RECOVER_HOPS: [(&str, u64); 3] = [
-    ("get_deposit", GET_DEPOSIT_RECOVER_FLOOR), ("withdraw", 10), ("exchange_callback_post_withdraw", 30),
+    ("get_deposit", GET_DEPOSIT_RECOVER_FLOOR), ("withdraw", 30), ("exchange_callback_post_withdraw", 50),
 ];
 const GET_DEPOSIT_SWAP_FLOOR: u64 = 8;
 const GET_DEPOSIT_RECOVER_FLOOR: u64 = 8;
@@ -219,7 +220,7 @@ async fn swap_chain_headroom_at_min_execute_gas() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// recover_from_ref at exactly MIN_RECOVER_GAS (160), Ref inner withdraw gas 20+20.
+/// recover_from_ref at exactly MIN_RECOVER_GAS (170), Ref inner withdraw gas 20+20.
 #[tokio::test]
 async fn recover_headroom_at_min_recover_gas() -> anyhow::Result<()> {
     for (hop, floor) in RECOVER_HOPS {
