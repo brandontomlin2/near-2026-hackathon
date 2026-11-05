@@ -12,9 +12,6 @@ import { pathToFileURL } from "node:url";
 import { buildPlan, DEFAULTS, renderPlan } from "../src/yield-optimizer/plan.mjs";
 import { loadSnapshot, SnapshotError } from "../src/yield-optimizer/snapshot.mjs";
 
-/** null = the shared default snapshot (loadSnapshot(null)): the Ref fixture, the demo vault, the mock clock. */
-export const DEFAULT_SNAPSHOT = null;
-
 const USAGE = `usage: node scripts/yield-optimizer.mjs [--snapshot <file>] [--slippage-bps N] [--min-edge-bps N] [--max-ref-deviation-bps N] [--json]
   --snapshot <file>    Ref-shaped market JSON plus a "vault" section and a clock (taken_at or now_ms)
                        (default: src/yield/fixtures/ref-testnet-pools.json, the demo vault, the mock clock)
@@ -37,7 +34,8 @@ function intOpt(name, value, max) {
 /** Returns { help } or { help: false, snapshot, json, opts }. Throws UsageError. */
 export function parseArgs(argv) {
   if (argv.some((a) => a === "--help" || a === "-h")) return { help: true };
-  const out = { help: false, snapshot: DEFAULT_SNAPSHOT, json: false, opts: {} };
+  // snapshot null = the shared default (loadSnapshot(null)): the Ref fixture, the demo vault, the mock clock.
+  const out = { help: false, snapshot: null, json: false, opts: {} };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const value = () => {

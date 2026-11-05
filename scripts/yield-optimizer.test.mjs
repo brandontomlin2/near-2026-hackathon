@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_SNAPSHOT, main, parseArgs, UsageError } from "./yield-optimizer.mjs";
+import { main, parseArgs, UsageError } from "./yield-optimizer.mjs";
 import { PLACEHOLDER_VAULT } from "../src/yield/strategies.mjs";
 
 const SCENARIO = fileURLToPath(new URL("../src/yield-optimizer/fixtures/scenario.hand-built.json", import.meta.url));
@@ -24,8 +24,7 @@ function run(argv) {
 describe("parseArgs", () => {
   it("defaults", () => {
     const a = parseArgs([]);
-    assert.equal(a.snapshot, DEFAULT_SNAPSHOT);
-    assert.equal(DEFAULT_SNAPSHOT, null, "no file: the shared Ref snapshot");
+    assert.equal(a.snapshot, null, "no file: the shared Ref snapshot");
     assert.equal(a.json, false);
     assert.deepEqual(a.opts, {});
   });

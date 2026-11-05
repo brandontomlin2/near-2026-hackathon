@@ -19,9 +19,6 @@ import { otherToken, quoteOut } from "../yield/pools.mjs";
 import { checkProposal, dayOf, spentOn } from "../yield/rules.mjs";
 import { rulesView } from "./snapshot.mjs";
 
-/** The execute_swap prepaid gas, from the one source (src/yield/gas.mjs), in TGas. */
-export const MIN_EXECUTE_GAS_TGAS = EXECUTE_SWAP_TGAS;
-
 export const DRY_RUN_NOTICE = "DRY RUN: nothing was signed or sent.";
 
 /** Personality defaults. Agent-side choices, not contract rules. */

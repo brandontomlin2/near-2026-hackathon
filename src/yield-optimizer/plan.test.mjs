@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { buildPlan, clipToLimits, MIN_EXECUTE_GAS_TGAS, DRY_RUN_NOTICE, DEFAULTS, formatUnits, renderPlan } from "./plan.mjs";
+import { buildPlan, clipToLimits, DRY_RUN_NOTICE, DEFAULTS, formatUnits, renderPlan } from "./plan.mjs";
 import { EXECUTE_SWAP_GAS_CLI, EXECUTE_SWAP_TGAS } from "../yield/gas.mjs";
 import { quoteOut } from "../yield/pools.mjs";
 import { checkProposal } from "../yield/rules.mjs";
@@ -346,11 +346,14 @@ describe("renderPlan", () => {
 });
 
 describe("gas", () => {
-  it("MIN_EXECUTE_GAS_TGAS is the one figure from src/yield/gas.mjs, equal to lib.rs MIN_EXECUTE_GAS", () => {
+  it("the planned execute_swap call carries lib.rs MIN_EXECUTE_GAS as its prepaid gas", () => {
     const lib = readFileSync(fileURLToPath(new URL("../../contracts/yield-vault/src/lib.rs", import.meta.url)), "utf8");
     const m = lib.match(/pub const MIN_EXECUTE_GAS: Gas = Gas::from_tgas\((\d+)\);/);
     assert.ok(m, "MIN_EXECUTE_GAS not found in lib.rs");
-    assert.equal(MIN_EXECUTE_GAS_TGAS, Number(m[1]));
+    const call = buildPlan(snap()).json.call;
+    assert.ok(call, "the hand-built fixture plans a swap");
+    assert.equal(call.gas_tgas, Number(m[1]));
+    assert.equal(call.gas, `${m[1]}.0 Tgas`);
   });
   it("plan.mjs holds no gas literal of its own", () => {
     const src = readFileSync(fileURLToPath(new URL("./plan.mjs", import.meta.url)), "utf8");
