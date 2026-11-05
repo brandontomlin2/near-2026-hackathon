@@ -4,7 +4,7 @@ What it is: a near-sdk Rust smart contract that holds NEP-141 token balances for
 
 A trading vault, one per personality (aloof, chaotic, social, skeptic), each driven by an AI agent running a strategy off chain. The vault is owned by a fixed `owner_id` account set at `new`. It records the personality NFT's `nft_contract_id` and `token_id` as metadata only and does not check them: owner checks ignore NFT ownership, so transferring the NFT does not transfer the vault. The agent acts only through approved **runner** accounts, and this contract enforces hard limits on chain regardless of what the strategy proposes. Approved swaps run on the Rhea (Ref Finance) testnet exchange `ref-finance-101.testnet` with the deposit -> swap -> withdraw pattern. wNEAR is `wrap.testnet`.
 
-**Status: NOT deployed.** A testnet deploy needs the human's explicit yes. Tested with unit tests (`cargo test`, 276 tests) and 22 integration tests in a throwaway local sandbox against a mock Ref and mock NEP-141 tokens (`sandbox/`, see "Sandbox measurements"). See "Known risks".
+**Status: NOT deployed.** A testnet deploy needs the human's explicit yes. Tested with unit tests (`cargo test`, 278 tests) and 22 integration tests in a throwaway local sandbox against a mock Ref and mock NEP-141 tokens (`sandbox/`, see "Sandbox measurements"). See "Known risks".
 
 Live testnet runbook (every step, cost, failure handling, verification table): [../../docs/yield-vault-live-runbook.md](../../docs/yield-vault-live-runbook.md).
 
