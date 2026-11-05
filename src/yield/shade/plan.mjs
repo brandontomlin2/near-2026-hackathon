@@ -4,7 +4,7 @@
 //   buildShadePlan(options?) -> plain object (deterministic for the same options)
 //   renderShadePlan(plan)    -> pretty JSON string
 //
-// options: { agentContract, path, executor, vault, owner, proposal, rootKey, nonce, blockHash, env, network }
+// options: { agentContract, path, executor, vault, owner, proposal, proposalSource, rootKey, nonce, blockHash, env, network }
 
 import { deriveEd25519PublicKey } from "../../../spikes/shade/chainsig.mjs";
 import { TESTNET_ED25519_ROOT } from "../../../spikes/shade/dry-run.mjs";
@@ -19,11 +19,12 @@ export const DEFAULTS = Object.freeze({
   vault: "vault.yield-demo.testnet",
   owner: "owner.yield-demo.testnet",
 });
-// A fixed illustrative proposal (1 wNEAR -> nUSDT through pool 1). It is NOT rule-checked here and the pool id is a placeholder.
+// A fixed illustrative proposal (1 wNEAR -> rft through pool 0 of src/yield/fixtures/ref-testnet-pools.json, whose
+// token_a/token_b are exactly these two tokens). It is NOT rule-checked here; the CLI uses a rule-checked yield:demo call instead.
 export const SAMPLE_PROPOSAL = Object.freeze({
-  pool_id: 1,
+  pool_id: 0,
   token_in: "wrap.testnet",
-  token_out: "nusdt.ft-fin.testnet",
+  token_out: "rft.tokenfactory.testnet",
   amount_in: "1000000000000000000000000",
   min_amount_out: "1000000",
 });
@@ -33,6 +34,7 @@ export const NOTICE = "DRY RUN. Every account below is an invented placeholder t
 export function buildShadePlan(options = {}) {
   assertDryRunOptions(options, options.env ?? process.env);
   const o = { ...DEFAULTS, proposal: SAMPLE_PROPOSAL, rootKey: TESTNET_ED25519_ROOT, ...stripUndefined(options) };
+  const proposalSource = options.proposalSource ?? null; // e.g. {from, agent, rule_check}; recorded as given
   const isPlaceholder = (role) => o[role] === DEFAULTS[role];
   // The MPC contract derives from (predecessor = agent contract, path).
   const derivedKey = deriveEd25519PublicKey(o.rootKey, o.agentContract, o.path);
@@ -46,7 +48,8 @@ export function buildShadePlan(options = {}) {
       id: o[r], status: isPlaceholder(r) ? "placeholder, not deployed" : "user-supplied, not checked on chain",
     }])),
     derivation: { predecessor: o.agentContract, path: o.path, domain_id: 1, root_key: o.rootKey, derived_key: derivedKey },
-    execute_swap: { ...tx, methodName: "execute_swap", gas: EXECUTE_SWAP_GAS, deposit: 0n, proposalNote: o.proposal === SAMPLE_PROPOSAL ? "fixed sample, not rule-checked" : "caller supplied" },
+    ...(proposalSource ? { proposal_source: proposalSource } : {}),
+    execute_swap: { ...tx, methodName: "execute_swap", gas: EXECUTE_SWAP_GAS, deposit: 0n, proposalNote: o.proposal === SAMPLE_PROPOSAL ? "fixed sample, not rule-checked" : proposalSource ? "from proposal_source, passed the rule check" : "caller supplied" },
     mpc: sign,
     authorization: auth,
   });

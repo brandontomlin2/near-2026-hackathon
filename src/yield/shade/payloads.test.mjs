@@ -177,3 +177,12 @@ describe("plan envelope", () => {
     assert.deepEqual(JSON.parse(renderShadePlan(plan)), plan);
   });
 });
+
+describe("SAMPLE_PROPOSAL consistency", () => {
+  it("names a fixture pool that holds both its tokens", () => {
+    const fixture = JSON.parse(readFileSync(`${rootDir}src/yield/fixtures/ref-testnet-pools.json`, "utf8"));
+    const pool = fixture.pools.find((p) => p.pool_id === SAMPLE_PROPOSAL.pool_id);
+    assert.ok(pool, `pool ${SAMPLE_PROPOSAL.pool_id} is in the fixture`);
+    assert.deepEqual([pool.token_a, pool.token_b].sort(), [SAMPLE_PROPOSAL.token_in, SAMPLE_PROPOSAL.token_out].sort());
+  });
+});
