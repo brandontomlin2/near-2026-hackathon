@@ -264,6 +264,10 @@ pub struct YieldVault {
     release: Option<u64>,
     /// Block timestamp (ns) at which `release` was set; gates `abort_release`.
     release_started_at: u64,
+    /// A token transfer reached `ft_on_transfer` while `release` was pending.
+    /// Its transient credit may be visible to the release's `ft_balance_of`
+    /// read, so that read is not trusted (treated as failed) when it resolves.
+    release_tainted: bool,
     day: u64,
     spent_today: BTreeMap<AccountId, u128>,
     balances: BTreeMap<AccountId, u128>,
@@ -378,6 +382,7 @@ impl YieldVault {
             recovery: None,
             release: None,
             release_started_at: 0,
+            release_tainted: false,
             day: day_of(env::block_timestamp()),
             spent_today: BTreeMap::new(),
             balances: BTreeMap::new(),
@@ -463,12 +468,31 @@ impl YieldVault {
         #[allow(unused_variables)] msg: String,
     ) -> PromiseOrValue<U128> {
         let token = env::predecessor_account_id();
+        // A transfer that reaches this method while a balance read is pending
+        // may have been visible to that read as a transient credit (the token
+        // credits the vault before this call and refunds after it). Receipts
+        // between two accounts arrive in order, so such a transfer's call must
+        // land after the read was requested and before its callback: invalidate
+        // the sync here, whatever the sender or token.
+        let sync_pending = self.sync_id != 0;
+        if sync_pending {
+            let id = self.sync_id;
+            self.sync_id = 0;
+            emit(
+                "sync_invalidated",
+                json!({ "sync_id": id, "reason": "transfer_in_transit", "token_id": token }),
+            );
+        }
+        // Same for a force release: its `ft_balance_of` read is not trusted.
+        if self.release.is_some() {
+            self.release_tainted = true;
+        }
         let known = self
             .config
             .allowed_pools
             .iter()
             .any(|p| p.token_a == token || p.token_b == token);
-        if sender_id != self.owner_id || !known || amount.0 == 0 || self.release.is_some() || self.sync_id != 0 {
+        if sender_id != self.owner_id || !known || amount.0 == 0 || self.release.is_some() || sync_pending {
             return PromiseOrValue::Value(amount);
         }
         self.credit(&token, amount.0);
@@ -905,6 +929,7 @@ impl YieldVault {
         let release_id = self.next_swap_id;
         self.sync_id = 0;
         self.release = Some(release_id);
+        self.release_tainted = false;
         self.release_started_at = env::block_timestamp();
         emit(
             "force_release_started",
@@ -1039,11 +1064,20 @@ impl YieldVault {
         if extra > 0 {
             self.credit(&token_id, extra);
         }
+        // While idle the vault sends no tokens out, so tracked must equal the
+        // FT balance. A lower balance means an earlier phantom credit (for
+        // example a transient transfer a starved `ft_on_transfer` could not
+        // invalidate): heal it.
+        let debited = tracked.saturating_sub(ft.0);
+        if debited > 0 {
+            self.debit(&token_id, debited);
+        }
         emit(
             "balance_synced",
             json!({
                 "token_id": token_id,
                 "credited": extra.to_string(),
+                "debited": debited.to_string(),
                 "ft_balance": ft.0.to_string(),
             }),
         );
@@ -1069,6 +1103,7 @@ impl YieldVault {
             return;
         }
         self.release = None;
+        let vault_ft = self.untaint(vault_ft);
         let Some(fl) = self.in_flight.clone() else {
             return;
         };
@@ -1133,6 +1168,7 @@ impl YieldVault {
             return;
         }
         self.release = None;
+        let vault_ft = self.untaint(vault_ft);
         let Some(r) = self.recovery.take() else {
             return;
         };
@@ -1446,6 +1482,18 @@ impl YieldVault {
             return None;
         }
         self.recovery.clone().filter(|r| r.id == recovery_id)
+    }
+
+    /// Ends a release's taint window. If a transfer was in transit during the
+    /// release, its FT balance read may include a refundable amount, so it is
+    /// treated as a failed read: the outcome is then a strand, never a credit
+    /// or rollback.
+    fn untaint(&mut self, vault_ft: Result<U128, PromiseError>) -> Result<U128, PromiseError> {
+        if std::mem::take(&mut self.release_tainted) {
+            Err(PromiseError::Failed)
+        } else {
+            vault_ft
+        }
     }
 
     /// The vault's FT balance shows `amount` on top of what it already tracks.

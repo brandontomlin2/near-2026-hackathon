@@ -2530,15 +2530,28 @@ fn sync_balance_credits_ft_transfer_donation() {
 }
 
 #[test]
-fn sync_balance_never_debits_when_ft_balance_is_lower() {
+fn sync_balance_debits_a_phantom_when_ft_balance_is_lower() {
+    // Idle vault: tracked must equal the FT balance, so a phantom is healed.
     let mut v = funded();
     let id = start_sync(&mut v, wrap());
     sync_cb(&mut v, id, wrap(), Ok(U128(3_000)));
-    assert_eq!(bal(&v, &wrap()), 10_000);
+    assert_eq!(bal(&v, &wrap()), 3_000);
+    let logs = get_logs().join("\n");
+    assert!(logs.contains("\"debited\":\"7000\"") && logs.contains("\"credited\":\"0\""), "{logs}");
+    // A failed read changes nothing.
     let id = start_sync(&mut v, wrap());
     sync_cb(&mut v, id, wrap(), Err(PromiseError::Failed));
-    assert_eq!(bal(&v, &wrap()), 10_000);
+    assert_eq!(bal(&v, &wrap()), 3_000);
     assert!(get_logs().join("\n").contains("sync_failed"));
+}
+
+#[test]
+fn sync_balance_debit_to_zero_removes_the_entry() {
+    let mut v = funded();
+    let id = start_sync(&mut v, wrap());
+    sync_cb(&mut v, id, wrap(), Ok(U128(0)));
+    assert_eq!(bal(&v, &wrap()), 0);
+    assert!(v.get_state().balances.iter().all(|(t, _)| t != &wrap()));
 }
 
 #[test]
@@ -2992,4 +3005,173 @@ fn withdraw_ref_storage_rejects_low_gas() {
     c.prepaid_gas(Gas::from_tgas(39));
     testing_env!(c.build());
     let _ = v.withdraw_ref_storage(Some(U128(1)));
+}
+
+// --------------------------------- transient refundable transfers (Codex, L-1)
+
+/// A third party's `ft_transfer_call` reaches `ft_on_transfer` while a sync
+/// read is pending; returns the refund.
+fn foreign_transfer(v: &mut YieldVault, token: AccountId, sender: &str, amount: u128) -> u128 {
+    testing_env!(ctx(token.as_str(), T0).build());
+    match v.ft_on_transfer(acct(sender), U128(amount), String::new()) {
+        PromiseOrValue::Value(r) => r.0,
+        _ => panic!("ft_on_transfer returns a value"),
+    }
+}
+
+#[test]
+fn transient_refundable_transfer_during_sync_is_not_credited() {
+    // Codex example: tracked 10_000, a refundable 500 is visible to the read.
+    let mut v = funded();
+    let id = start_sync(&mut v, wrap());
+    assert_eq!(foreign_transfer(&mut v, wrap(), "mallory.testnet", 500), 500, "refunded");
+    assert_eq!(v.sync_id, 0, "the pending sync is invalidated");
+    assert!(get_logs().join("\n").contains("sync_invalidated"));
+    sync_cb(&mut v, id, wrap(), Ok(U128(10_500)));
+    assert_eq!(bal(&v, &wrap()), 10_000, "the transient 500 must not be credited");
+    assert!(!get_logs().join("\n").contains("balance_synced"), "callback is a no-op");
+}
+
+#[test]
+fn any_token_transfer_during_sync_invalidates_it() {
+    // The read is of `wrap`, the transient is of an unknown token: still a
+    // conservative invalidation (the sync may be of any token).
+    let mut v = funded();
+    let id = start_sync(&mut v, wrap());
+    let unknown = acct("junk.testnet");
+    assert_eq!(foreign_transfer(&mut v, unknown, "mallory.testnet", 7), 7);
+    assert_eq!(v.sync_id, 0);
+    sync_cb(&mut v, id, wrap(), Ok(U128(10_500)));
+    assert_eq!(bal(&v, &wrap()), 10_000);
+}
+
+#[test]
+fn owner_deposit_during_sync_is_refunded_and_invalidates_it() {
+    let mut v = funded();
+    let id = start_sync(&mut v, wrap());
+    assert_eq!(foreign_transfer(&mut v, wrap(), "owner.testnet", 500), 500);
+    sync_cb(&mut v, id, wrap(), Ok(U128(10_500)));
+    assert_eq!(bal(&v, &wrap()), 10_000, "refunded deposit is not also credited by the sync");
+}
+
+#[test]
+fn undisturbed_sync_still_credits_a_real_donation() {
+    let mut v = funded();
+    let id = start_sync(&mut v, wrap());
+    sync_cb(&mut v, id, wrap(), Ok(U128(10_500)));
+    assert_eq!(bal(&v, &wrap()), 10_500);
+    assert!(get_logs().join("\n").contains("\"credited\":\"500\""));
+}
+
+#[test]
+fn transfer_without_a_pending_sync_emits_no_invalidation() {
+    let mut v = funded();
+    assert_eq!(foreign_transfer(&mut v, wrap(), "mallory.testnet", 500), 500);
+    assert!(!get_logs().join("\n").contains("sync_invalidated"));
+    deposit(&mut v, wrap(), 500);
+    assert_eq!(bal(&v, &wrap()), 10_500);
+    assert!(!get_logs().join("\n").contains("sync_invalidated"));
+}
+
+#[test]
+fn fresh_sync_after_an_invalidated_one_works() {
+    let mut v = funded();
+    let old = start_sync(&mut v, wrap());
+    foreign_transfer(&mut v, wrap(), "mallory.testnet", 500);
+    sync_cb(&mut v, old, wrap(), Ok(U128(10_500)));
+    assert_eq!(bal(&v, &wrap()), 10_000);
+    // The refund has settled; a real donation of 250 is now the only excess.
+    let new = start_sync(&mut v, wrap());
+    assert_ne!(old, new);
+    sync_cb(&mut v, new, wrap(), Ok(U128(10_250)));
+    assert_eq!(bal(&v, &wrap()), 10_250);
+}
+
+#[test]
+fn residual_phantom_from_a_starved_receiver_is_healed_by_the_next_sync() {
+    // If ft_on_transfer is starved of gas its invalidation is reverted and the
+    // sync credits the transient 500. The token then refunds it; the next
+    // quiet sync debits the phantom.
+    let mut v = funded();
+    let id = start_sync(&mut v, wrap());
+    sync_cb(&mut v, id, wrap(), Ok(U128(10_500)));
+    assert_eq!(bal(&v, &wrap()), 10_500, "phantom (residual, documented)");
+    let id = start_sync(&mut v, wrap());
+    sync_cb(&mut v, id, wrap(), Ok(U128(10_000)));
+    assert_eq!(bal(&v, &wrap()), 10_000);
+}
+
+#[test]
+fn transient_transfer_during_release_taints_swap_rollback() {
+    // Without the taint, ft = 10_000 (9_900 tracked + 100) would roll back.
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    let id = force_release(&mut v);
+    assert_eq!(foreign_transfer(&mut v, wrap(), "mallory.testnet", 100), 100, "refunded");
+    release_cb();
+    v.resolve_release_swap(id, Ok(U128(10_000)), Ok(U128(0)), Ok(U128(0)));
+    assert!(!v.get_state().swap_in_flight && !v.get_state().release_in_flight);
+    assert_eq!(bal(&v, &wrap()), 9_900, "no rollback on a tainted read");
+    assert_eq!(unverified(&v, &wrap()), 100, "booked once, as unverified");
+    assert_eq!(stranded(&v, &wrap()), 0);
+    assert!(get_logs().join("\n").contains("lock_force_released_unverified"));
+}
+
+#[test]
+fn transient_transfer_during_release_taints_token_out_credit() {
+    // Held token_out: an untainted ft read would credit the swap.
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    v.in_flight.as_mut().unwrap().amount_out = 390;
+    let id = force_release(&mut v);
+    foreign_transfer(&mut v, rft(), "mallory.testnet", 390);
+    release_cb();
+    v.resolve_release_swap(id, Ok(U128(390)), Ok(U128(0)), Ok(U128(0)));
+    assert_eq!(bal(&v, &rft()), 0, "no credit on a tainted read");
+    assert_eq!(unverified(&v, &rft()), 390);
+    assert_eq!(v.get_state().swaps_executed, 0);
+}
+
+#[test]
+fn transient_transfer_during_release_taints_recovery_credit() {
+    let mut v = recovering();
+    let rid = force_release(&mut v);
+    foreign_transfer(&mut v, rft(), "mallory.testnet", 300);
+    release_cb();
+    v.resolve_release_recovery(rid, Ok(U128(300)), Ok(U128(0)));
+    assert_eq!(bal(&v, &rft()), 0);
+    assert_eq!(stranded(&v, &rft()) + unverified(&v, &rft()), 500, "record restored, nothing lost");
+    assert_eq!(unverified(&v, &rft()), 300);
+}
+
+#[test]
+fn taint_does_not_leak_into_the_next_release() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    let id = force_release(&mut v);
+    foreign_transfer(&mut v, wrap(), "mallory.testnet", 100);
+    release_cb();
+    v.resolve_release_swap(id, Ok(U128(10_000)), Ok(U128(0)), Ok(U128(0)));
+    assert_eq!(bal(&v, &wrap()), 9_900);
+    // A new swap, released cleanly, rolls back normally.
+    run_at(&mut v, proposal(100), T0 + 2 * STALE_LOCK_NS);
+    let mut c = ctx("owner.testnet", T0 + 4 * STALE_LOCK_NS);
+    c.attached_deposit(NearToken::from_yoctonear(1));
+    testing_env!(c.build());
+    let _ = v.force_release_lock();
+    let id = v.release.unwrap();
+    release_cb();
+    v.resolve_release_swap(id, Ok(U128(9_900)), Ok(U128(0)), Ok(U128(0)));
+    assert_eq!(bal(&v, &wrap()), 9_900, "clean read rolls back the second 100");
+}
+
+#[test]
+fn superseded_release_callback_does_not_clear_the_taint() {
+    let mut v = funded();
+    run(&mut v, proposal(100));
+    let first = force_release(&mut v);
+    foreign_transfer(&mut v, wrap(), "mallory.testnet", 100);
+    release_cb();
+    v.resolve_release_swap(first + 100, Ok(U128(10_000)), Ok(U128(0)), Ok(U128(0))); // stale id
+    assert!(v.release_tainted, "a stale callback must not consume the taint");
 }
