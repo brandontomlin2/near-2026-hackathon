@@ -27,7 +27,7 @@ export function assertSafeOutDir(outDir) {
 /** `cannot write <dir>: <short reason>` for a Node filesystem error (error.code like ENOENT), or null for any other error. */
 export function describeWriteFailure(dir, error) {
   if (typeof error?.code !== "string" || !/^E[A-Z]+$/.test(error.code)) return null;
-  const reason = String(error.message).split("\n")[0].replace(/^E[A-Z]+: /, "").replace(/,? (mkdir|open|scandir|rmdir|unlink|access|stat)? ?'.*$/, "");
+  const reason = String(error.message).split("\n")[0].replace(/^E[A-Z]+: /, "").replace(/, (mkdir|open|scandir|opendir|rmdir|unlink|access|stat|lstat|rename|symlink|copyfile|rm|mkdtemp|realpath) '.*$/, "");
   return `cannot write ${dir}: ${reason}`;
 }
 

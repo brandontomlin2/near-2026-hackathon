@@ -56,7 +56,11 @@ const YOCTO_PER_NEAR = 10n ** 24n;
 
 /** "10000000000000000000000" -> "0.01 NEAR", "1" -> "1 yoctoNEAR". */
 export function formatDeposit(yocto) {
+  if (typeof yocto === "string" && yocto.trim() === "") {
+    throw new SyntaxError(`invalid deposit: ${JSON.stringify(yocto)}`);
+  }
   const y = BigInt(yocto);
+  if (y < 0n) throw new RangeError(`deposit must not be negative: ${y}`);
   if (y < 10n ** 18n) return `${y} yoctoNEAR`;
   const whole = y / YOCTO_PER_NEAR;
   const frac = (y % YOCTO_PER_NEAR).toString().padStart(24, "0").replace(/0+$/, "");
