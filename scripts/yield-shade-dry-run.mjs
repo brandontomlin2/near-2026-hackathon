@@ -13,8 +13,6 @@ import { EXECUTE_SWAP_TGAS } from "../src/yield/gas.mjs";
 import { RefusalError, assertNotMainnet } from "../src/yield/send.mjs";
 import { runDemo } from "../src/yield/demo.mjs";
 import { buildShadePlan, renderShadePlan } from "../src/yield/shade/plan.mjs";
-import { loadSnapshot } from "../src/yield-optimizer/snapshot.mjs";
-import { DEFAULT_SNAPSHOT } from "./yield-optimizer.mjs";
 
 const USAGE = `Usage: node scripts/yield-shade-dry-run.mjs [--json] [--agent-contract ID] [--path P]   (--flag=value also works)
   (no flag)            human-readable Shade Agent runner plan
@@ -151,7 +149,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     assertNotMainnet(env);
     if (opts.network !== undefined && opts.network !== "testnet") throw new RefusalError("refused: network must be testnet. This tool never targets mainnet.");
 
-    const { calls } = await runDemo({ rhea: loadSnapshot(DEFAULT_SNAPSHOT), rheaSource: "src/yield-optimizer/fixtures/rhea-testnet-snapshot.json" });
+    const { calls } = await runDemo();
     const first = calls.calls[0];
     if (!first) throw new RefusalError("refused: yield:demo planned no rule-checked call to build a plan from");
     const plan = buildShadePlan({

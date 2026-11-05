@@ -8,8 +8,6 @@ import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { runDemo } from "../src/yield/demo.mjs";
-import { loadSnapshot } from "../src/yield-optimizer/snapshot.mjs";
-import { DEFAULT_SNAPSHOT } from "./yield-optimizer.mjs";
 
 const SCRIPT = fileURLToPath(new URL("./yield-shade-dry-run.mjs", import.meta.url));
 const PKG = fileURLToPath(new URL("../package.json", import.meta.url));
@@ -48,7 +46,7 @@ describe("yield:shade:dry-run --json", () => {
   let demoFirst;
   before(async () => {
     plan = JSON.parse(run(["--json"]).stdout);
-    demoFirst = (await runDemo({ rhea: loadSnapshot(DEFAULT_SNAPSHOT), rheaSource: "x" })).calls.calls[0];
+    demoFirst = (await runDemo()).calls.calls[0];
   });
   it("is dry run, unsigned, unsent", () => {
     assert.equal(plan.dry_run, true);
