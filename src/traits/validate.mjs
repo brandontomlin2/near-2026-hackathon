@@ -20,10 +20,12 @@ export const TRAIT_VALUES = Object.freeze({
  */
 export function validateTraits(value) {
   const errors = [];
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+  if (value === null || typeof value !== "object") {
     return { valid: false, errors: ["traits: must be an object"] };
   }
   try {
+    // Inside the try: Array.isArray throws on a revoked proxy.
+    if (Array.isArray(value)) return { valid: false, errors: ["traits: must be an object"] };
     for (const key of Object.keys(value)) {
       if (!TRAIT_KEYS.includes(key)) errors.push(`${key}: unknown key`);
     }

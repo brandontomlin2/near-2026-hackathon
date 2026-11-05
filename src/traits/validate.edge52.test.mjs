@@ -285,3 +285,17 @@ test("validateTraits returns fresh result objects: mutating errors does not affe
   a.errors.length = 0;
   assert.equal(validateTraits({}).errors.length, TRAIT_KEYS.length);
 });
+
+test("a revoked proxy is invalid, not fatal: validateTraits reports it, assertTraits throws TypeError", () => {
+  const { proxy, revoke } = Proxy.revocable({}, {});
+  revoke();
+  const r = validateTraits(proxy);
+  assert.equal(r.valid, false);
+  assert.equal(r.errors.length, 1);
+  assert.match(r.errors[0], /^traits: could not be read \(.*revoked/);
+  assert.throws(() => assertTraits(proxy), (e) => e instanceof TypeError && /could not be read/.test(e.message));
+});
+
+test("arrays are still rejected as non-objects after the revoked-proxy fix", () => {
+  assert.deepEqual(validateTraits([]), { valid: false, errors: ["traits: must be an object"] });
+});
