@@ -5,8 +5,10 @@
 //
 // Runs `node scripts/yield-demo.mjs --out DIR` (offline, mock) with a timeout, then reads
 // DIR/plan.json, DIR/calls.json and DIR/index.html and fails unless the plan is a dry run with nothing signed
-// or sent, 0 calls planned (the stable-pool agents are refused as off reference, chaotic is vetoed and the
-// optimizer holds on the thin real pools), and the 4 vault-rule rejections match the contract. It also fails
+// or sent, exactly 1 call planned (the stable-pool agents are refused as off reference and chaotic is vetoed;
+// the optimizer plans one small swap on pool 747, a shallow pair with a reference price), and the 4 vault-rule
+// rejections match the contract. The planner's call must pass checkProposal, re-run here on the default
+// snapshot's vault, and sit on a pool whose candidate has a reference price and status ok. It also fails
 // when the demo tells two stories: more than one vault id across the agents, the planner vault and the calls,
 // more than one gas string across the calls, or a planner that is not on the one shared snapshot. index.html
 // must carry the DRY RUN notice and each rejection's contract message (HTML-escaped as rendered).
@@ -19,12 +21,14 @@ import { fileURLToPath } from "node:url";
 import { escapeHtml } from "../src/viewer/render.mjs";
 import { assertSafeOutDir } from "../src/util/outdir.mjs";
 import { EXECUTE_SWAP_GAS_CLI } from "../src/yield/gas.mjs";
+import { checkProposal } from "../src/yield/rules.mjs";
+import { defaultSnapshot, rulesView } from "../src/yield-optimizer/snapshot.mjs";
 
 export const EXPECTED_MODE = "mock";
 export const EXPECTED_AGENTS = 5;
-export const EXPECTED_CALLS = 0;
-/** On the committed snapshot the optimizer holds; with 0 calls this keeps the check from passing on an unrelated break. */
-export const EXPECTED_PLANNER_DECISION = "hold";
+export const EXPECTED_CALLS = 1;
+/** On the committed snapshot the optimizer swaps on pool 747 (the only pool with a reference price and an edge). */
+export const EXPECTED_PLANNER_DECISION = "swap";
 export const PLANNER_STATUSES = ["ok", "off_reference", "below_min_edge", "no_reference_price", "refused"];
 export const EXPECTED_SIGNED = 0;
 export const EXPECTED_SENT = 0;
@@ -74,7 +78,8 @@ export function checkYieldDemo(plan, calls) {
   const pool1 = (agents ?? []).filter((a) => isObject(a) && a.kind === "personality" && isObject(a.proposal) && a.proposal.pool_id === 1);
   expect(pool1.length > 0, "plan.json must have at least one personality agent proposing on pool 1 (the off-reference refusal is what the demo shows)");
   const plannerRow = (agents ?? []).find((a) => isObject(a) && a.kind === "planner");
-  expect(!plannerRow || plannerRow.decision === EXPECTED_PLANNER_DECISION, `plan.json planner decision must be ${EXPECTED_PLANNER_DECISION} on the committed snapshot (got ${JSON.stringify(plannerRow?.decision)})`);
+  expect(plannerRow?.decision === EXPECTED_PLANNER_DECISION, `plan.json planner decision must be ${EXPECTED_PLANNER_DECISION} on the committed snapshot (got ${JSON.stringify(plannerRow?.decision)})`);
+  problems.push(...checkPlannerCall(plannerRow, list ?? []));
   (agents ?? []).forEach((agent, i) => {
     if (!isObject(agent) || agent.kind !== "personality" || !isObject(agent.proposal) || agent.proposal.pool_id !== 1) return;
     const text = JSON.stringify([agent.rule_check, agent.strategy_check]);
@@ -101,6 +106,32 @@ export function checkYieldDemo(plan, calls) {
       expect(s.contract_message === s.js_message, `${label} contract_message must equal js_message`);
       expect(typeof s.contract_message === "string" && typeof s.code === "string" && s.contract_message.startsWith(`${s.code}: `), `${label} contract_message must start with "<code>: "`);
     });
+  }
+  return problems;
+}
+
+/**
+ * Problems with the planner's call: it must exist, be the one call in calls.json, pass checkProposal when
+ * re-run here (not taken from the demo's own rule_check) against the default snapshot's planner vault, and
+ * be on a pool whose candidate has a reference price (a number) and status ok.
+ */
+export function checkPlannerCall(planner, calls) {
+  const problems = [];
+  const expect = (ok, message) => { if (!ok) problems.push(message); };
+  if (!isObject(planner)) return ["plan.json has no planner row to carry the call"];
+  const proposal = planner.call?.args?.proposal;
+  if (!isObject(proposal)) return ["the planner must carry an execute_swap call with args.proposal (it holds or has none)"];
+  expect(planner.call.method_name === "execute_swap", `planner call method_name must be execute_swap (got ${JSON.stringify(planner.call.method_name)})`);
+  expect(calls.some((c) => isObject(c) && JSON.stringify(c.args?.proposal) === JSON.stringify(proposal)), "calls.json must contain the planner's call");
+  const snap = defaultSnapshot();
+  const view = rulesView(snap);
+  const rules = checkProposal(proposal, view.config, view.state, snap.runner_id, view.nowMs);
+  expect(rules.ok, `the planner's call does not pass checkProposal on the default snapshot: ${rules.reason}`);
+  const cands = (Array.isArray(planner.candidates) ? planner.candidates : []).filter((c) => isObject(c) && c.pool_id === proposal.pool_id);
+  expect(cands.length > 0, `the planner's call is on pool ${proposal.pool_id}, which is not among its candidates`);
+  for (const c of cands) {
+    expect(typeof c.ref_deviation_bps === "number" && Number.isFinite(c.ref_deviation_bps), `the planner's call is on pool ${proposal.pool_id}, which has no reference price (ref_deviation_bps ${JSON.stringify(c.ref_deviation_bps)})`);
+    expect(c.status === "ok", `the planner's call is on pool ${proposal.pool_id} whose candidate status is ${JSON.stringify(c.status)}, not ok`);
   }
   return problems;
 }
@@ -149,6 +180,7 @@ export function checkOneStory(plan, calls) {
     expect(planner.decision === "hold" || planner.decision === "swap", `planner decision must be hold or swap (got ${JSON.stringify(planner.decision)})`);
     expect(typeof planner.reason === "string" && planner.reason !== "", "planner reason must be a non-empty string");
     expect(planner.decision !== "hold" || planner.call === null, "a planner that holds must carry no call");
+    expect(planner.decision !== "swap" || (isObject(planner.call) && planner.outcome === "execute"), "a planner that swaps must carry its call and the outcome execute");
     const cands = Array.isArray(planner.candidates) ? planner.candidates : [];
     expect(cands.length > 0, "planner must list its candidates");
     cands.forEach((c, i) => expect(isObject(c) && PLANNER_STATUSES.includes(c.status), `planner candidates[${i}] has an unknown status ${JSON.stringify(isObject(c) ? c.status : c)}`));

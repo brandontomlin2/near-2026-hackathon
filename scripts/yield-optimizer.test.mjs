@@ -55,11 +55,12 @@ describe("main", () => {
     const j = JSON.parse(jsonPart);
     assert.equal(j.dry_run, true);
     assert.match(j.notice, /^DRY RUN/);
-    // The honest result on the thin real Ref pools: nothing passes the reference guard and the vault rules.
-    assert.equal(j.decision, "hold");
+    // On the real Ref snapshot only pool 747 (a priced stable pair, shallow fake-token liquidity) passes the reference guard and the vault rules.
+    assert.equal(j.decision, "swap");
+    assert.equal(j.call.args.proposal.pool_id, 747);
     assert.equal(j.vault_id, PLACEHOLDER_VAULT);
     assert.equal(j.snapshot.block_height, 276332963);
-    assert.match(human, /Decision: HOLD - no pool passes every gate/);
+    assert.match(human, /^Decision: SWAP 0\.05 usdc -> at least 0\.050406 usdt on pool 747 /m);
   });
 
   it("--snapshot with the hand-built scenario plans the swap on pool 17", () => {

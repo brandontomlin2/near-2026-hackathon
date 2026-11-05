@@ -10,6 +10,8 @@ export const STRATEGY_VERSION = 1;
 export const WNEAR = "wrap.testnet";
 export const NUSDT = "nusdt.ft-fin.testnet";
 export const NUSDC = "nusdc.ft-fin.testnet";
+export const FAKE_USDC = "usdc.fakes.testnet";
+export const FAKE_USDT = "usdt.fakes.testnet";
 export const RFT = "rft.tokenfactory.testnet";
 export const EXCHANGE = "ref-finance-101.testnet";
 export const PLACEHOLDER_RUNNER = "runner.yield-demo.testnet";
@@ -88,6 +90,7 @@ const CONFIG_TABLE = {
 const POOL_PAIRS = {
   0: { pool_id: 0, token_a: WNEAR, token_b: RFT },
   1: { pool_id: 1, token_a: NUSDT, token_b: NUSDC },
+  747: { pool_id: 747, token_a: FAKE_USDC, token_b: FAKE_USDT },
 };
 
 /**
@@ -167,11 +170,18 @@ export function defaultVaultConfig(agentId, { runner = PLACEHOLDER_RUNNER, fixtu
 // vault's validate_config accepts only the four strategy names, so its vault config carries
 // the closest one (aloof: a price-disciplined, small-size trader) and the planner's own
 // identity lives in the plan ("agent": "yield-optimizer"). Pools 0 and 1 are the two pools
-// the personality vaults can use; the floors come from the same floorRate maths.
+// the personality vaults can use; pool 747 (usdc.fakes / usdt.fakes, both 6 decimals, priced
+// stable pair) is planner-only. It is shallow testnet liquidity of fake tokens: ~5 tokens per
+// side at block 276332963, so max_trade 0.05 (about 1% of a reserve) and daily_cap 0.1 keep
+// one trade small enough that price impact is a few bps on top of the 30 bps fee. The floors
+// come from the same floorRate maths (reference-derived for 747: the $1 peg less STABLE_PEG_BPS).
 export const PLANNER_STRATEGY = "aloof";
-const PLANNER_TABLE = { pools: [0, 1], limits: { [WNEAR]: ["10", "20"], [RFT]: ["1000", "2000"], [NUSDT]: ["0.01", "0.02"], [NUSDC]: ["1", "2"] } };
+const PLANNER_TABLE = {
+  pools: [0, 1, 747],
+  limits: { [WNEAR]: ["10", "20"], [RFT]: ["1000", "2000"], [NUSDT]: ["0.01", "0.02"], [NUSDC]: ["1", "2"], [FAKE_USDC]: ["0.05", "0.1"], [FAKE_USDT]: ["0.05", "0.1"] },
+};
 
-/** VaultConfig (v2) for the Yield Optimizer planner's vault: pools 0 and 1, limits for wrap, rft, nusdt and nusdc. */
+/** VaultConfig (v2) for the Yield Optimizer planner's vault: pools 0, 1 and 747, limits for wrap, rft, nusdt, nusdc and the two fakes. */
 export function plannerVaultConfig({ runner = PLACEHOLDER_RUNNER, fixture = loadPoolFixture() } = {}) {
   return buildVaultConfig(PLANNER_STRATEGY, PLANNER_TABLE, { runner, fixture });
 }

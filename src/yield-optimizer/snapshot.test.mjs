@@ -237,11 +237,11 @@ describe("defaultSnapshot (the shared Ref market)", () => {
     assert.equal(s.tokens["wrap.testnet"].symbol, "wrap");
   });
 
-  it("the planner vault allows pools 0 and 1 for the demo runner and funds every traded token", () => {
+  it("the planner vault allows pools 0, 1 and 747 for the demo runner and funds every traded token", () => {
     const v = rulesView(s);
-    assert.deepEqual(v.config.allowed_pools.map((p) => p.pool_id), [0, 1]);
+    assert.deepEqual(v.config.allowed_pools.map((p) => p.pool_id), [0, 1, 747]);
     assert.deepEqual(v.config.runners, [PLACEHOLDER_RUNNER]);
-    assert.deepEqual(v.config.limits.map((l) => l.token_id).sort(), ["nusdc.ft-fin.testnet", "nusdt.ft-fin.testnet", "rft.tokenfactory.testnet", "wrap.testnet"]);
+    assert.deepEqual(v.config.limits.map((l) => l.token_id).sort(), ["nusdc.ft-fin.testnet", "nusdt.ft-fin.testnet", "rft.tokenfactory.testnet", "usdc.fakes.testnet", "usdt.fakes.testnet", "wrap.testnet"]);
     for (const l of v.config.limits) assert.ok(v.state.balances[l.token_id] > l.max_trade, l.token_id);
     assert.equal(v.nowMs, MOCK_EPOCH_MS);
     assert.equal(v.state.spent.day, dayOf(MOCK_EPOCH_MS));

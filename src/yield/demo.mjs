@@ -287,7 +287,7 @@ function plannerNotes(a) {
     groups.set(key, [...(groups.get(key) ?? []), c]);
   }
   const lines = [];
-  if (!a.call) lines.push(`  optimizer HOLD, ${a.candidates.length} pools checked, none usable:`);
+  lines.push(a.call ? `  optimizer swap on pool ${a.proposal.pool_id}, ${a.candidates.length - 1} other pools not chosen:` : `  optimizer HOLD, ${a.candidates.length} pools checked, none usable:`);
   for (const [key, cs] of groups) {
     const what = {
       off_reference: `off reference (spot limit ${a.params.max_ref_deviation_bps} bps, quote limit ${a.params.max_edge_bps} bps vs the mock reference price)`,

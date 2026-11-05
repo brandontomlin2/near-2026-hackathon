@@ -40,9 +40,9 @@ test("README has the yield:demo subsection with run, --calls and plan.json steps
     ["out/yield-demo/plan.json", "file"],
     ["out/yield-demo/index.html", "file"],
   ]);
-  // The --calls step prints a single line on the real snapshot (no call is planned), so it quotes that line.
+  // The --calls step prints the optimizer's one call on the real snapshot, so it quotes that call's lines.
   for (const s of demo.steps.filter((x) => x.command !== "npm run yield:demo -- --calls")) assert.ok(s.quotes.length >= 3, `step ${s.n} quotes at least 3 lines`);
-  assert.deepEqual(demo.steps[1].quotes, ["no calls planned (DRY RUN: nothing signed, nothing sent)"]);
+  assert.deepEqual(demo.steps[1].quotes, ["call 1 of 1 (yield-optimizer)", "method: execute_swap", "gas: 280.0 Tgas", "signed: false", "sent: false"]);
   assert.match(demo.text, /<!-- judge:run -->/, "a judge:run block");
 });
 
@@ -124,13 +124,15 @@ test("README planner table: every expected line is printed by that command", () 
   }
 });
 
-test("README names the shared snapshot, the optimizer hold and one 280 TGas figure that the real output shows", () => {
+test("README names the shared snapshot, the optimizer's pool 747 swap and one 280 TGas figure that the real output shows", () => {
   const out = runDemo("npm run yield:demo");
   const calls = runDemo("npm run yield:demo -- --calls");
   assert.match(out, /snapshot: one committed Ref testnet snapshot at block 276332963/);
-  assert.match(out, /^yield-optimizer {2}HOLD: no pool passes every gate/m);
-  // The real snapshot plans no call; the hand-built scenario plans one, with the one shared gas figure.
-  assert.equal(calls, "no calls planned (DRY RUN: nothing signed, nothing sent)\n");
+  assert.match(out, /^yield-optimizer {2}pool 747: 0\.05 usdc -> min 0\.050406 usdt {2}OK +execute$/m);
+  // The real snapshot plans the optimizer's one call (pool 747), with the one shared gas figure; the hand-built scenario plans another.
+  assert.match(calls, /^call 1 of 1 \(yield-optimizer\)$/m);
+  assert.deepEqual([...calls.matchAll(/^ {2}gas: (.*)$/gm)].map((m) => m[1]), ["280.0 Tgas"]);
+  assert.match(calls, /"pool_id":747/);
   const scenario = runDemo(`npm run yield:demo -- --calls --snapshot ${join(root, "src/yield-optimizer/fixtures/scenario.hand-built.json")}`);
   assert.equal([...scenario.matchAll(/^ {2}gas: (.*)$/gm)].map((m) => m[1]).join("|"), "280.0 Tgas");
   assert.match(scenario, /^call 1 of 1 \(yield-optimizer\)$/m);
