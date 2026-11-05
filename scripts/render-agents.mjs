@@ -18,7 +18,7 @@ import { assertSafeOutDir, describeWriteFailure } from "../src/util/outdir.mjs";
 function assertWritableDir(dir) {
   let probe = resolve(dir);
   while (!existsSync(probe)) probe = dirname(probe);
-  if (!statSync(probe).isDirectory()) throw new Error(`cannot create ${dir}: ${probe} is not a directory`);
+  if (!statSync(probe).isDirectory()) throw Object.assign(new Error(`cannot create ${dir}: ${probe} is not a directory`), { code: "ENOTDIR" }); // an I/O failure (exit 1), not a usage error
   accessSync(probe, constants.W_OK);
 }
 

@@ -131,7 +131,7 @@ test("a repeated --style a --style b renders only the last one", (t) => {
   assert.deepEqual(readdirSync(join(cwd, "o", "styles")), ["sticker"]);
 });
 
-test.skip("repeated --out with an I/O failure: the message names the last --out, not the first", (t) => {
+test("repeated --out with an I/O failure: the message names the last --out, not the first", (t) => {
   const cwd = scratch(t);
   writeFileSync(join(cwd, "blocker"), "x");
   const r = run(cwd, ["--out", "good", "--out", "blocker/sub"]);
@@ -144,7 +144,7 @@ test.skip("repeated --out with an I/O failure: the message names the last --out,
   assert.equal(readdirSync(join(cwd, "good")).length, AGENTS.length);
 });
 
-test.skip("--out pointing at an existing file is an I/O failure (exit 1), not a usage error, and the file is untouched", (t) => {
+test("--out pointing at an existing file is an I/O failure (exit 1), not a usage error, and the file is untouched", (t) => {
   const cwd = scratch(t);
   writeFileSync(join(cwd, "afile"), "keep");
   const r = run(cwd, ["--out", "afile"]);
@@ -157,7 +157,7 @@ test.skip("--out pointing at an existing file is an I/O failure (exit 1), not a 
   assert.deepEqual(readdirSync(cwd), ["afile"]);
 });
 
-test.skip("--out under a file is an I/O failure (exit 1) with no partial output, for every style mode", (t) => {
+test("--out under a file is an I/O failure (exit 1) with no partial output, for every style mode", (t) => {
   const cwd = scratch(t);
   writeFileSync(join(cwd, "afile"), "keep");
   for (const args of [[], ["--style", "sticker"], ["--style", "all"]]) {
@@ -171,7 +171,7 @@ test.skip("--out under a file is an I/O failure (exit 1) with no partial output,
   assert.equal(readFileSync(join(cwd, "afile"), "utf8"), "keep");
 });
 
-test.skip("a file where out/styles should be: no partial output, exit 1", (t) => {
+test("a file where out/styles should be: no partial output, exit 1", (t) => {
   const cwd = scratch(t);
   const out = join(cwd, "o");
   assert.equal(run(cwd, ["--out", "o"]).code, 0);
