@@ -169,3 +169,22 @@ describe("process smoke test", () => {
     assert.equal(JSON.parse(r.stdout).dry_run, true);
   });
 });
+
+describe("mainnet snapshot refusal", () => {
+  it("a .near vault_id exits 1 with a testnet-only message and no plan", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yopt-mainnet-"));
+    try {
+      const raw = JSON.parse(fs.readFileSync(SCENARIO, "utf8"));
+      raw.vault.vault_id = "yield-vault.near";
+      const f = path.join(dir, "mainnet.json");
+      fs.writeFileSync(f, JSON.stringify(raw));
+      const r = run(["--snapshot", f]);
+      assert.equal(r.code, 1);
+      assert.match(r.stderr, /\.near/);
+      assert.match(r.stderr, /testnet/);
+      assert.equal(r.stdout, "");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

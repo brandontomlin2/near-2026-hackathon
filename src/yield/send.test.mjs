@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { RefusalError, assertNotMainnet, assertSendAllowed, buildExecuteSwapArgv, formatCommand } from "./send.mjs";
+import { RefusalError, assertNotMainnet, assertSendAllowed, buildExecuteSwapArgv, formatCommand, isMainnetAccountId } from "./send.mjs";
 
 const GOOD = { NEAR_NETWORK: "testnet", YIELD_VAULT_ACCOUNT_ID: "vault.x.testnet", YIELD_RUNNER_ACCOUNT_ID: "runner.x.testnet" };
 const OK = { approve: true, agent: "skeptic" };
@@ -115,4 +115,13 @@ test("formatCommand shell-quotes the json args and leaves plain words bare", () 
 test("L1: assertSendAllowed refuses vault === runner", () => {
   const same = { ...GOOD, YIELD_RUNNER_ACCOUNT_ID: GOOD.YIELD_VAULT_ACCOUNT_ID };
   assert.match(refusal(() => assertSendAllowed(same, OK)).message, /different accounts/);
+});
+
+test("isMainnetAccountId is the shared .near predicate", () => {
+  assert.equal(isMainnetAccountId("a.near"), true);
+  assert.equal(isMainnetAccountId(" A.NEAR "), true);
+  assert.equal(isMainnetAccountId("a.testnet"), false);
+  assert.equal(isMainnetAccountId("near"), false);
+  assert.equal(isMainnetAccountId("a.near.testnet"), false);
+  assert.equal(isMainnetAccountId(undefined), false);
 });

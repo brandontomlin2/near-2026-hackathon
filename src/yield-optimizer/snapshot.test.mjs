@@ -247,3 +247,18 @@ describe("defaultSnapshot (the shared Ref market)", () => {
     assert.equal(v.state.spent.day, dayOf(MOCK_EPOCH_MS));
   });
 });
+
+describe("mainnet (.near) accounts are refused", () => {
+  it("rejects a .near vault_id, runner_id and config.runners entry, case-insensitively", () => {
+    rejects((r) => { r.vault.vault_id = "yield-vault.near"; }, /vault\.vault_id ends in \.near \(mainnet\)\. This tool only ever targets testnet\./);
+    rejects((r) => { r.vault.runner_id = "runner.near"; }, /vault\.runner_id ends in \.near/);
+    rejects((r) => { r.vault.vault_id = "X.NEAR"; }, /vault\.vault_id ends in \.near/);
+    rejects((r) => { r.vault.config.runners = ["ok.testnet", "bot.near"]; }, /vault\.config\.runners\[1\] ends in \.near/);
+  });
+  it("still accepts the committed hand-built scenario and .testnet / .near.testnet ids", () => {
+    parseSnapshot(raw());
+    const r = raw();
+    r.vault.vault_id = "a.near.testnet";
+    parseSnapshot(r);
+  });
+});

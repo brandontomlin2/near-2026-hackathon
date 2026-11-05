@@ -19,6 +19,7 @@
 import { readFileSync } from "node:fs";
 import { initialState } from "../yield/ledger.mjs";
 import { MOCK_EPOCH_MS } from "../yield/mock.mjs";
+import { isMainnetAccountId } from "../yield/send.mjs";
 import { loadPoolFixture } from "../yield/pools.mjs";
 import { U128_MAX, dayOf, validateVaultConfig } from "../yield/rules.mjs";
 import { PLACEHOLDER_RUNNER, PLACEHOLDER_VAULT, plannerVaultConfig } from "../yield/strategies.mjs";
@@ -36,6 +37,12 @@ function need(cond, msg) {
 
 // Control characters (newlines, ANSI escapes) in a --snapshot file would reach the terminal through the plan text.
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+
+/** A snapshot never names a mainnet (.near) account; same rule as the send gate. */
+function testnetId(v, where) {
+  need(!isMainnetAccountId(v), `${where} ends in .near (mainnet). This tool only ever targets testnet.`);
+  return v;
+}
 
 function str(v, where) {
   need(typeof v === "string" && v.length > 0, `${where} must be a non-empty string`);
@@ -107,7 +114,7 @@ function parseConfig(c) {
         daily_cap: u128(l.daily_cap, `${w}.daily_cap`),
       };
     }),
-    runners: arr(c.runners, "vault.config.runners").map((r, i) => str(r, `vault.config.runners[${i}]`)),
+    runners: arr(c.runners, "vault.config.runners").map((r, i) => testnetId(str(r, `vault.config.runners[${i}]`), `vault.config.runners[${i}]`)),
   };
   // The contract would never hold a config that fails validate_config.
   // validateVaultConfig lists every failure; the first is the one the contract would panic with.
@@ -209,8 +216,8 @@ export function parseSnapshot(raw) {
   return {
     ...market,
     ...clock,
-    vault_id: str(raw.vault.vault_id, "vault.vault_id"),
-    runner_id: str(raw.vault.runner_id, "vault.runner_id"),
+    vault_id: testnetId(str(raw.vault.vault_id, "vault.vault_id"), "vault.vault_id"),
+    runner_id: testnetId(str(raw.vault.runner_id, "vault.runner_id"), "vault.runner_id"),
     vault: { config: parseConfig(raw.vault.config), state: parseState(raw.vault.state) },
   };
 }

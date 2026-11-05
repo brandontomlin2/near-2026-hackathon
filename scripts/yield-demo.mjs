@@ -35,7 +35,8 @@ const USAGE = `Usage: node scripts/yield-demo.mjs [--out DIR] [--snapshot FILE] 
   --json         print the plan JSON only (same content as plan.json); writes no files
   -h, --help     print this help and exit 0
 Always a DRY RUN with mock inference: offline, no keys, nothing signed or sent. The same bytes
-every run. MOCK_INFERENCE and NEAR_AI_* are ignored. NEAR_NETWORK=mainnet is refused.
+every run. MOCK_INFERENCE and NEAR_AI_* are ignored. NEAR_NETWORK=mainnet and a --snapshot naming a .near
+vault or runner are refused.
 Exit 0 ok, 1 refused or failed, 2 usage error.`;
 
 class UsageError extends Error {}
