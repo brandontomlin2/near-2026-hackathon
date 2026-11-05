@@ -117,3 +117,26 @@ test('runbook marks unverified items and contains no key material', () => {
   assert.doesNotMatch(runbook, /secp256k1:[1-9A-HJ-NP-Za-km-z]{80,}/);
   assert.doesNotMatch(runbook, /sk-/);
 });
+
+const status = runbook.match(/^## Status\n([\s\S]*?)(?=^## )/m)?.[1] ?? '';
+
+test('Status points to the Shade Agent path and the go/no-go checklist', () => {
+  assert.ok(status, 'Status section exists');
+  assert.ok(status.includes('`npm run yield:shade:dry-run`'));
+  const m = /\]\((yield-shade-go-nogo\.md)\)/.exec(status);
+  assert.ok(m, 'Status links yield-shade-go-nogo.md');
+  assert.ok(existsSync(resolve(dirname(runbookPath), m[1])), 'linked file exists');
+});
+
+test('Status says nothing is signed or sent and chain-changing steps need an explicit yes', () => {
+  assert.match(status, /No transaction in this document has been signed or sent/);
+  assert.match(status, /Every step that changes chain state needs [^\n]*explicit yes/);
+  const shade = status.split('\n').find((l) => l.includes('yield:shade:dry-run')) ?? '';
+  assert.match(shade, /Nothing in either is done/);
+  assert.match(shade, /explicit yes/);
+});
+
+test('runbook contains no imperative invitation to sign', () => {
+  const bad = runbook.split('\n').filter((l) => /\b(please|go ahead and|you should now)\b.*\bsign/i.test(l));
+  assert.deepEqual(bad, []);
+});

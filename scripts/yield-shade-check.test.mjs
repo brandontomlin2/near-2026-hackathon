@@ -156,7 +156,7 @@ test("verify.sh runs the shade check after the yield demo stage and expects its 
   const demoAt = text.indexOf('planned "yield demo" "yield:demo:check" mock');
   const shadeAt = text.indexOf('planned "yield shade" "yield:shade:check" mock');
   assert.ok(demoAt > 0 && shadeAt > demoAt, "yield shade stage must follow the yield demo stage");
-  assert.match(text, /"yield demo" "yield shade" "vault tests"/);
+  assert.match(text, /"yield demo" "yield shade" "yield live" "vault tests"/);
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
   assert.equal(pkg.scripts["yield:shade:check"], "node scripts/yield-shade-check.mjs");
 });

@@ -324,7 +324,7 @@ test("verify.sh resolves the evidence tx file only with --live and before enteri
 // (or skipped a stage by accident) can never look like a clean pass.
 const STAGES = [
   "fresh clone", "workflows", "symlinks", "secret files", "npm install", "tests",
-  "secret scan", "deploy nft", "mint", "swarm", "demo", "round hash", "yield", "yield demo", "yield shade", "vault tests",
+  "secret scan", "deploy nft", "mint", "swarm", "demo", "round hash", "yield", "yield demo", "yield shade", "yield live", "vault tests",
   "evidence",
 ];
 
