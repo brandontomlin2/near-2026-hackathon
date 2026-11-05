@@ -27,19 +27,18 @@ test("readme-asset --force: a directory at chaotic-sheet.txt is refused before a
 });
 
 for (const force of [false, true]) {
-  test(`readme-asset${force ? " --force" : ""}: a dangling symlink at chaotic-share.svg is refused, target not created`, () => {
+  test(`readme-asset${force ? " --force" : ""}: a dangling symlink at chaotic-share.svg is replaced, never written through`, () => {
     const dir = mkdtempSync(join(tmpdir(), "readme-asset-fix59-"));
     try {
       const target = join(dir, "elsewhere.svg");
       const link = join(dir, "chaotic-share.svg");
       symlinkSync(target, link);
       const r = cli(["--out", dir, ...(force ? ["--force"] : [])]);
-      assert.equal(r.status, 1, r.stderr);
-      assert.match(r.stderr, /symbolic link/);
-      assert.equal(r.stderr.trim().split("\n").length, 1, r.stderr);
+      assert.equal(r.status, 0, r.stderr);
       assert.equal(existsSync(target), false, "link target must not be created");
-      assert.equal(existsSync(join(dir, "chaotic-sheet.txt")), false, "nothing written");
-      assert.ok(lstatSync(link).isSymbolicLink());
+      assert.equal(lstatSync(link).isSymbolicLink(), false, "link replaced by a regular file");
+      assert.ok(lstatSync(link).isFile());
+      assert.ok(existsSync(join(dir, "chaotic-sheet.txt")));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
