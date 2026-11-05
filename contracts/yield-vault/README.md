@@ -271,6 +271,10 @@ Fixed after a third AI review (report not in the repository; its finding M2 is t
 
 - Medium, NEAR stranded on the vault account: a `register_failed` refund that `on_register` could not forward stayed on the vault account for good, and the Ref storage balance could not be taken back (no method withdrew NEAR). Now `withdraw_ref_storage` calls Ref's NEP-145 `storage_withdraw` and `withdraw_near` sends free NEAR (balance minus storage cost minus a 0.1 NEAR reserve) to the owner. Tests: `withdraw_near_*`, `withdrawable_near_is_zero_when_balance_below_storage`, `withdraw_ref_storage_*`. The `storage_withdraw` call shape is the NEP-145 standard and has not run against Ref.
 
+Fixed after a fourth AI review (report not in the repository; its finding M1):
+
+- Medium, an ordinary Ref slippage failure (`E68: slippage error`) stranded `amount_in` on Ref, kept it counted in `spent_today`, needed the owner's `recover_from_ref`, and three in a row paused the vault, which a runner could force with an unfillable `min_amount_out`. Now `on_swap` chains a refund: `get_deposit(token_in)` -> `ref.withdraw(token_in, amount_in)` -> `get_deposit(token_in)`, and credits token_in back and gives back the day's spend only if Ref's deposit fell by `amount_in` from the snapshot (`swap_refunded`). Only an ambiguous or failed refund strands (`refund_*` reasons), and only those count toward auto-pause. See "Failure handling". Pinned by `verified_refund_restores_balance_spend_and_releases_lock`, `many_verified_refunds_never_auto_pause` and the sandbox file `sandbox/tests/failed_swap_refund.rs`.
+
 Open (not fixed). Severity is the impact on funds if the item happens, not its likelihood:
 
 - Low, the vault is not tied to the NFT. `nft_contract_id` and `token_id` are stored and never checked. The owner is the account set at `new` and there is no ownership transfer, so if the NFT is sold the old owner keeps the vault and its funds. Only the owner can deposit, so no one else's funds are ever in the vault; the gap is that a buyer of the NFT does not get the vault. Do not sell the NFT as if it came with the vault.
