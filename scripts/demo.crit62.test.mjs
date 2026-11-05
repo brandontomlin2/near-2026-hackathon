@@ -62,6 +62,14 @@ describe("portable hash-check hint", () => {
     assert.ok(line.includes("sha256sum"));
   });
 
+  it("the printed Check the hash command is valid bash (hint is a # comment)", () => {
+    const line = result.stdout.split("\n").find((l) => l.includes("Check the hash:"));
+    const cmd = line.slice(line.indexOf("Check the hash:") + "Check the hash:".length).trim();
+    assert.match(cmd, /# no shasum\? use sha256sum$/);
+    const r = spawnSync("bash", ["-n", "-c", cmd], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+  });
+
   it("the printed pipeline (sha256 of the sheet plus the newline node -p adds) equals the recorded sheetHash", () => {
     const file = JSON.parse(fs.readFileSync(path.join(out, "memory/aloof/sheet.json"), "utf8"));
     const printed = createHash("sha256").update(`${file.sheet}\n`).digest("hex");
