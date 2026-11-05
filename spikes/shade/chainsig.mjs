@@ -19,7 +19,11 @@ const TWEAK_PREFIX = 'near-mpc-recovery v0.1.0 epsilon derivation:';
 const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 export function base58Encode(bytes) {
   let n = 0n;
-  for (const b of bytes) n = (n << 8n) | BigInt(b);
+  let i = 0;
+  for (const b of bytes) {
+    if (!Number.isInteger(b) || b < 0 || b > 255) throw new RangeError(`base58Encode: byte at index ${i} is not an integer 0..255: ${String(b)}`);
+    n = (n << 8n) | BigInt(b); i++;
+  }
   let out = '';
   while (n > 0n) { out = B58[Number(n % 58n)] + out; n /= 58n; }
   for (const b of bytes) { if (b !== 0) break; out = '1' + out; }
@@ -142,6 +146,9 @@ function writeAction(w, a) {
       w.u8(5).publicKey(a.publicKey).u64(0); // access key nonce
       if (a.permission === 'FullAccess') { w.u8(1); return; }
       const p = a.permission;
+      if (p === null || typeof p !== 'object' || typeof p.receiverId !== 'string' || !Array.isArray(p.methodNames)) {
+        throw new Error(`unknown AddKey permission: ${JSON.stringify(p, (_, v) => (typeof v === 'bigint' ? `${v}n` : v))}`);
+      }
       w.u8(0);
       if (p.allowance == null) w.u8(0); else w.u8(1).u128(p.allowance);
       w.string(p.receiverId).u32(p.methodNames.length);
