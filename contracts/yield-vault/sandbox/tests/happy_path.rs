@@ -27,10 +27,7 @@ fn pair_amount(list: &Value, id: &str) -> u128 {
 #[tokio::test]
 async fn happy_path_full_lifecycle() -> anyhow::Result<()> {
     let sb = Sb::new().await?;
-    // See tests/failure_paths.rs::ref_withdraw_gas_40_is_too_little_with_ref_20_20: with Ref's
-    // default inner gas (20 + 20) the vault's 40 TGas for `ref.withdraw` is NOT enough, so this
-    // happy path runs with the mock's inner withdraw gas set to 10 + 10.
-    sb.set_ref_withdraw_gas(10, 10).await?;
+    // mock-ref runs at its default: Ref's real inner withdraw gas (20 TGas ft_transfer + 20 TGas resolve).
     let c = lib_gas_constants();
     let g = |k: &str| tgas(c[k]);
 
@@ -111,7 +108,6 @@ async fn happy_path_full_lifecycle() -> anyhow::Result<()> {
 #[tokio::test]
 async fn failed_swap_strands_then_recover_from_ref() -> anyhow::Result<()> {
     let sb = Sb::new().await?;
-    sb.set_ref_withdraw_gas(10, 10).await?;
     let c = lib_gas_constants();
     let g = |k: &str| tgas(c[k]);
     sb.owner.call(sb.vault.id(), "register_on_ref").deposit(near(1)).gas(g("MIN_REGISTER_GAS")).transact().await?.into_result()?;

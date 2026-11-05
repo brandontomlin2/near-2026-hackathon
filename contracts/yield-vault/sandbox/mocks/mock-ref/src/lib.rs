@@ -122,6 +122,8 @@ pub struct MockRef {
     /// TGas attached to the inner `ft_transfer` / `exchange_callback_post_withdraw` of `withdraw`.
     withdraw_transfer_tgas: u64,
     withdraw_resolve_tgas: u64,
+    /// method -> extra TGas to burn before the normal work (headroom tests).
+    burn_tgas: BTreeMap<String, u64>,
 }
 
 #[near]
@@ -139,6 +141,7 @@ impl MockRef {
             get_deposit_calls: 0,
             withdraw_transfer_tgas: 20,
             withdraw_resolve_tgas: 20,
+            burn_tgas: BTreeMap::new(),
         }
     }
 
@@ -210,6 +213,33 @@ impl MockRef {
         self.withdraw_resolve_tgas = resolve_tgas;
     }
 
+    /// Headroom knob: `method` (`ft_on_transfer`, `swap`, `withdraw`, `get_deposit`,
+    /// `exchange_callback_post_withdraw`) first spins until it has used `tgas` extra TGas
+    /// (deterministic: it loops until `env::used_gas()` has grown by that much), then does
+    /// its normal work. Real Ref bodies are heavier than this mock; this models that.
+    /// `tgas = 0` clears the knob.
+    pub fn set_burn_tgas(&mut self, method: String, tgas: u64) {
+        self.assert_owner();
+        if tgas == 0 {
+            self.burn_tgas.remove(&method);
+        } else {
+            self.burn_tgas.insert(method, tgas);
+        }
+    }
+
+    fn burn(&self, method: &str) {
+        if let Some(t) = self.burn_tgas.get(method) {
+            let target = env::used_gas().as_gas() + Gas::from_tgas(*t).as_gas();
+            let mut x: u64 = 1;
+            while env::used_gas().as_gas() < target {
+                for i in 0..2_000u64 {
+                    x = x.wrapping_mul(6364136223846793005).wrapping_add(i);
+                }
+                std::hint::black_box(x);
+            }
+        }
+    }
+
     // ---- token receiver (token_receiver.rs) ---------------------------------
 
     pub fn ft_on_transfer(
@@ -218,6 +248,7 @@ impl MockRef {
         amount: U128,
         msg: String,
     ) -> PromiseOrValue<U128> {
+        self.burn("ft_on_transfer");
         let token = env::predecessor_account_id();
         require!(msg.is_empty(), "mock-ref: only empty-msg deposits are supported");
         if self.refund_all_deposits {
@@ -239,6 +270,7 @@ impl MockRef {
     #[payable]
     pub fn swap(&mut self, actions: Vec<SwapAction>, referral_id: Option<AccountId>) -> U128 {
         assert_one_yocto();
+        self.burn("swap");
         let _ = referral_id;
         require!(!self.swap_panic, "mock-ref: swap disabled by test knob");
         require!(!actions.is_empty(), "ERR_AT_LEAST_ONE_SWAP");
@@ -295,6 +327,7 @@ impl MockRef {
         skip_unwrap_near: Option<bool>,
     ) -> Promise {
         assert_one_yocto();
+        self.burn("withdraw");
         let _ = skip_unwrap_near;
         require!(amount.0 > 0, "E29: Illegal withdraw amount");
         let sender = env::predecessor_account_id();
@@ -332,6 +365,7 @@ impl MockRef {
         sender_id: AccountId,
         amount: U128,
     ) {
+        self.burn("exchange_callback_post_withdraw");
         require!(env::promise_results_count() == 1, "E25: expected 1 promise result");
         match env::promise_result_checked(0, 4096) {
             Ok(_) => {}
@@ -348,6 +382,7 @@ impl MockRef {
     // ---- views ---------------------------------------------------------------
 
     pub fn get_deposit(&mut self, account_id: AccountId, token_id: AccountId) -> Value {
+        self.burn("get_deposit");
         require!(!self.get_deposit_panic, "mock-ref: get_deposit disabled by test knob");
         if self.garbage_at > 0 {
             self.get_deposit_calls += 1;

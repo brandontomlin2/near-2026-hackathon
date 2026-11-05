@@ -192,6 +192,14 @@ impl Sb {
         Ok(())
     }
 
+    /// Makes the named Ref method burn `tgas` extra TGas before its normal work (0 clears).
+    pub async fn set_ref_burn(&self, method: &str, tgas: u64) -> Result<()> {
+        self.admin.call(self.rf.id(), "set_burn_tgas")
+            .args_json(json!({"method": method, "tgas": tgas}))
+            .transact().await?.into_result()?;
+        Ok(())
+    }
+
     /// Owner funds Ref storage for the vault and deposits `amount` of token_in into it.
     pub async fn register_and_deposit(&self, amount: u128) -> Result<()> {
         let c = lib_gas_constants();

@@ -16,50 +16,56 @@ fn pair_amount(list: &Value, id: &str) -> u128 {
         .map(|p| p[1].as_str().unwrap().parse().unwrap()).unwrap_or(0)
 }
 
-/// FINDING (M-1): Ref's own `withdraw` attaches 20 TGas to ft_transfer and 20 TGas to its
-/// resolve callback (ref-exchange utils.rs GAS_FOR_FT_TRANSFER / GAS_FOR_RESOLVE_TRANSFER;
-/// mirrored in mock-ref). The vault attaches GAS_REF_WITHDRAW = 40 TGas in total, which leaves
-/// nothing for Ref's own body and receipt fees, so `ref.withdraw` fails with "Exceeded the
-/// prepaid gas". The vault stays consistent (token_out is stranded on Ref) but no swap can
-/// ever complete. Ref's own UI attaches 100 TGas to `withdraw`.
+/// Regression for finding M-1. HISTORY: with GAS_REF_WITHDRAW = 40 TGas the sandbox showed
+/// `ref.withdraw` failing with "Exceeded the prepaid gas", because Ref's own `withdraw`
+/// attaches 20 TGas to ft_transfer and 20 TGas to its resolve callback (ref-exchange utils.rs
+/// GAS_FOR_FT_TRANSFER / GAS_FOR_RESOLVE_TRANSFER; mirrored in mock-ref), leaving nothing for
+/// Ref's body. The vault stayed consistent (token_out stranded on Ref) but no swap could ever
+/// complete. Fixed in lib.rs by raising GAS_REF_WITHDRAW to 60 and rebudgeting the chain.
+/// This test pins the fix: with Ref at its realistic default 20 + 20, swap at exactly
+/// MIN_EXECUTE_GAS and recover_from_ref at exactly MIN_RECOVER_GAS both complete.
 #[tokio::test]
-async fn ref_withdraw_gas_40_is_too_little_with_ref_20_20() -> anyhow::Result<()> {
+async fn ref_withdraw_gas_covers_ref_20_20_at_documented_minimums() -> anyhow::Result<()> {
+    let c = lib_gas_constants();
+    // 20 (ft_transfer) + 20 (resolve) must fit with an allowance for Ref's withdraw body and
+    // receipt fees (the headroom tests measure what Ref can add on top).
+    const REF_BODY_ALLOWANCE: u64 = 10;
+    assert!(c["GAS_REF_WITHDRAW"] >= 20 + 20 + REF_BODY_ALLOWANCE,
+        "GAS_REF_WITHDRAW = {} too small for Ref's 20+20", c["GAS_REF_WITHDRAW"]);
+
     let sb = Sb::new().await?; // mock-ref default: inner gas 20 + 20
     sb.register_and_deposit(DEPOSIT).await?;
-    let c = lib_gas_constants();
-    assert_eq!(c["GAS_REF_WITHDRAW"], 40, "lib.rs constant changed; revisit this finding");
-
     let r = sb.runner.call(sb.vault.id(), "execute_swap")
         .args_json(sb.swap_args(AMOUNT_IN, MIN_OUT))
         .gas(tgas(c["MIN_EXECUTE_GAS"])).transact().await?;
-    let rows = report_expecting(&sb, "execute_swap @ 280, Ref inner withdraw gas 20+20 (FINDING)", &r, sb.runner.id(), &["ref.withdraw"]).await?;
-    assert!(rows.iter().any(|x| x.label == "ref.withdraw" && !x.ok), "ref.withdraw must fail");
+    report(&sb, "execute_swap @ MIN_EXECUTE_GAS, Ref inner withdraw gas 20+20", &r, sb.runner.id()).await?;
     let s = sb.state().await?;
-    assert_eq!(s["swap_in_flight"], false, "vault must not be left locked");
-    assert_eq!(s["swaps_executed"], 0);
-    assert_eq!(pair_amount(&s["stranded_on_ref"], sb.tout.id().as_str()), AMOUNT_OUT);
-    assert_eq!(sb.vault_balance(&sb.tout).await?, 0);
-    assert_eq!(sb.ref_deposit(sb.vault.id(), &sb.tout).await?, AMOUNT_OUT);
-
-    // Recovery at MIN_RECOVER_GAS hits the same 40 TGas withdraw and fails the same way.
-    let r = sb.owner.call(sb.vault.id(), "recover_from_ref")
-        .args_json(json!({"token_id": sb.tout.id(), "amount": AMOUNT_OUT.to_string()}))
-        .deposit(YOCTO).gas(tgas(c["MIN_RECOVER_GAS"])).transact().await?;
-    report_expecting(&sb, "recover_from_ref @ 150, Ref inner withdraw gas 20+20 (FINDING)", &r, sb.owner.id(), &["ref.withdraw"]).await?;
-    let s = sb.state().await?;
-    assert_eq!(pair_amount(&s["stranded_on_ref"], sb.tout.id().as_str()), AMOUNT_OUT, "stranded record restored");
-    assert_eq!(s["recovery_in_flight"], false);
-    assert_eq!(sb.vault_balance(&sb.tout).await?, 0);
-
-    // With Ref's inner gas lowered (10 + 10) the same recovery works.
-    sb.set_ref_withdraw_gas(10, 10).await?;
-    let r = sb.owner.call(sb.vault.id(), "recover_from_ref")
-        .args_json(json!({"token_id": sb.tout.id(), "amount": AMOUNT_OUT.to_string()}))
-        .deposit(YOCTO).gas(tgas(c["MIN_RECOVER_GAS"])).transact().await?;
-    report(&sb, "recover_from_ref @ 150, Ref inner withdraw gas 10+10", &r, sb.owner.id()).await?;
+    assert_eq!(s["swap_in_flight"], false);
+    assert_eq!(s["swaps_executed"], 1);
+    assert!(s["stranded_on_ref"].as_array().unwrap().is_empty());
     assert_eq!(sb.vault_balance(&sb.tout).await?, AMOUNT_OUT);
     assert_eq!(sb.ft_balance(&sb.tout, sb.vault.id()).await?, AMOUNT_OUT);
     assert_eq!(sb.ref_deposit(sb.vault.id(), &sb.tout).await?, 0);
+
+    // recover_from_ref at MIN_RECOVER_GAS: strand token_out on Ref via a panicking get_deposit
+    // would be indirect; instead strand token_in with a panicking swap, then recover.
+    sb.admin.call(sb.rf.id(), "set_swap_panic").args_json(json!({"v": true})).transact().await?.into_result()?;
+    let r = sb.runner.call(sb.vault.id(), "execute_swap")
+        .args_json(sb.swap_args(AMOUNT_IN, MIN_OUT))
+        .gas(tgas(c["MIN_EXECUTE_GAS"])).transact().await?;
+    report_expecting(&sb, "execute_swap, ref.swap panics (strand)", &r, sb.runner.id(), &["ref.swap"]).await?;
+    sb.admin.call(sb.rf.id(), "set_swap_panic").args_json(json!({"v": false})).transact().await?.into_result()?;
+    assert_eq!(pair_amount(&sb.state().await?["stranded_on_ref"], sb.tin.id().as_str()), AMOUNT_IN);
+    let tin_before = sb.vault_balance(&sb.tin).await?;
+    let r = sb.owner.call(sb.vault.id(), "recover_from_ref")
+        .args_json(json!({"token_id": sb.tin.id(), "amount": AMOUNT_IN.to_string()}))
+        .deposit(YOCTO).gas(tgas(c["MIN_RECOVER_GAS"])).transact().await?;
+    report(&sb, "recover_from_ref @ MIN_RECOVER_GAS, Ref inner withdraw gas 20+20", &r, sb.owner.id()).await?;
+    let s = sb.state().await?;
+    assert_eq!(s["recovery_in_flight"], false);
+    assert!(s["stranded_on_ref"].as_array().unwrap().is_empty());
+    assert_eq!(sb.vault_balance(&sb.tin).await?, tin_before + AMOUNT_IN);
+    assert_eq!(sb.ref_deposit(sb.vault.id(), &sb.tin).await?, 0);
     Ok(())
 }
 
@@ -76,7 +82,6 @@ async fn stale(sb: &Sb) -> anyhow::Result<()> {
 #[tokio::test]
 async fn force_release_credits_swap_whose_last_callback_died() -> anyhow::Result<()> {
     let sb = Sb::new().await?;
-    sb.set_ref_withdraw_gas(10, 10).await?;
     sb.register_and_deposit(DEPOSIT).await?;
     let c = lib_gas_constants();
     sb.admin.call(sb.rf.id(), "set_garbage_get_deposit_call").args_json(json!({"n": 2})).transact().await?.into_result()?;
@@ -117,7 +122,6 @@ async fn force_release_credits_swap_whose_last_callback_died() -> anyhow::Result
 #[tokio::test]
 async fn force_release_strands_swap_stuck_before_withdraw_then_recover() -> anyhow::Result<()> {
     let sb = Sb::new().await?;
-    sb.set_ref_withdraw_gas(10, 10).await?;
     sb.register_and_deposit(DEPOSIT).await?;
     let c = lib_gas_constants();
     sb.admin.call(sb.rf.id(), "set_garbage_get_deposit_call").args_json(json!({"n": 1})).transact().await?.into_result()?;
