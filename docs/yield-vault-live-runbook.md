@@ -559,7 +559,7 @@ These are not produced by `yield-live.mjs` (they only apply after a failure). Th
 | --- | --- | --- | --- |
 | A swap or recovery has been in flight for at least 10 minutes | `force_release_lock` | 100 TGas | `{}` |
 | `release_in_flight` stays true at least 10 minutes after a force release | `abort_release` | none enforced | `{}` |
-| Funds stranded on Ref | `recover_from_ref` | 150 TGas | `{"token_id":"<TOKEN>","amount":"<AMOUNT>"}` |
+| Funds stranded on Ref | `recover_from_ref` | 170 TGas | `{"token_id":"<TOKEN>","amount":"<AMOUNT>"}` |
 | Vault holds tokens it does not track (donation, or marked on Ref by mistake) | `sync_balance` | 50 TGas | `{"token_id":"<TOKEN>"}` |
 
 Template (replace the method, args and gas, keep everything else):
@@ -568,7 +568,7 @@ Template (replace the method, args and gas, keep everything else):
 near contract call-function as-transaction vault.owner.yield-demo.testnet force_release_lock json-args '{}' prepaid-gas '100 Tgas' attached-deposit '1 yoctoNEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
 ```
 
-Use 150 Tgas or more for `recover_from_ref` and keep headroom above each minimum. `force_release_lock` reads where the held amount really is and then credits, rolls back or strands it; read the vault README "Force release" table before interpreting the result.
+Use 170 Tgas or more for `recover_from_ref` and keep headroom above each minimum. `force_release_lock` reads where the held amount really is and then credits, rolls back or strands it; read the vault README "Force release" table before interpreting the result.
 
 ## Verification table
 
@@ -595,7 +595,7 @@ Status meanings: CONFIRMED means checked against the source named in the last co
 | V17 | vault | `withdraw_near` | amount | 1 yocto | 30 TGas | CONFIRMED (lib.rs) |
 | V18 | vault | `force_release_lock` | none | 1 yocto | min 100 TGas | CONFIRMED (lib.rs) |
 | V19 | vault | `abort_release` | none | 1 yocto | none enforced | CONFIRMED (lib.rs) |
-| V20 | vault | `recover_from_ref` | token_id, amount | 1 yocto | min 150 TGas | CONFIRMED (lib.rs) |
+| V20 | vault | `recover_from_ref` | token_id, amount | 1 yocto | min 170 TGas | CONFIRMED (lib.rs) |
 | V21 | vault | `sync_balance` | token_id | 1 yocto | min 50 TGas | CONFIRMED (lib.rs) |
 | V22 | vault | `ft_on_transfer` | sender_id, amount, msg | called by the token | n/a | CONFIRMED (lib.rs) |
 | R1 | Ref ref-finance-101.testnet | contract exists and is live | n/a | n/a | n/a | CONFIRMED: code present, `version` view returns "1.9.19", owner reflabs.sputnikv2.testnet (RPC). Whether Rhea renamed it: UNCONFIRMED; no Rhea document stating this was reachable |
