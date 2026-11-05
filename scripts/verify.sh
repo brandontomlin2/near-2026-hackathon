@@ -661,7 +661,9 @@ fi
 
 secret_scan
 
-planned "deploy nft" "deploy:nft" live
+# --json keeps this a dry run and skips the wasm-built gate: the fresh clone has no
+# target/ (gitignored), so a plain dry run would fail with "wasm not found".
+planned "deploy nft" "deploy:nft" live --json
 planned "mint" "mint" auto
 rounds="${SWARM_ROUNDS:-5}"
 if [[ ! "$rounds" =~ ^[1-9][0-9]*$ ]]; then
