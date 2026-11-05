@@ -1,9 +1,10 @@
 // The live runbook must not drift from the plan tool or from the contract.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -139,4 +140,39 @@ test('Status says nothing is signed or sent and chain-changing steps need an exp
 test('runbook contains no imperative invitation to sign', () => {
   const bad = runbook.split('\n').filter((l) => /\b(please|go ahead and|you should now)\b.*\bsign/i.test(l));
   assert.deepEqual(bad, []);
+});
+
+// Post-M1 and pool-747 tip: the Status explains how the live swap relates to the
+// demo's one planned call, and that a failed Ref swap refunds itself.
+const swapTx = plan.transactions.find((t) => t.id === 'execute-swap');
+const swapProposal = swapTx?.actions.find((a) => a.method_name === 'execute_swap')?.args.proposal;
+
+test('Status names the live swap pool and the demo call pool as the tools really produce them', () => {
+  assert.ok(swapProposal, 'live plan has an execute_swap step');
+  const outDir = mkdtempSync(join(tmpdir(), 'yield-demo-runbook-'));
+  try {
+    const demo = spawnSync('node', ['scripts/yield-demo.mjs', '--out', outDir], { cwd: root, encoding: 'utf8', timeout: 120000 });
+    assert.equal(demo.status, 0, demo.stderr);
+    const calls = JSON.parse(readFileSync(join(outDir, 'calls.json'), 'utf8')).calls;
+    assert.equal(calls.length, 1, 'the demo plans exactly one call');
+    const demoProposal = calls[0].args.proposal;
+    const line = status.split('\n').find((l) => l.includes('The swap here is on Ref testnet pool')) ?? '';
+    assert.ok(line.includes(`pool ${swapProposal.pool_id} (${swapProposal.token_in} to ${swapProposal.token_out})`), `live swap pool/tokens in Status: ${line}`);
+    assert.ok(line.includes(`pool ${demoProposal.pool_id} (${demoProposal.token_in} to ${demoProposal.token_out})`), `demo call pool/tokens in Status: ${line}`);
+    assert.notEqual(swapProposal.pool_id, demoProposal.pool_id, 'if the live path moves to the demo pool, rewrite the Status bullet');
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
+test('Status and step 19 describe the M1 refund self-heal with events that exist in lib.rs', () => {
+  for (const ev of ['swap_refunded', 'swap_failed']) assert.ok(libRs.includes(`"${ev}"`), `${ev} emitted by lib.rs`);
+  assert.ok(libRs.includes('fn on_refund_reconciled'), 'refund reconcile callback exists');
+  const m1 = status.split('\n').find((l) => l.includes('M1 fix')) ?? '';
+  assert.match(m1, /`swap_refunded`, then `swap_failed`/);
+  assert.match(m1, /Only a refund that cannot be verified strands/);
+  const step19 = runbook.slice(runbook.indexOf('#### Step 19 [swap]'), runbook.indexOf('#### Step 20 '));
+  assert.match(step19, /`swap_refunded` then `swap_failed`/);
+  assert.match(step19, /`swaps_executed: 0`/);
+  assert.match(step19, /Only if that refund cannot be verified are the funds stranded/);
 });
