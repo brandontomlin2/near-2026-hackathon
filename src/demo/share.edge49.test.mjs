@@ -19,6 +19,14 @@ describe("share edge: renderShareCard missing and odd fields", () => {
     assert.ok(renderShareCard(card({ round: -3 })).includes("round -3 ·"));
   });
 
+  it("regression: undefined or null round never prints the words undefined/null", () => {
+    for (const round of [undefined, null]) {
+      const svg = renderShareCard(card({ round }));
+      assert.ok(!/undefined|null/.test(svg), String(round));
+      assert.ok(svg.includes("round  · hype"), String(round));
+    }
+  });
+
   it("whitespace-only text yields no tspans and the minimum height", () => {
     const svg = renderShareCard(card({ text: " \t\n  " }));
     assert.ok(!svg.includes("<tspan"));
