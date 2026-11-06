@@ -11,7 +11,7 @@ Exit code: 0
 stdout:
 
 ```text
-Yield vault live path on testnet: setup stage, plan steps 1-20 of 36, UNSIGNED (nothing is signed or sent)
+Yield vault live path on testnet: setup stage, plan steps 1-19 of 35, UNSIGNED (nothing is signed or sent)
 owner owner.yield-demo.testnet | vault vault.owner.yield-demo.testnet | runner runner.owner.yield-demo.testnet
 
 PREFLIGHT (offline; nothing is read from .env, no value is printed)
@@ -22,9 +22,9 @@ env NEAR_NETWORK             not set  value never shown
 env YIELD_VAULT_ACCOUNT_ID   not set  value never shown
 env YIELD_RUNNER_ACCOUNT_ID  not set  value never shown
 snapshot age                 fresh    24.0 h old (taken 2026-11-05T11:06:25Z, block 276332963); limit 72 h
-prepaid gas                  info     1120 TGas over 19 transactions; unused gas is refunded
-the one call it would send   info     step 19 execute_swap, runner.owner.yield-demo.testnet -> vault.owner.yield-demo.testnet, 280 TGas, deposit 0 yocto
-not sent; text only: near contract call-function as-transaction vault.owner.yield-demo.testnet execute_swap json-args '{"proposal":{"pool_id":0,"token_in":"wrap.testnet","token_out":"rft.tokenfactory.testnet","amount_in":"10000000000000000000000","min_amount_out":"50000000"}}' prepaid-gas '280.0 Tgas' attached-deposit '0 NEAR' sign-as runner.owner.yield-demo.testnet network-config testnet sign-with-keychain send
+prepaid gas                  info     1090 TGas over 18 transactions; unused gas is refunded
+the one call it would send   info     step 18 execute_swap, runner.owner.yield-demo.testnet -> vault.owner.yield-demo.testnet, 280 TGas, deposit 0 yocto
+not sent; text only: near contract call-function as-transaction vault.owner.yield-demo.testnet execute_swap json-args '{"proposal":{"pool_id":747,"token_in":"usdc.fakes.testnet","token_out":"usdt.fakes.testnet","amount_in":"50000","min_amount_out":"50406"}}' prepaid-gas '280.0 Tgas' attached-deposit '0 NEAR' sign-as runner.owner.yield-demo.testnet network-config testnet sign-with-keychain send
 wasm, toolchain and on-chain reads: npm run yield:live:preflight
 
 SETUP ONLY (deploy, fund, one small swap). withdraw, pause, revoke and delete are deferred until after the agent send: npm run yield:live:dry-run -- --rollback
@@ -46,96 +46,91 @@ SETUP ONLY (deploy, fund, one small swap). withdraw, pause, revoke and delete ar
  3. [setup] deploy the vault wasm and call new in one transaction
     vault.owner.yield-demo.testnet -> vault.owner.yield-demo.testnet
     deploy contracts/yield-vault/target/near/yield_vault.wasm
-    call new {"owner_id":"owner.yield-demo.testnet","nft_contract_id":"personality-nft.yield-demo.testnet","token_id":"<FILL_ME>","ref_exchange_id":"ref-finance-101.testnet","config":{"strategy":"chaotic","allowed_pools":[{"pool_id":0,"token_a":"wrap.testnet","token_b":"rft.tokenfactory.testnet","min_rate_a_to_b":{"num":"1770923779569","den":"374136952131431998480120321"},"min_rate_b_to_a":{"num":"374136952131431998480120321","den":"7083695118276"}}],"limits":[{"token_id":"wrap.testnet","max_trade":"10000000000000000000000000","daily_cap":"30000000000000000000000000"},{"token_id":"rft.tokenfactory.testnet","max_trade":"100000000000","daily_cap":"300000000000"}],"runners":["runner.owner.yield-demo.testnet"]}} deposit 0 NEAR (0 yocto) gas 100 TGas
+    call new {"owner_id":"owner.yield-demo.testnet","nft_contract_id":"personality-nft.yield-demo.testnet","token_id":"<FILL_ME>","ref_exchange_id":"ref-finance-101.testnet","config":{"strategy":"aloof","allowed_pools":[{"pool_id":0,"token_a":"wrap.testnet","token_b":"rft.tokenfactory.testnet","min_rate_a_to_b":{"num":"1770923779569","den":"374136952131431998480120321"},"min_rate_b_to_a":{"num":"374136952131431998480120321","den":"7083695118276"}},{"pool_id":1,"token_a":"nusdt.ft-fin.testnet","token_b":"nusdc.ft-fin.testnet","min_rate_a_to_b":{"num":"99","den":"1000000"},"min_rate_b_to_a":{"num":"9900","den":"1"}},{"pool_id":747,"token_a":"usdc.fakes.testnet","token_b":"usdt.fakes.testnet","min_rate_a_to_b":{"num":"99","den":"100"},"min_rate_b_to_a":{"num":"99","den":"100"}}],"limits":[{"token_id":"wrap.testnet","max_trade":"10000000000000000000000000","daily_cap":"20000000000000000000000000"},{"token_id":"rft.tokenfactory.testnet","max_trade":"100000000000","daily_cap":"200000000000"},{"token_id":"nusdt.ft-fin.testnet","max_trade":"10000","daily_cap":"20000"},{"token_id":"nusdc.ft-fin.testnet","max_trade":"100","daily_cap":"200"},{"token_id":"usdc.fakes.testnet","max_trade":"50000","daily_cap":"100000"},{"token_id":"usdt.fakes.testnet","max_trade":"50000","daily_cap":"100000"}],"runners":["runner.owner.yield-demo.testnet"]}} deposit 0 NEAR (0 yocto) gas 100 TGas
     cost: 0 NEAR | expect: both actions succeed (new is only callable by the vault account itself, so it must be this transaction)
-    near-cli-rs (text only): near contract deploy vault.owner.yield-demo.testnet use-file contracts/yield-vault/target/near/yield_vault.wasm with-init-call new json-args '{"owner_id":"owner.yield-demo.testnet","nft_contract_id":"personality-nft.yield-demo.testnet","token_id":"<FILL_ME>","ref_exchange_id":"ref-finance-101.testnet","config":{"strategy":"chaotic","allowed_pools":[{"pool_id":0,"token_a":"wrap.testnet","token_b":"rft.tokenfactory.testnet","min_rate_a_to_b":{"num":"1770923779569","den":"374136952131431998480120321"},"min_rate_b_to_a":{"num":"374136952131431998480120321","den":"7083695118276"}}],"limits":[{"token_id":"wrap.testnet","max_trade":"10000000000000000000000000","daily_cap":"30000000000000000000000000"},{"token_id":"rft.tokenfactory.testnet","max_trade":"100000000000","daily_cap":"300000000000"}],"runners":["runner.owner.yield-demo.testnet"]}}' prepaid-gas '100 Tgas' attached-deposit '0 NEAR' network-config testnet sign-with-keychain send
+    near-cli-rs (text only): near contract deploy vault.owner.yield-demo.testnet use-file contracts/yield-vault/target/near/yield_vault.wasm with-init-call new json-args '{"owner_id":"owner.yield-demo.testnet","nft_contract_id":"personality-nft.yield-demo.testnet","token_id":"<FILL_ME>","ref_exchange_id":"ref-finance-101.testnet","config":{"strategy":"aloof","allowed_pools":[{"pool_id":0,"token_a":"wrap.testnet","token_b":"rft.tokenfactory.testnet","min_rate_a_to_b":{"num":"1770923779569","den":"374136952131431998480120321"},"min_rate_b_to_a":{"num":"374136952131431998480120321","den":"7083695118276"}},{"pool_id":1,"token_a":"nusdt.ft-fin.testnet","token_b":"nusdc.ft-fin.testnet","min_rate_a_to_b":{"num":"99","den":"1000000"},"min_rate_b_to_a":{"num":"9900","den":"1"}},{"pool_id":747,"token_a":"usdc.fakes.testnet","token_b":"usdt.fakes.testnet","min_rate_a_to_b":{"num":"99","den":"100"},"min_rate_b_to_a":{"num":"99","den":"100"}}],"limits":[{"token_id":"wrap.testnet","max_trade":"10000000000000000000000000","daily_cap":"20000000000000000000000000"},{"token_id":"rft.tokenfactory.testnet","max_trade":"100000000000","daily_cap":"200000000000"},{"token_id":"nusdt.ft-fin.testnet","max_trade":"10000","daily_cap":"20000"},{"token_id":"nusdc.ft-fin.testnet","max_trade":"100","daily_cap":"200"},{"token_id":"usdc.fakes.testnet","max_trade":"50000","daily_cap":"100000"},{"token_id":"usdt.fakes.testnet","max_trade":"50000","daily_cap":"100000"}],"runners":["runner.owner.yield-demo.testnet"]}}' prepaid-gas '100 Tgas' attached-deposit '0 NEAR' network-config testnet sign-with-keychain send
  4. [check] read the stored config
     view -> vault.owner.yield-demo.testnet
     view get_config {}
-    cost: 0 NEAR | expect: runners == [runner.owner.yield-demo.testnet], strategy == chaotic
+    cost: 0 NEAR | expect: runners == [runner.owner.yield-demo.testnet], strategy == aloof (the yield-optimizer planner vault: pools 0, 1 and 747)
     near-cli-rs (text only): near contract call-function as-read-only vault.owner.yield-demo.testnet get_config json-args '{}' network-config testnet now
  5. [check] read the vault state
     view -> vault.owner.yield-demo.testnet
     view get_state {}
     cost: 0 NEAR | expect: paused == false, nothing in flight
     near-cli-rs (text only): near contract call-function as-read-only vault.owner.yield-demo.testnet get_state json-args '{}' network-config testnet now
- 6. [check] read wrap.testnet's storage bounds
-    view -> wrap.testnet
+ 6. [check] read usdc.fakes.testnet's storage bounds
+    view -> usdc.fakes.testnet
     view storage_balance_bounds {}
     cost: 0 NEAR | expect: min <= 0.00125 NEAR (token_storage_deposit_near)
-    near-cli-rs (text only): near contract call-function as-read-only wrap.testnet storage_balance_bounds json-args '{}' network-config testnet now
- 7. [fund] register the vault on wrap.testnet
-    owner.yield-demo.testnet -> wrap.testnet
+    near-cli-rs (text only): near contract call-function as-read-only usdc.fakes.testnet storage_balance_bounds json-args '{}' network-config testnet now
+ 7. [fund] register the vault on usdc.fakes.testnet
+    owner.yield-demo.testnet -> usdc.fakes.testnet
     call storage_deposit {"account_id":"vault.owner.yield-demo.testnet","registration_only":true} deposit 0.00125 NEAR (1250000000000000000000 yocto) gas 30 TGas
-    cost: 0.00125 NEAR | expect: wrap.testnet storage_balance_of(vault.owner.yield-demo.testnet) is not null
-    near-cli-rs (text only): near contract call-function as-transaction wrap.testnet storage_deposit json-args '{"account_id":"vault.owner.yield-demo.testnet","registration_only":true}' prepaid-gas '30 Tgas' attached-deposit '0.00125 NEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
- 8. [fund] register the owner on wrap.testnet (so withdrawals can land)
-    owner.yield-demo.testnet -> wrap.testnet
+    cost: 0.00125 NEAR | expect: usdc.fakes.testnet storage_balance_of(vault.owner.yield-demo.testnet) is not null
+    near-cli-rs (text only): near contract call-function as-transaction usdc.fakes.testnet storage_deposit json-args '{"account_id":"vault.owner.yield-demo.testnet","registration_only":true}' prepaid-gas '30 Tgas' attached-deposit '0.00125 NEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
+ 8. [fund] register the owner on usdc.fakes.testnet (so withdrawals can land)
+    owner.yield-demo.testnet -> usdc.fakes.testnet
     call storage_deposit {"account_id":"owner.yield-demo.testnet","registration_only":true} deposit 0.00125 NEAR (1250000000000000000000 yocto) gas 30 TGas
-    cost: 0.00125 NEAR | expect: wrap.testnet storage_balance_of(owner.yield-demo.testnet) is not null
-    near-cli-rs (text only): near contract call-function as-transaction wrap.testnet storage_deposit json-args '{"account_id":"owner.yield-demo.testnet","registration_only":true}' prepaid-gas '30 Tgas' attached-deposit '0.00125 NEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
- 9. [check] read rft.tokenfactory.testnet's storage bounds
-    view -> rft.tokenfactory.testnet
+    cost: 0.00125 NEAR | expect: usdc.fakes.testnet storage_balance_of(owner.yield-demo.testnet) is not null
+    near-cli-rs (text only): near contract call-function as-transaction usdc.fakes.testnet storage_deposit json-args '{"account_id":"owner.yield-demo.testnet","registration_only":true}' prepaid-gas '30 Tgas' attached-deposit '0.00125 NEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
+ 9. [check] read usdt.fakes.testnet's storage bounds
+    view -> usdt.fakes.testnet
     view storage_balance_bounds {}
     cost: 0 NEAR | expect: min <= 0.00125 NEAR (token_storage_deposit_near)
-    near-cli-rs (text only): near contract call-function as-read-only rft.tokenfactory.testnet storage_balance_bounds json-args '{}' network-config testnet now
-10. [fund] register the vault on rft.tokenfactory.testnet
-    owner.yield-demo.testnet -> rft.tokenfactory.testnet
+    near-cli-rs (text only): near contract call-function as-read-only usdt.fakes.testnet storage_balance_bounds json-args '{}' network-config testnet now
+10. [fund] register the vault on usdt.fakes.testnet
+    owner.yield-demo.testnet -> usdt.fakes.testnet
     call storage_deposit {"account_id":"vault.owner.yield-demo.testnet","registration_only":true} deposit 0.00125 NEAR (1250000000000000000000 yocto) gas 30 TGas
-    cost: 0.00125 NEAR | expect: rft.tokenfactory.testnet storage_balance_of(vault.owner.yield-demo.testnet) is not null
-    near-cli-rs (text only): near contract call-function as-transaction rft.tokenfactory.testnet storage_deposit json-args '{"account_id":"vault.owner.yield-demo.testnet","registration_only":true}' prepaid-gas '30 Tgas' attached-deposit '0.00125 NEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
-11. [fund] register the owner on rft.tokenfactory.testnet (so withdrawals can land)
-    owner.yield-demo.testnet -> rft.tokenfactory.testnet
+    cost: 0.00125 NEAR | expect: usdt.fakes.testnet storage_balance_of(vault.owner.yield-demo.testnet) is not null
+    near-cli-rs (text only): near contract call-function as-transaction usdt.fakes.testnet storage_deposit json-args '{"account_id":"vault.owner.yield-demo.testnet","registration_only":true}' prepaid-gas '30 Tgas' attached-deposit '0.00125 NEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
+11. [fund] register the owner on usdt.fakes.testnet (so withdrawals can land)
+    owner.yield-demo.testnet -> usdt.fakes.testnet
     call storage_deposit {"account_id":"owner.yield-demo.testnet","registration_only":true} deposit 0.00125 NEAR (1250000000000000000000 yocto) gas 30 TGas
-    cost: 0.00125 NEAR | expect: rft.tokenfactory.testnet storage_balance_of(owner.yield-demo.testnet) is not null
-    near-cli-rs (text only): near contract call-function as-transaction rft.tokenfactory.testnet storage_deposit json-args '{"account_id":"owner.yield-demo.testnet","registration_only":true}' prepaid-gas '30 Tgas' attached-deposit '0.00125 NEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
-12. [fund] wrap 0.02 NEAR into wNEAR
-    owner.yield-demo.testnet -> wrap.testnet
-    call near_deposit {} deposit 0.02 NEAR (20000000000000000000000 yocto) gas 30 TGas
-    cost: 0.02 NEAR | expect: owner holds at least 20000000000000000000000 wNEAR (ft_balance_of)
-    near-cli-rs (text only): near contract call-function as-transaction wrap.testnet near_deposit json-args '{}' prepaid-gas '30 Tgas' attached-deposit '0.02 NEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
-13. [check] read Ref's storage bounds
+    cost: 0.00125 NEAR | expect: usdt.fakes.testnet storage_balance_of(owner.yield-demo.testnet) is not null
+    near-cli-rs (text only): near contract call-function as-transaction usdt.fakes.testnet storage_deposit json-args '{"account_id":"owner.yield-demo.testnet","registration_only":true}' prepaid-gas '30 Tgas' attached-deposit '0.00125 NEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
+12. [check] read Ref's storage bounds
     view -> ref-finance-101.testnet
     view storage_balance_bounds {}
     cost: 0 NEAR | expect: min <= ref_storage_deposit_near; note per-token storage Ref needs
     near-cli-rs (text only): near contract call-function as-read-only ref-finance-101.testnet storage_balance_bounds json-args '{}' network-config testnet now
-14. [fund] pay the vault's Ref storage
+13. [fund] pay the vault's Ref storage
     owner.yield-demo.testnet -> vault.owner.yield-demo.testnet
     call register_on_ref {} deposit 0.5 NEAR (500000000000000000000000 yocto) gas 100 TGas
     cost: 0.5 NEAR | expect: registered_on_ref event; Ref storage_balance_of(vault) is not null
     near-cli-rs (text only): near contract call-function as-transaction vault.owner.yield-demo.testnet register_on_ref json-args '{}' prepaid-gas '100 Tgas' attached-deposit '0.5 NEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
-15. [check] read the vault's Ref storage balance
+14. [check] read the vault's Ref storage balance
     view -> ref-finance-101.testnet
     view storage_balance_of {"account_id":"vault.owner.yield-demo.testnet"}
     cost: 0 NEAR | expect: total >= storage_balance_bounds.min
     near-cli-rs (text only): near contract call-function as-read-only ref-finance-101.testnet storage_balance_of json-args '{"account_id":"vault.owner.yield-demo.testnet"}' network-config testnet now
-16. [fund] deposit 20000000000000000000000 of wrap.testnet into the vault
-    owner.yield-demo.testnet -> wrap.testnet
-    call ft_transfer_call {"receiver_id":"vault.owner.yield-demo.testnet","amount":"20000000000000000000000","msg":""} deposit 0.000000000000000000000001 NEAR (1 yocto) gas 100 TGas
+15. [fund] deposit 100000 of usdc.fakes.testnet into the vault
+    owner.yield-demo.testnet -> usdc.fakes.testnet
+    call ft_transfer_call {"receiver_id":"vault.owner.yield-demo.testnet","amount":"100000","msg":""} deposit 0.000000000000000000000001 NEAR (1 yocto) gas 100 TGas
     cost: 0.000000000000000000000001 NEAR | expect: vault ft_on_transfer accepts the owner's deposit (token is in an allowed pool): deposit event, nothing refunded
-    near-cli-rs (text only): near contract call-function as-transaction wrap.testnet ft_transfer_call json-args '{"receiver_id":"vault.owner.yield-demo.testnet","amount":"20000000000000000000000","msg":""}' prepaid-gas '100 Tgas' attached-deposit '1 yoctoNEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
-17. [check] read the vault's tracked balance
+    near-cli-rs (text only): near contract call-function as-transaction usdc.fakes.testnet ft_transfer_call json-args '{"receiver_id":"vault.owner.yield-demo.testnet","amount":"100000","msg":""}' prepaid-gas '100 Tgas' attached-deposit '1 yoctoNEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
+16. [check] read the vault's tracked balance
     view -> vault.owner.yield-demo.testnet
-    view get_balance {"token_id":"wrap.testnet"}
-    cost: 0 NEAR | expect: == 20000000000000000000000
-    near-cli-rs (text only): near contract call-function as-read-only vault.owner.yield-demo.testnet get_balance json-args '{"token_id":"wrap.testnet"}' network-config testnet now
-18. [check] run the swap rules without side effects
+    view get_balance {"token_id":"usdc.fakes.testnet"}
+    cost: 0 NEAR | expect: == 100000
+    near-cli-rs (text only): near contract call-function as-read-only vault.owner.yield-demo.testnet get_balance json-args '{"token_id":"usdc.fakes.testnet"}' network-config testnet now
+17. [check] run the swap rules without side effects
     view -> vault.owner.yield-demo.testnet
-    view check_proposal {"proposal":{"pool_id":0,"token_in":"wrap.testnet","token_out":"rft.tokenfactory.testnet","amount_in":"10000000000000000000000","min_amount_out":"50000000"},"runner_id":"runner.owner.yield-demo.testnet"}
+    view check_proposal {"proposal":{"pool_id":747,"token_in":"usdc.fakes.testnet","token_out":"usdt.fakes.testnet","amount_in":"50000","min_amount_out":"50406"},"runner_id":"runner.owner.yield-demo.testnet"}
     cost: 0 NEAR | expect: ok == true
-    near-cli-rs (text only): near contract call-function as-read-only vault.owner.yield-demo.testnet check_proposal json-args '{"proposal":{"pool_id":0,"token_in":"wrap.testnet","token_out":"rft.tokenfactory.testnet","amount_in":"10000000000000000000000","min_amount_out":"50000000"},"runner_id":"runner.owner.yield-demo.testnet"}' network-config testnet now
-19. [swap] runner swaps 10000000000000000000000 wrap.testnet -> rft.tokenfactory.testnet on pool 0
+    near-cli-rs (text only): near contract call-function as-read-only vault.owner.yield-demo.testnet check_proposal json-args '{"proposal":{"pool_id":747,"token_in":"usdc.fakes.testnet","token_out":"usdt.fakes.testnet","amount_in":"50000","min_amount_out":"50406"},"runner_id":"runner.owner.yield-demo.testnet"}' network-config testnet now
+18. [swap] runner swaps 50000 usdc.fakes.testnet -> usdt.fakes.testnet on pool 747
     runner.owner.yield-demo.testnet -> vault.owner.yield-demo.testnet
-    call execute_swap {"proposal":{"pool_id":0,"token_in":"wrap.testnet","token_out":"rft.tokenfactory.testnet","amount_in":"10000000000000000000000","min_amount_out":"50000000"}} deposit 0 NEAR (0 yocto) gas 280 TGas
+    call execute_swap {"proposal":{"pool_id":747,"token_in":"usdc.fakes.testnet","token_out":"usdt.fakes.testnet","amount_in":"50000","min_amount_out":"50406"}} deposit 0 NEAR (0 yocto) gas 280 TGas
     cost: 0 NEAR | expect: swap_executed event; balance of token_out >= min_amount_out
-    near-cli-rs (text only): near contract call-function as-transaction vault.owner.yield-demo.testnet execute_swap json-args '{"proposal":{"pool_id":0,"token_in":"wrap.testnet","token_out":"rft.tokenfactory.testnet","amount_in":"10000000000000000000000","min_amount_out":"50000000"}}' prepaid-gas '280.0 Tgas' attached-deposit '0 NEAR' sign-as runner.owner.yield-demo.testnet network-config testnet sign-with-keychain send
-20. [check] read the vault state after the swap
+    near-cli-rs (text only): near contract call-function as-transaction vault.owner.yield-demo.testnet execute_swap json-args '{"proposal":{"pool_id":747,"token_in":"usdc.fakes.testnet","token_out":"usdt.fakes.testnet","amount_in":"50000","min_amount_out":"50406"}}' prepaid-gas '280.0 Tgas' attached-deposit '0 NEAR' sign-as runner.owner.yield-demo.testnet network-config testnet sign-with-keychain send
+19. [check] read the vault state after the swap
     view -> vault.owner.yield-demo.testnet
     view get_state {}
     cost: 0 NEAR | expect: no swap in flight, swaps_executed == 1, nothing stranded
     near-cli-rs (text only): near contract call-function as-read-only vault.owner.yield-demo.testnet get_state json-args '{}' network-config testnet now
 
-totals (whole plan, both stages): 19 transactions, 17 views, deposits 8.525 NEAR + 7 yocto (1-yocto security deposits), owner outflow 8.525 NEAR + 7 yocto (1-yocto security deposits), prepaid gas 1120 TGas
+totals (whole plan, both stages): 18 transactions, 17 views, deposits 8.505 NEAR + 7 yocto (1-yocto security deposits), owner outflow 8.505 NEAR + 7 yocto (1-yocto security deposits), prepaid gas 1090 TGas
 warning: placeholder not filled in: placeholders (flag is true)
 warning: placeholder not filled in: owner_id
 warning: placeholder not filled in: vault_id
@@ -144,6 +139,7 @@ warning: placeholder not filled in: nft_contract_id
 warning: placeholder not filled in: token_id
 warning: placeholder not filled in: public_keys.vault
 warning: placeholder not filled in: public_keys.runner
+manual: the owner must already hold 100000 base units of usdc.fakes.testnet (the plan can only wrap NEAR into wrap.testnet, so it cannot fund this token)
 plan valid against contracts/yield-vault/src/lib.rs
 ```
 

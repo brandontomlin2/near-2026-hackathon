@@ -8,7 +8,7 @@
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 
-import { validateLiveConfig } from "./live-plan.mjs";
+import { PLANNER_PROFILE, buildLivePlan, validateLiveConfig } from "./live-plan.mjs";
 import { RefusalError } from "./send.mjs";
 
 export const DEFAULT_LIVE_CONFIG = "out/yield-vault.live.json";
@@ -37,11 +37,12 @@ export const DEMO_SEND_REFUSAL =
 
 /**
  * The live-path status for the demo summary.
- * @param {{ env: object, configPath?: string, explicit?: boolean }} o explicit: the path came from --live-config
+ * @param {{ env: object, configPath?: string, explicit?: boolean, demoProposal?: object }} o explicit: the path came from --live-config;
+ *   demoProposal: the swap proposal this run plans for the Yield Optimizer, so the armed block can say whether the live swap is that call
  * @returns {{ state: "not-configured"|"not-armed"|"armed", lines: string[], problems: string[] }}
  * Throws RefusalError (exit 2) when the config holds something that looks like a private key or a mainnet id.
  */
-export function liveStatus({ env, configPath = DEFAULT_LIVE_CONFIG, explicit = false }) {
+export function liveStatus({ env, configPath = DEFAULT_LIVE_CONFIG, explicit = false, demoProposal }) {
   const tail = "Default is this dry run; see docs/yield-vault-live-runbook.md.";
   if (!existsSync(configPath) || !statSync(configPath).isFile()) {
     if (explicit) throw new RefusalError(`--live-config ${configPath} does not exist or is not a file. Nothing was signed or sent.`, 2);
@@ -75,7 +76,7 @@ export function liveStatus({ env, configPath = DEFAULT_LIVE_CONFIG, explicit = f
   if (gates.length) {
     return { state: "not-armed", problems: gates, lines: [`live path: not armed (${configPath} is valid; ${gates.join(", ")}). ${tail}`] };
   }
-  return { state: "armed", problems: [], lines: armedLines(configPath, config) };
+  return { state: "armed", problems: [], lines: armedLines(configPath, config, demoProposal) };
 }
 
 /**
@@ -96,16 +97,38 @@ function notArmed(configPath, problems, tail) {
 
 const shellQuote = (arg) => (/^[A-Za-z0-9_@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, "'\\''")}'`);
 
+const SWAP_KEYS = ["pool_id", "token_in", "token_out", "amount_in", "min_amount_out"];
+const sameSwap = (a, b) => a && b && SWAP_KEYS.every((k) => String(a[k]) === String(b[k]));
+
 /** The exact commands of the live path. Printed as text for a human; yield:demo runs none of them. */
-export function armedLines(configPath, config) {
+export function armedLines(configPath, config, demoProposal) {
   const s = config.swap;
   const cfg = shellQuote(configPath);
+  const optimizer = config.vault_profile === PLANNER_PROFILE;
   const send = [
     "NEAR_NETWORK=testnet",
     `YIELD_VAULT_ACCOUNT_ID=${config.vault_id}`,
     `YIELD_RUNNER_ACCOUNT_ID=${config.runner_id}`,
     `npm run yield -- --agent ${config.agent} --send --i-approve --vault-state ${VAULT_STATE_FILE}`,
   ].join(" ");
+  let swapStep = null;
+  if (optimizer) swapStep = buildLivePlan(config).steps.findIndex((st) => st.id === "execute-swap") + 1;
+  const step3 = optimizer
+    ? [
+        `  3. the runner sends step ${swapStep} of step 2's list (execute_swap) with near-cli-rs, by hand, signed as ${config.runner_id}`,
+        `     this is the Yield Optimizer's swap, not a personality agent's: \`npm run yield -- --send\` only drives aloof, chaotic, social and skeptic, so it is not used for the ${config.vault_profile} profile`,
+      ]
+    : [
+        `  3. ${send}`,
+        `     you write ${VAULT_STATE_FILE} first from the vault's get_config + get_state views (shape: npm run yield -- --help; under 10 minutes old);`,
+        `     the ${config.agent} agent proposes, its swap is checked against that state, then near-cli-rs sends it`,
+      ];
+  const swapText = `pool ${s.pool_id} (${s.token_in} -> ${s.token_out})`;
+  const lastLine = !demoProposal
+    ? `  The live config swaps on ${swapText}.`
+    : sameSwap(s, demoProposal)
+      ? `  The live config swaps on ${swapText}, ${s.amount_in} in, min ${s.min_amount_out} out: the same call this demo plans for the Yield Optimizer.`
+      : `  The live config swaps on ${swapText}; this demo's planned call differs (pool ${demoProposal.pool_id}, ${demoProposal.token_in} -> ${demoProposal.token_out}, ${demoProposal.amount_in} in, min ${demoProposal.min_amount_out} out).`;
   return [
     `live path: ARMED (${configPath} valid, placeholders false, ${ARM_ENV}=1, NEAR_NETWORK=testnet). This run still signed and sent nothing.`,
     "  The live path is these commands, run by a human in this order; yield:demo runs none of them:",
@@ -113,12 +136,10 @@ export function armedLines(configPath, config) {
     "     read-only testnet views; go on only if it ends READY FOR LIVE: yes",
     `  2. npm run yield:live:dry-run -- --config ${cfg}`,
     "     prints the SETUP stage only, as unsigned near-cli-rs commands: deploy, fund, the one small Rhea/Ref testnet execute_swap and its read-back;",
-    "     the human signs each one by hand. It lists no teardown commands: those would empty or tear down the vault step 3 needs",
-    `  3. ${send}`,
-    `     you write ${VAULT_STATE_FILE} first from the vault's get_config + get_state views (shape: npm run yield -- --help; under 10 minutes old);`,
-    `     the ${config.agent} agent proposes, its swap is checked against that state, then near-cli-rs sends it`,
+    `     the human signs each one by hand. It lists no teardown commands: those would empty or tear down the vault step 3 needs`,
+    ...step3,
     `  4. AFTER step 3 only (rollback, optional): npm run yield:live:dry-run -- --config ${cfg} --rollback`,
     "     prints the deferred teardown commands (withdraw, pause, revoke, delete). Do not sign any of them before step 3",
-    `  The live config swaps on pool ${s.pool_id} (${s.token_in} -> ${s.token_out}); this demo's planned call is on its own snapshot pool.`,
+    lastLine,
   ];
 }

@@ -58,7 +58,7 @@ test("checkLivePlan rejects a non-object", () => {
   assert.deepEqual(checkLivePlan([]), ["plan is not a JSON object"]);
 });
 
-const PLAN_JS = `const plan = { network: "testnet", unsigned: true, problems: [], transactions: Array.from({ length: 36 }, (_, i) => ({ i })) };`;
+const PLAN_JS = `const plan = { network: "testnet", unsigned: true, problems: [], transactions: Array.from({ length: 35 }, (_, i) => ({ i })) };`;
 
 function fake(name, body) {
   const file = join(root, name);

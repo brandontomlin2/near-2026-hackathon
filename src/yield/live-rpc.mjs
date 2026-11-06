@@ -3,7 +3,7 @@
 // hard assertion in assertReadOnlyRequest throws for anything else, so this module cannot sign
 // or broadcast. No keys, no headers beyond content-type. fetch is injectable; tests never use the network.
 
-import { findPlaceholders, formatNear, parseNear, vaultConfigFor } from "./live-plan.mjs";
+import { findPlaceholders, formatNear, liveTokens, parseNear, vaultConfigFor } from "./live-plan.mjs";
 
 /** The testnet RPC docs.near.org lists. */
 export const DEFAULT_RPC = "https://test.rpc.fastnear.com";
@@ -116,7 +116,7 @@ export async function onlineChecks(config, plan, rpc) {
   };
   const ref = config.ref_exchange_id;
   const vc = vaultConfigFor(config);
-  const tokens = [...new Set(vc.allowed_pools.flatMap((p) => [p.token_a, p.token_b]))];
+  const tokens = liveTokens(config);
   const placeholders = findPlaceholders(config);
   const isPh = (path) => placeholders.some((p) => p === path || p.startsWith(`${path}.`));
 

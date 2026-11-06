@@ -3,17 +3,26 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
-  MAX_TX_GAS, TGAS, buildLivePlan, formatNear, formatSplit, planTotals, loadContractSpec, loadLiveConfig, parseContractMethods, parseMinGas, parseNear,
+  MAX_TX_GAS, TGAS, buildLivePlan, formatNear, formatSplit, liveTokens, planTotals, vaultConfigFor, loadContractSpec, loadLiveConfig, parseContractMethods, parseMinGas, parseNear,
   validateLiveConfig, validatePlan,
 } from "./live-plan.mjs";
 import { RefusalError } from "./send.mjs";
-import { WNEAR, defaultVaultConfig, limitFor } from "./strategies.mjs";
+import { WNEAR, defaultVaultConfig, limitFor, plannerVaultConfig } from "./strategies.mjs";
 
 const EXAMPLE = new URL("../../config/yield-vault.live.example.json", import.meta.url);
 const KEY = "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp";
 const spec = loadContractSpec();
 const example = () => loadLiveConfig(EXAMPLE);
 const planOf = () => structuredClone(buildLivePlan(example()));
+/** The old personality-agent shape: chaotic vault, wNEAR -> rft on pool 0. Keeps the non-planner path covered. */
+const chaoticExample = () => {
+  const c = example();
+  delete c.vault_profile;
+  Object.assign(c, { agent: "chaotic", deposit: { token_id: WNEAR, amount: "20000000000000000000000" } });
+  c.swap = { pool_id: 0, token_in: WNEAR, token_out: "rft.tokenfactory.testnet", amount_in: "10000000000000000000000", min_amount_out: "50000000" };
+  return c;
+};
+const chaoticPlanOf = () => structuredClone(buildLivePlan(chaoticExample()));
 const validate = (plan) => validatePlan(plan, spec.methods, { minGas: spec.minGas });
 const stepOf = (plan, id) => plan.steps.find((s) => s.id === id);
 const callOf = (plan, id) => stepOf(plan, id).actions.find((a) => a.type === "FunctionCall");
@@ -112,7 +121,7 @@ test("plan: withdraw amounts are run-time values read from named view steps", ()
   assert.deepEqual(src.actions[0].args, { token_id: cfg.swap.token_out });
   assert.equal(out.runtime_args.amount.path, "result");
   assert.ok(plan.steps.indexOf(src) < plan.steps.indexOf(out));
-  assert.match(out.near_cli, /<READ get_balance\(rft\.tokenfactory\.testnet\) at step view-balance-2>/);
+  assert.match(out.near_cli, new RegExp(`<READ get_balance\\(${cfg.swap.token_out.replaceAll(".", "\\.")}\\) at step view-balance-2>`));
   const rest = stepOf(plan, "withdraw-rest");
   assert.deepEqual(stepOf(plan, rest.runtime_args.amount.from_step).actions[0].args, { token_id: cfg.swap.token_in });
   const near = stepOf(plan, "withdraw-near");
@@ -180,7 +189,7 @@ test("ordering: each relevant step moved out of place yields its specific proble
     ["create-vault", "view-state", /the vault account must be created before the deploy/],
   ];
   for (const [id, before, re] of cases) {
-    const plan = planOf();
+    const plan = chaoticPlanOf();
     moveStep(plan, id, before);
     const p = validate(plan);
     assert.ok(p.some((x) => re.test(x)), `${id} -> ${before}: ${re}\n${p.join("\n")}`);
@@ -188,7 +197,7 @@ test("ordering: each relevant step moved out of place yields its specific proble
 });
 
 test("ordering: registrations are matched by (token, account), not by the first storage_deposit", () => {
-  const plan = planOf();
+  const plan = chaoticPlanOf();
   // The owner's wrap registration now registers someone else; the vault's wrap registration must not stand in for it.
   plan.steps.find((s) => s.id === "storage-deposit-2").actions[0].args.account_id = "bob.testnet";
   const p = validate(plan);
@@ -206,13 +215,28 @@ test("a deleted deploy or missing pre-delete check is a problem", () => {
 });
 
 test("plan: storage bounds are read before each token's storage_deposit", () => {
-  const plan = buildLivePlan(example());
-  for (const t of ["wrap.testnet", "rft.tokenfactory.testnet"]) {
-    const bounds = plan.steps.findIndex((s) => s.view && s.receiver_id === t && s.actions[0].method_name === "storage_balance_bounds");
-    const dep = plan.steps.findIndex((s) => s.receiver_id === t && s.actions[0].method_name === "storage_deposit");
-    assert.ok(bounds >= 0 && bounds < dep, t);
-    assert.match(plan.steps[bounds].expect, /min <= 0\.00125 NEAR/);
+  for (const cfg of [example(), chaoticExample()]) {
+    const plan = buildLivePlan(cfg);
+    for (const t of liveTokens(cfg)) {
+      const bounds = plan.steps.findIndex((s) => s.view && s.receiver_id === t && s.actions[0].method_name === "storage_balance_bounds");
+      const dep = plan.steps.findIndex((s) => s.receiver_id === t && s.actions[0].method_name === "storage_deposit");
+      assert.ok(bounds >= 0 && bounds < dep, t);
+      assert.match(plan.steps[bounds].expect, /min <= 0\.00125 NEAR/);
+    }
   }
+});
+
+test("plan: only the swap pair is registered, not every token of every allowed pool", () => {
+  const cfg = example();
+  assert.deepEqual(liveTokens(cfg), ["usdc.fakes.testnet", "usdt.fakes.testnet"]);
+  const plan = buildLivePlan(cfg);
+  const registered = new Set(plan.steps.filter((s) => s.actions[0].method_name === "storage_deposit").map((s) => s.receiver_id));
+  for (const t of liveTokens(cfg)) assert.ok(registered.has(t), t);
+  assert.ok(!registered.has(WNEAR) && !registered.has("rft.tokenfactory.testnet") && !registered.has("nusdt.ft-fin.testnet"));
+  assert.deepEqual(liveTokens(chaoticExample()), [WNEAR, "rft.tokenfactory.testnet"]);
+  const same = example();
+  same.swap.token_out = same.swap.token_in;
+  assert.deepEqual(liveTokens(same), [same.swap.token_in], "duplicates collapse");
 });
 
 test("plan: delete-vault says the per-token storage deposits are forfeited", () => {
@@ -320,8 +344,8 @@ test("mutation: wrong signer, unknown external method, bad U128", () => {
 });
 
 test("config: structural problems", () => {
-  const bad = (mutate, re) => {
-    const c = example();
+  const bad = (mutate, re, base = example) => {
+    const c = base();
     mutate(c);
     assert.ok(validateLiveConfig(c, { allowPlaceholders: true }).some((p) => re.test(p)), re.toString());
   };
@@ -341,11 +365,12 @@ test("config: structural problems", () => {
     c.deposit.amount = (over + 10n ** 24n).toString();
     c.swap.amount_in = over.toString();
     c.swap.min_amount_out = "100000000000"; // above the price floor
-  }, /\(ERR_MAX_TRADE\)/);
+  }, /\(ERR_MAX_TRADE\)/, chaoticExample);
   bad((c) => (c.swap.min_amount_out = "1"), /\(ERR_PRICE_FLOOR\)/);
   bad((c) => (c.funding.vault_initial_near = "1.5e3"), /not a NEAR amount/);
   bad((c) => (c.public_keys.vault = "ed25519:abc"), /public_keys\.vault is not a 32-byte/);
-  bad((c) => (c.deposit.token_id = "nusdt.ft-fin.testnet"), /in no allowed pool/);
+  bad((c) => (c.deposit.token_id = "other.testnet"), /in no allowed pool/);
+  bad((c) => (c.deposit.token_id = "nusdt.ft-fin.testnet"), /swap\.token_in must be the deposited token/);
 });
 
 test("a filled config with real-looking values validates and uses the given ids", () => {
@@ -402,7 +427,8 @@ test("pre-delete checks come right before the deletes, with the destroy warning"
   assert.match(state.expect, /stranded_on_ref, unverified_on_ref all empty or zero; swap_in_flight, recovery_in_flight, release_in_flight false/);
   const refChecks = plan.steps.filter((s) => s.id.startsWith("pre-delete-ref-deposit"));
   const vc = buildLivePlan(example()).steps.find((s) => s.id === "deploy-init").actions[1].args.config;
-  const tokens = [...new Set(vc.allowed_pools.flatMap((p) => [p.token_a, p.token_b]))];
+  const tokens = liveTokens(example());
+  assert.ok(vc.allowed_pools.length > 1, "the vault allows more pools than the live swap uses");
   assert.deepEqual(refChecks.map((s) => s.actions[0].args.token_id), tokens);
   for (const s of refChecks) {
     assert.equal(s.receiver_id, "ref-finance-101.testnet");
@@ -422,8 +448,47 @@ test("totals split NEAR from 1-yocto security deposits and keep exact yocto", ()
   const t = planTotals(plan);
   const oneYocto = plan.steps.flatMap((s) => s.actions).filter((a) => a.type === "FunctionCall" && a.deposit_yocto === "1").length;
   assert.equal(t.deposit_security_yocto, String(oneYocto));
-  assert.equal(t.deposit_near, "8.525");
-  assert.equal(formatSplit(t.deposit_near, t.deposit_security_yocto), `8.525 NEAR + ${oneYocto} yocto (1-yocto security deposits)`);
-  assert.equal(BigInt(t.deposit_yocto), parseNear("8.525") + BigInt(oneYocto));
+  assert.equal(t.deposit_near, "8.505");
+  assert.equal(formatSplit(t.deposit_near, t.deposit_security_yocto), `8.505 NEAR + ${oneYocto} yocto (1-yocto security deposits)`);
+  assert.equal(BigInt(t.deposit_yocto), parseNear("8.505") + BigInt(oneYocto));
   assert.equal(t.owner_outflow_yocto, t.deposit_yocto);
+});
+
+test("config: vault_profile is accepted only as yield-optimizer, and only with agent aloof", () => {
+  const problems = (mutate) => {
+    const c = example();
+    mutate(c);
+    return validateLiveConfig(c, { allowPlaceholders: true });
+  };
+  assert.equal(example().vault_profile, "yield-optimizer");
+  assert.deepEqual(problems(() => {}), []);
+  // The field is optional, but without it aloof is the plain aloof vault (pool 1 only): the 747 swap is refused.
+  assert.ok(problems((c) => delete c.vault_profile).some((p) => /ERR_POOL_NOT_ALLOWED/.test(p)));
+  for (const agent of ["chaotic", "social", "skeptic"]) {
+    assert.ok(problems((c) => (c.agent = agent)).some((p) => /vault_profile "yield-optimizer" needs agent "aloof"/.test(p)), agent);
+  }
+  for (const v of ["yield_optimizer", "Yield-Optimizer", "chaotic", "", null, 5]) {
+    assert.ok(problems((c) => (c.vault_profile = v)).some((p) => /vault_profile must be "yield-optimizer" when set/.test(p)), String(v));
+  }
+  assert.ok(problems((c) => (c.surprise = 1)).some((p) => /unknown field surprise/.test(p)), "unknown top-level keys are still rejected");
+  assert.ok(problems((c) => (c.vault_profil = "yield-optimizer")).some((p) => /unknown field vault_profil/.test(p)), "a typo of the new key is rejected");
+});
+
+test("plan: the vault_profile `new` call carries plannerVaultConfig (aloof, pools 0, 1, 747); without it the agent's own config", () => {
+  const cfg = example();
+  const plan = buildLivePlan(cfg);
+  const config = stepOf(plan, "deploy-init").actions[1].args.config;
+  assert.deepEqual(config, plannerVaultConfig({ runner: cfg.runner_id }));
+  assert.equal(config.strategy, "aloof");
+  assert.deepEqual(config.allowed_pools.map((p) => p.pool_id), [0, 1, 747]);
+  assert.deepEqual(config.runners, [cfg.runner_id]);
+  assert.match(stepOf(plan, "view-config").expect, /strategy == aloof \(the yield-optimizer planner vault: pools 0, 1 and 747\)/);
+  const plain = example();
+  delete plain.vault_profile;
+  const own = vaultConfigFor(plain);
+  assert.deepEqual(own, defaultVaultConfig("aloof", { runner: plain.runner_id }));
+  assert.deepEqual(own.allowed_pools.map((p) => p.pool_id), [1]);
+  assert.notDeepEqual(own, config, "the planner vault differs from the plain aloof vault");
+  const chaotic = stepOf(chaoticPlanOf(), "deploy-init").actions[1].args.config;
+  assert.equal(chaotic.strategy, "chaotic");
 });

@@ -40,7 +40,7 @@ test("default dry-run is setup only: ends at the swap read-back, no teardown ste
   for (const id of got) assert.doesNotMatch(id, /withdraw|delete|pause|revoke/);
   const r = dry([]);
   assert.equal(r.code, 0, r.stderr);
-  assert.match(r.stdout, /setup stage, plan steps 1-20 of 36/);
+  assert.match(r.stdout, /setup stage, plan steps 1-19 of 35/);
   assert.match(r.stdout, /SETUP ONLY/);
   assert.doesNotMatch(r.stdout, /near-cli-rs \(text only\):.*(delete-account|withdraw|pause|revoke_all_runners)/);
   assert.doesNotMatch(r.stdout, /\[rollback\]|\[withdraw\]/);
@@ -55,7 +55,7 @@ test("--rollback prints only the deferred steps, numbered after the setup, with 
   assert.ok(!got.includes("execute-swap") && !got.includes("deploy-init"));
   const r = dry(["--rollback"]);
   assert.equal(r.code, 0, r.stderr);
-  assert.match(r.stdout, /rollback stage, plan steps 21-36 of 36/);
+  assert.match(r.stdout, /rollback stage, plan steps 20-35 of 35/);
   assert.match(r.stdout, /ROLLBACK: run these only AFTER the agent send/);
   assert.match(r.stdout, new RegExp(`^${String(n + 1).padStart(2)}\\. \\[`, "m"));
 });
