@@ -1,0 +1,128 @@
+{
+  "_source": "Ref/Rhea testnet exchange ref-finance-101.testnet, view get_pool per pool id and ft_metadata per token, via https://rpc.testnet.fastnear.com (JSON-RPC query/call_function, block_id 276332963). Regenerate with: node scripts/yield-snapshot.mjs",
+  "_block_height": 276332963,
+  "_block_hash": "pBjrE7hQR6F5CoVHPgTeqUtDupCdqvTvaJ38LPDUR6P",
+  "_taken_at": "2026-11-05T11:06:25Z",
+  "_pool_ids": [
+    0,
+    1,
+    2,
+    5,
+    6,
+    8,
+    747
+  ],
+  "_note": "Decoded snapshot of selected pools. Amounts are base units (decimal strings); total_fee is in bps (of 10000); decimals come from each token's ft_metadata. mock_usd_price is the demo's reference price, not an oracle: stable tokens use the $1 peg, wrap.testnet a fixed mock $3.00, null means no reference price. Testnet liquidity is thin and most reserves are junk (e.g. pool 1, nusdt/nusdc, is far off the peg); pool 747 (usdc.fakes/usdt.fakes) is shallow but near the peg. Read the reserves below, not this note: it is regenerated unchanged. ref_get_return records Ref's own get_return view at the same block, so the constant-product quote can be checked against the exchange.",
+  "exchange": "ref-finance-101.testnet",
+  "tokens": {
+    "wrap.testnet": {
+      "decimals": 24,
+      "stable": false,
+      "mock_usd_price": "3.00"
+    },
+    "nusdt.ft-fin.testnet": {
+      "decimals": 6,
+      "stable": true,
+      "mock_usd_price": "1.00"
+    },
+    "nusdc.ft-fin.testnet": {
+      "decimals": 2,
+      "stable": true,
+      "mock_usd_price": "1.00"
+    },
+    "rft.tokenfactory.testnet": {
+      "decimals": 8,
+      "stable": false,
+      "mock_usd_price": null
+    },
+    "banana.ft-fin.testnet": {
+      "decimals": 6,
+      "stable": false,
+      "mock_usd_price": null
+    },
+    "usdc.fakes.testnet": {
+      "decimals": 6,
+      "stable": true,
+      "mock_usd_price": "1.00"
+    },
+    "usdt.fakes.testnet": {
+      "decimals": 6,
+      "stable": true,
+      "mock_usd_price": "1.00"
+    }
+  },
+  "pools": [
+    {
+      "pool_id": 0,
+      "pool_kind": "SIMPLE_POOL",
+      "token_a": "wrap.testnet",
+      "token_b": "rft.tokenfactory.testnet",
+      "reserve_a": "1496547808525727993920481284",
+      "reserve_b": "14167390236552",
+      "total_fee": 40
+    },
+    {
+      "pool_id": 1,
+      "pool_kind": "SIMPLE_POOL",
+      "token_a": "nusdt.ft-fin.testnet",
+      "token_b": "nusdc.ft-fin.testnet",
+      "reserve_a": "237316",
+      "reserve_b": "44411",
+      "total_fee": 20
+    },
+    {
+      "pool_id": 2,
+      "pool_kind": "SIMPLE_POOL",
+      "token_a": "wrap.testnet",
+      "token_b": "rft.tokenfactory.testnet",
+      "reserve_a": "293555376894865027299647623",
+      "reserve_b": "1504148507026",
+      "total_fee": 20
+    },
+    {
+      "pool_id": 5,
+      "pool_kind": "SIMPLE_POOL",
+      "token_a": "banana.ft-fin.testnet",
+      "token_b": "nusdt.ft-fin.testnet",
+      "reserve_a": "27324061349",
+      "reserve_b": "1826",
+      "total_fee": 10
+    },
+    {
+      "pool_id": 6,
+      "pool_kind": "SIMPLE_POOL",
+      "token_a": "wrap.testnet",
+      "token_b": "nusdc.ft-fin.testnet",
+      "reserve_a": "327081",
+      "reserve_b": "1000000000000000000003128",
+      "total_fee": 20
+    },
+    {
+      "pool_id": 8,
+      "pool_kind": "SIMPLE_POOL",
+      "token_a": "rft.tokenfactory.testnet",
+      "token_b": "wrap.testnet",
+      "reserve_a": "9077430456",
+      "reserve_b": "13780356513507131835149548",
+      "total_fee": 20
+    },
+    {
+      "pool_id": 747,
+      "pool_kind": "SIMPLE_POOL",
+      "token_a": "usdc.fakes.testnet",
+      "token_b": "usdt.fakes.testnet",
+      "reserve_a": "4976689",
+      "reserve_b": "5108251",
+      "total_fee": 30
+    }
+  ],
+  "ref_get_return": [
+    {
+      "pool_id": 747,
+      "token_in": "usdc.fakes.testnet",
+      "amount_in": "50000",
+      "token_out": "usdt.fakes.testnet",
+      "amount_out": "50660"
+    }
+  ]
+}

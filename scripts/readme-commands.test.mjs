@@ -38,9 +38,9 @@ test("README shows npm run anchor only in its working --dry-run form", () => {
 const quick = readme.match(/## Judge quick path\n([\s\S]*?)\n## /)?.[1] ?? "";
 const quoted = (text) => [...text.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
 
-test("Judge quick path has at most 3 numbered commands and says it is mock", () => {
+test("Judge quick path has at most 4 numbered commands and says it is mock", () => {
   assert.ok(quick.length > 0, "README has a Judge quick path section");
-  assert.ok(/^[1-3]\. /m.test(quick) && !/^4\. /m.test(quick));
+  assert.ok(/^[1-4]\. /m.test(quick) && !/^5\. /m.test(quick));
   assert.match(quick, /mock or dry-run/);
   assert.match(quick, /Nothing is signed or sent/);
 });
@@ -93,12 +93,17 @@ test("README demo counts: seed 1 writes the files and cards Try-it step 1 names,
 test("Judge quick path: the verify.sh lines it quotes are ones verify.sh prints", () => {
   // Not run here: verify.sh itself runs this test suite.
   const verify = readFileSync(new URL("./verify.sh", import.meta.url), "utf8");
-  const step3 = quick.split(/^3\. /m)[1];
+  const steps = quick.split(/^(?=\d+\. )/m).filter((s) => /^\d+\. /.test(s));
+  const verifySteps = steps.filter((s) => s.includes("`bash scripts/verify.sh`"));
+  assert.equal(verifySteps.length, 1, "exactly one quick-path step runs verify.sh");
+  const stepV = verifySteps[0];
+  // verify.sh takes minutes; it is the last step so the seconds-long demos come first.
+  assert.equal(stepV, steps.at(-1), "verify.sh is the last quick-path step");
   assert.ok(verify.includes('"STATUS" "STAGE" "DETAIL"'));
   assert.ok(verify.includes("result: PASS"));
-  assert.match(step3, /`STATUS \/ STAGE \/ DETAIL`/);
-  assert.match(step3, /`result: PASS`/);
+  assert.match(stepV, /`STATUS \/ STAGE \/ DETAIL`/);
+  assert.match(stepV, /`result: PASS`/);
   assert.ok(verify.includes('planned "demo" "demo" mock'), "verify.sh runs the demo stage in mock mode");
   assert.ok(verify.includes('record PASS "$stage" "npm run ${script} (${mode})"'), "verify.sh row detail format");
-  assert.ok(quoted(step3).includes("PASS      demo            npm run demo (mock)"));
+  assert.ok(quoted(stepV).includes("PASS      demo            npm run demo (mock)"));
 });

@@ -1,0 +1,33 @@
+{
+  "strategy": "chaotic",
+  "allowed_pools": [
+    {
+      "pool_id": 0,
+      "token_a": "wrap.testnet",
+      "token_b": "rft.tokenfactory.testnet",
+      "min_rate_a_to_b": {
+        "num": "1770923779569",
+        "den": "374136952131431998480120321"
+      },
+      "min_rate_b_to_a": {
+        "num": "374136952131431998480120321",
+        "den": "7083695118276"
+      }
+    }
+  ],
+  "limits": [
+    {
+      "token_id": "wrap.testnet",
+      "max_trade": "10000000000000000000000000",
+      "daily_cap": "30000000000000000000000000"
+    },
+    {
+      "token_id": "rft.tokenfactory.testnet",
+      "max_trade": "100000000000",
+      "daily_cap": "300000000000"
+    }
+  ],
+  "runners": [
+    "runner.yield-demo.testnet"
+  ]
+}

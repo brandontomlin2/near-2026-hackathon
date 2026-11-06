@@ -1,0 +1,33 @@
+# ============================================================================
+# NOT DEPLOYED. NOT BUILT. NOT PUSHED anywhere. Draft for review.
+# Deploying needs the owner's (Brandon's) explicit yes. All values are placeholders.
+# See docs/yield-shade-agent-plan.md.
+# ============================================================================
+# Shape follows the official template:
+# https://raw.githubusercontent.com/NearDeFi/shade-agent-template/main/docker-compose.yaml
+services:
+  yield-shade-agent:
+    # UNCONFIRMED: image does not exist; we have not written the Dockerfile. Pin by digest (security.md).
+    image: docker.io/REPLACE_ME/yield-shade-agent@sha256:REPLACE_ME
+    container_name: yield-shade-agent
+    # Confirmed in template: linux/amd64.
+    platform: linux/amd64
+    environment:
+      # Safe defaults: the runtime must not sign or send unless both are explicitly changed.
+      YIELD_SHADE_DRY_RUN: "1"
+      NEAR_NETWORK: testnet
+      # Confirmed names in the template (value from the deploy env file, not stored here):
+      AGENT_CONTRACT_ID: ${AGENT_CONTRACT_ID}
+      SPONSOR_ACCOUNT_ID: ${SPONSOR_ACCOUNT_ID}
+      SPONSOR_PRIVATE_KEY: ${SPONSOR_PRIVATE_KEY}
+      # UNCONFIRMED: names below are our own design, not framework-defined.
+      VAULT_ID: ${VAULT_ID}
+      EXECUTOR_ACCOUNT_ID: ${EXECUTOR_ACCOUNT_ID}
+      DERIVATION_PATH: ${DERIVATION_PATH}
+    ports:
+      # Template exposes 3000. UNCONFIRMED whether our runtime needs an HTTP port at all.
+      - 3000:3000
+    volumes:
+      # Confirmed in template: dstack socket (TEE quote + key derivation inside the CVM).
+      - /var/run/dstack.sock:/var/run/dstack.sock
+    restart: always

@@ -1,0 +1,37 @@
+{
+  "placeholders": true,
+  "network": "testnet",
+  "owner_id": "owner.yield-demo.testnet",
+  "vault_id": "vault.owner.yield-demo.testnet",
+  "runner_id": "runner.owner.yield-demo.testnet",
+  "nft_contract_id": "personality-nft.yield-demo.testnet",
+  "token_id": "<FILL_ME>",
+  "agent": "chaotic",
+  "ref_exchange_id": "ref-finance-101.testnet",
+  "wasm_path": "contracts/yield-vault/target/near/yield_vault.wasm",
+  "public_keys": {
+    "vault": "ed25519:<FILL_ME>",
+    "runner": "ed25519:<FILL_ME>"
+  },
+  "funding": {
+    "vault_initial_near": "6",
+    "runner_initial_near": "2"
+  },
+  "ref_storage_deposit_near": "0.5",
+  "token_storage_deposit_near": "0.00125",
+  "deposit": {
+    "token_id": "wrap.testnet",
+    "amount": "20000000000000000000000"
+  },
+  "swap": {
+    "pool_id": 0,
+    "token_in": "wrap.testnet",
+    "token_out": "rft.tokenfactory.testnet",
+    "amount_in": "10000000000000000000000",
+    "min_amount_out": "50000000"
+  },
+  "limits": {
+    "max_deposit_near_per_tx": "8",
+    "max_total_near": "12"
+  }
+}

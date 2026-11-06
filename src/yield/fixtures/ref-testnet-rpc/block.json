@@ -1,0 +1,12 @@
+{
+  "_trimmed": "block response cut to the three header fields yield-snapshot.mjs reads (height, hash, timestamp_nanosec); chunk and approval signatures dropped",
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "header": {
+      "height": 276332963,
+      "hash": "pBjrE7hQR6F5CoVHPgTeqUtDupCdqvTvaJ38LPDUR6P",
+      "timestamp_nanosec": "1793876785530238920"
+    }
+  }
+}

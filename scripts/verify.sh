@@ -39,6 +39,12 @@ print WARN lines and record SKIP. Planned npm scripts are:
   evidence     write out/evidence.json (mock memory loop: swarm, sheets, anchor_sheet
                dry-runs, mock, not on-chain proof; real hashes and RPC views with --live)
   anchor       dry-run round-hash determinism check (always mock, never signs)
+  yield:demo:check  runs the yield demo with a timeout; PASS only if plan.json is a dry run
+               (signed false, sent false, 1 call planned, the planner's pool 747 swap re-checked with checkProposal, 0 signed, one vault id, one gas figure) with 4 matching rule rejections
+  yield:shade:check  runs yield:shade:dry-run under a guard (no near CLI, network or subprocess call);
+               PASS only if it is a testnet dry run (signed false, sent false) and refused flags exit 1
+  yield:live:check  runs yield:live:dry-run under a guard (no near CLI, network or subprocess call);
+               PASS only if it is an unsigned testnet plan and signing flags and NEAR_NETWORK=mainnet exit 2
 
 The mock evidence stage passes only for placeholder entries marked mock.
 A missing planned script prints SKIP (not built yet) and does not fail.
@@ -98,7 +104,8 @@ print_summary() {
   # each one has a row, so a lost results file can never look like a clean pass.
   local expected_stages=(
     "fresh clone" "workflows" "symlinks" "secret files" "npm install" "tests"
-    "secret scan" "deploy nft" "mint" "swarm" "demo" "round hash" "evidence"
+    "secret scan" "deploy nft" "mint" "swarm" "demo" "round hash" "yield" "yield demo" "yield shade" "yield live" "vault tests"
+    "evidence"
   )
   local status stage detail seen=$'\n' missing=""
   echo
@@ -678,6 +685,32 @@ fi
 
 planned "demo" "demo" mock
 planned "round hash" "anchor" mock --dry-run --check
+# Yield Optimizer: one mock debate round, dry run (nothing signed or sent).
+planned "yield" "yield" mock
+# Yield demo: runs npm run yield:demo with a timeout and checks plan.json (dry run, 1 call planned and re-checked on a pool with a reference price, pool 1 refused as off reference, one vault id, one gas figure, 4 rule rejections).
+planned "yield demo" "yield:demo:check" mock
+# Yield shade: runs the Shade dry run under a no-near-CLI, no-network, no-subprocess guard and checks it never signs or sends.
+planned "yield shade" "yield:shade:check" mock
+# Yield live: runs the unsigned testnet live-path planner (dry-run) under the same guard and checks it never signs or sends.
+planned "yield live" "yield:live:check" mock
+
+# Yield vault contract unit tests. The build cache is the source checkout's
+# gitignored target/ so a fresh clone does not recompile near-sdk every run.
+echo
+echo "==> vault tests"
+if [[ ! -f contracts/yield-vault/Cargo.toml ]]; then
+  echo "SKIP (not built yet)"
+  record SKIP "vault tests" "SKIP (not built yet)"
+elif ! command -v cargo >/dev/null 2>&1; then
+  echo "WARN: cargo not installed; the yield vault contract tests did NOT run" >&2
+  record SKIP "vault tests" "NOT RUN: cargo not installed"
+elif (cd contracts/yield-vault && CARGO_TARGET_DIR="${source_root}/contracts/yield-vault/target" cargo test --quiet); then
+  record PASS "vault tests" "cargo test (contracts/yield-vault)"
+else
+  echo "FAIL: cargo test failed in contracts/yield-vault"
+  record FAIL "vault tests" "cargo test failed (contracts/yield-vault)"
+  failed=1
+fi
 
 planned "evidence" "evidence" auto
 if [[ "$last_outcome" == "pass" ]]; then

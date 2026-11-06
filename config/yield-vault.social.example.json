@@ -1,0 +1,56 @@
+{
+  "strategy": "social",
+  "allowed_pools": [
+    {
+      "pool_id": 0,
+      "token_a": "wrap.testnet",
+      "token_b": "rft.tokenfactory.testnet",
+      "min_rate_a_to_b": {
+        "num": "1770923779569",
+        "den": "374136952131431998480120321"
+      },
+      "min_rate_b_to_a": {
+        "num": "374136952131431998480120321",
+        "den": "7083695118276"
+      }
+    },
+    {
+      "pool_id": 1,
+      "token_a": "nusdt.ft-fin.testnet",
+      "token_b": "nusdc.ft-fin.testnet",
+      "min_rate_a_to_b": {
+        "num": "44411",
+        "den": "474632"
+      },
+      "min_rate_b_to_a": {
+        "num": "118658",
+        "den": "44411"
+      }
+    }
+  ],
+  "limits": [
+    {
+      "token_id": "wrap.testnet",
+      "max_trade": "10000000000000000000000000",
+      "daily_cap": "20000000000000000000000000"
+    },
+    {
+      "token_id": "rft.tokenfactory.testnet",
+      "max_trade": "100000000000",
+      "daily_cap": "200000000000"
+    },
+    {
+      "token_id": "nusdt.ft-fin.testnet",
+      "max_trade": "10000",
+      "daily_cap": "20000"
+    },
+    {
+      "token_id": "nusdc.ft-fin.testnet",
+      "max_trade": "100",
+      "daily_cap": "200"
+    }
+  ],
+  "runners": [
+    "runner.yield-demo.testnet"
+  ]
+}

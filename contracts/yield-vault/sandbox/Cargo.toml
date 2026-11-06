@@ -1,0 +1,16 @@
+[package]
+name = "yield-vault-sandbox"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Throwaway local-sandbox (near-workspaces) gas harness for yield-vault. Not part of the vault crate."
+
+# Keep this crate out of any parent workspace so `cargo test` in ../ is unaffected.
+[workspace]
+
+[dev-dependencies]
+near-workspaces = "0.24.0"
+tokio = { version = "1", features = ["full"] }
+serde_json = "1"
+anyhow = "1"
+reqwest = { version = "0.13", features = ["json"] }

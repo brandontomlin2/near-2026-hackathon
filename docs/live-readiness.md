@@ -28,7 +28,7 @@ export NEAR_CONTRACT_ACCOUNT_ID=<contract>.testnet # must be set explicitly for 
 | 6 | `npm run live-proof -- --media-base <url>` | no (dry run) | Six steps: deploy, four mints, `anchor_sheet`. Writes `out/live-proof/evidence.example.json` (`"example": true`, placeholder hashes). Exit 0. |
 | 7 | `npm run live-proof -- --send --i-approve --media-base <url>` | **yes** | `send: deploy, mint x4, anchor_sheet on testnet as ...`, each near-cli-rs transaction streamed, then `wrote 6 of 6 transaction hashes to out/live-proof/txs.json`, `done.` and the evidence command (step 8). Exit 0. |
 | 8 | `EVIDENCE_NETWORK=testnet NEAR_CONTRACT_ACCOUNT_ID=<contract>.testnet EVIDENCE_TX_FILE=out/live-proof/txs.json npm run evidence` | no (read-only RPC views) | `out/evidence.json` with real hashes and the `nft_tokens` and per-token `sheet_anchor` view results; `mock` is false. |
-| 9 | `NEAR_NETWORK=testnet NEAR_CONTRACT_ACCOUNT_ID=<contract>.testnet EVIDENCE_TX_FILE="$PWD/out/live-proof/txs.json" bash scripts/verify.sh --live` | runs `deploy nft` and `mint` as dry runs | 13 rows, `result: PASS`. The path in `EVIDENCE_TX_FILE` must be absolute. |
+| 9 | `NEAR_NETWORK=testnet NEAR_CONTRACT_ACCOUNT_ID=<contract>.testnet EVIDENCE_TX_FILE="$PWD/out/live-proof/txs.json" bash scripts/verify.sh --live` | runs `deploy nft` and `mint` as dry runs | 18 rows, `result: PASS`. The path in `EVIDENCE_TX_FILE` must be absolute. |
 
 Step 7 is the only command that spends anything. It is one command for the whole run; the separate `npm run deploy:nft -- --send --i-approve` and `npm run mint -- --send --i-approve --media-base <url>` do the same deploy and mint but write no `txs.json`, so use `live-proof` if you want the hashes recorded.
 
