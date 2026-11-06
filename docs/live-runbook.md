@@ -1,6 +1,6 @@
 # Live testnet runbook
 
-For the owner. This runbook mints all four NFTs. The approved yield vault live run mints only the one NFT its vault belongs to; its single entry is `npm run yield:live:once` (see `docs/yield-vault-live-runbook.md`, "The one entry"). Nothing in this repository has been run live, and nothing here runs until you decide to. Only step 6 signs and spends; every other step is a build, a read-only check or a dry run. The shorter checklist is `docs/live-readiness.md`; this file is the ordered procedure. Mainnet is refused everywhere.
+For the owner. This runbook mints all four NFTs. The approved yield vault live run mints only the one NFT its vault belongs to; its single entry is `npm run yield:live:once` (see `docs/yield-vault-live-runbook.md`, "The one entry"). It needs near-cli-rs on PATH and a funded testnet account with keys in `~/.near-credentials/testnet/` (or the OS keychain with `--keys-in-os-keychain`). Nothing in this repository has been run live, and nothing here runs until you decide to. Only step 6 signs and spends; every other step is a build, a read-only check or a dry run. The shorter checklist is `docs/live-readiness.md`; this file is the ordered procedure. Mainnet is refused everywhere.
 
 ## 1. Preconditions
 

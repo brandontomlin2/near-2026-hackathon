@@ -140,6 +140,33 @@ test("ready: prints NFT deploy, one mint, vault steps through the swap, then STO
   assert.match(s, /Nothing was signed or sent; near was not run\./);
 });
 
+test("ready: the setup list has no withdraw, pause, revoke or delete command and points at --teardown", T, async () => {
+  const r = await runReady();
+  assert.equal(r.code, 0, r.stderr);
+  const cmds = r.stdout.split("\n").filter((l) => l.trimStart().startsWith("near "));
+  assert.ok(cmds.length >= 20, "setup-through-swap commands are printed");
+  for (const l of cmds) assert.doesNotMatch(l, /withdraw|pause|revoke|delete-account|delete_account|unregister/i, l);
+  assert.doesNotMatch(r.stdout, /plan step (2[1-9]|3\d) /, "no teardown step in the setup list");
+  assert.match(r.stdout, /This list is setup through the swap only\./);
+  assert.match(r.stdout, /STOP\. The swap is plan step 19\. Plan steps 21-36 \(16 more\) are a separate list, printed by\n {2}npm run yield:live:once -- .* --teardown/);
+});
+
+test("--teardown: ready prints only the after-swap list (withdraw, rollback); not ready still exits 3", T, async () => {
+  const r = await runReady({ argv: ["--config", filledConfig(), "--media-base", MEDIA, "--teardown"] });
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.rec.called(), false, "near was invoked");
+  const cmds = r.stdout.split("\n").filter((l) => l.trimStart().startsWith("near "));
+  assert.ok(cmds.some((l) => /withdraw/.test(l)), "withdraw is in the teardown list");
+  assert.ok(cmds.some((l) => /delete-account/.test(l)), "account deletion is in the teardown list");
+  assert.equal(cmds.filter((l) => / execute_swap | nft_mint /.test(l)).length, 0, "no swap or mint in teardown");
+  assert.doesNotMatch(r.stdout, /with-init-call/);
+  assert.match(r.stdout, /plan step 24 \[withdraw\]/);
+  assert.doesNotMatch(r.stdout, /plan step (1|19|20) \[/);
+  const bad = await runReady({ argv: ["--config", filledConfig(), "--teardown"] });
+  assert.equal(bad.code, 3, "teardown needs the same checks (here --media-base)");
+  assert.doesNotMatch(bad.stdout, /near (account|contract)/);
+});
+
 test("ready: no secret from a key file or env is printed, and key files are never opened", T, async () => {
   const r = await runReady({ env: { NEAR_PRIVATE_KEY: SECRET, NEAR_SEED_PHRASE: "sentinel seed words never shown" } });
   assert.equal(r.code, 0, r.stderr);
