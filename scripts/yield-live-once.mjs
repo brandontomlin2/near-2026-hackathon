@@ -138,7 +138,7 @@ export function environmentChecks({ config, opts, env, home, root }) {
     const found = safe && (existsSync(join(home, CREDENTIALS_DIR, `${id}.json`)) || hasJsonEntry(join(home, CREDENTIALS_DIR, id)));
     if (found) add("ok", `credential file: ${role}`, "present (not opened)");
     else if (opts.osKeychain) add("manual", `credential file: ${role}`, "not in ~/" + CREDENTIALS_DIR + "/; confirm the key is in the OS keychain (near account list-keys) by hand");
-    else add("missing", `credential file: ${role}`, `no ~/${CREDENTIALS_DIR}/<${role} id>.json (or <${role} id>/); put the key in the near-cli-rs legacy keychain (.agents/skills/near-cli-rs) or pass --keys-in-os-keychain`);
+    else add("missing", `credential file: ${role}`, `account ${safe ? id : String(id)}: no ~/${CREDENTIALS_DIR}/${safe ? id : "<id>"}.json (or ${safe ? id : "<id>"}/); put its key in the near-cli-rs keychain (~/${CREDENTIALS_DIR}/, see .agents/skills/near-cli-rs) or pass --keys-in-os-keychain`);
   }
   return rows;
 }
@@ -207,7 +207,12 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     if (validateLiveConfig(config, { allowPlaceholders: false }).length || findPlaceholders(config).length) missing.push("config filled in (no placeholders)");
     log("");
     if (missing.length) {
+      const accounts = [...new Set([config.owner_id, config.nft_contract_id, config.vault_id, config.runner_id])].join(", ");
       log("NOT READY FOR LIVE. Nothing was signed or sent; near was not run.");
+      log("Approved run (the only one): deploy the yield vault, mint ONE personality NFT, make ONE small Rhea (Ref) testnet swap.");
+      log("Faucet test NEAR only, testnet only. Nothing is signed or sent until READY FOR LIVE is yes and the owner runs the printed commands by hand.");
+      log(`Testnet accounts that need keys: ${accounts}.`);
+      log(`Put the keys in the near-cli-rs keychain: ~/${CREDENTIALS_DIR}/<account>.json (or <account>/<public key>.json), or the OS keychain with --keys-in-os-keychain. Put no key in the repo or the config; the config holds public keys only.`);
       err(`yield:live:once: not ready for live: ${[...new Set(missing)].join("; ")}`);
       return 3;
     }
