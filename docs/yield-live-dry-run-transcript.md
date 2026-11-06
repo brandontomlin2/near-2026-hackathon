@@ -11,7 +11,7 @@ Exit code: 0
 stdout:
 
 ```text
-Yield vault live path on testnet: 36 steps, UNSIGNED (nothing is signed or sent)
+Yield vault live path on testnet: setup stage, plan steps 1-20 of 36, UNSIGNED (nothing is signed or sent)
 owner owner.yield-demo.testnet | vault vault.owner.yield-demo.testnet | runner runner.owner.yield-demo.testnet
 
 PREFLIGHT (offline; nothing is read from .env, no value is printed)
@@ -26,6 +26,8 @@ prepaid gas                  info     1120 TGas over 19 transactions; unused gas
 the one call it would send   info     step 19 execute_swap, runner.owner.yield-demo.testnet -> vault.owner.yield-demo.testnet, 280 TGas, deposit 0 yocto
 not sent; text only: near contract call-function as-transaction vault.owner.yield-demo.testnet execute_swap json-args '{"proposal":{"pool_id":0,"token_in":"wrap.testnet","token_out":"rft.tokenfactory.testnet","amount_in":"10000000000000000000000","min_amount_out":"50000000"}}' prepaid-gas '280.0 Tgas' attached-deposit '0 NEAR' sign-as runner.owner.yield-demo.testnet network-config testnet sign-with-keychain send
 wasm, toolchain and on-chain reads: npm run yield:live:preflight
+
+SETUP ONLY (deploy, fund, one small swap). withdraw, pause, revoke and delete are deferred until after the agent send: npm run yield:live:dry-run -- --rollback
 
  1. [setup] create and fund the vault account
     owner.yield-demo.testnet -> vault.owner.yield-demo.testnet
@@ -132,92 +134,8 @@ wasm, toolchain and on-chain reads: npm run yield:live:preflight
     view get_state {}
     cost: 0 NEAR | expect: no swap in flight, swaps_executed == 1, nothing stranded
     near-cli-rs (text only): near contract call-function as-read-only vault.owner.yield-demo.testnet get_state json-args '{}' network-config testnet now
-21. [check] read what is left on Ref for token_out
-    view -> ref-finance-101.testnet
-    view get_deposit {"account_id":"vault.owner.yield-demo.testnet","token_id":"rft.tokenfactory.testnet"}
-    cost: 0 NEAR | expect: 0 (the chain withdrew it back to the vault)
-    near-cli-rs (text only): near contract call-function as-read-only ref-finance-101.testnet get_deposit json-args '{"account_id":"vault.owner.yield-demo.testnet","token_id":"rft.tokenfactory.testnet"}' network-config testnet now
-22. [check] read the vault's token_out balance
-    view -> vault.owner.yield-demo.testnet
-    view get_balance {"token_id":"rft.tokenfactory.testnet"}
-    cost: 0 NEAR | expect: >= 50000000
-    near-cli-rs (text only): near contract call-function as-read-only vault.owner.yield-demo.testnet get_balance json-args '{"token_id":"rft.tokenfactory.testnet"}' network-config testnet now
-23. [check] read the vault's unswapped token_in balance
-    view -> vault.owner.yield-demo.testnet
-    view get_balance {"token_id":"wrap.testnet"}
-    cost: 0 NEAR | expect: 10000000000000000000000 if the swap took exactly amount_in (Ref may accept less)
-    near-cli-rs (text only): near contract call-function as-read-only vault.owner.yield-demo.testnet get_balance json-args '{"token_id":"wrap.testnet"}' network-config testnet now
-24. [withdraw] owner withdraws the whole token_out balance of rft.tokenfactory.testnet
-    owner.yield-demo.testnet -> vault.owner.yield-demo.testnet
-    call withdraw {"token_id":"rft.tokenfactory.testnet","amount":"<READ get_balance(rft.tokenfactory.testnet) at step view-balance-2>"} deposit 0.000000000000000000000001 NEAR (1 yocto) gas 100 TGas
-    cost: 0.000000000000000000000001 NEAR | expect: withdraw event; owner ft_balance_of(token_out) rose; the vault's token_out balance is 0
-    near-cli-rs (text only): near contract call-function as-transaction vault.owner.yield-demo.testnet withdraw json-args '{"token_id":"rft.tokenfactory.testnet","amount":"<READ get_balance(rft.tokenfactory.testnet) at step view-balance-2>"}' prepaid-gas '100 Tgas' attached-deposit '1 yoctoNEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
-25. [withdraw] owner withdraws the unswapped wrap.testnet balance
-    owner.yield-demo.testnet -> vault.owner.yield-demo.testnet
-    call withdraw {"token_id":"wrap.testnet","amount":"<READ get_balance(wrap.testnet) at step view-balance-3>"} deposit 0.000000000000000000000001 NEAR (1 yocto) gas 100 TGas
-    cost: 0.000000000000000000000001 NEAR | expect: withdraw event; vault get_balance(token_in) == 0. Skip this step if the value read is 0 (withdraw rejects a zero amount).
-    near-cli-rs (text only): near contract call-function as-transaction vault.owner.yield-demo.testnet withdraw json-args '{"token_id":"wrap.testnet","amount":"<READ get_balance(wrap.testnet) at step view-balance-3>"}' prepaid-gas '100 Tgas' attached-deposit '1 yoctoNEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
-26. [check] read the owner's token_out balance
-    view -> rft.tokenfactory.testnet
-    view ft_balance_of {"account_id":"owner.yield-demo.testnet"}
-    cost: 0 NEAR | expect: >= 50000000
-    near-cli-rs (text only): near contract call-function as-read-only rft.tokenfactory.testnet ft_balance_of json-args '{"account_id":"owner.yield-demo.testnet"}' network-config testnet now
-27. [rollback] pause the vault
-    owner.yield-demo.testnet -> vault.owner.yield-demo.testnet
-    call pause {} deposit 0.000000000000000000000001 NEAR (1 yocto) gas 30 TGas
-    cost: 0.000000000000000000000001 NEAR | expect: paused event
-    near-cli-rs (text only): near contract call-function as-transaction vault.owner.yield-demo.testnet pause json-args '{}' prepaid-gas '30 Tgas' attached-deposit '1 yoctoNEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
-28. [rollback] revoke every runner
-    owner.yield-demo.testnet -> vault.owner.yield-demo.testnet
-    call revoke_all_runners {} deposit 0.000000000000000000000001 NEAR (1 yocto) gas 30 TGas
-    cost: 0.000000000000000000000001 NEAR | expect: runner_revoked event; get_config().runners == []
-    near-cli-rs (text only): near contract call-function as-transaction vault.owner.yield-demo.testnet revoke_all_runners json-args '{}' prepaid-gas '30 Tgas' attached-deposit '1 yoctoNEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
-29. [rollback] pull the Ref storage balance back to the vault account
-    owner.yield-demo.testnet -> vault.owner.yield-demo.testnet
-    call withdraw_ref_storage {} deposit 0.000000000000000000000001 NEAR (1 yocto) gas 100 TGas
-    cost: 0.000000000000000000000001 NEAR | expect: ref_storage_withdraw event; NEAR returns to the vault account
-    near-cli-rs (text only): near contract call-function as-transaction vault.owner.yield-demo.testnet withdraw_ref_storage json-args '{}' prepaid-gas '100 Tgas' attached-deposit '1 yoctoNEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
-30. [check] read how much NEAR the owner can withdraw
-    view -> vault.owner.yield-demo.testnet
-    view get_withdrawable_near {}
-    cost: 0 NEAR | expect: the amount withdraw_near takes next (account balance minus storage cost minus a 0.1 NEAR reserve)
-    near-cli-rs (text only): near contract call-function as-read-only vault.owner.yield-demo.testnet get_withdrawable_near json-args '{}' network-config testnet now
-31. [rollback] send the free NEAR from the vault to the owner
-    owner.yield-demo.testnet -> vault.owner.yield-demo.testnet
-    call withdraw_near {"amount":"<READ get_withdrawable_near() at step view-withdrawable>"} deposit 0.000000000000000000000001 NEAR (1 yocto) gas 30 TGas
-    cost: 0.000000000000000000000001 NEAR | expect: near_withdrawn event. Skip this step if the value read is 0. Optional: delete-vault sends the remaining NEAR to the owner anyway.
-    near-cli-rs (text only): near contract call-function as-transaction vault.owner.yield-demo.testnet withdraw_near json-args '{"amount":"<READ get_withdrawable_near() at step view-withdrawable>"}' prepaid-gas '30 Tgas' attached-deposit '1 yoctoNEAR' sign-as owner.yield-demo.testnet network-config testnet sign-with-keychain send
-32. [check] read the vault state before deleting it
-    view -> vault.owner.yield-demo.testnet
-    view get_state {}
-    cost: 0 NEAR | expect: balances, stranded_on_ref, unverified_on_ref all empty or zero; swap_in_flight, recovery_in_flight, release_in_flight false
-    near-cli-rs (text only): near contract call-function as-read-only vault.owner.yield-demo.testnet get_state json-args '{}' network-config testnet now
-33. [check] read what Ref still holds of wrap.testnet for the vault
-    view -> ref-finance-101.testnet
-    view get_deposit {"account_id":"vault.owner.yield-demo.testnet","token_id":"wrap.testnet"}
-    cost: 0 NEAR | expect: 0
-    near-cli-rs (text only): near contract call-function as-read-only ref-finance-101.testnet get_deposit json-args '{"account_id":"vault.owner.yield-demo.testnet","token_id":"wrap.testnet"}' network-config testnet now
-34. [check] read what Ref still holds of rft.tokenfactory.testnet for the vault
-    view -> ref-finance-101.testnet
-    view get_deposit {"account_id":"vault.owner.yield-demo.testnet","token_id":"rft.tokenfactory.testnet"}
-    cost: 0 NEAR | expect: 0
-    near-cli-rs (text only): near contract call-function as-read-only ref-finance-101.testnet get_deposit json-args '{"account_id":"vault.owner.yield-demo.testnet","token_id":"rft.tokenfactory.testnet"}' network-config testnet now
-35. [rollback] delete the vault account (destroys any tokens it still holds on token contracts or Ref)
-    vault.owner.yield-demo.testnet -> vault.owner.yield-demo.testnet
-    delete account, beneficiary owner.yield-demo.testnet
-    cost: 0 NEAR | expect: vault.owner.yield-demo.testnet no longer exists. Deleting it destroys any tokens still held for it on the token contracts or on Ref; only run it after the pre-delete checks are clean. The beneficiary owner.yield-demo.testnet receives the remaining NEAR, so withdraw_near is only needed if you keep the account. The vault's per-token storage deposits (0.00125 NEAR each) and any Ref storage still locked by token entries are forfeited: the plan has no storage_unregister step.
-    near-cli-rs (text only): near account delete-account vault.owner.yield-demo.testnet beneficiary owner.yield-demo.testnet network-config testnet sign-with-keychain send
-36. [rollback] delete the runner account
-    runner.owner.yield-demo.testnet -> runner.owner.yield-demo.testnet
-    delete account, beneficiary owner.yield-demo.testnet
-    cost: 0 NEAR | expect: runner.owner.yield-demo.testnet no longer exists; its NEAR went to owner.yield-demo.testnet
-    near-cli-rs (text only): near account delete-account runner.owner.yield-demo.testnet beneficiary owner.yield-demo.testnet network-config testnet sign-with-keychain send
 
-totals: 19 transactions, 17 views, deposits 8.525 NEAR + 7 yocto (1-yocto security deposits), owner outflow 8.525 NEAR + 7 yocto (1-yocto security deposits), prepaid gas 1120 TGas
-filled at run time (read the value from the named view step, then put it in the command; not a placeholder):
-  withdraw-out.amount <- view-balance-2 (result)
-  withdraw-rest.amount <- view-balance-3 (result)
-  withdraw-near.amount <- view-withdrawable (result)
+totals (whole plan, both stages): 19 transactions, 17 views, deposits 8.525 NEAR + 7 yocto (1-yocto security deposits), owner outflow 8.525 NEAR + 7 yocto (1-yocto security deposits), prepaid gas 1120 TGas
 warning: placeholder not filled in: placeholders (flag is true)
 warning: placeholder not filled in: owner_id
 warning: placeholder not filled in: vault_id

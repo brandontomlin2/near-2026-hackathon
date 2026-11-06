@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import {
   CONTRACT_SOURCE_URL, YOCTO_PER_BYTE, abiPathFor, compareMethods, parseAbiMethods, buildLivePlan, findPlaceholders, formatNear, formatSplit, loadContractSpec, loadLiveConfig,
   parseNear, planTotals, validateLiveConfig, validatePlan,
+  setupStepCount,
 } from "../src/yield/live-plan.mjs";
 import { PrerequisiteError, buildPreflight, notReadyLines, preflightForJson, readSnapshotMeta, renderPreflight } from "../src/yield/live-dry-run-preflight.mjs";
 import { DEFAULT_RPC, assertRpcUrl, createRpc, onlineChecks } from "../src/yield/live-rpc.mjs";
@@ -33,7 +34,7 @@ const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
 const REFUSED_FLAGS = ["--send", "--sign", "--i-approve", "--sign-with-keychain", "--sign-with-plaintext-private-key", "--private-key", "--seed-phrase", "--live", "--broadcast"];
 
 const USAGE = () => `Usage: node scripts/yield-live.mjs <dry-run|preflight> [options]
-  dry-run [--config FILE] [--json] [--out FILE] [--require-ready]
+  dry-run [--config FILE] [--json] [--out FILE] [--require-ready] [--rollback | --all]
       Build the full ordered list of unsigned testnet transactions for the vault's live path,
       validate it against contracts/yield-vault/src/lib.rs and print it. Placeholders in the
       config are allowed here and listed as warnings.
@@ -41,6 +42,12 @@ const USAGE = () => `Usage: node scripts/yield-live.mjs <dry-run|preflight> [opt
       placeholders filled, whether NEAR_NETWORK, YIELD_VAULT_ACCOUNT_ID and YIELD_RUNNER_ACCOUNT_ID are
       set, snapshot age (fresh up to 72 h, else run npm run yield:snapshot), prepaid gas, and the one call
       (execute_swap) a real send would make. Wasm, toolchain and on-chain reads are in \`preflight\`.
+      Default: the SETUP stage only, plan steps up to and including the one small execute_swap and its
+      read-back (deploy, fund, swap). withdraw, pause, revoke and delete are NOT listed: they would
+      empty, pause or delete the vault the agent send needs. Do them after the agent send with
+      --rollback, which prints only the deferred stage (withdraw and rollback steps).
+      --rollback print the deferred withdraw and rollback steps only (after the agent send)
+      --all      review only: the whole plan, both stages, in one list. Never sign it top to bottom before the agent send
       --json     print one JSON document {network, unsigned:true, transactions, problems, totals, preflight}
       --out FILE write that JSON document to FILE as well
       --require-ready  after printing the plan, exit 3 with the missing items on stderr if anything
@@ -79,7 +86,7 @@ function refuseSigning(argv) {
 }
 
 function parseArgs(argv) {
-  const o = { cmd: undefined, config: DEFAULT_CONFIG, json: false, out: undefined, build: false, requireReady: false, online: false, rpc: DEFAULT_RPC, help: false };
+  const o = { cmd: undefined, config: DEFAULT_CONFIG, json: false, out: undefined, build: false, rollback: false, all: false, requireReady: false, online: false, rpc: DEFAULT_RPC, help: false };
   if (argv.some((a) => a === "--help" || a === "-h")) return { ...o, help: true };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -94,6 +101,8 @@ function parseArgs(argv) {
       o.cmd = a;
     } else if (a === "--config") o.config = resolve(value());
     else if (a === "--json") o.json = true;
+    else if (a === "--rollback" && o.cmd === "dry-run") o.rollback = true;
+    else if (a === "--all" && o.cmd === "dry-run") o.all = true;
     else if (a === "--out" && o.cmd === "dry-run") o.out = resolve(value());
     else if (a === "--require-ready" && (o.cmd === "dry-run" || o.cmd === "preflight")) o.requireReady = true;
     else if (a === "--build" && o.cmd === "preflight") o.build = true;
@@ -101,6 +110,7 @@ function parseArgs(argv) {
     else if (a === "--rpc" && o.cmd === "preflight") o.rpc = value();
     else throw new UsageError(`unknown argument ${JSON.stringify(a.slice(0, 40))}`);
   }
+  if (o.rollback && o.all) throw new UsageError("--rollback and --all cannot be combined");
   if (!o.cmd) throw new UsageError("a command is required: dry-run or preflight");
   if (o.rpc !== DEFAULT_RPC && !o.online) throw new UsageError("--rpc only applies together with --online");
   if (o.online) {
@@ -121,10 +131,10 @@ function detectCargo(args) {
   return (r.stdout || r.stderr).trim().split("\n")[0];
 }
 
-function renderStep(s, i) {
+function renderStep(s, i, offset = 0) {
   const lines = [];
   const who = s.view ? `view -> ${s.receiver_id}` : `${s.signer_id} -> ${s.receiver_id}`;
-  lines.push(`${String(i + 1).padStart(2)}. [${s.phase}] ${s.title}`);
+  lines.push(`${String(i + 1 + offset).padStart(2)}. [${s.phase}] ${s.title}`);
   lines.push(`    ${who}`);
   for (const a of s.actions) {
     if (a.type === "FunctionCall") lines.push(`    call ${a.method_name} ${JSON.stringify(a.args)} deposit ${formatNear(a.deposit_yocto)} NEAR (${a.deposit_yocto} yocto) gas ${BigInt(a.gas) / 10n ** 12n} TGas`);
@@ -165,9 +175,13 @@ function dryRun(opts, { log, err, env, now, snapshotPath, contractSource }) {
   const totals = planTotals(plan);
   const wasmFile = isAbsolute(config.wasm_path) ? config.wasm_path : resolve(ROOT, config.wasm_path);
   const wasm = existsSync(wasmFile) ? { path: config.wasm_path, bytes: statSync(wasmFile).size, sha256: sha256File(wasmFile) } : { path: config.wasm_path, bytes: null, sha256: null };
-  const transactions = plan.steps.map((s) => ({ ...s, actions: s.actions.map((a) => (a.type === "DeployContract" && wasm.sha256 ? { ...a, wasm_sha256: wasm.sha256 } : a)) }));
-  const runtime = plan.steps.filter((st) => st.runtime_args).flatMap((st) => Object.entries(st.runtime_args).map(([arg, r]) => ({ step: st.id, arg, from_step: r.from_step, path: r.path })));
-  const doc = { network: plan.network, unsigned: true, owner_id: plan.owner_id, vault_id: plan.vault_id, runner_id: plan.runner_id, wasm, transactions, problems, warnings, manual: plan.manual, filled_at_run_time: runtime, totals, preflight: preflightForJson(preflight) };
+  const cut = setupStepCount(plan);
+  const offset = opts.rollback ? cut : 0;
+  const shown = opts.all ? plan.steps : opts.rollback ? plan.steps.slice(cut) : plan.steps.slice(0, cut);
+  const stage = opts.all ? "all" : opts.rollback ? "rollback" : "setup";
+  const transactions = shown.map((s) => ({ ...s, actions: s.actions.map((a) => (a.type === "DeployContract" && wasm.sha256 ? { ...a, wasm_sha256: wasm.sha256 } : a)) }));
+  const runtime = shown.filter((st) => st.runtime_args).flatMap((st) => Object.entries(st.runtime_args).map(([arg, r]) => ({ step: st.id, arg, from_step: r.from_step, path: r.path })));
+  const doc = { network: plan.network, unsigned: true, stage, steps_shown: `${offset + 1}-${offset + shown.length} of ${plan.steps.length}`, owner_id: plan.owner_id, vault_id: plan.vault_id, runner_id: plan.runner_id, wasm, transactions, problems, warnings, manual: plan.manual, filled_at_run_time: runtime, totals, preflight: preflightForJson(preflight) };
   if (opts.out) writeFileSync(opts.out, `${JSON.stringify(doc, null, 2)}\n`);
   const finish = () => {
     if (problems.length) return 1;
@@ -180,14 +194,18 @@ function dryRun(opts, { log, err, env, now, snapshotPath, contractSource }) {
     log(JSON.stringify(doc, null, 2));
     return finish();
   }
-  log(`Yield vault live path on ${plan.network}: ${plan.steps.length} steps, UNSIGNED (nothing is signed or sent)`);
+  log(`Yield vault live path on ${plan.network}: ${stage} stage, plan steps ${offset + 1}-${offset + shown.length} of ${plan.steps.length}, UNSIGNED (nothing is signed or sent)`);
   log(`owner ${plan.owner_id} | vault ${plan.vault_id} | runner ${plan.runner_id}`);
   log("");
   renderPreflight(preflight).forEach((l) => log(l));
   log("");
-  plan.steps.forEach((s, i) => log(renderStep(s, i)));
+  if (opts.rollback) log("ROLLBACK: run these only AFTER the agent send. They withdraw, pause, revoke and delete, so the vault is gone or empty afterwards.");
+  else if (opts.all) log("REVIEW ONLY: the whole plan, setup and rollback together. Do not sign it top to bottom: rollback steps tear the vault down. Use the default (setup) and --rollback lists for signing.");
+  else log(`SETUP ONLY (deploy, fund, one small swap). withdraw, pause, revoke and delete are deferred until after the agent send: npm run yield:live:dry-run -- --rollback`);
   log("");
-  log(`totals: ${totals.transactions} transactions, ${totals.views} views, deposits ${formatSplit(totals.deposit_near, totals.deposit_security_yocto)}, owner outflow ${formatSplit(totals.owner_outflow_near, totals.owner_outflow_security_yocto)}, prepaid gas ${totals.gas_tgas} TGas`);
+  shown.forEach((s, i) => log(renderStep(s, i, offset)));
+  log("");
+  log(`totals (whole plan, both stages): ${totals.transactions} transactions, ${totals.views} views, deposits ${formatSplit(totals.deposit_near, totals.deposit_security_yocto)}, owner outflow ${formatSplit(totals.owner_outflow_near, totals.owner_outflow_security_yocto)}, prepaid gas ${totals.gas_tgas} TGas`);
   if (runtime.length) {
     log("filled at run time (read the value from the named view step, then put it in the command; not a placeholder):");
     for (const r of runtime) log(`  ${r.step}.${r.arg} <- ${r.from_step} (${r.path})`);

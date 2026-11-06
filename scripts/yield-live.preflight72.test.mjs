@@ -51,7 +51,7 @@ test("example config, empty env: heading right after the header, rows present, e
   const r = await run(["dry-run"]);
   assert.equal(r.code, 0, r.stderr);
   const lines = r.stdout.split("\n");
-  assert.equal(lines[0], "Yield vault live path on testnet: 36 steps, UNSIGNED (nothing is signed or sent)");
+  assert.equal(lines[0], "Yield vault live path on testnet: setup stage, plan steps 1-20 of 36, UNSIGNED (nothing is signed or sent)");
   assert.match(lines[1], /^owner /);
   assert.equal(lines[3], "PREFLIGHT (offline; nothing is read from .env, no value is printed)");
   assert.match(lines[4], /^check\s+status\s+detail$/);

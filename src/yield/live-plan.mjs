@@ -388,6 +388,19 @@ export function buildLivePlan(config) {
   };
 }
 
+/**
+ * Where the pre-send path ends. Steps [0, count) are setup: deploy, fund, the one small execute_swap
+ * and its read-back. Everything after (withdraw, rollback and their checks) is deferred until
+ * after the agent send, because it empties, pauses or deletes the vault the agent send needs.
+ */
+export function setupStepCount(plan) {
+  const at = plan.steps.findIndex((s) => s.actions.some((a) => a.type === "FunctionCall" && a.method_name === "execute_swap"));
+  if (at < 0) throw new Error("the plan has no execute_swap step");
+  const end = at + 2; // the swap and the get_state read-back right after it
+  if (plan.steps[at + 1]?.id !== "view-state-2") throw new Error("the plan has no read-back after the execute_swap step");
+  return end;
+}
+
 // --------------------------------------------------------------------------- Rust source parse
 
 /** Replace comments and string literals with blanks so braces and keywords inside them cannot confuse the parser. */
