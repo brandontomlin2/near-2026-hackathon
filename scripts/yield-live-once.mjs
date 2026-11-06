@@ -11,7 +11,9 @@
 //      exists for each signer (existence only: no key file is opened, read or printed);
 //   3. if anything is missing: prints what, sends nothing, exits 3;
 //   4. if ready: prints the exact ordered near-cli-rs commands (NFT deploy, one nft_mint, vault
-//      steps through execute_swap and the read-back after it) and STOPS.
+//      steps through execute_swap and the read-back after it) and STOPS. That list holds setup only:
+//      no withdraw, pause, revoke or delete. With --teardown (same checks) it prints instead the
+//      separate list that runs after the swap has been reviewed: withdraw, then rollback.
 //
 // It never signs, never sends and never spawns near. Every printed command is text for a human,
 // to run by hand, one at a time, each after the owner's explicit yes. --send, --i-approve and any
@@ -35,7 +37,7 @@ export const NFT_WASM = "contracts/personality-nft/target/near/personality_nft.w
 export const CREDENTIALS_DIR = ".near-credentials/testnet";
 const REFUSED_FLAGS = ["--send", "--i-approve", "--live", "--broadcast", "--execute", "--yes", "--online", "--rpc", "--network"];
 
-const USAGE = `Usage: npm run yield:live:once -- [--config FILE] [--media-base URL] [--keys-in-os-keychain]
+const USAGE = `Usage: npm run yield:live:once -- [--config FILE] [--media-base URL] [--keys-in-os-keychain] [--teardown]
   The one entry for the approved live testnet run (vault deploy, one personality NFT mint, one
   small Ref testnet swap). Offline: runs yield-live preflight --require-ready, then checks
   near-cli-rs on PATH (PATH scan; near is never run), NEAR_NETWORK=testnet, the NFT wasm,
@@ -45,6 +47,8 @@ const USAGE = `Usage: npm run yield:live:once -- [--config FILE] [--media-base U
   --media-base URL       where <token_id>.svg is hosted (the nft_mint media URL)
   --keys-in-os-keychain  the signer keys are in the OS keychain, not ~/${CREDENTIALS_DIR}/;
                          a missing credential file becomes a MANUAL line instead of not ready
+  --teardown             print the separate after-the-swap list (withdraw, then rollback) instead
+                         of the setup-through-swap list; same checks, same exit codes
   -h, --help             print this help and exit 0
   Exit 0 ready (commands printed, nothing run), 1 preflight FAIL, 2 refused or usage error,
   3 not ready. This tool never signs, sends or runs near; --send, --i-approve and flags
@@ -63,7 +67,7 @@ function refuseSends(argv) {
 }
 
 function parseArgs(argv) {
-  const o = { config: DEFAULT_CONFIG, mediaBase: null, osKeychain: false, help: false };
+  const o = { config: DEFAULT_CONFIG, mediaBase: null, osKeychain: false, teardown: false, help: false };
   if (argv.some((a) => a === "--help" || a === "-h")) return { ...o, help: true };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -76,6 +80,7 @@ function parseArgs(argv) {
     if (a === "--config") o.config = resolve(value());
     else if (a === "--media-base") o.mediaBase = value();
     else if (a === "--keys-in-os-keychain") o.osKeychain = true;
+    else if (a === "--teardown") o.teardown = true;
     else throw new UsageError(`unknown argument ${JSON.stringify(a.slice(0, 40))}`);
   }
   return o;
@@ -160,7 +165,9 @@ export function orderedCommands(config, mediaBase) {
   const plan = buildLivePlan(config);
   const swapAt = findSwapStep(plan).step - 1; // findSwapStep numbers steps from 1
   const vault = plan.steps.slice(0, swapAt + 2).map((s, i) => ({ title: `plan step ${i + 1} [${s.phase}] ${s.title}`, signer: s.view ? null : s.signer_id, cost: `${s.cost_near} NEAR${s.view ? "" : " + gas"}`, command: s.near_cli, expect: s.expect }));
-  return { nft, vault, rest: plan.steps.length - (swapAt + 2), total: plan.steps.length, swapNumber: swapAt + 1 };
+  const first = swapAt + 2; // plan steps before this index are setup through the swap and its read-back
+  const teardown = plan.steps.slice(first).map((s, i) => ({ title: `plan step ${first + i + 1} [${s.phase}] ${s.title}`, signer: s.view ? null : s.signer_id, cost: `${s.cost_near} NEAR${s.view ? "" : " + gas"}`, command: s.near_cli, expect: s.expect }));
+  return { nft, vault, teardown, rest: plan.steps.length - first, total: plan.steps.length, swapNumber: swapAt + 1 };
 }
 
 export async function main(argv = process.argv.slice(2), io = {}) {
@@ -204,32 +211,49 @@ export async function main(argv = process.argv.slice(2), io = {}) {
       err(`yield:live:once: not ready for live: ${[...new Set(missing)].join("; ")}`);
       return 3;
     }
-    const { nft, vault, rest, total, swapNumber } = orderedCommands(config, opts.mediaBase);
+    const { nft, vault, teardown, rest, total, swapNumber } = orderedCommands(config, opts.mediaBase);
+    const printSteps = (list, n) => {
+      for (const c of list) {
+        n += 1;
+        log(`${String(n).padStart(2)}. ${c.title}  [${c.signer ? `signer ${c.signer}` : "read-only"}; ${c.cost}]`);
+        log(`    ${c.command}`);
+        log(`    expect: ${c.expect}`);
+      }
+    };
+    const manualNotes = () => {
+      for (const r of rows.filter((x) => x.status === "manual")) log(`manual: ${r.name}: ${r.detail}`);
+      log("manual: confirm the MANUAL items of the preflight above (owner funds, keychain keys, Ref storage bound)");
+    };
+    if (opts.teardown) {
+      log(`READY FOR LIVE (offline checks). TEARDOWN list: plan steps ${vault.length + 1}-${total} (${rest} steps), for after the swap`);
+      log("has run and its result was reviewed. Nothing below has been run. Before each command: get the owner's explicit yes,");
+      log("run it by hand, and check its result before the next. Testnet only.");
+      manualNotes();
+      log("");
+      log(`== teardown: plan steps ${vault.length + 1}-${total} of ${total} (withdraw, then rollback) ==`);
+      for (const c of teardown) {
+        log(`${c.title}  [${c.signer ? `signer ${c.signer}` : "read-only"}; ${c.cost}]`);
+        log(`    ${c.command}`);
+        log(`    expect: ${c.expect}`);
+      }
+      log("");
+      log("STOP. Record every transaction hash. Nothing was signed or sent; near was not run.");
+      return 0;
+    }
     log("READY FOR LIVE (offline checks). Nothing below has been run. Before each command: get the owner's explicit yes,");
-    log("run it by hand, and check its result before the next. Testnet only.");
-    for (const r of rows.filter((x) => x.status === "manual")) log(`manual: ${r.name}: ${r.detail}`);
-    log("manual: confirm the MANUAL items of the preflight above (owner funds, keychain keys, Ref storage bound)");
+    log("run it by hand, and check its result before the next. Testnet only. This list is setup through the swap only.");
+    manualNotes();
     log(`manual: the NFT contract account ${config.nft_contract_id} must already exist on testnet, funded for its wasm storage, with its key in the keychain; nothing below creates it (docs/live-runbook.md, Preconditions)`);
     log("");
     log("== 3. personality NFT (contracts/personality-nft) ==");
-    let n = 0;
-    for (const c of nft) {
-      n += 1;
-      log(`${String(n).padStart(2)}. ${c.title}  [signer ${c.signer}; ${c.cost}]`);
-      log(`    ${c.command}`);
-    }
+    printSteps(nft, 0);
     log("");
     log(`== 4. yield vault: plan steps 1-${vault.length} of ${total} (deploy, fund, one swap on Ref testnet, read-back) ==`);
-    for (const c of vault) {
-      n += 1;
-      log(`${String(n).padStart(2)}. ${c.title}  [${c.signer ? `signer ${c.signer}` : "read-only"}; ${c.cost}]`);
-      log(`    ${c.command}`);
-      log(`    expect: ${c.expect}`);
-    }
+    printSteps(vault, nft.length);
     log("");
-    log(`STOP. The swap is plan step ${swapNumber}. Plan steps ${vault.length + 1}-${total} (${rest} more: withdraw and rollback) come from`);
-    log(`  npm run yield:live:dry-run -- --config ${shellQuote(opts.config)}`);
-    log("and docs/yield-vault-live-runbook.md (Plan steps, Rollback). Record every transaction hash.");
+    log(`STOP. The swap is plan step ${swapNumber}. Plan steps ${vault.length + 1}-${total} (${rest} more) are a separate list, printed by`);
+    log(`  npm run yield:live:once -- --config ${shellQuote(opts.config)} --media-base ${shellQuote(opts.mediaBase)} --teardown`);
+    log("(offline, same checks) and in docs/yield-vault-live-runbook.md. Record every transaction hash.");
     log("Nothing was signed or sent; near was not run. The owner-gated senders (--send --i-approve) are not run by this script.");
     return 0;
   } catch (e) {
