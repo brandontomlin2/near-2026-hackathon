@@ -28,6 +28,12 @@ function runScript(args) {
 }
 
 function run(command) {
+  if (command === "npm run yield:live:once") {
+    const env = { ...process.env };
+    delete env.NODE_TEST_CONTEXT;
+    const r = spawnSync(process.execPath, [join(root, "scripts/yield-live-once.mjs")], { cwd: root, env, encoding: "utf8", timeout: 60_000 });
+    return { status: r.status, stdout: r.stdout, lines: trimmedLines(`${r.stdout}\n${r.stderr}`) };
+  }
   if (command === "npm run yield:live:check") {
     const env = { ...process.env };
     delete env.NODE_TEST_CONTEXT;
@@ -43,9 +49,10 @@ test("package.json maps yield:live:dry-run and yield:live:preflight to the scrip
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   assert.equal(pkg.scripts["yield:live:dry-run"], "node scripts/yield-live.mjs dry-run");
   assert.equal(pkg.scripts["yield:live:preflight"], "node scripts/yield-live.mjs preflight");
+  assert.equal(pkg.scripts["yield:live:once"], "node scripts/yield-live-once.mjs");
 });
 
-test("README has the live testnet path subsection with five steps", () => {
+test("README has the live testnet path subsection with six steps", () => {
   assert.ok(sub, "### Live testnet path, unsigned subsection exists under ## Yield Optimizer");
   assert.deepEqual(steps.map((s) => s.command), [
     "npm run yield:live:dry-run",
@@ -53,8 +60,9 @@ test("README has the live testnet path subsection with five steps", () => {
     "npm run yield:live:dry-run -- --send",
     "npm run yield:live:preflight",
     "npm run yield:live:check",
+    "npm run yield:live:once",
   ]);
-  assert.deepEqual(steps.map((s) => s.exit), [0, 0, 2, 0, 0]);
+  assert.deepEqual(steps.map((s) => s.exit), [0, 0, 2, 0, 0, 3]);
   for (const s of steps) assert.ok(s.quotes.length >= 1, `step ${s.n} quotes at least 1 line`);
 });
 
