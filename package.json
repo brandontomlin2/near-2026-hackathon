@@ -2,7 +2,7 @@
   "name": "near-2026-hackathon",
   "version": "0.1.0",
   "private": true,
-  "description": "Own an AI personality as an NFT on NEAR: it thinks with NEAR AI and lives in a swarm with other tokens.",
+  "description": "Yield Optimizer vault on NEAR: a smart contract enforces an AI agent's trading rules (pool allowlist, trade limits, price floor) for swaps on Rhea (Ref Finance) testnet pools; personality agents only propose.",
   "license": "MIT",
   "type": "module",
   "engines": {
