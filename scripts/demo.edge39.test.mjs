@@ -135,7 +135,7 @@ describe("demo.mjs default run matches the README", () => {
     assert.match(r.stdout, /^\[1\/5\] swarm: 6 rounds, 24 events, verify: ok$/m);
     assert.match(r.stdout, /^\[4\/5\] anchor \(dry run\): 8 calls prepared, 0 signed$/m);
     assert.match(r.stdout, /^Done\. Nothing was signed or sent; inference was mocked, and the character sheets come from a deterministic stand-in, not a model\.$/m);
-    assert.match(r.stdout, /^Files written \(64\):$/m);
+    assert.match(r.stdout, /^Files written \(65\):$/m);
     assert.match(r.stdout, /^  4c8e826620ce2fa1c118df19d13f622ade870b0a54dd206e2c93157df9c6ff52\b|4c8e826620ce2fa1c118df19d13f622ade870b0a54dd206e2c93157df9c6ff52/m);
   });
 
@@ -147,7 +147,7 @@ describe("demo.mjs default run matches the README", () => {
 
   it("every file the output lists exists under out/ and the 'Do this, see that' targets are among them", () => {
     const listed = [...r.stdout.matchAll(/^ {2}(out\/\S+)$/gm)].map((m) => m[1]);
-    assert.equal(listed.length, 64);
+    assert.equal(listed.length, 65);
     for (const f of listed) assert.ok(fs.statSync(path.join(dir, f)).isFile(), f);
     for (const f of ["out/index.html", "out/transcript.txt", "out/memory/aloof/sheet.json", "out/anchors.json"]) assert.ok(listed.includes(f), f);
     assert.equal(listed.filter((f) => f.startsWith("out/share/") && !f.includes("meme-")).length, 24);

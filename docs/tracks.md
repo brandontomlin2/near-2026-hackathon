@@ -44,7 +44,7 @@ Command:
 npm run test:contract
 ```
 
-The judge sees: `test result: ok. 125 passed; 0 failed` (first run compiles
+The judge sees: `test result: ok. 164 passed; 0 failed` (first run compiles
 the crates first). Seven of those tests name the transfer check, for example
 `transfer_expecting_anchor_checks_hash_and_depth` and
 `transfer_expecting_anchor_refuses_an_in_flight_token_and_works_after`; others
@@ -146,8 +146,12 @@ fixture (`src/privacy/fixture.mjs`), not a live TEE report. See
 
 ## Why there is no inter-agent economy
 
-`PRODUCT.md` lists "Token economics or payments", "Marketplace or trading" and
-"Intents" as out of scope for the Nov 11 freeze. A bidding or settlement
+Each token now owns a wallet (`contracts/personality-nft/src/wallet.rs`): a
+NEAR balance keyed by token id that moves with the token, tips in, and
+inference paid out by a runner account through a capped grant. That is a
+token paying its own bill, not agents paying each other. `PRODUCT.md` still
+lists other token economics, "Marketplace or trading" and "Intents" as out of
+scope for the Nov 11 freeze. A bidding or settlement
 mechanic would also change every round hash, sheet and quote that the README
 and its tests pin. The README's "Track fit, plainly" paragraph already says
 there is no bidding, payment or settlement between agents.

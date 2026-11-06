@@ -1,4 +1,5 @@
-// Offline end-to-end demo: swarm -> memory -> art -> anchor (dry run) -> page.
+// Offline end-to-end demo: swarm -> memory -> art -> anchor (dry run) ->
+// token wallets (dry run) -> page.
 //
 // Mock mode only. No network, no keys, no signing: submitAnchor is always
 // called with live:false and no sender. Output is deterministic: no clocks,
@@ -18,6 +19,7 @@ import { renderDemoPage } from "./page.mjs";
 import { renderShareCard } from "./share.mjs";
 import { buildMemes } from "./memes.mjs";
 import { buildTransfer } from "./transfer-verify.mjs";
+import { simulateDemoWallets } from "../wallet/wallet.mjs";
 import { assertSafeOutDir, clearOwnedFiles } from "../util/outdir.mjs";
 
 export const DEMO_DEFAULTS = Object.freeze({
@@ -124,6 +126,17 @@ export async function runDemo({
   }
   const anchors = { network: "testnet", contractId, signed: false, calls };
 
+  // 3b. Token wallets, offline: each token pays for its own inference from
+  // its wallet, replies earn it tips, and the wallet moves with the token.
+  // Every wallet call is prepared as a dry run and never signed.
+  const wallets = simulateDemoWallets({
+    contractId,
+    agents: AGENTS,
+    events: result.events,
+    sheetRounds: Object.fromEntries(AGENTS.map((a) => [a.id, history.get(a.id).map((r) => r.round)])),
+    rounds,
+  });
+
   // 4. Art, in the chosen style: the signature image (neutral, current memory
   // depth), the same at mint, and one reaction face per mood. A style with a
   // single mood (default) gets the neutral image only.
@@ -205,6 +218,7 @@ export async function runDemo({
   await writeFile(join(outDir, "transcript.txt"), result.transcript);
   await writeFile(join(outDir, "events.json"), json(result));
   await writeFile(join(outDir, "anchors.json"), json(anchors));
+  await writeFile(join(outDir, "wallets.json"), json(wallets));
 
   const finalRoundHash = result.roundHashes.at(-1);
   const manifest = {
@@ -222,11 +236,19 @@ export async function runDemo({
     memes,
     anchors: "anchors.json",
     transfer: buildTransfer(agents, anchors, { contractId, mode: "mock" }),
+    wallets: {
+      file: "wallets.json",
+      signed: false,
+      calls: wallets.calls.length,
+      accounts: wallets.accounts,
+      prices: wallets.prices,
+      tokens: wallets.tokens.map(({ entries, ...rest }) => rest),
+    },
     files: [],
   };
   // The manifest lists every file the demo wrote, including itself and the page.
   manifest.files = [
-    "transcript.txt", "events.json", "anchors.json", "demo.json", "index.html",
+    "transcript.txt", "events.json", "anchors.json", "wallets.json", "demo.json", "index.html",
     ...shares.map((x) => x.file),
     ...memes.map((x) => x.file),
     ...AGENTS.flatMap((a) => [

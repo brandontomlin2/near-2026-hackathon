@@ -9,6 +9,11 @@
 //! anchored. The anchor is keyed by token id, so it travels with the token on
 //! transfer, and a new owner can check that the sheet they received matches
 //! the hash the token claims.
+//!
+//! Each token also owns a *wallet*: a NEAR balance keyed by token id, so it
+//! moves with the token on transfer. Anyone can tip a token, its owner can
+//! spend from it, and the owner can let an agent account pay one payee (for
+//! example an inference provider) up to an allowance. See `wallet.rs`.
 
 use near_contract_standards::non_fungible_token::approval::NonFungibleTokenApproval;
 use near_contract_standards::non_fungible_token::core::{
@@ -30,6 +35,9 @@ use near_sdk::{
     PromiseOrValue,
 };
 use std::collections::HashMap;
+
+mod wallet;
+pub use wallet::{TokenWallet, WalletAgent, WalletAgentView};
 
 /// NEP-297 `standard` field for the events this contract adds on top of NEP-171.
 pub const EVENT_STANDARD: &str = "personality_nft";
@@ -61,6 +69,8 @@ enum StorageKey {
     SheetAnchors,
     SeenHashes,
     InFlight,
+    Wallets,
+    WalletAgents,
 }
 
 /// The on-chain pointer to a token's off-chain character sheet.
@@ -135,6 +145,12 @@ pub struct Contract {
     in_flight: LookupMap<TokenId, InFlightLock>,
     /// Source of lock nonces. Incremented per `nft_transfer_call`.
     next_lock_nonce: u64,
+    /// Each token's wallet balance in yoctoNEAR, keyed by token id so it
+    /// travels with the token on transfer. See `wallet.rs`.
+    wallets: LookupMap<TokenId, u128>,
+    /// Optional spending grant per token: an agent account that may pay one
+    /// payee from the token's wallet, up to an allowance. See `wallet.rs`.
+    wallet_agents: LookupMap<TokenId, wallet::WalletAgent>,
 }
 
 #[near]
@@ -174,6 +190,8 @@ impl Contract {
             seen_hashes: LookupMap::new(StorageKey::SeenHashes),
             in_flight: LookupMap::new(StorageKey::InFlight),
             next_lock_nonce: 0,
+            wallets: LookupMap::new(StorageKey::Wallets),
+            wallet_agents: LookupMap::new(StorageKey::WalletAgents),
         }
     }
 
@@ -201,6 +219,7 @@ impl Contract {
         validate_token_id(&token_id);
         validate_token_metadata(&token_metadata);
         let initial_storage = env::storage_usage();
+        let token_id_for_wallet = token_id.clone();
         let token = self.tokens.internal_mint_with_refund(
             token_id.clone(),
             receiver_id,
@@ -215,9 +234,13 @@ impl Contract {
                 updated_at: U64(env::block_timestamp()),
             },
         );
+        // Every token is born with an empty wallet, so the minter pays for
+        // its storage once and deposits never grow storage later.
+        self.wallets.insert(token_id_for_wallet, 0);
         // `store` collections write lazily; flush so the storage delta below
-        // includes the anchor and the minter is charged for it.
+        // includes the anchor and the wallet, and the minter is charged for it.
         self.sheet_anchors.flush();
+        self.wallets.flush();
         let storage_used = env::storage_usage().saturating_sub(initial_storage);
         refund_deposit_to_account(storage_used, env::predecessor_account_id());
         NftMint {
@@ -639,7 +662,7 @@ fn validate_token_metadata(m: &TokenMetadata) {
     }
 }
 
-fn emit_event<T: near_sdk::serde::Serialize>(event: &str, data: T) {
+pub(crate) fn emit_event<T: near_sdk::serde::Serialize>(event: &str, data: T) {
     let log = EventLog {
         standard: EVENT_STANDARD.to_string(),
         version: EVENT_VERSION.to_string(),

@@ -182,7 +182,7 @@ test("hostile agent ids cannot reach file paths or hrefs", async () => {
   try {
     const run = await runDemo({ outDir: dir, rounds: 3, every: 3, ...hostileClients("x") });
     for (const f of run.files) assert.match(f, /^[A-Za-z0-9_./-]+$/);
-    assert.deepEqual((await readdir(dir)).sort(), ["anchors.json", "art", "demo.json", "events.json", "index.html", "memory", "share", "transcript.txt"]);
+    assert.deepEqual((await readdir(dir)).sort(), ["anchors.json", "art", "demo.json", "events.json", "index.html", "memory", "share", "transcript.txt", "wallets.json"]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

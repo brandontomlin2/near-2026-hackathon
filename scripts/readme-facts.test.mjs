@@ -193,9 +193,9 @@ test("README step 2 lists the page's h2 sections in the real order", async () =>
     const out = await runDemoCli(dir);
     const html = await readFile(join(out, "index.html"), "utf8");
     const h2s = [...html.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/g)].map((m) => m[1].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim());
-    assert.deepEqual(h2s, ["Agents", "Memory", "Meme pack", "Transfer: memory travels with the NFT", "Channel", "Anchor (dry run)", "Round hash chain", "Files"]);
+    assert.deepEqual(h2s, ["Agents", "Memory", "Meme pack", "Wallet: each token pays for its own thinking", "Transfer: memory travels with the NFT", "Channel", "Anchor (dry run)", "Round hash chain", "Files"]);
     const step2 = readme.match(/^2\. Open `out\/index\.html`\..*$/m)[0];
-    const claimed = ["Agents (", "Memory", "Meme pack", "Transfer", "the Channel", "Anchor (dry run)", "Check a hash yourself", "Round hash chain", "collapsed \"24 share cards\"", "Files"];
+    const claimed = ["Agents (", "Memory", "Meme pack", "Wallet (", "Transfer", "the Channel", "Anchor (dry run)", "Check a hash yourself", "Round hash chain", "collapsed \"24 share cards\"", "Files"];
     const positions = claimed.map((h) => step2.indexOf(h));
     assert.ok(positions.every((p) => p > 0), `step 2 must name every section: ${claimed.join(", ")}`);
     assert.deepEqual([...positions].sort((a, b) => a - b), positions, "step 2 must list the sections in page order");
@@ -305,14 +305,17 @@ test("README calls docs/img/page.png the top of the page, and quotes its real pi
   assert.ok(screenshot.includes(`--window-size=${width},${height}`), "the tracked PNG is a viewport capture at the screenshot script's window size");
 });
 
-test("README track-fit paragraph covers every claimed track and disclaims agent economics", () => {
+test("README track-fit paragraph covers every claimed track and states the agent economics plainly", () => {
   const tracks = readme.match(/^Tracks: (.+)\.$/m)[1].match(/`([a-z]+)`/g).map((t) => t.replace(/`/g, ""));
   const fit = readme.match(/^Track fit, plainly: .*$/m);
   assert.ok(fit, "README must have a 'Track fit, plainly:' paragraph");
   for (const t of tracks) assert.ok(fit[0].includes(`\`${t}\``), `track fit must mention ${t}`);
   // Says what exists and, against the organisers' track definitions, what does not.
-  assert.ok(fit[0].includes("What does not exist: no coordination market, bidding, collective purchasing or settlement between agents, and no agent earns, spends, negotiates, hires or pays."));
-  assert.ok(fit[0].includes("The agents talk, remember and anchor, and nothing else."));
+  assert.ok(fit[0].includes("What does not exist: no coordination market, bidding, collective purchasing or settlement between agents, and no agent negotiates, hires or pays another agent."));
+  assert.ok(fit[0].includes("The agents talk, remember, anchor and pay their own inference bill, and nothing else."));
+  // The only economics: a token's own wallet, and the demo shows it as a dry run.
+  assert.ok(fit[0].includes("In the demo this is a dry run"));
+  for (const m of ["wallet_set_agent", "wallet_agent_pay", "wallet_deposit"]) assert.ok(fit[0].includes(`\`${m}\``), m);
 });
 
 test("README 'Live on testnet' is one short paragraph after the working sections, with the owner-only command", async () => {

@@ -19,7 +19,7 @@ const PINNED_FINAL_ROUND_HASH = "4c8e826620ce2fa1c118df19d13f622ade870b0a54dd206
 const IDS = ["aloof", "chaotic", "social", "skeptic"];
 // Pins the sheet writer, summarizer prompt, hashing, art paths and anchors, not just the swarm.
 const PINNED_ALOOF_SHEET_HASH = "94f4211aa7fc9e0938ce92000cbcbcb7cfe70862f2158d2a77e518f11fa3ebbb";
-const PINNED_DEMO_JSON_SHA256 = "a669e25de88fb3bc1d97032ffb059d621b90fab237cfcce67fb9e16bfff49c54";
+const PINNED_DEMO_JSON_SHA256 = "14728e7c6b4ad62c83b451f4a68fc0f588d6019224032da4023542b275a17e20";
 
 const tmp = [];
 function mkTmp() {

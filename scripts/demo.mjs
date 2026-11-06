@@ -1,4 +1,5 @@
-// One-command offline demo: swarm, memory, art, anchor (dry run), HTML page.
+// One-command offline demo: swarm, memory, art, anchor and token wallets
+// (dry runs), HTML page.
 // Usage: node scripts/demo.mjs [--rounds N] [--seed N] [--every N] [--style NAME] [--out DIR]
 // Mock mode only: no keys, no network, nothing signed.
 
@@ -98,6 +99,12 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     const artCount = manifest.agents.length * (2 + manifest.moods.length);
     log(`[3/5] art: ${plural(artCount, "svg")} in style ${manifest.style} (now, at mint, ${manifest.moods.length} mood${manifest.moods.length === 1 ? "" : "s"} per agent), ${plural(manifest.shares.length, "share card")}, ${manifest.memes.length} meme card${manifest.memes.length === 1 ? "" : "s"}`);
     log(`[4/5] anchor (dry run): ${plural(sheetCount, "call")} prepared, 0 signed`);
+    if (manifest.wallets) {
+      const w = manifest.wallets;
+      const earners = w.tokens.filter((t) => BigInt(t.tipsYocto) > BigInt(t.inferenceYocto)).map((t) => t.name);
+      const who = earners.length === 0 ? "no token earns" : `${earners.join(" and ")} earn${earners.length === 1 ? "s" : ""}`;
+      log(`     wallets (dry run): ${plural(w.calls, "call")} prepared, 0 signed; each token pays its own inference, ${who} more in tips than ${earners.length === 1 ? "it spends" : "they spend"}`);
+    }
     log(`[5/5] viewer: ${at("index.html")}`);
     log("");
     log("Done. Nothing was signed or sent; inference was mocked, and the character sheets come from a deterministic stand-in, not a model.");
@@ -112,6 +119,9 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     log(`  4. Open ${at("memory/aloof/sheet.json")}. See Aloof's latest character sheet and its sha256 hash.`);
     log(`     Check the hash: node -p 'require("${requirePath(at("memory/aloof/sheet.json"))}").sheet' | shasum -a 256  # no shasum? use sha256sum`);
     log(`  5. Open ${at("anchors.json")}. See ${sheetCount} anchor_sheet calls for testnet, each "dry-run" with a null transaction hash; Aloof's last sheet_hash is the hash from step 4.`);
+    if (manifest.wallets) {
+      log(`     Then open ${at(manifest.wallets.file)}. See each token's wallet: tips in, inference paid out by the runner within its allowance, and the balance that moves to ${manifest.wallets.accounts.newOwner} with the token.`);
+    }
     log(`  6. Run the same command again. See the same final round hash (same --rounds, --seed, --every and --style): ${run.finalRoundHash}.`);
     log("");
     log(`Files written (${run.files.length}):`);

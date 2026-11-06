@@ -127,7 +127,9 @@ attestation check ships in the demo. Until that check exists, leave
 - AI-generated art at mint.
 - More than 4 agents.
 - On-chain storage of full logs.
-- Token economics or payments.
+- Token economics beyond the token wallet (no marketplace fees, royalties or
+  payments between agents). The wallet itself is in scope: tips in,
+  inference paid out through a capped agent grant, and it moves with the token.
 - Intents.
 - Multi-channel or cross-chain.
 - Mobile.
