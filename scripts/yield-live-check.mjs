@@ -91,7 +91,7 @@ export function runChecks({ timeoutMs = DEFAULT_TIMEOUT_MS, script = LIVE_SCRIPT
     };
 
     // 1. The real run, in an empty directory so any file write is visible.
-    const main = runGuarded({ ...ctx, args: ["dry-run", "--json"] });
+    const main = runGuarded({ ...ctx, args: ["dry-run", "--json", "--all"] });
     const mainFailure = failed("dry run", main.run);
     if (mainFailure) problems.push(mainFailure);
     else if (main.run.status !== 0) problems.push(`dry run exited with status ${main.run.status ?? main.run.signal}: ${(main.run.stderr ?? "").trim().split("\n")[0]}`);

@@ -227,8 +227,8 @@ export async function main(argv = process.argv.slice(2), io = {}) {
       log(`    expect: ${c.expect}`);
     }
     log("");
-    log(`STOP. The swap is plan step ${swapNumber}. Plan steps ${vault.length + 1}-${total} (${rest} more: withdraw and rollback) come from`);
-    log(`  npm run yield:live:dry-run -- --config ${shellQuote(opts.config)}`);
+    log(`STOP. The swap is plan step ${swapNumber}. Plan steps ${vault.length + 1}-${total} (${rest} more: withdraw and rollback) are deferred until AFTER the agent send; do not sign them before it. Print them then with`);
+    log(`  npm run yield:live:dry-run -- --config ${shellQuote(opts.config)} --rollback`);
     log("and docs/yield-vault-live-runbook.md (Plan steps, Rollback). Record every transaction hash.");
     log("Nothing was signed or sent; near was not run. The owner-gated senders (--send --i-approve) are not run by this script.");
     return 0;

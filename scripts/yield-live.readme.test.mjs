@@ -75,9 +75,11 @@ test("README live steps: every quoted line is a full line of the real output and
 });
 
 test("README step 1 step count equals the transactions in dry-run --json", () => {
-  const plan = JSON.parse(runScript(["dry-run", "--json"]).stdout);
-  const count = /^Yield vault live path on testnet: (\d+) steps,/.exec(steps[0].quotes[0])?.[1];
-  assert.equal(Number(count), plan.transactions.length);
+  const plan = JSON.parse(runScript(["dry-run", "--json", "--all"]).stdout);
+  const m = /^Yield vault live path on testnet: setup stage, plan steps 1-(\d+) of (\d+),/.exec(steps[0].quotes[0]);
+  assert.equal(Number(m?.[2]), plan.transactions.length);
+  const setup = JSON.parse(runScript(["dry-run", "--json"]).stdout);
+  assert.equal(Number(m?.[1]), setup.transactions.length);
   assert.equal(plan.unsigned, true);
   assert.deepEqual(plan.problems, []);
 });
@@ -100,7 +102,7 @@ test("subsection links the runbook and the go/no-go checklist, and both exist", 
 test("README step 5 step count matches step 1 and package.json maps yield:live:check", () => {
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   assert.equal(pkg.scripts["yield:live:check"], "node scripts/yield-live-check.mjs");
-  const n1 = /: (\d+) steps,/.exec(steps[0].quotes[0])?.[1];
+  const n1 = / of (\d+),/.exec(steps[0].quotes[0])?.[1];
   const n5 = /, (\d+) steps, plan valid;/.exec(steps[4].quotes[0])?.[1];
   assert.ok(n1 && n5, "both step counts are quoted");
   assert.equal(n5, n1);

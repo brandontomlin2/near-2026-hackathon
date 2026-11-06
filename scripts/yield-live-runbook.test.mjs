@@ -13,7 +13,7 @@ const runbook = readFileSync(runbookPath, 'utf8');
 const libRs = readFileSync(resolve(root, 'contracts/yield-vault/src/lib.rs'), 'utf8');
 const vaultReadme = readFileSync(resolve(root, 'contracts/yield-vault/README.md'), 'utf8');
 
-const run = spawnSync('node', ['scripts/yield-live.mjs', 'dry-run', '--json'], { cwd: root, encoding: 'utf8', timeout: 60000 });
+const run = spawnSync('node', ['scripts/yield-live.mjs', 'dry-run', '--json', '--all'], { cwd: root, encoding: 'utf8', timeout: 60000 });
 const plan = JSON.parse(run.stdout);
 const pubFns = new Set([...libRs.matchAll(/pub fn (\w+)/g)].map((m) => m[1]));
 

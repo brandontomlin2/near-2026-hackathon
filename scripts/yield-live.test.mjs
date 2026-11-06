@@ -46,7 +46,7 @@ function filledConfig(mutate = () => {}) {
 }
 
 test("dry-run --json: unsigned, ordered steps, exit 0", () => {
-  const r = run(["dry-run", "--json"]);
+  const r = run(["dry-run", "--json", "--all"]);
   assert.equal(r.code, 0, r.stderr);
   const doc = JSON.parse(r.stdout);
   assert.equal(doc.unsigned, true);
@@ -71,7 +71,7 @@ test("dry-run text lists steps, totals and commands; --out writes the JSON", () 
   assert.match(r.stdout, /UNSIGNED \(nothing is signed or sent\)/);
   assert.match(r.stdout, /^ 1\. \[setup\]/m);
   assert.match(r.stdout, /near-cli-rs \(text only\): near contract call-function as-transaction .* execute_swap/);
-  assert.match(r.stdout, /totals: \d+ transactions, \d+ views, deposits 8\.525 NEAR \+ \d+ yocto \(1-yocto security deposits\), owner outflow 8\.525 NEAR \+ \d+ yocto/);
+  assert.match(r.stdout, /totals \(whole plan, both stages\): \d+ transactions, \d+ views, deposits 8\.525 NEAR \+ \d+ yocto \(1-yocto security deposits\), owner outflow 8\.525 NEAR \+ \d+ yocto/);
   assert.match(r.stdout, /warning: placeholder not filled in: owner_id/);
   assert.equal(JSON.parse(readFileSync(out, "utf8")).unsigned, true);
 });
@@ -130,11 +130,11 @@ test("--build never runs before the config validated: refused and invalid config
 });
 
 test("dry-run lists run-time values apart from placeholders and problems", () => {
-  const doc = JSON.parse(run(["dry-run", "--json"]).stdout);
+  const doc = JSON.parse(run(["dry-run", "--json", "--all"]).stdout);
   assert.deepEqual(doc.filled_at_run_time.map((r) => `${r.step}.${r.arg}`), ["withdraw-out.amount", "withdraw-rest.amount", "withdraw-near.amount"]);
   assert.ok(!doc.warnings.some((w) => /withdraw/.test(w)));
   assert.deepEqual(doc.problems, []);
-  const text = run(["dry-run"]).stdout;
+  const text = run(["dry-run", "--rollback"]).stdout;
   assert.match(text, /filled at run time/);
   assert.match(text, /withdraw-out\.amount <- view-balance-2 \(result\)/);
   assert.match(text, /<READ get_balance\(rft\.tokenfactory\.testnet\) at step view-balance-2>/);

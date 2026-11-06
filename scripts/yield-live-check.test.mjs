@@ -16,7 +16,7 @@ let root, realPlan, realStdout;
 
 before(() => {
   root = mkdtempSync(join(tmpdir(), "yield-live-check-test-"));
-  const r = spawnSync(process.execPath, [LIVE_SCRIPT, "dry-run", "--json"], { encoding: "utf8", cwd: root });
+  const r = spawnSync(process.execPath, [LIVE_SCRIPT, "dry-run", "--json", "--all"], { encoding: "utf8", cwd: root });
   assert.equal(r.status, 0, r.stderr);
   realStdout = r.stdout;
   realPlan = JSON.parse(r.stdout);

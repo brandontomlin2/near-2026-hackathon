@@ -20,14 +20,14 @@ test("the clock is pinned exactly 24 h after the snapshot", () => {
   assert.equal(TRANSCRIPT_NOW - Date.parse(SNAPSHOT_TAKEN_AT), 24 * 3_600_000);
 });
 
-test("run 1: exit 0, unsigned header, preflight table, valid plan, 36 steps", () => {
+test("run 1: exit 0, unsigned header, preflight table, valid plan, setup stage 1-20 of 36", () => {
   const s = section(1);
   assert.match(s, /^Exit code: 0$/m);
   assert.ok(s.includes("UNSIGNED (nothing is signed or sent)"));
   assert.ok(s.includes("PREFLIGHT (offline; nothing is read from .env, no value is printed)"));
   assert.match(s, /^snapshot age\s+fresh\s+24\.0 h old/m);
   assert.ok(s.includes("plan valid against contracts/yield-vault/src/lib.rs"));
-  assert.ok(s.includes("36 steps"));
+  assert.ok(s.includes("setup stage, plan steps 1-20 of 36"));
   assert.ok(s.includes("Command: `npm run yield:live:dry-run`"));
 });
 
