@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "true",
+  "buildCommand": "npm run yield:demo",
+  "outputDirectory": "out/yield-demo",
+  "cleanUrls": true,
+  "trailingSlash": false
+}
