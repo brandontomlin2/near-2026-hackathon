@@ -336,6 +336,7 @@ async function preflight(opts, { log, err, fetch: fetchFn }) {
   const todo = checks.filter((c) => c.status === "MISSING" || c.status === "MANUAL" || c.status === "FAIL");
   if (todo.length === 0) log("  nothing");
   for (const c of todo) log(`  - [${c.status}] ${c.name}${c.status === "MISSING" ? `: ${c.detail}` : ""}`);
+  log(`Gate for the approved run (deploy the yield vault, mint ONE personality NFT, make ONE small Rhea (Ref) testnet swap). This check ${opts.online ? "only reads testnet views" : "is offline"}: near is never run, no key file is opened, nothing is signed or sent.`);
   log(`READY FOR LIVE: ${ready ? `yes (${opts.online ? "online read-only" : "offline"} checks only; confirm the MANUAL items by hand, then get the human's explicit yes)` : "no"}`);
   return exitCode();
 }

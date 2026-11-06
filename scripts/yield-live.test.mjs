@@ -186,6 +186,7 @@ test("preflight on the example: placeholders MISSING, READY FOR LIVE: no", () =>
   assert.match(r.stdout, /^MANUAL\s+keys for owner/m);
   assert.match(r.stdout, /Missing for live:/);
   assert.match(r.stdout, /READY FOR LIVE: no/);
+  assert.match(r.stdout, /Gate for the approved run \(deploy the yield vault, mint ONE personality NFT, make ONE small Rhea \(Ref\) testnet swap\)\. This check is offline: near is never run, no key file is opened, nothing is signed or sent\./);
 });
 
 test("preflight reports size and sha256 of a present wasm, and is READY when all is complete", () => {
