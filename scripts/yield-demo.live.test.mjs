@@ -127,6 +127,8 @@ describe("yield:demo live-path status", () => {
       [{}, "YIELD_LIVE_ARMED=1 is not set, NEAR_NETWORK=testnet is not set"],
       [{ [ARM_ENV]: "1" }, "NEAR_NETWORK=testnet is not set"],
       [{ [ARM_ENV]: "true", NEAR_NETWORK: "testnet" }, "YIELD_LIVE_ARMED=1 is not set"],
+      [{ [ARM_ENV]: " 1", NEAR_NETWORK: "testnet" }, "YIELD_LIVE_ARMED=1 is not set"],
+      [{ [ARM_ENV]: "1", NEAR_NETWORK: "Testnet" }, "NEAR_NETWORK=testnet is not set"],
     ]) {
       const r = run([], { env, config: filledConfig() });
       assert.equal(r.code, 0, r.stderr);
@@ -165,6 +167,14 @@ describe("yield:demo live-path status", () => {
     assert.ok(out.indexOf("live path: ARMED") < out.indexOf("== details =="));
   });
 
+  it("a --live-config path with spaces or shell metacharacters is single-quoted in the printed commands", () => {
+    const cfg = join(mkdtempSync(join(work, "q-")), "my live $(x).json");
+    writeFileSync(cfg, JSON.stringify(filledConfig()));
+    const r = run(["--live-config", cfg], { env: ARMED_ENV });
+    assert.equal(r.code, 0, r.stderr);
+    assert.ok(r.stdout.includes(`  2. npm run yield:live:dry-run -- --config '${cfg}'\n`), r.stdout);
+  });
+
   it("--live-config FILE is read instead of the default; a missing explicit file is refused", () => {
     const cfg = join(work, "elsewhere.json");
     writeFileSync(cfg, JSON.stringify(filledConfig()));
@@ -200,6 +210,39 @@ describe("yield:demo hard refusals", () => {
     assert.equal(existsSync(nearLog), false);
   });
 
+  it("a bare (unprefixed) key pasted into a non-key field is not echoed in the not-armed line", () => {
+    const bare = "5".repeat(30) + "abcdefghijkmnopqrstuvwxyz";
+    const r = run([], { env: ARMED_ENV, config: filledConfig({ funding: { vault_initial_near: bare, runner_initial_near: "2" } }) });
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stdout, /^live path: not armed \(out\/yield-vault\.live\.json: .*<value not shown>/m);
+    assert.ok(!(r.stdout + r.stderr).includes(bare), "the pasted value was printed");
+    assert.equal(existsSync(nearLog), false);
+  });
+
+  it("an explicit missing --live-config is refused in --calls and --json mode too", () => {
+    for (const mode of ["--calls", "--json"]) {
+      const r = run([mode, "--live-config", join(work, "nope.json")], { env: ARMED_ENV });
+      assert.equal(r.code, 2, mode);
+      assert.equal(r.stdout, "");
+    }
+  });
+
+  it("--calls and --json print no live-path line, even armed", () => {
+    for (const mode of ["--calls", "--json"]) {
+      const r = run([mode], { env: ARMED_ENV, config: filledConfig() });
+      assert.equal(r.code, 0, r.stderr);
+      assert.doesNotMatch(r.stdout, /live path:/);
+      assert.equal(existsSync(nearLog), false);
+    }
+  });
+
+  it("a config of an odd shape is reported as not armed, not a stack trace", () => {
+    const r = run([], { env: ARMED_ENV, config: filledConfig({ swap: null, limits: [] }) });
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stdout, /^live path: not armed \(out\/yield-vault\.live\.json: /m);
+    assert.doesNotMatch(r.stderr, /at .*\.mjs:\d+/);
+  });
+
   it("a config naming a .near (mainnet) account is refused (exit 2)", () => {
     const r = run([], { env: ARMED_ENV, config: filledConfig({ owner_id: "owner.near" }) });
     assert.equal(r.code, 2);
@@ -212,8 +255,9 @@ describe("yield:demo hard refusals", () => {
     assert.match(r.stderr, /refused: NEAR_NETWORK=mainnet/);
   });
 
-  it("a flag VALUE containing 'sign' is not a refused flag (e.g. --snapshot design.json)", () => {
+  it("a flag VALUE containing 'sign' is not a refused flag (e.g. --snapshot design.json); any FLAG containing it is", () => {
     assert.equal(isRefusedDemoFlag("design.json"), false);
+    assert.equal(isRefusedDemoFlag("--design"), true); // deliberately broad: exit 2 either way
     assert.equal(isRefusedDemoFlag("--Sign"), true);
     assert.equal(isRefusedDemoFlag("--send=yes"), true);
   });
