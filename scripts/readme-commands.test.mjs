@@ -45,6 +45,14 @@ test("Judge quick path has at most 4 numbered commands and says it is mock", () 
   assert.match(quick, /Nothing is signed or sent/);
 });
 
+test("Judge quick path leads with the vault: step 1 is npm install && npm run yield:demo, the NFT demo comes after", () => {
+  const steps = quick.split(/^(?=\d+\. )/m).filter((s) => /^\d+\. /.test(s));
+  assert.ok(steps[0].startsWith("1. `npm install && npm run yield:demo`"), "step 1 is the vault demo");
+  assert.ok(steps[1].startsWith("2. `npm run demo`"), "step 2 is the supporting NFT demo");
+  assert.ok(steps[2].startsWith("3. `open out/index.html`"), "step 3 opens the NFT page");
+  assert.ok(steps.at(-1).startsWith("4. `bash scripts/verify.sh`"), "step 4 is verify.sh");
+});
+
 test("Judge quick path: npm run demo prints the lines it quotes and writes the page", () => {
   const out = mkdtempSync(join(tmpdir(), "quickpath-"));
   try {
@@ -53,15 +61,15 @@ test("Judge quick path: npm run demo prints the lines it quotes and writes the p
       encoding: "utf8",
     });
     assert.equal(run.status, 0, run.stderr);
-    const step1 = quick.split(/^2\. /m)[0];
-    const lines = quoted(step1).filter((q) => !q.startsWith("npm install"));
-    assert.ok(lines.length >= 4, "step 1 quotes demo output lines");
+    const step1 = quick.split(/^2\. /m)[1].split(/^3\. /m)[0];
+    const lines = quoted(step1).filter((q) => !q.startsWith("npm "));
+    assert.ok(lines.length >= 4, "step 2 quotes demo output lines");
     for (const line of lines) {
       // The final line's path is machine-specific; compare its fixed prefix.
       const want = line.startsWith("Open the page:") ? "Open the page: open " : line;
       assert.ok(run.stdout.includes(want), `demo output has: ${want}`);
     }
-    const headline = quoted(quick.split(/^2\. /m)[1].split(/^3\. /m)[0]).find((q) => /remembers/.test(q));
+    const headline = quoted(quick.split(/^3\. /m)[1].split(/^4\. /m)[0]).find((q) => /remembers/.test(q));
     assert.ok(readFileSync(join(out, "index.html"), "utf8").includes(headline), "page has the headline");
   } finally {
     rmSync(out, { recursive: true, force: true });
