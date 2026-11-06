@@ -9,11 +9,22 @@ const KEY = "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp";
 const REF = "ref-finance-101.testnet";
 const WNEAR = "wrap.testnet";
 const RFT = "rft.tokenfactory.testnet";
+const USDC = "usdc.fakes.testnet";
+const USDT = "usdt.fakes.testnet";
 
 const filled = () => {
   const c = loadLiveConfig(EXAMPLE);
   Object.assign(c, { placeholders: false, owner_id: "alice.testnet", vault_id: "vault.alice.testnet", runner_id: "run.alice.testnet", nft_contract_id: "nft.alice.testnet", token_id: "7" });
   c.public_keys = { vault: KEY, runner: KEY };
+  return c;
+};
+
+/** The old personality-agent shape (chaotic vault, wNEAR -> rft on pool 0), to keep that path covered. */
+const chaoticFilled = () => {
+  const c = filled();
+  delete c.vault_profile;
+  Object.assign(c, { agent: "chaotic", deposit: { token_id: WNEAR, amount: "20000000000000000000000" } });
+  c.swap = { pool_id: 0, token_in: WNEAR, token_out: RFT, amount_in: "10000000000000000000000", min_amount_out: "50000000" };
   return c;
 };
 
@@ -23,10 +34,15 @@ function fakeChain(over = {}) {
     accounts: { "wrap.testnet": { code_hash: "x", amount: "1" }, [REF]: { code_hash: "5Uk3VqDvSyGkS5pE8eWqjR9zVfXk2QxJf8cYhFZ9pQd1", amount: "1" }, "alice.testnet": { amount: (50n * 10n ** 24n).toString(), code_hash: NO_CODE_HASH } },
     views: {
       [`${REF}:storage_balance_bounds`]: { min: "1020000000000000000000", max: null },
-      [`${REF}:get_whitelisted_tokens`]: [WNEAR, RFT, "nusdt.ft-fin.testnet"],
-      [`${REF}:get_pool`]: { token_account_ids: [WNEAR, RFT], amounts: ["1000000000000000000000000000", "5000000000000"], pool_kind: "SIMPLE_POOL" },
+      [`${REF}:get_whitelisted_tokens`]: [USDC, USDT, WNEAR, RFT, "nusdt.ft-fin.testnet"],
+      // pool 747 reserves from src/yield/fixtures/ref-testnet-pools.json
+      [`${REF}:get_pool`]: { token_account_ids: [USDC, USDT], amounts: ["4976689", "5108251"], pool_kind: "SIMPLE_POOL" },
+      [`${USDC}:ft_metadata`]: { decimals: 6 },
+      [`${USDT}:ft_metadata`]: { decimals: 6 },
       [`${WNEAR}:ft_metadata`]: { decimals: 24 },
       [`${RFT}:ft_metadata`]: { decimals: 6 },
+      [`${USDC}:storage_balance_bounds`]: { min: "1250000000000000000000" },
+      [`${USDT}:storage_balance_bounds`]: { min: "1250000000000000000000" },
       [`${WNEAR}:storage_balance_bounds`]: { min: "1250000000000000000000" },
       [`${RFT}:storage_balance_bounds`]: { min: "1250000000000000000000" },
     },
@@ -125,9 +141,11 @@ test("online checks all PASS against a consistent testnet, within the request bu
   const bad = checks.filter((c) => !["PASS", "MANUAL"].includes(c.status));
   assert.deepEqual(bad, []);
   assert.match(find(checks, /Ref exchange has code/).detail, /code_hash/);
-  assert.match(find(checks, new RegExp(`token ${WNEAR}`)).detail, /decimals 24/);
-  assert.match(find(checks, new RegExp(`token ${RFT}`)).detail, /decimals 6/);
-  assert.match(find(checks, /owner account funded/).detail, /balance 50 NEAR, needs 9\.525/);
+  assert.match(find(checks, new RegExp(`token ${USDC}`)).detail, /decimals 6/);
+  assert.match(find(checks, new RegExp(`token ${USDT}`)).detail, /decimals 6/);
+  assert.equal(checks.filter((c) => /^online: token /.test(c.name)).length, 2, "only the swap pair is checked, not every token of every allowed pool");
+  assert.match(find(checks, /Ref pool matches/).detail, /pool 747 tokens match, reserves \[4976689, 5108251\], amount_in is 1% of the token_in reserve/);
+  assert.match(find(checks, /owner account funded/).detail, /balance 50 NEAR, needs 9\.505/);
   assert.ok(checks.some((c) => c.status === "MANUAL" && /not checkable read-only/.test(c.name)));
   assert.ok(rpc.requests <= MAX_REQUESTS, `${rpc.requests} requests`);
 });
@@ -151,36 +169,64 @@ test("online checks: Ref without code, high storage bounds, missing whitelist", 
   chain.state.views[`${REF}:storage_balance_bounds`] = { min: "600000000000000000000000" };
   assert.equal(find((await run(filled(), chain)).checks, /Ref storage_balance_bounds/).status, "FAIL");
   chain = fakeChain();
-  chain.state.views[`${REF}:get_whitelisted_tokens`] = [WNEAR];
+  chain.state.views[`${REF}:get_whitelisted_tokens`] = [USDC];
   const w = find((await run(filled(), chain)).checks, /whitelists/);
   assert.equal(w.status, "FAIL");
-  assert.match(w.detail, new RegExp(RFT));
+  assert.match(w.detail, new RegExp(USDT));
+  assert.doesNotMatch(w.detail, new RegExp(USDC.replaceAll(".", "\\.")));
+  // Tokens of the vault's other allowed pools are not needed: whitelisting just the pair passes.
+  chain = fakeChain();
+  chain.state.views[`${REF}:get_whitelisted_tokens`] = [USDC, USDT];
+  assert.equal(find((await run(filled(), chain)).checks, /whitelists/).status, "PASS");
+  // The old personality-agent shape checks wNEAR and rft instead.
+  chain = fakeChain();
+  chain.state.views[`${REF}:get_whitelisted_tokens`] = [WNEAR];
+  const wc = find((await run(chaoticFilled(), chain)).checks, /whitelists/);
+  assert.equal(wc.status, "FAIL");
+  assert.match(wc.detail, new RegExp(RFT));
 });
 
 test("online checks: pool pair, empty reserves and a large swap", async () => {
   let chain = fakeChain();
-  chain.state.views[`${REF}:get_pool`] = { token_account_ids: [RFT, WNEAR], amounts: ["5000000000000", "1000000000000000000000000000"] };
+  chain.state.views[`${REF}:get_pool`] = { token_account_ids: [USDT, USDC], amounts: ["5108251", "4976689"] };
   assert.equal(find((await run(filled(), chain)).checks, /Ref pool matches/).status, "PASS", "either order is fine");
   chain = fakeChain();
-  chain.state.views[`${REF}:get_pool`] = { token_account_ids: [WNEAR, "nusdt.ft-fin.testnet"], amounts: ["1", "1"] };
+  chain.state.views[`${REF}:get_pool`] = { token_account_ids: [USDC, "nusdt.ft-fin.testnet"], amounts: ["1", "1"] };
   assert.equal(find((await run(filled(), chain)).checks, /Ref pool matches/).status, "FAIL");
   chain = fakeChain();
-  chain.state.views[`${REF}:get_pool`] = { token_account_ids: [WNEAR, RFT], amounts: ["0", "5"] };
+  chain.state.views[`${REF}:get_pool`] = { token_account_ids: [USDC, USDT], amounts: ["0", "5"] };
   assert.match(find((await run(filled(), chain)).checks, /Ref pool matches/).detail, /empty reserves/);
   chain = fakeChain();
-  chain.state.views[`${REF}:get_pool`] = { token_account_ids: [WNEAR, RFT], amounts: ["1000000000000000000000000", "5000000000000"] }; // amount_in = 1% exactly... 0.01 NEAR of 1 NEAR
+  chain.state.views[`${REF}:get_pool`] = { token_account_ids: [USDC, USDT], amounts: ["5000000", "5000000"] }; // amount_in 50000 = 1% of the token_in reserve exactly
   const heavy = find((await run(filled(), chain)).checks, /Ref pool matches/);
   assert.equal(heavy.status, "PASS", "exactly 1% is not above 1%");
-  chain.state.views[`${REF}:get_pool`].amounts[0] = "900000000000000000000000";
+  chain.state.views[`${REF}:get_pool`].amounts[0] = "4900000";
   const over = find((await run(filled(), chain)).checks, /Ref pool matches/);
   assert.equal(over.status, "WARN");
   assert.match(over.detail, /above 1%/);
 });
 
+test("online checks: the old chaotic pool-0 shape still checks wNEAR / rft", async () => {
+  const chain = fakeChain();
+  chain.state.views[`${REF}:get_pool`] = { token_account_ids: [WNEAR, RFT], amounts: ["1000000000000000000000000000", "5000000000000"], pool_kind: "SIMPLE_POOL" };
+  const { checks } = await run(chaoticFilled(), chain);
+  assert.deepEqual(checks.filter((c) => !["PASS", "MANUAL"].includes(c.status)), []);
+  assert.match(find(checks, new RegExp(`token ${WNEAR}`)).detail, /decimals 24/);
+  assert.match(find(checks, new RegExp(`token ${RFT}`)).detail, /decimals 6/);
+  assert.equal(find(checks, new RegExp(`token ${USDC}`)), undefined);
+  assert.match(find(checks, /Ref pool matches/).detail, /pool 0 tokens match/);
+  assert.match(find(checks, /owner account funded/).detail, /needs 9\.525/);
+  chain.state.views[`${REF}:get_pool`] = { token_account_ids: [WNEAR, RFT], amounts: ["1000000000000000000000000", "5000000000000"] };
+  assert.equal(find((await run(chaoticFilled(), chain)).checks, /Ref pool matches/).status, "PASS", "exactly 1% (0.01 of 1 NEAR)");
+  chain.state.views[`${REF}:get_pool`].amounts[0] = "900000000000000000000000";
+  assert.equal(find((await run(chaoticFilled(), chain)).checks, /Ref pool matches/).status, "WARN");
+});
+
 test("online checks: token storage bounds, owner funding and existing accounts", async () => {
   let chain = fakeChain();
-  chain.state.views[`${RFT}:storage_balance_bounds`] = { min: "9000000000000000000000" };
-  assert.equal(find((await run(filled(), chain)).checks, new RegExp(`token ${RFT}`)).status, "FAIL");
+  chain.state.views[`${USDT}:storage_balance_bounds`] = { min: "9000000000000000000000" };
+  assert.equal(find((await run(filled(), chain)).checks, new RegExp(`token ${USDT}`)).status, "FAIL");
+  assert.equal(find((await run(filled(), chain)).checks, new RegExp(`token ${USDC}`)).status, "PASS");
   chain = fakeChain();
   chain.state.accounts["alice.testnet"] = { amount: (9n * 10n ** 24n).toString() };
   assert.equal(find((await run(filled(), chain)).checks, /owner account funded/).status, "FAIL");

@@ -11,7 +11,7 @@ import { EXECUTE_SWAP_GAS, EXECUTE_SWAP_TGAS } from "./gas.mjs";
 import { vaultArgs } from "./proposal.mjs";
 import { checkProposal, validateVaultConfig } from "./rules.mjs";
 import { RefusalError, assertNotMainnet, buildExecuteSwapArgv, formatCommand } from "./send.mjs";
-import { EXCHANGE, WNEAR, defaultVaultConfig } from "./strategies.mjs";
+import { EXCHANGE, PLANNER_STRATEGY, WNEAR, defaultVaultConfig, plannerVaultConfig } from "./strategies.mjs";
 
 export const NETWORK = "testnet";
 export const AGENT_IDS = Object.freeze(["aloof", "chaotic", "social", "skeptic"]);
@@ -105,7 +105,7 @@ function publicKeyProblem(key, allowPlaceholder) {
 // ------------------------------------------------------------------------------------- config
 
 const SECTION_KEYS = {
-  top: ["placeholders", "network", "owner_id", "vault_id", "runner_id", "nft_contract_id", "token_id", "agent", "ref_exchange_id", "wasm_path", "public_keys", "funding", "ref_storage_deposit_near", "token_storage_deposit_near", "deposit", "swap", "limits"],
+  top: ["placeholders", "network", "owner_id", "vault_id", "runner_id", "nft_contract_id", "token_id", "agent", "vault_profile", "ref_exchange_id", "wasm_path", "public_keys", "funding", "ref_storage_deposit_near", "token_storage_deposit_near", "deposit", "swap", "limits"],
   public_keys: ["vault", "runner"],
   funding: ["vault_initial_near", "runner_initial_near"],
   deposit: ["token_id", "amount"],
@@ -139,9 +139,22 @@ function isDirectChild(parent, id) {
 
 const isTestnetId = (id) => isValidAccountId(id) && id.endsWith(".testnet");
 
-/** The VaultConfig the `new` call takes: defaultVaultConfig(agent) with runners = [runner_id]. */
+/** The only vault_profile: the Yield Optimizer planner's vault (what `npm run yield:demo` executes against). */
+export const PLANNER_PROFILE = "yield-optimizer";
+
+/**
+ * The VaultConfig the `new` call takes, with runners = [runner_id]: the agent's own defaultVaultConfig,
+ * or with vault_profile "yield-optimizer" the planner's vault (pools 0, 1 and 747), the same vault
+ * `npm run yield:demo` plans its execute_swap against.
+ */
 export function vaultConfigFor(config) {
+  if (config.vault_profile === PLANNER_PROFILE) return plannerVaultConfig({ runner: config.runner_id });
   return defaultVaultConfig(config.agent, { runner: config.runner_id });
+}
+
+/** The tokens the vault ever holds or receives: the swap pair, token_in first. */
+export function liveTokens(config) {
+  return [...new Set([config.swap.token_in, config.swap.token_out])];
 }
 
 /**
@@ -186,6 +199,10 @@ export function validateLiveConfig(config, { allowPlaceholders = false } = {}) {
   if (owner !== undefined && (owner === vault || owner === runner)) add("owner_id must differ from vault_id and runner_id");
   if (!isPh(config.token_id) && !(typeof config.token_id === "string" && /^[a-z0-9_-]{1,64}$/.test(config.token_id))) add("token_id must be 1-64 chars of [a-z0-9_-]");
   if (!AGENT_IDS.includes(config.agent)) add(`agent must be one of ${AGENT_IDS.join(", ")}`);
+  if (config.vault_profile !== undefined) {
+    if (config.vault_profile !== PLANNER_PROFILE) add(`vault_profile must be "${PLANNER_PROFILE}" when set`);
+    else if (config.agent !== PLANNER_STRATEGY) add(`vault_profile "${PLANNER_PROFILE}" needs agent "${PLANNER_STRATEGY}": the vault contract has no fifth strategy, the planner's vault carries ${PLANNER_STRATEGY}`);
+  }
   if (typeof config.wasm_path !== "string" || config.wasm_path === "") add("wasm_path must be a non-empty string");
   if (config.ref_exchange_id !== EXCHANGE) add(`ref_exchange_id must be ${EXCHANGE} (the exchange the vault config and fixtures are for)`);
 
@@ -308,7 +325,7 @@ export function buildLivePlan(config) {
   const { owner_id: owner, vault_id: vault, runner_id: runner, ref_exchange_id: ref } = config;
   const vc = vaultConfigFor(config);
   const proposal = vaultArgs(config.swap).proposal;
-  const tokens = [...new Set(vc.allowed_pools.flatMap((p) => [p.token_a, p.token_b]))];
+  const tokens = liveTokens(config);
   const dep = BigInt(config.deposit.amount);
   const tokDep = parseNear(config.token_storage_deposit_near);
   const steps = [];
@@ -332,7 +349,7 @@ export function buildLivePlan(config) {
     { type: "DeployContract", wasm_path: config.wasm_path },
     call("new", { owner_id: owner, nft_contract_id: config.nft_contract_id, token_id: config.token_id, ref_exchange_id: ref, config: vc }, 100),
   ], "both actions succeed (new is only callable by the vault account itself, so it must be this transaction)");
-  step("view-config", "check", "read the stored config", null, vault, [viewCall("get_config")], `runners == [${runner}], strategy == ${config.agent}`);
+  step("view-config", "check", "read the stored config", null, vault, [viewCall("get_config")], `runners == [${runner}], strategy == ${config.agent}${config.vault_profile === PLANNER_PROFILE ? ` (the ${PLANNER_PROFILE} planner vault: pools 0, 1 and 747)` : ""}`);
   step("view-state", "check", "read the vault state", null, vault, [viewCall("get_state")], "paused == false, nothing in flight");
 
   for (const t of tokens) {
@@ -344,7 +361,7 @@ export function buildLivePlan(config) {
   if (config.deposit.token_id === WNEAR) {
     step("wrap-near", "fund", `wrap ${formatNear(dep)} NEAR into wNEAR`, owner, WNEAR, [call("near_deposit", {}, 30, dep)], `owner holds at least ${config.deposit.amount} wNEAR (ft_balance_of)`);
   } else {
-    manual.push(`the owner must already hold ${config.deposit.amount} base units of ${config.deposit.token_id} (the plan only wraps NEAR into ${WNEAR})`);
+    manual.push(`the owner must already hold ${config.deposit.amount} base units of ${config.deposit.token_id} (the plan can only wrap NEAR into ${WNEAR}, so it cannot fund this token)`);
   }
   step("ref-bounds", "check", "read Ref's storage bounds", null, ref, [viewCall("storage_balance_bounds")], "min <= ref_storage_deposit_near; note per-token storage Ref needs");
   step("register-on-ref", "fund", "pay the vault's Ref storage", owner, vault, [call("register_on_ref", {}, 100, parseNear(config.ref_storage_deposit_near))], "registered_on_ref event; Ref storage_balance_of(vault) is not null");
