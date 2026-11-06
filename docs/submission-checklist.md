@@ -63,7 +63,7 @@ Walked 2026-11-04 against this tree (main `aaaa5ba`), offline. Status: **PASS** 
 | Human decides: mainnet NEAR account for payout (`nearAddress`) | TODO-OWNER | Ask. Never create or invent one. |
 | Human decides: public repository URL (`projectUrl`, unique) | TODO-OWNER | Known only after the repo is public. |
 | Human decides: public demo post URL (`demoUrl`) | TODO-OWNER | Known only after the human publishes the post. |
-| Human decides: what they built (`idea`, 20-2000 chars) | TODO-OWNER | Human approves a draft from README "What this is" and "How NEAR fits". |
+| Human decides: what they built (`idea`, 20-2000 chars) | TODO-OWNER | Human approves a draft from the README opening (vault lede) and "What this is" / "How NEAR fits". |
 | Human decides: consent to the contact notice, read verbatim | TODO-OWNER | Quote is in Section 6. `true` only after the human agrees. |
 
 Disclosure note: `docs/DISCLOSURE.md` carries the Q-002, Q-003 and Q-005 answers. A one-sentence "everything here is mock or dry-run; nothing is deployed to testnet; no mainnet or Intents use" is added there so the disclosure file stands alone.
@@ -85,10 +85,10 @@ Open GAPs for the lead: (1) README one-line library list (suggested text above).
 
 | Requirement | Status | Evidence / next step |
 | --- | --- | --- |
-| What the product is, the problem, how NEAR fits; no marketing | done | README "What this is", "How NEAR fits". |
+| What the product is, the problem, how NEAR fits; no marketing | done | README opening (the vault lede, "Problem:" and "Status, plainly:" paragraphs), then "What this is" and "How NEAR fits" for the NFT side. |
 | Numbered "do X, see Y" steps from a fresh clone | done | README "Try it (judge path)" steps 1-10. Re-check each command exists in `package.json` before submit. |
 | Works with no keys (`MOCK_INFERENCE=1`); live env vars documented | done | README "Inference" section. |
-| Track ids named in README | done | README line 21, under the title: "Tracks: `nfts`, `swarms` and `agents`." `docs/HACKATHON.md` lists all 13 valid ids. |
+| Track ids named in README | done | README "What this is" section: "Tracks: `nfts`, `swarms` and `agents`." `docs/HACKATHON.md` lists all 13 valid ids. |
 | Libraries, templates, AI-generated code listed (Q-005) | done | `docs/DISCLOSURE.md`, linked from README "Disclosure". |
 | Pre-hackathon code disclosed (Q-002, Q-003) | done | README "Mock caveats and status" and "Disclosure": none. `docs/DISCLOSURE.md` names first commit `992acee`. |
 | Planned features not described as shipped | done | README "Mock caveats and status" and "Live on testnet" say nothing is deployed and there are no hashes to show. Re-check after any live run. |

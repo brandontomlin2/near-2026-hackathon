@@ -169,7 +169,7 @@ test("README does not pin a contract unit-test count; it claims only 'ok' and '0
 });
 
 test("README names the product, pins the exact Rust toolchain and describes live:check's real output", async () => {
-  assert.match(readme, /^# Personality NFT\n\nNEAR 2026 Hackathon entry\./, "H1 must be the product name, hackathon line under it");
+  assert.match(readme, /^# Yield Optimizer vault\n\nNEAR 2026 Hackathon entry\./, "H1 must be the product name, hackathon line under it");
   const toolchain = await readFile(join(root, "contracts/personality-nft/rust-toolchain.toml"), "utf8");
   const channel = toolchain.match(/^channel = "([^"]+)"/m)[1];
   assert.ok(readmeText.includes(`Needs Rust ${channel} (pinned in the crate's \`rust-toolchain.toml\``), `README must say Rust ${channel}`);
