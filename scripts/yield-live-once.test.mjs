@@ -280,3 +280,25 @@ test("subprocess: --help exits 0, but not past a send flag; unknown flags exit 2
   assert.equal(spawnOnce(["--help", "--send"]).code, 2);
   assert.equal(spawnOnce(["--bogus"]).code, 2);
 });
+
+test("READY=no messaging: names accounts, key location, the approved run, and that nothing is sent", T, async () => {
+  const r = await runReady({ home: homeWithKeys([]) });
+  assert.equal(r.code, 3, r.stderr);
+  for (const id of Object.values(IDS)) assert.ok(r.stdout.includes(id), `account ${id} not named`);
+  assert.match(r.stdout, /no ~\/\.near-credentials\/testnet\/\S+\.json/);
+  assert.match(r.stdout, /Put the keys in the near-cli-rs keychain: ~\/\.near-credentials\/testnet\/<account>\.json/);
+  assert.match(r.stdout, /--keys-in-os-keychain/);
+  assert.match(r.stdout, /Approved run \(the only one\): deploy the yield vault, mint ONE personality NFT, make ONE small Rhea \(Ref\) testnet swap\./);
+  assert.match(r.stdout, /Faucet test NEAR only, testnet only\./);
+  assert.match(r.stdout, /Nothing is signed or sent until READY FOR LIVE is yes and the owner runs the printed commands by hand\./);
+  assert.equal(r.rec.called(), false);
+});
+
+test("subprocess, example config: the READY=no output carries the approved-run and key-location facts", T, () => {
+  const r = spawnOnce([], { NEAR_NETWORK: "testnet" });
+  assert.equal(r.code, 3, r.stderr);
+  assert.match(r.stdout, /Approved run \(the only one\)/);
+  assert.match(r.stdout, /Faucet test NEAR only/);
+  assert.match(r.stdout, /Testnet accounts that need keys: /);
+  assert.match(r.stdout, /~\/\.near-credentials\/testnet\//);
+});
