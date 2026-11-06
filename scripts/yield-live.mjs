@@ -21,16 +21,15 @@ import {
   parseNear, planTotals, validateLiveConfig, validatePlan,
   setupStepCount,
 } from "../src/yield/live-plan.mjs";
+import { BUILD_COMMAND, buildAll } from "./build-wasm.mjs";
 import { PrerequisiteError, buildPreflight, notReadyLines, preflightForJson, readSnapshotMeta, renderPreflight } from "../src/yield/live-dry-run-preflight.mjs";
 import { DEFAULT_RPC, assertRpcUrl, createRpc, onlineChecks } from "../src/yield/live-rpc.mjs";
 import { RefusalError, assertNotMainnet } from "../src/yield/send.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_CONFIG = resolve(ROOT, "config/yield-vault.live.example.json");
-const CONTRACT_DIR = resolve(ROOT, "contracts/yield-vault");
 const SNAPSHOT_FILE = resolve(ROOT, "src/yield/fixtures/ref-testnet-pools.json");
 const CONTRACT_SOURCE_FILE = fileURLToPath(CONTRACT_SOURCE_URL);
-const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
 const REFUSED_FLAGS = ["--send", "--sign", "--i-approve", "--sign-with-keychain", "--sign-with-plaintext-private-key", "--private-key", "--seed-phrase", "--live", "--broadcast"];
 
 const USAGE = () => `Usage: node scripts/yield-live.mjs <dry-run|preflight> [options]
@@ -63,7 +62,7 @@ const USAGE = () => `Usage: node scripts/yield-live.mjs <dry-run|preflight> [opt
                  contracts exist and match the config, storage bounds, pool tokens and reserves, owner funded,
                  vault/runner not yet created. Only query/call_function and view_account with finality final; no keys.
       --rpc URL  RPC endpoint for --online; must be https and must not contain "mainnet" (else exit 2)
-      --build    first run \`cargo near build non-reproducible-wasm\` in contracts/yield-vault (10 min timeout)
+      --build    first run npm run build:wasm (cargo near build non-reproducible-wasm for the NFT and the vault; 10 min timeout each)
       --require-ready  exit 3 with the MISSING item names on stderr when READY FOR LIVE is no
       Exit 0 no FAIL (MISSING and MANUAL items do not fail; they make READY FOR LIVE no),
       1 at least one FAIL, 2 refused or usage error, 3 with --require-ready and not ready.
@@ -229,10 +228,11 @@ async function preflight(opts, { log, err, fetch: fetchFn }) {
   if (opts.build) {
     if (configProblems.length) add("FAIL", "wasm build", "skipped: the config does not validate");
     else {
-    log("building: cargo near build non-reproducible-wasm (contracts/yield-vault)");
-    const r = spawnSync("cargo", ["near", "build", "non-reproducible-wasm"], { cwd: CONTRACT_DIR, encoding: "utf8", timeout: BUILD_TIMEOUT_MS });
-    if (r.error || r.status !== 0) add("FAIL", "wasm build", (r.error?.message ?? r.stderr ?? "").trim().split("\n").slice(-3).join(" | "));
-    else add("PASS", "wasm build", "cargo near build non-reproducible-wasm succeeded");
+    log(`building both wasms (${BUILD_COMMAND}): cargo near build non-reproducible-wasm`);
+    const results = buildAll({ log });
+    const bad = results.find((r) => !r.ok);
+    if (bad || results.length < 2) add("FAIL", "wasm build", bad ? `${bad.name}: ${bad.detail}` : "build did not complete");
+    else add("PASS", "wasm build", "personality-nft and yield-vault: cargo near build non-reproducible-wasm succeeded");
     }
   }
   const placeholders = findPlaceholders(config);
@@ -254,7 +254,7 @@ async function preflight(opts, { log, err, fetch: fetchFn }) {
 
   const wasmPath = isAbsolute(config.wasm_path ?? "") ? config.wasm_path : resolve(ROOT, config.wasm_path ?? "");
   if (!config.wasm_path || !existsSync(wasmPath)) {
-    add("MISSING", "wasm present", `${config.wasm_path} not found; build it: cargo near build non-reproducible-wasm (or preflight --build)`);
+    add("MISSING", "wasm present", `${config.wasm_path} not found; build both wasms offline: npm run build:wasm (or preflight --build)`);
   } else {
     const size = statSync(wasmPath).size;
     const need = BigInt(size) * YOCTO_PER_BYTE;
@@ -272,7 +272,7 @@ async function preflight(opts, { log, err, fetch: fetchFn }) {
 
   const abiFile = config.wasm_path ? abiPathFor(wasmPath) : null;
   if (!abiFile || !existsSync(abiFile)) {
-    add("MISSING", "plan valid against built ABI", `${abiFile ?? "(no wasm_path)"} not found; cargo near build writes it next to the wasm`);
+    add("MISSING", "plan valid against built ABI", `${abiFile ?? "(no wasm_path)"} not found; npm run build:wasm writes it next to the wasm`);
   } else {
     try {
       const spec = loadContractSpec();
