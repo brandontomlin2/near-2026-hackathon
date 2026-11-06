@@ -11,6 +11,16 @@
 - A later alternative to the keychain-signed runner in step 19 is a Shade Agent runner: `npm run yield:shade:dry-run` prints its payloads offline, and the owner's go/no-go checklist is [docs/yield-shade-go-nogo.md](yield-shade-go-nogo.md). Nothing in either is done, and each signing step there needs the owner's explicit yes.
 - Anything marked UNCONFIRMED was not verified from a first-party source or a live call; the "Verification table" and "Known gaps" say what to check.
 
+## The one entry: `npm run yield:live:once`
+
+For the approved live run (deploy the vault, mint one personality NFT, one small Ref testnet swap), start here:
+
+```bash
+npm run yield:live:once -- --config out/yield-vault.live.json --media-base <url>
+```
+
+It is offline and never runs `near`, signs or sends. It runs `npm run yield:live:preflight -- --require-ready`, then checks that `near` is on PATH (PATH scan only), `NEAR_NETWORK=testnet`, `contracts/personality-nft/target/near/personality_nft.wasm` exists, `--media-base` is given, `token_id` is the agent's personality NFT (`aloof`, `chaotic`, `social` or `skeptic`, equal to `agent` when `agent` is set), and `~/.near-credentials/testnet/<id>.json` (or `<id>/`) exists for the owner, NFT contract, vault and runner. It only checks that each entry exists; no key file is opened or printed. The printed commands use `sign-with-keychain`; when the OS keychain has no key for a signer, near-cli-rs falls back to that legacy store. The NFT contract account itself must already exist with its key (nothing in the printed list creates it; see `docs/live-runbook.md`). If your keys are in the OS keychain instead, pass `--keys-in-os-keychain` and confirm them by hand. Anything missing: it prints `NOT READY FOR LIVE. Nothing was signed or sent; near was not run.` and exits 3 (1 on a preflight FAIL, 2 on a refusal such as `--send`, `--i-approve` or mainnet). When ready it prints, in order, the NFT deploy, one `nft_mint`, and (with this plan) steps 1 to 20 below (through the step 19 swap and its read-back), then `STOP.`. Run each one by hand, one at a time, after Brandon's explicit yes. Withdraw and rollback (steps 21 to 36) follow from this runbook.
+
 ## Cost and time
 
 - Owner outflow for the full path: 8.525 NEAR plus 7 yocto (the 1 yocto security deposits). Of that, 6 NEAR funds the vault account (about 2.62 NEAR is its wasm storage), 2 NEAR funds the runner, 0.5 NEAR goes to Ref storage, and 0.02 NEAR becomes wNEAR. Most of it comes back through the rollback steps (Ref storage via step 29, vault and runner balances via the account deletions in steps 35 and 36).

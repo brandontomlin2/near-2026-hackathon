@@ -171,11 +171,10 @@ test("without --require-ready the gaps never change the exit code", async () => 
   assert.equal((await run(["dry-run"], { now: () => TAKEN_MS + 500 * H })).code, 0);
 });
 
-test("--require-ready is a usage error for preflight, and a signing-looking name is not used", async () => {
+test("--require-ready on preflight is accepted (exit 3 when not ready; see yield-live.preflight-ready74.test.mjs), and a signing-looking name is not used", async () => {
   const r = await run(["preflight", "--require-ready"]);
-  assert.equal(r.code, 2);
-  assert.match(r.stderr, /unknown argument "--require-ready"/);
-  assert.equal(r.stdout, "");
+  assert.equal(r.code, 3);
+  assert.match(r.stderr, /not ready for live \(--require-ready\)/);
 });
 
 test("the real default fixture paths exist (defaults stay wired)", async () => {

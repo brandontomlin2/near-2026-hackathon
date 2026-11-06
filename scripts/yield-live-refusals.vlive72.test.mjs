@@ -44,6 +44,8 @@ const REVIEWED_YIELD_SCRIPTS = {
   "yield:live:check": { command: "node scripts/yield-live-check.mjs", sends: false },
   "yield:live:dry-run": { command: "node scripts/yield-live.mjs dry-run", sends: false },
   "yield:live:preflight": { command: "node scripts/yield-live.mjs preflight", sends: false },
+  // Prints the approved run's commands and stops; refuses --send/--i-approve (scripts/yield-live-once.test.mjs).
+  "yield:live:once": { command: "node scripts/yield-live-once.mjs", sends: false },
 };
 
 describe("package.json yield scripts inventory", () => {

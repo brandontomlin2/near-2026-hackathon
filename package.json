@@ -29,6 +29,7 @@
     "yield:live:check": "node scripts/yield-live-check.mjs",
     "yield:live:dry-run": "node scripts/yield-live.mjs dry-run",
     "yield:live:preflight": "node scripts/yield-live.mjs preflight",
+    "yield:live:once": "node scripts/yield-live-once.mjs",
     "screenshot": "node scripts/screenshot.mjs",
     "readme-asset": "node scripts/readme-asset.mjs",
     "site": "node scripts/site.mjs",
