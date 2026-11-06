@@ -45,7 +45,7 @@ describe("yield:demo default run", () => {
     assert.equal(r.code, 0, r.stderr);
     const lines = r.stdout.split("\n");
     const detailsAt = lines.indexOf("== details ==");
-    assert.ok(detailsAt > 0 && detailsAt <= 25, `summary is ${detailsAt} lines`);
+    assert.ok(detailsAt > 0 && detailsAt <= 26, `summary is ${detailsAt} lines`); // 25 + the "live path:" line
     const summary = lines.slice(0, detailsAt).join("\n");
     assert.match(lines[0], /^YIELD DEMO - DRY RUN - mock inference, offline - nothing signed, nothing sent$/);
     for (const id of ["aloof", "chaotic", "social", "skeptic", "yield-optimizer"]) {
