@@ -113,7 +113,7 @@ export function armedLines(configPath, config) {
     "     read-only testnet views; go on only if it ends READY FOR LIVE: yes",
     `  2. npm run yield:live:dry-run -- --config ${cfg}`,
     "     prints the SETUP stage only, as unsigned near-cli-rs commands: deploy, fund, the one small Rhea/Ref testnet execute_swap and its read-back;",
-    "     the human signs each one by hand. It lists no teardown commands: those would empty or delete the vault step 3 needs",
+    "     the human signs each one by hand. It lists no teardown commands: those would empty or tear down the vault step 3 needs",
     `  3. ${send}`,
     `     you write ${VAULT_STATE_FILE} first from the vault's get_config + get_state views (shape: npm run yield -- --help; under 10 minutes old);`,
     `     the ${config.agent} agent proposes, its swap is checked against that state, then near-cli-rs sends it`,
