@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { BUILD_COMMAND, CONTRACTS, buildAll } from "./build-wasm.mjs";
+import { BUILD_COMMAND, CONTRACTS, buildAll, missingTools } from "./build-wasm.mjs";
 
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
@@ -35,4 +35,14 @@ test("live Missing/help text points at npm run build:wasm", () => {
   for (const f of ["yield-live.mjs", "yield-live-once.mjs"]) {
     assert.match(readFileSync(new URL(`./${f}`, import.meta.url), "utf8"), /npm run build:wasm/, f);
   }
+});
+
+test("missingTools names cargo and cargo-near when absent, nothing when present", () => {
+  const enoent = () => ({ error: new Error("ENOENT") });
+  const m = missingTools({ spawn: enoent });
+  assert.equal(m.length, 1);
+  assert.match(m[0], /^cargo /);
+  assert.deepEqual(missingTools({ spawn: () => ({ status: 0 }) }), []);
+  const noNear = missingTools({ spawn: (c, a) => ({ status: a[0] === "near" ? 1 : 0 }) });
+  assert.match(noNear[0], /cargo-near/);
 });
