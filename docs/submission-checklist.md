@@ -55,7 +55,7 @@ Walked 2026-11-04 against this tree (main `aaaa5ba`), offline. Status: **PASS** 
 | Procedure 3: submit only between 2026-11-01T00:00Z and 2026-11-14T23:59Z, once, after repo is public and the post is up; re-read live HACKATHON.md first | TODO-OWNER | Section 7 below. Not started. |
 | Procedure 3: payload has exactly the 11 API fields, no `website`, body at most 12000 bytes, `requestId` generated once, payload not committed | TODO-OWNER | Section 7 below. No payload exists in the repo (`git grep -ln requestId` finds only `docs/HACKATHON.md` and this file). |
 | Never-list: print the full JSON payload and wait for an explicit yes before sending | TODO-OWNER | Section 7 below. |
-| Tracks: one or more valid ids, each once | TODO-OWNER | Plan `nfts`, `swarms`, `agents` (README "Tracks: `nfts`, `swarms` and `agents`.", `PRODUCT.md`, `docs/tracks.md`); `privacy` stays off (Section 5). Human confirms. |
+| Tracks: one or more valid ids, each once | TODO-OWNER | Plan `defi`, `security` first (the Yield Optimizer vault), then `nfts`, `swarms`, `agents` as supporting context (README "Tracks: `defi`, `security`, `nfts`, `swarms` and `agents`."; `PRODUCT.md` and `docs/tracks.md` still list the earlier three and are not updated here); `privacy` stays off (Section 5). Human confirms. |
 | Human decides: project name (2-80) | TODO-OWNER | Not in repo by design. |
 | Human decides: team lead name (2-80) | TODO-OWNER | `LICENSE` names a copyright holder, but that is not the confirmed `leadName`. Ask. |
 | Human decides: contact email (max 160, at most 2 submissions per email) | TODO-OWNER | Ask. |
@@ -88,7 +88,7 @@ Open GAPs for the lead: (1) README one-line library list (suggested text above).
 | What the product is, the problem, how NEAR fits; no marketing | done | README opening (the vault lede, "Problem:" and "Status, plainly:" paragraphs), then "What this is" and "How NEAR fits" for the NFT side. |
 | Numbered "do X, see Y" steps from a fresh clone | done | README "Try it (judge path)" steps 1-10. Re-check each command exists in `package.json` before submit. |
 | Works with no keys (`MOCK_INFERENCE=1`); live env vars documented | done | README "Inference" section. |
-| Track ids named in README | done | README "What this is" section: "Tracks: `nfts`, `swarms` and `agents`." `docs/HACKATHON.md` lists all 13 valid ids. |
+| Track ids named in README | done | README "What this is" section: "Tracks: `defi`, `security`, `nfts`, `swarms` and `agents`." `docs/HACKATHON.md` lists all 13 valid ids. |
 | Libraries, templates, AI-generated code listed (Q-005) | done | `docs/DISCLOSURE.md`, linked from README "Disclosure". |
 | Pre-hackathon code disclosed (Q-002, Q-003) | done | README "Mock caveats and status" and "Disclosure": none. `docs/DISCLOSURE.md` names first commit `992acee`. |
 | Planned features not described as shipped | done | README "Mock caveats and status" and "Live on testnet" say nothing is deployed and there are no hashes to show. Re-check after any live run. |
@@ -127,7 +127,7 @@ Valid ids (API table): `defi`, `thesis`, `privacy`, `business`, `swarms`, `secur
 
 | Requirement | Status | Evidence / next step |
 | --- | --- | --- |
-| Plan: `nfts`, `swarms`, `agents` | done (plan) | `PRODUCT.md` "Tracks"; README matches since 2026-11-03. |
+| Plan: `defi`, `security` (vault), then `nfts`, `swarms`, `agents` (supporting) | done (plan) | README leads with `defi` and `security`; `PRODUCT.md` "Tracks" is not edited here and still lists `nfts`, `swarms`, `agents`. |
 | `privacy` only if a TEE attestation check ships | not met, stays off | `npm run attest:check` exists but only checks a hand-made fixture offline and ends `CONSISTENT, NOT VERIFIED`: no TDX quote signature, NVIDIA attestation or chat signature is checked, and nothing has run against a real report. So `privacy` stays off (`PRODUCT.md`, `docs/privacy.md`). |
 | Final track list confirmed | needs Brandon | Human picks every track the project fits. |
 | Q-015: at most 2 projects per person, each independent and named in the other's README; at most 2 submissions per email | needs Brandon | Ask whether a second project is planned; record the answer here. |
