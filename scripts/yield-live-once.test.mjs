@@ -148,7 +148,9 @@ test("ready: the setup list has no withdraw, pause, revoke or delete command and
   for (const l of cmds) assert.doesNotMatch(l, /withdraw|pause|revoke|delete-account|delete_account|unregister/i, l);
   assert.doesNotMatch(r.stdout, /plan step (2[1-9]|3\d) /, "no teardown step in the setup list");
   assert.match(r.stdout, /This list is setup through the swap only\./);
-  assert.match(r.stdout, /STOP\. The swap is plan step 19\. Plan steps 21-36 \(16 more\) are a separate list, printed by\n {2}npm run yield:live:once -- .* --teardown/);
+  assert.match(r.stdout, /STOP\. The swap is plan step 19\. Plan steps 21-36 \(16 more: withdraw and rollback\) are deferred until AFTER the agent send/);
+  assert.match(r.stdout, /npm run yield:live:once -- .* --teardown/);
+  assert.match(r.stdout, /npm run yield:live:dry-run -- .* --rollback/);
 });
 
 test("--teardown: ready prints only the after-swap list (withdraw, rollback); not ready still exits 3", T, async () => {
