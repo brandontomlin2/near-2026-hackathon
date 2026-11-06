@@ -48,7 +48,7 @@ const USAGE = () => `Usage: node scripts/yield-live.mjs <dry-run|preflight> [opt
       Exit 0 plan valid, 1 plan has problems, 2 refused or usage error, 3 a prerequisite is missing
       (pool snapshot fixture, contracts/yield-vault/src/lib.rs, a single execute_swap step) or, with
       --require-ready, the setup is not ready for live.
-  preflight [--config FILE] [--json] [--build] [--online [--rpc URL]]
+  preflight [--config FILE] [--json] [--build] [--online [--rpc URL]] [--require-ready]
       Offline checklist (PASS / FAIL / MISSING / WARN / MANUAL): config complete, ids testnet,
       plan valid against lib.rs, limits, wasm present (size, sha256, storage cost estimate), wasm
       newer than src/lib.rs, cargo and cargo-near on PATH. Ends with "READY FOR LIVE: yes|no".
@@ -57,8 +57,9 @@ const USAGE = () => `Usage: node scripts/yield-live.mjs <dry-run|preflight> [opt
                  vault/runner not yet created. Only query/call_function and view_account with finality final; no keys.
       --rpc URL  RPC endpoint for --online; must be https and must not contain "mainnet" (else exit 2)
       --build    first run \`cargo near build non-reproducible-wasm\` in contracts/yield-vault (10 min timeout)
+      --require-ready  exit 3 with the MISSING item names on stderr when READY FOR LIVE is no
       Exit 0 no FAIL (MISSING and MANUAL items do not fail; they make READY FOR LIVE no),
-      1 at least one FAIL, 2 refused or usage error.
+      1 at least one FAIL, 2 refused or usage error, 3 with --require-ready and not ready.
   -h, --help   print this help and exit 0
 Default config: config/yield-vault.live.example.json. Public keys only; a field that looks like a
 private key or seed is refused. Mainnet (NEAR_NETWORK=mainnet or any .near id) is refused.
@@ -94,7 +95,7 @@ function parseArgs(argv) {
     } else if (a === "--config") o.config = resolve(value());
     else if (a === "--json") o.json = true;
     else if (a === "--out" && o.cmd === "dry-run") o.out = resolve(value());
-    else if (a === "--require-ready" && o.cmd === "dry-run") o.requireReady = true;
+    else if (a === "--require-ready" && (o.cmd === "dry-run" || o.cmd === "preflight")) o.requireReady = true;
     else if (a === "--build" && o.cmd === "preflight") o.build = true;
     else if (a === "--online" && o.cmd === "preflight") o.online = true;
     else if (a === "--rpc" && o.cmd === "preflight") o.rpc = value();
@@ -200,7 +201,7 @@ function dryRun(opts, { log, err, env, now, snapshotPath, contractSource }) {
   return finish();
 }
 
-async function preflight(opts, { log, fetch: fetchFn }) {
+async function preflight(opts, { log, err, fetch: fetchFn }) {
   const checks = [];
   const add = (status, name, detail = "") => checks.push({ status, name, detail });
 
@@ -300,9 +301,15 @@ async function preflight(opts, { log, fetch: fetchFn }) {
   const failed = checks.some((c) => c.status === "FAIL");
   const missing = checks.filter((c) => c.status === "MISSING");
   const ready = !failed && missing.length === 0;
+  const exitCode = () => {
+    if (failed) return 1;
+    if (!opts.requireReady || ready) return 0;
+    err(`yield-live: not ready for live (--require-ready): ${missing.map((c) => c.name).join("; ")}`);
+    return 3;
+  };
   if (opts.json) {
     log(JSON.stringify({ network: "testnet", unsigned: true, checks, ready_for_live: ready, missing: missing.map((c) => c.name) }, null, 2));
-    return failed ? 1 : 0;
+    return exitCode();
   }
   log(`Yield vault live preflight (${opts.online ? "online read-only" : "offline"}, ${opts.config === DEFAULT_CONFIG ? "config/yield-vault.live.example.json" : "custom config"})`);
   for (const c of checks) log(`${c.status.padEnd(7)} ${c.name}${c.detail ? `: ${c.detail}` : ""}`);
@@ -312,7 +319,7 @@ async function preflight(opts, { log, fetch: fetchFn }) {
   if (todo.length === 0) log("  nothing");
   for (const c of todo) log(`  - [${c.status}] ${c.name}${c.status === "MISSING" ? `: ${c.detail}` : ""}`);
   log(`READY FOR LIVE: ${ready ? `yes (${opts.online ? "online read-only" : "offline"} checks only; confirm the MANUAL items by hand, then get the human's explicit yes)` : "no"}`);
-  return failed ? 1 : 0;
+  return exitCode();
 }
 
 export async function main(argv = process.argv.slice(2), io = {}) {
@@ -327,7 +334,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
       log(USAGE());
       return 0;
     }
-    return opts.cmd === "dry-run" ? dryRun(opts, { log, err, env, now: (io.now ?? Date.now)(), snapshotPath: io.snapshotPath ?? SNAPSHOT_FILE, contractSource: io.contractSource ?? CONTRACT_SOURCE_FILE }) : await preflight(opts, { log, fetch: io.fetch });
+    return opts.cmd === "dry-run" ? dryRun(opts, { log, err, env, now: (io.now ?? Date.now)(), snapshotPath: io.snapshotPath ?? SNAPSHOT_FILE, contractSource: io.contractSource ?? CONTRACT_SOURCE_FILE }) : await preflight(opts, { log, err, fetch: io.fetch });
   } catch (e) {
     if (e instanceof RefusalError) {
       err(e.message);
