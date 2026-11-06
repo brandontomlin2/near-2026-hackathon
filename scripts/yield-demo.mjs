@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { assertSafeOutDir, describeWriteFailure } from "../src/util/outdir.mjs";
 import { renderDemoPage } from "../src/yield/demo-page.mjs";
 import { DEFAULT_LIVE_CONFIG, DEMO_SEND_REFUSAL, isRefusedDemoFlag, liveStatus } from "../src/yield/demo-live.mjs";
-import { renderCalls, renderDetails, renderSummary, runDemo } from "../src/yield/demo.mjs";
+import { PLANNER_ID, renderCalls, renderDetails, renderSummary, runDemo } from "../src/yield/demo.mjs";
 import { RefusalError, assertNotMainnet } from "../src/yield/send.mjs";
 import { SnapshotError, loadSnapshot } from "../src/yield-optimizer/snapshot.mjs";
 
@@ -128,16 +128,17 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     return 1;
   }
 
+  const result = await runDemo({ snapshot, snapshotFile: opts.snapshot ?? null });
+
   let live;
   try {
-    live = liveStatus({ env, configPath: opts.liveConfig ?? DEFAULT_LIVE_CONFIG, explicit: opts.liveConfig !== undefined });
+    live = liveStatus({ env, configPath: opts.liveConfig ?? DEFAULT_LIVE_CONFIG, explicit: opts.liveConfig !== undefined, demoProposal: result.calls.calls.find((c) => c.agent === PLANNER_ID)?.args.proposal });
   } catch (e) {
     if (!(e instanceof RefusalError)) throw e;
     err(`yield:demo: ${e.message}`);
     return e.exitCode;
   }
 
-  const result = await runDemo({ snapshot, snapshotFile: opts.snapshot ?? null });
   const planText = `${JSON.stringify(result.doc, null, 2)}\n`;
   if (opts.json) {
     log(planText.trimEnd());

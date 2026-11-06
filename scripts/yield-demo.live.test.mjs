@@ -158,13 +158,27 @@ describe("yield:demo live-path status", () => {
     assert.match(out, /^live path: ARMED \(out\/yield-vault\.live\.json valid, placeholders false, YIELD_LIVE_ARMED=1, NEAR_NETWORK=testnet\)\. This run still signed and sent nothing\.$/m);
     assert.ok(out.includes("  1. npm run yield:live:preflight -- --config out/yield-vault.live.json --online\n"), out);
     assert.ok(out.includes("  2. npm run yield:live:dry-run -- --config out/yield-vault.live.json\n"), out);
-    assert.ok(
-      out.includes("  3. NEAR_NETWORK=testnet YIELD_VAULT_ACCOUNT_ID=vault.owner-e2e.testnet YIELD_RUNNER_ACCOUNT_ID=runner.owner-e2e.testnet npm run yield -- --agent chaotic --send --i-approve --vault-state out/yield-vault.state.json\n"),
-      out,
-    );
-    assert.match(out, /The live config swaps on pool 0 \(wrap\.testnet -> rft\.tokenfactory\.testnet\)/);
+    // vault_profile yield-optimizer: the swap is plan step 18 sent by the runner via near-cli-rs, not `yield --send`.
+    assert.ok(out.includes("  3. the runner sends step 18 of step 2's list (execute_swap) with near-cli-rs, by hand, signed as runner.owner-e2e.testnet\n"), out);
+    assert.doesNotMatch(out, /npm run yield -- --agent aloof --send/);
+    assert.match(out, /The live config swaps on pool 747 \(usdc\.fakes\.testnet -> usdt\.fakes\.testnet\), 50000 in, min 50406 out: the same call this demo plans for the Yield Optimizer\./);
     // The armed block is in the summary, before the details.
     assert.ok(out.indexOf("live path: ARMED") < out.indexOf("== details =="));
+  });
+
+  it("armed with a personality agent (no vault_profile): step 3 is the gated yield --send command, and a swap that differs from the demo's is said so", () => {
+    const c = filledConfig({ agent: "chaotic" });
+    delete c.vault_profile;
+    c.swap = { pool_id: 0, token_in: "wrap.testnet", token_out: "rft.tokenfactory.testnet", amount_in: "10000000000000000000000", min_amount_out: "50000000" };
+    c.deposit = { token_id: "wrap.testnet", amount: "20000000000000000000000" };
+    const r = run([], { env: ARMED_ENV, config: c });
+    assert.equal(r.code, 0, r.stderr);
+    assertNothingSigned(r);
+    assert.ok(
+      r.stdout.includes("  3. NEAR_NETWORK=testnet YIELD_VAULT_ACCOUNT_ID=vault.owner-e2e.testnet YIELD_RUNNER_ACCOUNT_ID=runner.owner-e2e.testnet npm run yield -- --agent chaotic --send --i-approve --vault-state out/yield-vault.state.json\n"),
+      r.stdout,
+    );
+    assert.match(r.stdout, /The live config swaps on pool 0 \(wrap\.testnet -> rft\.tokenfactory\.testnet\); this demo's planned call differs \(pool 747, usdc\.fakes\.testnet -> usdt\.fakes\.testnet/);
   });
 
   it("a --live-config path with spaces or shell metacharacters is single-quoted in the printed commands", () => {

@@ -33,7 +33,7 @@ function recorder() {
 
 function filledConfig(extra = {}) {
   const c = JSON.parse(readFileSync(EXAMPLE, "utf8"));
-  Object.assign(c, { placeholders: false, ...IDS, token_id: "chaotic", agent: "chaotic" }, extra);
+  Object.assign(c, { placeholders: false, ...IDS, token_id: "aloof", agent: "aloof" }, extra);
   c.public_keys = { vault: KEY, runner: KEY };
   const file = join(tmp(), "live.json");
   writeFileSync(file, JSON.stringify(c));
@@ -114,22 +114,22 @@ test("ready: prints NFT deploy, one mint, vault steps through the swap, then STO
   const order = [
     at("READY FOR LIVE (offline checks)"),
     at("near contract deploy nft.alice.testnet use-file contracts/personality-nft/target/near/personality_nft.wasm with-init-call new_default_meta"),
-    at("near contract call-function as-transaction nft.alice.testnet nft_mint json-args '{\"token_id\":\"chaotic\""),
+    at("near contract call-function as-transaction nft.alice.testnet nft_mint json-args '{\"token_id\":\"aloof\""),
     at("near account create-account fund-myself vault.alice.testnet"),
     at("near contract deploy vault.alice.testnet use-file contracts/yield-vault/target/near/yield_vault.wasm with-init-call new"),
     at(" execute_swap json-args "),
-    at("STOP. The swap is plan step 19."),
+    at("STOP. The swap is plan step 18."),
   ];
   assert.deepEqual([...order].sort((a, b) => a - b), order, "sections out of order");
   assert.equal((s.match(/ nft_mint /g) ?? []).length, 1, "exactly one mint");
   assert.equal((s.match(/ execute_swap /g) ?? []).length, 1, "exactly one swap");
-  assert.match(s, /media\.example\/agents\/chaotic\.svg/);
+  assert.match(s, /media\.example\/agents\/aloof\.svg/);
   const mint = s.split("\n").find((l) => l.includes(" nft_mint "));
   assert.match(mint, /"receiver_id":"alice\.testnet"/);
   assert.match(mint, /attached-deposit '0\.05 NEAR' sign-as alice\.testnet network-config testnet sign-with-keychain send$/);
   assert.match(s, /with-init-call new_default_meta json-args '\{"owner_id":"alice\.testnet"\}'/);
   const vaultNew = s.split("\n").find((l) => l.includes("with-init-call new json-args"));
-  assert.match(vaultNew, /"owner_id":"alice\.testnet","nft_contract_id":"nft\.alice\.testnet","token_id":"chaotic"/);
+  assert.match(vaultNew, /"owner_id":"alice\.testnet","nft_contract_id":"nft\.alice\.testnet","token_id":"aloof"/);
   assert.match(s.split("\n").find((l) => l.includes(" execute_swap ")), /sign-as run\.alice\.testnet network-config testnet/);
   assert.match(s, /^manual: the NFT contract account nft\.alice\.testnet must already exist/m);
   for (const line of s.split("\n").filter((l) => l.trimStart().startsWith("near "))) {
@@ -144,11 +144,11 @@ test("ready: the setup list has no withdraw, pause, revoke or delete command and
   const r = await runReady();
   assert.equal(r.code, 0, r.stderr);
   const cmds = r.stdout.split("\n").filter((l) => l.trimStart().startsWith("near "));
-  assert.ok(cmds.length >= 20, "setup-through-swap commands are printed");
+  assert.ok(cmds.length >= 19, "setup-through-swap commands are printed");
   for (const l of cmds) assert.doesNotMatch(l, /withdraw|pause|revoke|delete-account|delete_account|unregister/i, l);
   assert.doesNotMatch(r.stdout, /plan step (2[1-9]|3\d) /, "no teardown step in the setup list");
   assert.match(r.stdout, /This list is setup through the swap only\./);
-  assert.match(r.stdout, /STOP\. The swap is plan step 19\. Plan steps 21-36 \(16 more: withdraw and rollback\) are deferred until AFTER the agent send/);
+  assert.match(r.stdout, /STOP\. The swap is plan step 18\. Plan steps 20-35 \(16 more: withdraw and rollback\) are deferred until AFTER the agent send/);
   assert.match(r.stdout, /npm run yield:live:once -- .* --teardown/);
   assert.match(r.stdout, /npm run yield:live:dry-run -- .* --rollback/);
 });
@@ -163,7 +163,7 @@ test("--teardown: ready prints only the after-swap list (withdraw, rollback); no
   assert.equal(cmds.filter((l) => / execute_swap | nft_mint /.test(l)).length, 0, "no swap or mint in teardown");
   assert.doesNotMatch(r.stdout, /with-init-call/);
   assert.match(r.stdout, /plan step 24 \[withdraw\]/);
-  assert.doesNotMatch(r.stdout, /plan step (1|19|20) \[/);
+  assert.doesNotMatch(r.stdout, /plan step (1|18|19) \[/);
   const bad = await runReady({ argv: ["--config", filledConfig(), "--teardown"] });
   assert.equal(bad.code, 3, "teardown needs the same checks (here --media-base)");
   assert.doesNotMatch(bad.stdout, /near (account|contract)/);
@@ -188,7 +188,7 @@ test("not ready: each missing piece alone exits 3, names it, prints no command",
     ["--media-base", { argv: ["--config", filledConfig()] }],
     ["personality NFT wasm", { root: tmp() }],
     ["credential file: runner", { home: homeWithKeys([IDS.owner_id, IDS.vault_id, IDS.nft_contract_id]) }],
-    ["config token_id is a personality NFT", { config: filledConfig({ token_id: "aloof" }) }],
+    ["config token_id is a personality NFT", { config: filledConfig({ token_id: "social" }) }],
     ["config token_id is a personality NFT", { config: filledConfig({ token_id: "7", agent: undefined }) }],
     ["NEAR_ACCOUNT_ID agrees with config owner_id", { env: { NEAR_ACCOUNT_ID: "someone-else.testnet" } }],
     ["config filled in (no placeholders)", { config: filledConfig({ placeholders: true }) }],
@@ -214,7 +214,7 @@ test("--keys-in-os-keychain turns a missing credential file into a MANUAL line",
 test("the legacy <id>/<public key>.json layout counts as present; an empty <id>/ does not", T, () => {
   const home = tmp();
   for (const id of Object.values(IDS)) mkdirSync(join(home, CREDENTIALS_DIR, id), { recursive: true });
-  const check = () => environmentChecks({ config: { ...IDS, token_id: "chaotic" }, opts: { mediaBase: MEDIA }, env: {}, home, root: tmp() });
+  const check = () => environmentChecks({ config: { ...IDS, token_id: "aloof" }, opts: { mediaBase: MEDIA }, env: {}, home, root: tmp() });
   assert.equal(check().filter((r) => r.name.startsWith("credential file") && r.status === "ok").length, 0);
   for (const id of Object.values(IDS)) {
     const f = join(home, CREDENTIALS_DIR, id, `${KEY.replace(":", "_")}.json`);
