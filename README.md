@@ -361,7 +361,18 @@ Every pull request must paste the real `bash scripts/verify.sh` output in a `## 
 
 ## Live on testnet
 
-Not run yet. Nothing from this repository is deployed to testnet, so there is no contract id and no transaction hash to check, and every hash above is a mock or a dry run. Only the owner can change that, with `npm run live-proof -- --send --i-approve --media-base <url>` (refused, before anything is deployed, unless `NEAR_ACCOUNT_ID` and `NEAR_CONTRACT_ACCOUNT_ID` are set and `--media-base` names the URL where the four `<token_id>.svg` files from `npm run render` are hosted, since the mint step requires it); it deploys, mints the four tokens and anchors one sheet, collects the transaction hashes the near CLI prints into `out/live-proof/txs.json`, and ends by printing the next command: `EVIDENCE_NETWORK=testnet NEAR_CONTRACT_ACCOUNT_ID=<NEAR_CONTRACT_ACCOUNT_ID> EVIDENCE_TX_FILE=out/live-proof/txs.json npm run evidence` (the evidence script reads `NEAR_CONTRACT_ACCOUNT_ID` as the contract account to query, the same variable the deploy step used; `NEAR_ACCOUNT_ID` is only its fallback), which makes read-only RPC views and writes the real transaction hashes and view results to `out/evidence.json` (a plain `npm run evidence` stays in mock mode and writes `MOCK-` placeholders). When that has happened, this section will quote that file. The step-by-step runbook, with a no-network rehearsal (`npm run live:dry-run`), is [`docs/live-runbook.md`](docs/live-runbook.md).
+Not run yet. Nothing from this repository is deployed to testnet, so there is no contract id and no transaction hash to check, and every hash above is a mock or a dry run. The live run is the [Yield Optimizer](#yield-optimizer) vault: deploy the vault, mint one personality NFT, and make one small Rhea/Ref testnet swap through the vault's `execute_swap`. Only the owner can start it, and every step that signs needs the owner's explicit yes. The one entry is `npm run yield:live:once -- --config out/yield-vault.live.json --media-base <url>`: it is offline, never runs `near`, signs or sends, and prints `READY=no` with the owner's to-do list until the config, wasm, keys and funds are in place. The step-by-step runbook, with every command, its cost and its rollback, is [`docs/yield-vault-live-runbook.md`](docs/yield-vault-live-runbook.md).
+
+Fill-in after the approved run. Every cell stays `not run yet` until the owner has run it and pasted values copied from the real output. Never write an id or hash here from memory, from a dry run or from an example; `scripts/readme-facts.test.mjs` fails on any hash-shaped string or `.testnet` account id in this section.
+
+| Item | Value |
+| --- | --- |
+| Vault contract id | not run yet |
+| NFT contract id (one mint) | not run yet |
+| Rhea/Ref `execute_swap` tx hash | not run yet |
+| Explorer links (`https://explorer.testnet.near.org/transactions/<hash>` for the swap, `.../accounts/<id>` for the vault and the NFT contract) | not run yet |
+
+Supporting footnote: the older personality-NFT-only proof (`npm run live-proof`) is in [`docs/live-runbook.md`](docs/live-runbook.md); the vault run above is the live story for this entry.
 
 ## Disclosure
 
