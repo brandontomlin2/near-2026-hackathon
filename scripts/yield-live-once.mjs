@@ -18,7 +18,7 @@
 // flag containing "sign" or "private" are refused with exit 2 before anything is read.
 // Exit 0 ready (commands printed), 1 preflight FAIL, 2 refused or usage error, 3 not ready.
 
-import { accessSync, constants, existsSync, statSync } from "node:fs";
+import { accessSync, constants, existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -126,14 +126,24 @@ export function environmentChecks({ config, opts, env, home, root }) {
   const signers = [["owner", config.owner_id], ["nft contract", config.nft_contract_id], ["vault", config.vault_id], ["runner", config.runner_id]];
   for (const [role, id] of signers) {
     // Existence only. Nothing is opened: an unreadable file still counts as present. The legacy
-    // keychain keeps a key as <id>.json, or as <id>/<public key>.json once an account has several.
+    // keychain keeps a key as <id>.json, or as <id>/<public key>.json (only names are listed).
+    // The printed commands use sign-with-keychain, which near-cli-rs falls back to this legacy
+    // store for when the OS keychain has no key (src/transaction_signature_options/sign_with_keychain).
     const safe = typeof id === "string" && /^[a-z0-9._-]+$/.test(id) && !id.includes("..");
-    const found = safe && (existsSync(join(home, CREDENTIALS_DIR, `${id}.json`)) || existsSync(join(home, CREDENTIALS_DIR, id)));
+    const found = safe && (existsSync(join(home, CREDENTIALS_DIR, `${id}.json`)) || hasJsonEntry(join(home, CREDENTIALS_DIR, id)));
     if (found) add("ok", `credential file: ${role}`, "present (not opened)");
     else if (opts.osKeychain) add("manual", `credential file: ${role}`, "not in ~/" + CREDENTIALS_DIR + "/; confirm the key is in the OS keychain (near account list-keys) by hand");
     else add("missing", `credential file: ${role}`, `no ~/${CREDENTIALS_DIR}/<${role} id>.json (or <${role} id>/); put the key in the near-cli-rs legacy keychain (.agents/skills/near-cli-rs) or pass --keys-in-os-keychain`);
   }
   return rows;
+}
+
+function hasJsonEntry(dir) {
+  try {
+    return readdirSync(dir).some((n) => n.endsWith(".json"));
+  } catch {
+    return false;
+  }
 }
 
 const nearLine = (argv) => `near ${argv.map(shellQuote).join(" ")}`;
@@ -199,6 +209,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     log("run it by hand, and check its result before the next. Testnet only.");
     for (const r of rows.filter((x) => x.status === "manual")) log(`manual: ${r.name}: ${r.detail}`);
     log("manual: confirm the MANUAL items of the preflight above (owner funds, keychain keys, Ref storage bound)");
+    log(`manual: the NFT contract account ${config.nft_contract_id} must already exist on testnet, funded for its wasm storage, with its key in the keychain; nothing below creates it (docs/live-runbook.md, Preconditions)`);
     log("");
     log("== 3. personality NFT (contracts/personality-nft) ==");
     let n = 0;

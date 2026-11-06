@@ -124,6 +124,14 @@ test("ready: prints NFT deploy, one mint, vault steps through the swap, then STO
   assert.equal((s.match(/ nft_mint /g) ?? []).length, 1, "exactly one mint");
   assert.equal((s.match(/ execute_swap /g) ?? []).length, 1, "exactly one swap");
   assert.match(s, /media\.example\/agents\/chaotic\.svg/);
+  const mint = s.split("\n").find((l) => l.includes(" nft_mint "));
+  assert.match(mint, /"receiver_id":"alice\.testnet"/);
+  assert.match(mint, /attached-deposit '0\.05 NEAR' sign-as alice\.testnet network-config testnet sign-with-keychain send$/);
+  assert.match(s, /with-init-call new_default_meta json-args '\{"owner_id":"alice\.testnet"\}'/);
+  const vaultNew = s.split("\n").find((l) => l.includes("with-init-call new json-args"));
+  assert.match(vaultNew, /"owner_id":"alice\.testnet","nft_contract_id":"nft\.alice\.testnet","token_id":"chaotic"/);
+  assert.match(s.split("\n").find((l) => l.includes(" execute_swap ")), /sign-as run\.alice\.testnet network-config testnet/);
+  assert.match(s, /^manual: the NFT contract account nft\.alice\.testnet must already exist/m);
   for (const line of s.split("\n").filter((l) => l.trimStart().startsWith("near "))) {
     assert.match(line, /network-config testnet /, line);
     assert.doesNotMatch(line, / --quiet\b/);
@@ -174,11 +182,17 @@ test("--keys-in-os-keychain turns a missing credential file into a MANUAL line",
   assert.match(r.stdout, /^manual: credential file: vault: /m);
 });
 
-test("the legacy <id>/ directory layout counts as present", T, () => {
+test("the legacy <id>/<public key>.json layout counts as present; an empty <id>/ does not", T, () => {
   const home = tmp();
   for (const id of Object.values(IDS)) mkdirSync(join(home, CREDENTIALS_DIR, id), { recursive: true });
-  const rows = environmentChecks({ config: { ...IDS, token_id: "chaotic" }, opts: { mediaBase: MEDIA }, env: {}, home, root: tmp() });
-  assert.equal(rows.filter((r) => r.name.startsWith("credential file") && r.status === "ok").length, 4);
+  const check = () => environmentChecks({ config: { ...IDS, token_id: "chaotic" }, opts: { mediaBase: MEDIA }, env: {}, home, root: tmp() });
+  assert.equal(check().filter((r) => r.name.startsWith("credential file") && r.status === "ok").length, 0);
+  for (const id of Object.values(IDS)) {
+    const f = join(home, CREDENTIALS_DIR, id, `${KEY.replace(":", "_")}.json`);
+    writeFileSync(f, SECRET);
+    chmodSync(f, 0o000);
+  }
+  assert.equal(check().filter((r) => r.name.startsWith("credential file") && r.status === "ok").length, 4);
 });
 
 test("preflight FAIL exits 1 and prints no command", T, async () => {
@@ -232,7 +246,8 @@ test("subprocess: mainnet is refused with exit 2 (env and config)", T, () => {
   assert.equal(r.rec.called(), false);
 });
 
-test("subprocess: --help exits 0; unknown flags exit 2", T, () => {
+test("subprocess: --help exits 0, but not past a send flag; unknown flags exit 2", T, () => {
   assert.equal(spawnOnce(["--help"]).code, 0);
+  assert.equal(spawnOnce(["--help", "--send"]).code, 2);
   assert.equal(spawnOnce(["--bogus"]).code, 2);
 });
