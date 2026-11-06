@@ -153,9 +153,9 @@ Common refusals (exit 2 or 1, nothing sent) are listed in `docs/live-readiness.m
 
 Then, on a feature branch:
 
-1. Replace the paragraph under `## Live on testnet` in `README.md` with the contract account id, the six explorer links and the view results copied from `out/evidence.json`. Keep it one paragraph. Never paste keys, `.env` contents or the keychain path.
+1. Fill the table under `## Live on testnet` in `README.md` (the vault-first section; the vault run in `docs/yield-vault-live-runbook.md` is the main story and this NFT-only proof is its footnote) with the contract account id, the explorer links and the view results copied from `out/evidence.json`. Never paste keys, `.env` contents or the keychain path.
 2. Update the tests that pin the current "Not run yet" wording in the same PR:
-   - `scripts/readme-facts.test.mjs` (the `Live on testnet` paragraph tests, which require a single paragraph starting `Not run yet.` and the evidence command),
+   - `scripts/readme-facts.test.mjs` (the `Live on testnet` tests, which require the section to start `Not run yet.`, keep the fill-in cells at `not run yet` and reject hash-shaped strings and `.testnet` ids),
    - `scripts/docs-facts.test.mjs`,
    - `scripts/live-readiness.test.mjs`,
    - and `scripts/live-runbook.live60.test.mjs`, which requires the README section to link this runbook.
