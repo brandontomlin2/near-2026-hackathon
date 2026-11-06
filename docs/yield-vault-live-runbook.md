@@ -53,10 +53,10 @@ mkdir -p out && cp config/yield-vault.live.example.json out/yield-vault.live.jso
 ## Step 0: build, preflight, dry-run
 
 ```bash
-cd contracts/yield-vault && cargo near build non-reproducible-wasm
+npm run build:wasm
 ```
 
-Expected: exit 0 in about 33 seconds. Output: `contracts/yield-vault/target/near/yield_vault.wasm` (261718 bytes, about 2.62 NEAR of storage at 1e19 yocto per byte) and `yield_vault_abi.json` next to it. The wasm is not reproducible, so its hash will differ on another machine.
+This builds BOTH wasms offline (`cargo near build non-reproducible-wasm` in `contracts/personality-nft`, then `contracts/yield-vault`, 10 min timeout each); `npm run yield:live:preflight -- --build` does the same. Expected: exit 0, the vault build takes about 33 seconds. Output: `contracts/yield-vault/target/near/yield_vault.wasm` (261718 bytes, about 2.62 NEAR of storage at 1e19 yocto per byte) and `yield_vault_abi.json` next to it. The wasm is not reproducible, so its hash will differ on another machine.
 
 ```bash
 npm run yield:live:preflight

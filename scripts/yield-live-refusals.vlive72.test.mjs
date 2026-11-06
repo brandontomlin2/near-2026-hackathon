@@ -118,7 +118,7 @@ describe("static scan of what can start a process or reach the network", () => {
     assert.deepEqual(found, {
       "scripts/readme-yield-lib.mjs": ['"bash"'],
       "scripts/yield-demo-check.mjs": ["process.execPath"],
-      "scripts/yield-live.mjs": ['"cargo"', '"cargo"'],
+      "scripts/yield-live.mjs": ['"cargo"'], // the version probe; builds run in scripts/build-wasm.mjs
       "scripts/yield-shade-check-guard.mjs": [], // names child_process only to block it
       "scripts/yield-shade-check.mjs": ["process.execPath"],
       "scripts/yield-snapshot.mjs": ['"curl"'],

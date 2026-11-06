@@ -127,7 +127,7 @@ export function environmentChecks({ config, opts, env, home, root }) {
     mediaDetail = e.message;
   }
   add(media, "--media-base", mediaDetail);
-  add(existsSync(join(root, NFT_WASM)) ? "ok" : "missing", "personality NFT wasm", existsSync(join(root, NFT_WASM)) ? NFT_WASM : `${NFT_WASM} not found; npm run build:contract`);
+  add(existsSync(join(root, NFT_WASM)) ? "ok" : "missing", "personality NFT wasm", existsSync(join(root, NFT_WASM)) ? NFT_WASM : `${NFT_WASM} not found; npm run build:wasm`);
   const signers = [["owner", config.owner_id], ["nft contract", config.nft_contract_id], ["vault", config.vault_id], ["runner", config.runner_id]];
   for (const [role, id] of signers) {
     // Existence only. Nothing is opened: an unreadable file still counts as present. The legacy
