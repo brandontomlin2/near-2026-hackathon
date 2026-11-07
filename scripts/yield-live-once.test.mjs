@@ -117,8 +117,9 @@ test("ready: prints NFT deploy, one mint, vault steps through the swap, then STO
     at("near contract call-function as-transaction nft.alice.testnet nft_mint json-args '{\"token_id\":\"aloof\""),
     at("near account create-account fund-myself vault.alice.testnet"),
     at("near contract deploy vault.alice.testnet use-file contracts/yield-vault/target/near/yield_vault.wasm with-init-call new"),
+    at("--- STOP here when signing this list. Plan step 18 is the ONE swap: send it once, as step 3 of the ARMED block, then read plan step 19. Never resend it blind. ---"),
     at(" execute_swap json-args "),
-    at("STOP. The swap is plan step 18."),
+    at("STOP. The swap is plan step 18. Send it ONCE, as step 3 of the ARMED block, then read plan step 19 (swaps_executed == 1); if it fails or its result is unclear, read that view and the transaction on the explorer first, and never resend it blind."),
   ];
   assert.deepEqual([...order].sort((a, b) => a - b), order, "sections out of order");
   assert.equal((s.match(/ nft_mint /g) ?? []).length, 1, "exactly one mint");
@@ -148,7 +149,15 @@ test("ready: the setup list has no withdraw, pause, revoke or delete command and
   for (const l of cmds) assert.doesNotMatch(l, /withdraw|pause|revoke|delete-account|delete_account|unregister/i, l);
   assert.doesNotMatch(r.stdout, /plan step (2[1-9]|3\d) /, "no teardown step in the setup list");
   assert.match(r.stdout, /This list is setup through the swap only\./);
-  assert.match(r.stdout, /STOP\. The swap is plan step 18\. Plan steps 20-35 \(16 more: withdraw and rollback\) are deferred until AFTER the agent send/);
+  assert.match(r.stdout, /^Sign plan steps 1-17 from it, then STOP: plan step 18 \(execute_swap\) is the ONE swap, sent once as step 3 of the ARMED block, and plan step 19 is its read-back\.$/m);
+  const lines = r.stdout.split("\n");
+  const stop = lines.findIndex((l) => l.startsWith("--- STOP here when signing this list. Plan step 18 is the ONE swap"));
+  const s17 = lines.findIndex((l) => /^\s*19\. plan step 17 \[check\]/.test(l));
+  const s18 = lines.findIndex((l) => /^\s*20\. plan step 18 \[swap\]/.test(l));
+  assert.ok(s17 > 0 && s17 < stop && stop < s18, `plan step 17 < STOP marker < plan step 18, got ${[s17, stop, s18]}`);
+  assert.equal(lines.filter((l) => l.startsWith("--- STOP here")).length, 1, "exactly one STOP marker");
+  assert.match(r.stdout, /STOP\. The swap is plan step 18\. Send it ONCE, as step 3 of the ARMED block/);
+  assert.match(r.stdout, /^Plan steps 20-35 \(16 more: withdraw and rollback\) are deferred until AFTER the agent send/m);
   assert.match(r.stdout, /npm run yield:live:once -- .* --teardown/);
   assert.match(r.stdout, /npm run yield:live:dry-run -- .* --rollback/);
 });
@@ -164,6 +173,11 @@ test("--teardown: ready prints only the after-swap list (withdraw, rollback); no
   assert.doesNotMatch(r.stdout, /with-init-call/);
   assert.match(r.stdout, /plan step 24 \[withdraw\]/);
   assert.doesNotMatch(r.stdout, /plan step (1|18|19) \[/);
+  // The <READ ...> markers in withdraw / withdraw_near commands come with the legend dry-run prints.
+  assert.match(r.stdout, /^filled at run time \(read the value from the named view step/m);
+  assert.match(r.stdout, /^  withdraw-out\.amount <- view-balance-2 \(result\)$/m);
+  assert.match(r.stdout, /^  withdraw-near\.amount <- view-withdrawable \(result\)$/m);
+  assert.ok(r.stdout.indexOf("filled at run time") < r.stdout.indexOf("STOP. Record every transaction hash"));
   const bad = await runReady({ argv: ["--config", filledConfig(), "--teardown"] });
   assert.equal(bad.code, 3, "teardown needs the same checks (here --media-base)");
   assert.doesNotMatch(bad.stdout, /near (account|contract)/);

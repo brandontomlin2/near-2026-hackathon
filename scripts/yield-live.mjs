@@ -180,7 +180,11 @@ function dryRun(opts, { log, err, env, now, snapshotPath, contractSource }) {
   const stage = opts.all ? "all" : opts.rollback ? "rollback" : "setup";
   const transactions = shown.map((s) => ({ ...s, actions: s.actions.map((a) => (a.type === "DeployContract" && wasm.sha256 ? { ...a, wasm_sha256: wasm.sha256 } : a)) }));
   const runtime = shown.filter((st) => st.runtime_args).flatMap((st) => Object.entries(st.runtime_args).map(([arg, r]) => ({ step: st.id, arg, from_step: r.from_step, path: r.path })));
-  const doc = { network: plan.network, unsigned: true, stage, steps_shown: `${offset + 1}-${offset + shown.length} of ${plan.steps.length}`, owner_id: plan.owner_id, vault_id: plan.vault_id, runner_id: plan.runner_id, wasm, transactions, problems, warnings, manual: plan.manual, filled_at_run_time: runtime, totals, preflight: preflightForJson(preflight) };
+  // The setup list ends with the one swap and its read-back. The human signs the steps before the
+  // swap from this list and stops: the swap itself is sent once, as step 3 of the ARMED block.
+  const swapStep = cut - 1;
+  const setupSigning = stage === "setup" ? { sign_by_hand: `1-${swapStep - 1}`, stop_before_step: swapStep, swap_step: swapStep, read_back_step: cut } : undefined;
+  const doc = { network: plan.network, unsigned: true, stage, steps_shown: `${offset + 1}-${offset + shown.length} of ${plan.steps.length}`, ...(setupSigning ? { setup_signing: setupSigning } : {}), owner_id: plan.owner_id, vault_id: plan.vault_id, runner_id: plan.runner_id, wasm, transactions, problems, warnings, manual: plan.manual, filled_at_run_time: runtime, totals, preflight: preflightForJson(preflight) };
   if (opts.out) writeFileSync(opts.out, `${JSON.stringify(doc, null, 2)}\n`);
   const finish = () => {
     if (problems.length) return 1;
@@ -200,9 +204,18 @@ function dryRun(opts, { log, err, env, now, snapshotPath, contractSource }) {
   log("");
   if (opts.rollback) log("ROLLBACK: run these only AFTER the agent send. They withdraw, pause, revoke and delete, so the vault is gone or empty afterwards.");
   else if (opts.all) log("REVIEW ONLY: the whole plan, setup and rollback together. Do not sign it top to bottom: rollback steps tear the vault down. Use the default (setup) and --rollback lists for signing.");
-  else log(`SETUP ONLY (deploy, fund, one small swap). withdraw, pause, revoke and delete are deferred until after the agent send: npm run yield:live:dry-run -- --rollback`);
+  else {
+    log(`SETUP ONLY (deploy, fund, one small swap). Sign plan steps 1-${swapStep - 1} from this list by hand, one at a time, then STOP.`);
+    log(`Plan step ${swapStep} (execute_swap) is the ONE swap: do not sign it from this list. It is sent once, as step 3 of the ARMED block (by hand for the yield-optimizer profile; \`npm run yield -- --send --i-approve\` replaces it for a personality agent), then plan step ${cut} reads it back (swaps_executed == 1).`);
+    log(`withdraw, pause, revoke and delete are deferred until after that send: npm run yield:live:dry-run -- --rollback`);
+  }
   log("");
-  shown.forEach((s, i) => log(renderStep(s, i, offset)));
+  shown.forEach((s, i) => {
+    if (stage === "setup" && i + 1 === swapStep) {
+      log(`--- STOP here when signing this list. The next step is the ONE swap: send it once, as step 3, then read plan step ${cut}. Never resend it blind. ---`);
+    }
+    log(renderStep(s, i, offset));
+  });
   log("");
   log(`totals (whole plan, both stages): ${totals.transactions} transactions, ${totals.views} views, deposits ${formatSplit(totals.deposit_near, totals.deposit_security_yocto)}, owner outflow ${formatSplit(totals.owner_outflow_near, totals.owner_outflow_security_yocto)}, prepaid gas ${totals.gas_tgas} TGas`);
   if (runtime.length) {

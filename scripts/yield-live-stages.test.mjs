@@ -52,6 +52,8 @@ for (const [label, cfg] of [
     const setup = lines.slice(s2, s3).join("\n");
     assert.match(setup, new RegExp(`signs plan steps 1-${swap - 1} by hand.*STOPS before plan step ${swap} \\(execute_swap\\)`));
     assert.doesNotMatch(setup, /signs each one/);
+    // Step 2 never tells the human to send anything; the only send instruction is step 3.
+    assert.doesNotMatch(setup, /--send|sends plan step|sign-with-keychain/);
     const trade = lines.slice(s3, s4).join("\n");
     assert.match(trade, /ONE swap only/);
     assert.match(trade, /never resend it blind, and do not go on to step 4/);
@@ -78,6 +80,30 @@ test("default dry-run is setup only: ends at the swap read-back, no teardown ste
   assert.match(r.stdout, /SETUP ONLY/);
   assert.doesNotMatch(r.stdout, /near-cli-rs \(text only\):.*(delete-account|withdraw|pause|revoke_all_runners)/);
   assert.doesNotMatch(r.stdout, /\[rollback\]|\[withdraw\]/);
+});
+
+test("default dry-run tells the human to sign 1-17 only and marks the STOP right before the one swap (step 18)", () => {
+  const r = dry([]);
+  assert.equal(r.code, 0, r.stderr);
+  const lines = r.stdout.split("\n");
+  assert.ok(lines.some((l) => l.startsWith("SETUP ONLY (deploy, fund, one small swap). Sign plan steps 1-17 from this list by hand, one at a time, then STOP.")), r.stdout);
+  assert.ok(lines.some((l) => l.startsWith("Plan step 18 (execute_swap) is the ONE swap: do not sign it from this list. It is sent once, as step 3 of the ARMED block")), r.stdout);
+  assert.ok(lines.some((l) => /then plan step 19 reads it back \(swaps_executed == 1\)/.test(l)), r.stdout);
+  const stop = lines.findIndex((l) => l.startsWith("--- STOP here when signing this list. The next step is the ONE swap: send it once, as step 3, then read plan step 19. Never resend it blind. ---"));
+  const s17 = lines.findIndex((l) => l.startsWith("17. [check]"));
+  const s18 = lines.findIndex((l) => l.startsWith("18. [swap]"));
+  const s19 = lines.findIndex((l) => l.startsWith("19. [check]"));
+  assert.ok(s17 > 0 && s17 < stop && stop < s18 && s18 < s19, `17 < STOP < 18 < 19, got ${[s17, stop, s18, s19]}`);
+  assert.equal(lines.filter((l) => l.startsWith("--- STOP here")).length, 1, "exactly one STOP marker");
+  const json = JSON.parse(dry(["--json"]).stdout);
+  assert.deepEqual(json.setup_signing, { sign_by_hand: "1-17", stop_before_step: 18, swap_step: 18, read_back_step: 19 });
+  assert.equal(json.transactions[json.setup_signing.swap_step - 1].id, "execute-swap");
+  assert.equal(json.transactions[json.setup_signing.read_back_step - 1].id, "view-state-2");
+  // The rollback and review lists carry no STOP marker and no signing window: they are not the setup list.
+  for (const args of [["--rollback"], ["--all"]]) {
+    assert.doesNotMatch(dry(args).stdout, /--- STOP here/);
+    assert.equal(JSON.parse(dry([...args, "--json"]).stdout).setup_signing, undefined);
+  }
 });
 
 test("--rollback prints only the deferred steps, numbered after the setup, with a run-after-send banner", () => {

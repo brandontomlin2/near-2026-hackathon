@@ -167,7 +167,9 @@ export function orderedCommands(config, mediaBase) {
   const vault = plan.steps.slice(0, swapAt + 2).map((s, i) => ({ title: `plan step ${i + 1} [${s.phase}] ${s.title}`, signer: s.view ? null : s.signer_id, cost: `${s.cost_near} NEAR${s.view ? "" : " + gas"}`, command: s.near_cli, expect: s.expect }));
   const first = swapAt + 2; // plan steps before this index are setup through the swap and its read-back
   const teardown = plan.steps.slice(first).map((s, i) => ({ title: `plan step ${first + i + 1} [${s.phase}] ${s.title}`, signer: s.view ? null : s.signer_id, cost: `${s.cost_near} NEAR${s.view ? "" : " + gas"}`, command: s.near_cli, expect: s.expect }));
-  return { nft, vault, teardown, rest: plan.steps.length - first, total: plan.steps.length, swapNumber: swapAt + 1 };
+  // Teardown amounts that are read from a view step first (the <READ ...> markers in the commands), as dry-run lists them.
+  const filledAtRunTime = plan.steps.slice(first).flatMap((s) => Object.entries(s.runtime_args ?? {}).map(([arg, r]) => `${s.id}.${arg} <- ${r.from_step} (${r.path})`));
+  return { nft, vault, teardown, filledAtRunTime, rest: plan.steps.length - first, total: plan.steps.length, swapNumber: swapAt + 1 };
 }
 
 export async function main(argv = process.argv.slice(2), io = {}) {
@@ -216,10 +218,13 @@ export async function main(argv = process.argv.slice(2), io = {}) {
       err(`yield:live:once: not ready for live: ${[...new Set(missing)].join("; ")}`);
       return 3;
     }
-    const { nft, vault, teardown, rest, total, swapNumber } = orderedCommands(config, opts.mediaBase);
-    const printSteps = (list, n) => {
-      for (const c of list) {
+    const { nft, vault, teardown, filledAtRunTime, rest, total, swapNumber } = orderedCommands(config, opts.mediaBase);
+    const printSteps = (list, n, stopBefore = null) => {
+      for (const [i, c] of list.entries()) {
         n += 1;
+        if (stopBefore !== null && i + 1 === stopBefore) {
+          log(`--- STOP here when signing this list. Plan step ${stopBefore} is the ONE swap: send it once, as step 3 of the ARMED block, then read plan step ${stopBefore + 1}. Never resend it blind. ---`);
+        }
         log(`${String(n).padStart(2)}. ${c.title}  [${c.signer ? `signer ${c.signer}` : "read-only"}; ${c.cost}]`);
         log(`    ${c.command}`);
         log(`    expect: ${c.expect}`);
@@ -242,11 +247,17 @@ export async function main(argv = process.argv.slice(2), io = {}) {
         log(`    expect: ${c.expect}`);
       }
       log("");
+      if (filledAtRunTime.length) {
+        log("filled at run time (read the value from the named view step, then replace the whole <READ ...> marker in the command with it; skip a withdraw whose value is 0):");
+        for (const line of filledAtRunTime) log(`  ${line}`);
+        log("");
+      }
       log("STOP. Record every transaction hash. Nothing was signed or sent; near was not run.");
       return 0;
     }
     log("READY FOR LIVE (offline checks). Nothing below has been run. Before each command: get the owner's explicit yes,");
     log("run it by hand, and check its result before the next. Testnet only. This list is setup through the swap only.");
+    log(`Sign plan steps 1-${swapNumber - 1} from it, then STOP: plan step ${swapNumber} (execute_swap) is the ONE swap, sent once as step 3 of the ARMED block, and plan step ${swapNumber + 1} is its read-back.`);
     manualNotes();
     log(`manual: the NFT contract account ${config.nft_contract_id} must already exist on testnet, funded for its wasm storage, with its key in the keychain; nothing below creates it (docs/live-runbook.md, Preconditions)`);
     log("");
@@ -254,9 +265,10 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     printSteps(nft, 0);
     log("");
     log(`== 4. yield vault: plan steps 1-${vault.length} of ${total} (deploy, fund, one swap on Ref testnet, read-back) ==`);
-    printSteps(vault, nft.length);
+    printSteps(vault, nft.length, swapNumber);
     log("");
-    log(`STOP. The swap is plan step ${swapNumber}. Plan steps ${vault.length + 1}-${total} (${rest} more: withdraw and rollback) are deferred until AFTER the agent send; do not sign them before it. Print them then with`);
+    log(`STOP. The swap is plan step ${swapNumber}. Send it ONCE, as step 3 of the ARMED block, then read plan step ${swapNumber + 1} (swaps_executed == 1); if it fails or its result is unclear, read that view and the transaction on the explorer first, and never resend it blind.`);
+    log(`Plan steps ${vault.length + 1}-${total} (${rest} more: withdraw and rollback) are deferred until AFTER the agent send; do not sign them before it. Print them then with`);
     log(`  npm run yield:live:once -- --config ${shellQuote(opts.config)} --media-base ${shellQuote(opts.mediaBase)} --teardown`);
     log(`or: npm run yield:live:dry-run -- --config ${shellQuote(opts.config)} --rollback`);
     log("and docs/yield-vault-live-runbook.md (Plan steps, Rollback). Record every transaction hash.");

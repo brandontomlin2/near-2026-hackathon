@@ -27,7 +27,9 @@ the one call it would send   info     step 18 execute_swap, runner.owner.yield-d
 not sent; text only: near contract call-function as-transaction vault.owner.yield-demo.testnet execute_swap json-args '{"proposal":{"pool_id":747,"token_in":"usdc.fakes.testnet","token_out":"usdt.fakes.testnet","amount_in":"50000","min_amount_out":"50406"}}' prepaid-gas '280.0 Tgas' attached-deposit '0 NEAR' sign-as runner.owner.yield-demo.testnet network-config testnet sign-with-keychain send
 wasm, toolchain and on-chain reads: npm run yield:live:preflight
 
-SETUP ONLY (deploy, fund, one small swap). withdraw, pause, revoke and delete are deferred until after the agent send: npm run yield:live:dry-run -- --rollback
+SETUP ONLY (deploy, fund, one small swap). Sign plan steps 1-17 from this list by hand, one at a time, then STOP.
+Plan step 18 (execute_swap) is the ONE swap: do not sign it from this list. It is sent once, as step 3 of the ARMED block (by hand for the yield-optimizer profile; `npm run yield -- --send --i-approve` replaces it for a personality agent), then plan step 19 reads it back (swaps_executed == 1).
+withdraw, pause, revoke and delete are deferred until after that send: npm run yield:live:dry-run -- --rollback
 
  1. [setup] create and fund the vault account
     owner.yield-demo.testnet -> vault.owner.yield-demo.testnet
@@ -119,6 +121,7 @@ SETUP ONLY (deploy, fund, one small swap). withdraw, pause, revoke and delete ar
     view check_proposal {"proposal":{"pool_id":747,"token_in":"usdc.fakes.testnet","token_out":"usdt.fakes.testnet","amount_in":"50000","min_amount_out":"50406"},"runner_id":"runner.owner.yield-demo.testnet"}
     cost: 0 NEAR | expect: ok == true
     near-cli-rs (text only): near contract call-function as-read-only vault.owner.yield-demo.testnet check_proposal json-args '{"proposal":{"pool_id":747,"token_in":"usdc.fakes.testnet","token_out":"usdt.fakes.testnet","amount_in":"50000","min_amount_out":"50406"},"runner_id":"runner.owner.yield-demo.testnet"}' network-config testnet now
+--- STOP here when signing this list. The next step is the ONE swap: send it once, as step 3, then read plan step 19. Never resend it blind. ---
 18. [swap] runner swaps 50000 usdc.fakes.testnet -> usdt.fakes.testnet on pool 747
     runner.owner.yield-demo.testnet -> vault.owner.yield-demo.testnet
     call execute_swap {"proposal":{"pool_id":747,"token_in":"usdc.fakes.testnet","token_out":"usdt.fakes.testnet","amount_in":"50000","min_amount_out":"50406"}} deposit 0 NEAR (0 yocto) gas 280 TGas
