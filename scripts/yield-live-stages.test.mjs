@@ -30,6 +30,40 @@ test("ARMED lines: nothing before the agent send (step 3) mentions teardown; rol
   assert.ok(lines.some((l) => /SETUP stage only/.test(l)));
 });
 
+for (const [label, cfg] of [
+  ["yield-optimizer", config],
+  ["personality agent", (() => {
+    const c = structuredClone(config);
+    delete c.vault_profile;
+    c.agent = c.token_id = "chaotic";
+    c.swap = { pool_id: 0, token_in: "wrap.testnet", token_out: "rft.tokenfactory.testnet", amount_in: "10000000000000000000000", min_amount_out: "50000000" };
+    c.deposit = { token_id: "wrap.testnet", amount: "20000000000000000000000" };
+    return c;
+  })()],
+]) {
+  test(`ARMED lines (${label}): preflight -> setup stops before the swap -> one swap + read-back -> optional teardown`, () => {
+    const lines = armedLines("out/yield-vault.live.json", cfg);
+    const text = lines.join("\n");
+    const swap = buildLivePlan(cfg).steps.findIndex((s) => s.id === "execute-swap") + 1;
+    const at = (n) => lines.findIndex((l) => l.startsWith(`  ${n}. `));
+    const [s1, s2, s3, s4] = [1, 2, 3, 4].map(at);
+    assert.ok(s1 > 0 && s1 < s2 && s2 < s3 && s3 < s4, "steps 1-4 print in order");
+    assert.match(lines[s1], /yield:live:preflight/);
+    const setup = lines.slice(s2, s3).join("\n");
+    assert.match(setup, new RegExp(`signs plan steps 1-${swap - 1} by hand.*STOPS before plan step ${swap} \\(execute_swap\\)`));
+    assert.doesNotMatch(setup, /signs each one/);
+    const trade = lines.slice(s3, s4).join("\n");
+    assert.match(trade, /ONE swap only/);
+    assert.match(trade, /never resend it blind, and do not go on to step 4/);
+    assert.match(trade, new RegExp(`read plan step ${swap + 1}`));
+    assert.doesNotMatch(lines.slice(0, s4).join("\n"), TEARDOWN);
+    assert.match(lines[s4], /AFTER step 3's read-back only \(rollback, optional\).*--rollback/);
+    // Exactly one instruction to send the swap: step 3. Step 2 only names it as where to stop.
+    assert.equal((text.match(/sends plan step \d+ \(execute_swap\) once|--send --i-approve/g) ?? []).length, 1);
+    if (label === "personality agent") assert.match(trade, new RegExp(`do not also sign step ${swap}`));
+  });
+}
+
 test("default dry-run is setup only: ends at the swap read-back, no teardown step or command", () => {
   const plan = buildLivePlan(config);
   const n = setupStepCount(plan);

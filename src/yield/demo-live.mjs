@@ -111,17 +111,20 @@ export function armedLines(configPath, config, demoProposal) {
     `YIELD_RUNNER_ACCOUNT_ID=${config.runner_id}`,
     `npm run yield -- --agent ${config.agent} --send --i-approve --vault-state ${VAULT_STATE_FILE}`,
   ].join(" ");
-  let swapStep = null;
-  if (optimizer) swapStep = buildLivePlan(config).steps.findIndex((st) => st.id === "execute-swap") + 1;
+  const swapStep = buildLivePlan(config).steps.findIndex((st) => st.id === "execute-swap") + 1;
+  const readBack = swapStep + 1;
+  const once = `     ONE swap only. If it fails or its result is unclear, read step ${readBack} (get_state) and the transaction on the explorer before anything else; never resend it blind, and do not go on to step 4`;
   const step3 = optimizer
     ? [
-        `  3. the runner sends step ${swapStep} of step 2's list (execute_swap) with near-cli-rs, by hand, signed as ${config.runner_id}`,
+        `  3. the runner sends plan step ${swapStep} (execute_swap) once, with near-cli-rs, by hand, signed as ${config.runner_id}; then read plan step ${readBack} (swaps_executed == 1)`,
         `     this is the Yield Optimizer's swap, not a personality agent's: \`npm run yield -- --send\` only drives aloof, chaotic, social and skeptic, so it is not used for the ${config.vault_profile} profile`,
+        once,
       ]
     : [
         `  3. ${send}`,
         `     you write ${VAULT_STATE_FILE} first from the vault's get_config + get_state views (shape: npm run yield -- --help; under 10 minutes old);`,
-        `     the ${config.agent} agent proposes, its swap is checked against that state, then near-cli-rs sends it`,
+        `     the ${config.agent} agent proposes, its swap is checked against that state, then near-cli-rs sends it. It replaces plan step ${swapStep}: do not also sign step ${swapStep}. Then read plan step ${readBack}`,
+        once,
       ];
   const swapText = `pool ${s.pool_id} (${s.token_in} -> ${s.token_out})`;
   const lastLine = !demoProposal
@@ -136,9 +139,10 @@ export function armedLines(configPath, config, demoProposal) {
     "     read-only testnet views; go on only if it ends READY FOR LIVE: yes",
     `  2. npm run yield:live:dry-run -- --config ${cfg}`,
     "     prints the SETUP stage only, as unsigned near-cli-rs commands: deploy, fund, the one small Rhea/Ref testnet execute_swap and its read-back;",
-    `     the human signs each one by hand. It lists no teardown commands: those would empty or tear down the vault step 3 needs`,
+    `     the human signs plan steps 1-${swapStep - 1} by hand, one at a time, and STOPS before plan step ${swapStep} (execute_swap): that swap is step 3, sent once.`,
+    `     It lists no teardown commands: those would empty or tear down the vault step 3 needs`,
     ...step3,
-    `  4. AFTER step 3 only (rollback, optional): npm run yield:live:dry-run -- --config ${cfg} --rollback`,
+    `  4. AFTER step 3's read-back only (rollback, optional): npm run yield:live:dry-run -- --config ${cfg} --rollback`,
     "     prints the deferred teardown commands (withdraw, pause, revoke, delete). Do not sign any of them before step 3",
     lastLine,
   ];

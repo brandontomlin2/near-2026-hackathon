@@ -159,7 +159,8 @@ describe("yield:demo live-path status", () => {
     assert.ok(out.includes("  1. npm run yield:live:preflight -- --config out/yield-vault.live.json --online\n"), out);
     assert.ok(out.includes("  2. npm run yield:live:dry-run -- --config out/yield-vault.live.json\n"), out);
     // vault_profile yield-optimizer: the swap is plan step 18 sent by the runner via near-cli-rs, not `yield --send`.
-    assert.ok(out.includes("  3. the runner sends step 18 of step 2's list (execute_swap) with near-cli-rs, by hand, signed as runner.owner-e2e.testnet\n"), out);
+    assert.ok(out.includes("     the human signs plan steps 1-17 by hand, one at a time, and STOPS before plan step 18 (execute_swap): that swap is step 3, sent once.\n"), out);
+    assert.ok(out.includes("  3. the runner sends plan step 18 (execute_swap) once, with near-cli-rs, by hand, signed as runner.owner-e2e.testnet; then read plan step 19 (swaps_executed == 1)\n"), out);
     assert.doesNotMatch(out, /npm run yield -- --agent aloof --send/);
     assert.match(out, /The live config swaps on pool 747 \(usdc\.fakes\.testnet -> usdt\.fakes\.testnet\), 50000 in, min 50406 out: the same call this demo plans for the Yield Optimizer\./);
     // The armed block is in the summary, before the details.
