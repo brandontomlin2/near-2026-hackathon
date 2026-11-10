@@ -47,8 +47,10 @@ export function parseYieldDemo(readme) {
 export function parseQuickYieldStep(readme) {
   const quick = section(readme, "Judge quick path");
   for (const { text } of numberedSteps(quick)) {
-    const [command, ...quotes] = spans(text);
-    if (/^npm run yield:demo(\s|$)/.test(command ?? "")) return { command, quotes };
+    const [first, ...quotes] = spans(text);
+    // Step 1 is `npm install && npm run yield:demo`; the install is not part of the demo command.
+    const command = (first ?? "").replace(/^npm install && /, "");
+    if (/^npm run yield:demo(\s|$)/.test(command)) return { command, quotes };
   }
   return null;
 }

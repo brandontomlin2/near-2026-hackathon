@@ -46,7 +46,7 @@ function filledConfig(mutate = () => {}) {
 }
 
 test("dry-run --json: unsigned, ordered steps, exit 0", () => {
-  const r = run(["dry-run", "--json"]);
+  const r = run(["dry-run", "--json", "--all"]);
   assert.equal(r.code, 0, r.stderr);
   const doc = JSON.parse(r.stdout);
   assert.equal(doc.unsigned, true);
@@ -60,7 +60,7 @@ test("dry-run --json: unsigned, ordered steps, exit 0", () => {
   assert.ok(ids.indexOf("withdraw-out") < ids.indexOf("delete-vault"));
   assert.equal(doc.totals.transactions + doc.totals.views, doc.transactions.length);
   assert.match(doc.totals.deposit_yocto, /^\d+$/);
-  assert.equal(doc.totals.deposit_near, "8.525");
+  assert.equal(doc.totals.deposit_near, "8.505");
 });
 
 test("dry-run text lists steps, totals and commands; --out writes the JSON", () => {
@@ -71,7 +71,7 @@ test("dry-run text lists steps, totals and commands; --out writes the JSON", () 
   assert.match(r.stdout, /UNSIGNED \(nothing is signed or sent\)/);
   assert.match(r.stdout, /^ 1\. \[setup\]/m);
   assert.match(r.stdout, /near-cli-rs \(text only\): near contract call-function as-transaction .* execute_swap/);
-  assert.match(r.stdout, /totals: \d+ transactions, \d+ views, deposits 8\.525 NEAR \+ \d+ yocto \(1-yocto security deposits\), owner outflow 8\.525 NEAR \+ \d+ yocto/);
+  assert.match(r.stdout, /totals \(whole plan, both stages\): \d+ transactions, \d+ views, deposits 8\.505 NEAR \+ \d+ yocto \(1-yocto security deposits\), owner outflow 8\.505 NEAR \+ \d+ yocto/);
   assert.match(r.stdout, /warning: placeholder not filled in: owner_id/);
   assert.equal(JSON.parse(readFileSync(out, "utf8")).unsigned, true);
 });
@@ -130,14 +130,14 @@ test("--build never runs before the config validated: refused and invalid config
 });
 
 test("dry-run lists run-time values apart from placeholders and problems", () => {
-  const doc = JSON.parse(run(["dry-run", "--json"]).stdout);
+  const doc = JSON.parse(run(["dry-run", "--json", "--all"]).stdout);
   assert.deepEqual(doc.filled_at_run_time.map((r) => `${r.step}.${r.arg}`), ["withdraw-out.amount", "withdraw-rest.amount", "withdraw-near.amount"]);
   assert.ok(!doc.warnings.some((w) => /withdraw/.test(w)));
   assert.deepEqual(doc.problems, []);
-  const text = run(["dry-run"]).stdout;
+  const text = run(["dry-run", "--rollback"]).stdout;
   assert.match(text, /filled at run time/);
   assert.match(text, /withdraw-out\.amount <- view-balance-2 \(result\)/);
-  assert.match(text, /<READ get_balance\(rft\.tokenfactory\.testnet\) at step view-balance-2>/);
+  assert.match(text, /<READ get_balance\(usdt\.fakes\.testnet\) at step view-balance-2>/);
 });
 
 test("unknown flags and commands exit 2", () => {
@@ -186,6 +186,7 @@ test("preflight on the example: placeholders MISSING, READY FOR LIVE: no", () =>
   assert.match(r.stdout, /^MANUAL\s+keys for owner/m);
   assert.match(r.stdout, /Missing for live:/);
   assert.match(r.stdout, /READY FOR LIVE: no/);
+  assert.match(r.stdout, /Gate for the approved run \(deploy the yield vault, mint ONE personality NFT, make ONE small Rhea \(Ref\) testnet swap\)\. This check is offline: near is never run, no key file is opened, nothing is signed or sent\./);
 });
 
 test("preflight reports size and sha256 of a present wasm, and is READY when all is complete", () => {
@@ -333,8 +334,8 @@ function fakeRpc(seen) {
     if (body.params.request_type === "view_account") return { ok: true, status: 200, json: async () => ({ result: { code_hash: "5Uk3VqDvSyGkS5pE8eWqjR9zVfXk2QxJf8cYhFZ9pQd1", amount: "1" } }) };
     const answers = {
       storage_balance_bounds: { min: "1020000000000000000000" },
-      get_whitelisted_tokens: ["wrap.testnet", "rft.tokenfactory.testnet"],
-      get_pool: { token_account_ids: ["wrap.testnet", "rft.tokenfactory.testnet"], amounts: ["1000000000000000000000000000", "5000000000000"] },
+      get_whitelisted_tokens: ["usdc.fakes.testnet", "usdt.fakes.testnet"],
+      get_pool: { token_account_ids: ["usdc.fakes.testnet", "usdt.fakes.testnet"], amounts: ["5000000", "5000000"] },
       ft_metadata: { decimals: 24 },
     };
     return { ok: true, status: 200, json: async () => ({ result: { result: [...Buffer.from(JSON.stringify(answers[body.params.method_name]))] } }) };

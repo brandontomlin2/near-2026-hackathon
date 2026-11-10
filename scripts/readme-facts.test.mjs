@@ -169,7 +169,7 @@ test("README does not pin a contract unit-test count; it claims only 'ok' and '0
 });
 
 test("README names the product, pins the exact Rust toolchain and describes live:check's real output", async () => {
-  assert.match(readme, /^# Personality NFT\n\nNEAR 2026 Hackathon entry\./, "H1 must be the product name, hackathon line under it");
+  assert.match(readme, /^# Yield Optimizer vault\n\nNEAR 2026 Hackathon entry\./, "H1 must be the product name, hackathon line under it");
   const toolchain = await readFile(join(root, "contracts/personality-nft/rust-toolchain.toml"), "utf8");
   const channel = toolchain.match(/^channel = "([^"]+)"/m)[1];
   assert.ok(readmeText.includes(`Needs Rust ${channel} (pinned in the crate's \`rust-toolchain.toml\``), `README must say Rust ${channel}`);
@@ -317,22 +317,41 @@ test("README track-fit paragraph covers every claimed track and disclaims agent 
   assert.ok(fit[0].includes("it is not deployed and its CLI is a dry run by default, so nothing has been traded."));
 });
 
-test("README 'Live on testnet' is one short paragraph after the working sections, with the owner-only command", async () => {
+test("README 'Live on testnet' is vault-first, says not run yet, and has an empty fill-in table", () => {
   const headings = [...readme.matchAll(/^## (.+)$/gm)].map((m) => m[1]);
   const liveIdx = headings.indexOf("Live on testnet");
   assert.ok(liveIdx >= 0, "README must have a 'Live on testnet' section");
-  for (const h of ["Try it (judge path)", "Contract", "Deploy to testnet", "Inference", "Swarm", "Art"]) {
+  for (const h of ["Try it (judge path)", "Contract", "Deploy to testnet", "Inference", "Swarm", "Art", "Yield Optimizer"]) {
     assert.ok(headings.indexOf(h) >= 0 && headings.indexOf(h) < liveIdx, `'${h}' must come before 'Live on testnet'`);
   }
   const body = readme.split("## Live on testnet\n")[1].split(/\n## /)[0].trim();
-  assert.equal(body.split(/\n\s*\n/).length, 1, "section must be a single paragraph");
-  assert.doesNotMatch(body, /^\|/m, "section must not contain a table");
   assert.doesNotMatch(body, /TBD/);
   assert.match(body, /^Not run yet\./);
-  const { SEND_COMMAND } = await import("./live-proof.mjs");
-  assert.ok(body.includes(`\`${SEND_COMMAND}\``), `must name the complete owner-approved command: ${SEND_COMMAND}`);
-  assert.doesNotMatch(body, /--i-approve`/, "an owner command that stops at --i-approve is incomplete: mint --send needs --media-base");
-  assert.ok(body.includes("`out/evidence.json`"), "must say where the evidence will appear");
+  // Vault-first: the owner's one entry and the vault runbook come before any mention of the NFT-only proof.
+  const once = body.indexOf("`npm run yield:live:once");
+  const runbook = body.indexOf("(docs/yield-vault-live-runbook.md)");
+  assert.ok(once >= 0 && runbook >= 0, "must name npm run yield:live:once and link docs/yield-vault-live-runbook.md");
+  const nft = body.indexOf("npm run live-proof");
+  assert.ok(nft === -1 || (nft > once && nft > runbook), "the NFT-only live-proof may only appear after the vault entry");
+  assert.ok(body.includes("(docs/live-runbook.md)"), "NFT footnote links the older runbook");
+  assert.equal(body.split("\n").filter((l) => /live-proof/.test(l) && !/^\|/.test(l) && /^Supporting footnote/.test(l)).length, 1, "the NFT path is one footnote line");
+  assert.doesNotMatch(body, /--i-approve/, "the README live section must not expand the NFT send command");
+});
+
+test("README 'Live on testnet' fill-in cells stay 'not run yet': no invented ids, hashes or tx links", () => {
+  const body = readme.split("## Live on testnet\n")[1].split(/\n## /)[0];
+  const rows = body.split("\n").filter((l) => /^\|/.test(l)).slice(2).map((l) => l.split("|").map((c) => c.trim()).filter(Boolean));
+  assert.deepEqual(rows.map((r) => r[0].replace(/\(.*$/, "").trim()), [
+    "Vault contract id",
+    "NFT contract id",
+    "Rhea/Ref `execute_swap` tx hash",
+    "Explorer links",
+  ]);
+  for (const r of rows) assert.equal(r[1], "not run yet", `fill-in cell for '${r[0]}' must stay 'not run yet' until a real run is pasted`);
+  // A real transaction hash is 43 or 44 base58 characters; no account id of any kind may appear before a run.
+  assert.doesNotMatch(body, /\b[1-9A-HJ-NP-Za-km-z]{43,44}\b/, "a hash-shaped string appears before any live run");
+  assert.doesNotMatch(body.replaceAll("explorer.testnet.near.org", "EXPLORER"), /\b[a-z0-9][a-z0-9_.-]*\.testnet\b/, "a .testnet account id appears before any live run");
+  assert.doesNotMatch(body, /explorer\.testnet\.near\.org\/transactions\/(?!<hash>)/, "an explorer tx link with a real hash appears before any live run");
 });
 
 test("README meme paragraph: templates not jokes, caption bottom line is a scripted reply, fold rule is fights then replies then roster", async () => {
@@ -427,13 +446,10 @@ test("the submission checklist and live:check name the complete owner command, w
   assert.match(r.lines.at(-1), /^ready: yes\. .*--send --i-approve --media-base <url>/);
 });
 
-test("README and the submission checklist quote the evidence command live-proof --send prints, with the tx file it writes", async () => {
+test("the submission checklist quotes the evidence command live-proof --send prints, with the tx file it writes", async () => {
   // A bare `npm run evidence` is mock mode; the docs must give the testnet invocation exactly as scripts/live-proof.mjs prints it.
-  const { TX_FILE_LABEL, evidenceCommand } = await import("./live-proof.mjs");
+  const { evidenceCommand } = await import("./live-proof.mjs");
   const command = `\`${evidenceCommand("<NEAR_CONTRACT_ACCOUNT_ID>")}\``;
-  const body = readme.split("## Live on testnet\n")[1].split(/\n## /)[0];
-  assert.ok(body.includes(`\`${TX_FILE_LABEL}\``), `README 'Live on testnet' must name ${TX_FILE_LABEL}`);
-  assert.ok(body.includes(command), `README 'Live on testnet' must quote ${command}`);
   const checklist = await readFile(join(root, "docs/submission-checklist.md"), "utf8");
   assert.ok(checklist.includes(command), `docs/submission-checklist.md must quote ${command}`);
 });

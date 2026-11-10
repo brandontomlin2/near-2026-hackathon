@@ -16,7 +16,7 @@ let root, realPlan, realStdout;
 
 before(() => {
   root = mkdtempSync(join(tmpdir(), "yield-live-check-test-"));
-  const r = spawnSync(process.execPath, [LIVE_SCRIPT, "dry-run", "--json"], { encoding: "utf8", cwd: root });
+  const r = spawnSync(process.execPath, [LIVE_SCRIPT, "dry-run", "--json", "--all"], { encoding: "utf8", cwd: root });
   assert.equal(r.status, 0, r.stderr);
   realStdout = r.stdout;
   realPlan = JSON.parse(r.stdout);
@@ -58,7 +58,7 @@ test("checkLivePlan rejects a non-object", () => {
   assert.deepEqual(checkLivePlan([]), ["plan is not a JSON object"]);
 });
 
-const PLAN_JS = `const plan = { network: "testnet", unsigned: true, problems: [], transactions: Array.from({ length: 36 }, (_, i) => ({ i })) };`;
+const PLAN_JS = `const plan = { network: "testnet", unsigned: true, problems: [], transactions: Array.from({ length: 35 }, (_, i) => ({ i })) };`;
 
 function fake(name, body) {
   const file = join(root, name);
