@@ -74,6 +74,54 @@ Check it yourself: `near contract call-function as-read-only vault.near-2026-hac
 
 Supporting footnote: the older personality-NFT-only proof (`npm run live-proof`) is in [`docs/live-runbook.md`](docs/live-runbook.md); the vault run above is the live story for this entry.
 
+### Try to break the live vault
+
+Four more read-only queries, this time to the vault's `check_proposal` view method on the same FASTNEAR testnet endpoint. `check_proposal` runs the rule engine that `execute_swap` runs (`check_rules` in `contracts/yield-vault/src/lib.rs`) without side effects and returns `{"ok":...,"reason":...}`. Each command proposes a bad trade and prints the vault's refusal. They are read-only and sign nothing: no account or key is used, and nothing is sent. They need only `curl` and Node. The test suite does not run them (they need the network); `scripts/readme-break-the-vault.test.mjs` pins the endpoint, request bodies and arguments, and runs the decoder on responses recorded in `scripts/fixtures/break-the-vault/`.
+
+`args_base64` is the base64 of the JSON arguments for that step: step 1 quotes them in full, and steps 2 to 4 describe what they change. The base trade is the live swap's shape: 0.01 wNEAR (`wrap.testnet`) for at least `90000000` `rft` (`rft.tokenfactory.testnet`) on pool 0, proposed by the allowed runner. Steps 1 to 3 change one field of it; step 4 changes two, so that the price floor is not what refuses it. `runner_id` is only an argument; no account signs anything. Every output below is the real output on 2026-11-10 (America/Chicago), one line.
+
+1. A stranger as the runner. `{"proposal":{"pool_id":0,"token_in":"wrap.testnet","token_out":"rft.tokenfactory.testnet","amount_in":"10000000000000000000000","min_amount_out":"90000000"},"runner_id":"stranger.testnet"}` is refused with `ERR_NOT_RUNNER`.
+
+```sh
+curl -s https://test.rpc.fastnear.com -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","finality":"final","account_id":"vault.near-2026-hackathon.testnet","method_name":"check_proposal","args_base64":"eyJwcm9wb3NhbCI6eyJwb29sX2lkIjowLCJ0b2tlbl9pbiI6IndyYXAudGVzdG5ldCIsInRva2VuX291dCI6InJmdC50b2tlbmZhY3RvcnkudGVzdG5ldCIsImFtb3VudF9pbiI6IjEwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIiwibWluX2Ftb3VudF9vdXQiOiI5MDAwMDAwMCJ9LCJydW5uZXJfaWQiOiJzdHJhbmdlci50ZXN0bmV0In0="}}' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(Buffer.from(JSON.parse(s).result.result).toString()))'
+```
+
+```text
+{"ok":false,"reason":"ERR_NOT_RUNNER: stranger.testnet is not an approved runner"}
+```
+
+2. A pool that is not on the allow-list: the base trade from the real runner, `runner.near-2026-hackathon.testnet`, with `"pool_id":5`. Refused with `ERR_POOL_NOT_ALLOWED`.
+
+```sh
+curl -s https://test.rpc.fastnear.com -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","finality":"final","account_id":"vault.near-2026-hackathon.testnet","method_name":"check_proposal","args_base64":"eyJwcm9wb3NhbCI6eyJwb29sX2lkIjo1LCJ0b2tlbl9pbiI6IndyYXAudGVzdG5ldCIsInRva2VuX291dCI6InJmdC50b2tlbmZhY3RvcnkudGVzdG5ldCIsImFtb3VudF9pbiI6IjEwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIiwibWluX2Ftb3VudF9vdXQiOiI5MDAwMDAwMCJ9LCJydW5uZXJfaWQiOiJydW5uZXIubmVhci0yMDI2LWhhY2thdGhvbi50ZXN0bmV0In0="}}' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(Buffer.from(JSON.parse(s).result.result).toString()))'
+```
+
+```text
+{"ok":false,"reason":"ERR_POOL_NOT_ALLOWED: pool 5"}
+```
+
+3. A lowball minimum out: the base trade with `"min_amount_out":"1"`. Refused with `ERR_PRICE_FLOOR`; the reason quotes the pool's configured floor rate.
+
+```sh
+curl -s https://test.rpc.fastnear.com -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","finality":"final","account_id":"vault.near-2026-hackathon.testnet","method_name":"check_proposal","args_base64":"eyJwcm9wb3NhbCI6eyJwb29sX2lkIjowLCJ0b2tlbl9pbiI6IndyYXAudGVzdG5ldCIsInRva2VuX291dCI6InJmdC50b2tlbmZhY3RvcnkudGVzdG5ldCIsImFtb3VudF9pbiI6IjEwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIiwibWluX2Ftb3VudF9vdXQiOiIxIn0sInJ1bm5lcl9pZCI6InJ1bm5lci5uZWFyLTIwMjYtaGFja2F0aG9uLnRlc3RuZXQifQ=="}}' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(Buffer.from(JSON.parse(s).result.result).toString()))'
+```
+
+```text
+{"ok":false,"reason":"ERR_PRICE_FLOOR: min_amount_out 1 below floor 1770923779569/374136952131431998480120321 of amount_in 10000000000000000000000"}
+```
+
+4. An oversized trade: 11 wNEAR (`"amount_in":"11000000000000000000000000"`) with `"min_amount_out":"100000000000"`, which clears the price floor. Refused with `ERR_MAX_TRADE`, because the vault's `max_trade` for `wrap.testnet` is 10 wNEAR.
+
+```sh
+curl -s https://test.rpc.fastnear.com -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","finality":"final","account_id":"vault.near-2026-hackathon.testnet","method_name":"check_proposal","args_base64":"eyJwcm9wb3NhbCI6eyJwb29sX2lkIjowLCJ0b2tlbl9pbiI6IndyYXAudGVzdG5ldCIsInRva2VuX291dCI6InJmdC50b2tlbmZhY3RvcnkudGVzdG5ldCIsImFtb3VudF9pbiI6IjExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIiwibWluX2Ftb3VudF9vdXQiOiIxMDAwMDAwMDAwMDAifSwicnVubmVyX2lkIjoicnVubmVyLm5lYXItMjAyNi1oYWNrYXRob24udGVzdG5ldCJ9"}}' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(Buffer.from(JSON.parse(s).result.result).toString()))'
+```
+
+```text
+{"ok":false,"reason":"ERR_MAX_TRADE: 11000000000000000000000000 exceeds max_trade 10000000000000000000000000"}
+```
+
+Control: the base trade unchanged, from the real runner, returned `{"ok":true,"reason":""}` on the same day, so each refusal comes from the change described in its step. To try your own proposal, encode the arguments with `node -e 'console.log(Buffer.from(process.argv[1]).toString("base64"))' '<json>'` and put the result in `args_base64`. Step 1 depends only on the runner list in the vault's configuration (`get_config`). Steps 2 to 4 depend on the configuration and on the vault being idle: if it were paused, or a swap or recovery were in flight, they would return `ERR_PAUSED` or `ERR_SWAP_IN_FLIGHT` instead. The control also depends on the vault's balance and the day's spend.
+
 ## Validate locally
 
 GitHub Actions is disabled on purpose; this repository has no `.github/workflows` files (see `docs/ci.md`). The judge screen is local. It clones the committed `HEAD`, so commit your changes first.
