@@ -51,5 +51,5 @@ The vault's sandbox integration tests are a separate crate, `contracts/yield-vau
 
 ## Other notes
 
-- Mock and testnet status: the demo is mock or dry-run only. Nothing is deployed to testnet or mainnet, nothing is signed or sent, and NEAR Intents (mainnet-only) is not used.
+- Mock and testnet status: the demos are mock or dry-run only and sign and send nothing. The one live state is the testnet run of 2026-11-09 in the README section "Live on testnet" (the vault deployed, one NFT minted, one swap). Nothing is on mainnet, and NEAR Intents (mainnet-only) is not used.
 - Not covered by the MIT license in `LICENSE`: the third-party libraries above and the installed agent skills keep their own licenses.
