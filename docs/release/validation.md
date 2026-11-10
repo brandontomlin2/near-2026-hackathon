@@ -47,3 +47,16 @@ Notes:
 - An independent review of the README reorder and the `PRODUCT.md` replacement (a separate Sonnet agent, read-only) found no P1 or P2 issue. Two of its P3 notes were applied in `f107972` (the UTC date of the swap, one `PRODUCT.md` sentence). Left as they are: the supporting `npm run demo` steps stay inside the judge quick path, ahead of "Live on testnet".
 - Earlier on this PR (before this follow-up): the headline change (`438635c`) updated five tests that pinned the old page text, and the README status fix (`43c70a6`) changed runbook wording to keep a pinned sentence.
 - Paste the `verify.sh` table above into the `## Proof` section of the pull request, or rerun it on the final commit.
+
+## Follow-up, 2026-11-10: "Try to break the live vault"
+
+Run on branch `claude/break-the-vault-1110` at commit `2e1c272` (`2608a4a`, the #201 squash, plus two commits: the README subsection "Try to break the live vault" and its drift test `scripts/readme-break-the-vault.test.mjs` with fixtures in `scripts/fixtures/break-the-vault/`). macOS on Apple silicon, Node v26.3.0, cargo installed, gitleaks 8.30.1 now installed. Both commands ran with a private `TMPDIR`, `npm test` under `gtimeout 1800` and `verify.sh` under `gtimeout 2400`. Nothing was signed or sent and no `near` CLI was run.
+
+| Command | Result | Detail |
+| --- | --- | --- |
+| `npm test` | PASS, exit 0 | 4623 tests in 251 suites: 4613 pass, 0 fail, 0 cancelled, 0 skipped, 10 todo; 62 s |
+| `bash scripts/verify.sh` | FAIL, exit 1 | 18 rows: 16 `PASS`, 1 `SKIP` (`deploy nft`, live testnet not requested), 1 `FAIL` (`secret scan`); `result: FAIL` |
+
+- The one `FAIL` is not from this follow-up. gitleaks is installed on this machine now, so the stage ran real gitleaks over the full history (974 commits) instead of the fallback scan, and it reported 8 `generic-api-key` findings. All 8 are one line each in three test files, in commits dated 2026-11-03: `src/inference/client.gaps14.test.mjs` line 19, `src/inference/hardening.test.mjs` line 9 and `src/memory/memory.gaps17.test.mjs` line 15. Each line is a made-up test constant (`const KEY = "test-fake-key-..."` or `"stub-key-..."`), not a credential. None is in a file this follow-up touched. Not fixed here: allow-listing them in `.gitleaks.toml` is a separate decision, and it is needed before `verify.sh` can pass on a machine with gitleaks.
+- Every other row is `PASS` (`tests` 301 file(s); `vault tests` `278 passed; 0 failed`) apart from the usual `deploy nft` `SKIP`.
+- Read-only live check, 2026-11-10 (America/Chicago): the four `curl` commands in the README subsection "Try to break the live vault" were run against `https://test.rpc.fastnear.com` (`check_proposal` on `vault.near-2026-hackathon.testnet`) by the author, again by an independent read-only Sonnet reviewer, and again through the test's live mode (`README_BREAK_THE_VAULT_LIVE=1`, 9 of 9 pass). Each printed the output the README quotes: `ERR_NOT_RUNNER`, `ERR_POOL_NOT_ALLOWED`, `ERR_PRICE_FLOOR`, `ERR_MAX_TRADE`; the control (the base trade from the real runner) returned `{"ok":true,"reason":""}`. These are JSON-RPC view queries; nothing was signed or sent. The reviewer found no P1; its two P2 wording notes (step 4 changes two fields; steps 2 to 4 also need the vault idle) were applied before the commit.
