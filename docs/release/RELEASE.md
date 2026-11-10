@@ -2,7 +2,7 @@
 
 Status of this file: DRAFT for Brandon, written 2026-11-09 on branch `claude/release-doc-1109`. Nothing in it has been submitted, posted or published. Every live fact is copied from the README section "Live on testnet"; no hash or account here is new. Companion files: [`judge-review.md`](judge-review.md) (what a fresh-clone judge hits) and [`validation.md`](validation.md) (test and verify results for this branch).
 
-Open conflict to settle first: the README still claims five tracks (`defi`, `security`, `nfts`, `swarms`, `agents`) and `PRODUCT.md` still describes the personality NFT as the product. This document recommends `security` and `defi` and a vault-first `PRODUCT.md`. Neither file was changed for that here; both are Brandon's call (see "Suggested tracks" and "Proposed PRODUCT.md changes").
+Settled: Brandon decided on 2026-11-09 that the tracks are `security`, `defi` and `nfts`, and that `PRODUCT.md` is vault-first. The README, `PRODUCT.md` and the checklists claim exactly these three (see "Tracks" and "PRODUCT.md (applied)").
 
 Dates, in America/Chicago (CST): feature freeze Wed Nov 11; submit target Fri Nov 13 by 8:00pm; hard deadline Sat Nov 14 at 5:59pm (2026-11-14T23:59Z), which is also when the repository must be public.
 
@@ -111,17 +111,17 @@ Next steps, in order:
 5. A rolling 24-hour cap in place of the UTC-day cap.
 6. A professional audit before any mainnet funds.
 
-## Suggested tracks
+## Tracks
 
-The track ids come from the Tracks table in `docs/HACKATHON.md` (checked against the live file on 2026-11-09; the 13 ids are unchanged). Brandon makes the final choice at submission. Hints in that table are not requirements (Q-011), and testnet-only projects are eligible for every track (Q-010).
+The track ids come from the Tracks table in `docs/HACKATHON.md` (checked against the live file on 2026-11-09; the 13 ids are unchanged). Brandon decided the tracks on 2026-11-09. Hints in that table are not requirements (Q-011), and testnet-only projects are eligible for every track (Q-010).
 
-| Track id | Recommend | One-line rationale |
+| Track id | Claim | One-line rationale |
 | --- | --- | --- |
 | `security` (AI Security & Defense) | Yes, lead | The track asks for "spending limits, policy engines, sandboxed wallets" to "Give AI money without giving it the keys to everything"; the vault is that: per-token trade and daily caps, pool allowlist, price floor, runner allowlist, pause and revoke, enforced by the contract. |
 | `defi` (Unstoppable DeFi) | Yes, lead | The track lists "vaults and trading agents"; this is a vault that trades on Rhea (Ref Finance) pools, with one live testnet swap. It does not use NEAR Intents, which the track text leans on. |
-| `nfts` (NFTs That Do Something) | Optional | The personality NFT carries a sheet anchor and one token was minted live, but this is the cut story and the vault does not check the NFT. Claim it only if Brandon wants the supporting demo scored. |
+| `nfts` (NFTs That Do Something) | Yes, supporting (decided by Brandon) | The personality NFT carries a sheet anchor and one token was minted live, but the vault does not check the NFT, so it supports the story and is not what the vault is scored on. |
 | `business` (Autonomous Business) | No, for now | "Humans only set the constraints" matches the vault, and the user is a treasury, but nothing here is a business with sales, payments or revenue. |
-| `swarms`, `agents` | No | The README itself says what these tracks ask for does not exist here (no market, bidding or settlement between agents; no agent earns, spends or pays). The README still lists both as claimed; see the judge review. |
+| `swarms`, `agents` | No | Dropped by Brandon. What these tracks ask for does not exist here (no market, bidding or settlement between agents; no agent earns, spends or pays). |
 
 ## Submission form field drafts
 
@@ -134,7 +134,7 @@ The fields are the ones in `docs/HACKATHON.md` under "Submission API". That file
 | `leadName` | 2-80 characters | HUMAN. |
 | `email` | valid, max 160 characters | HUMAN. |
 | `size` | one of `1`, `2 - 4`, `4 - 6`, `6 - 8`, `8+` | HUMAN. |
-| `tracks` | one or more track ids | Suggestion: `["security","defi"]` (see above). HUMAN decides. |
+| `tracks` | one or more track ids | `["security","defi","nfts"]`, decided by Brandon 2026-11-09. |
 | `nearAddress` | mainnet payout account | HUMAN. An agent never creates or invents one. The testnet accounts above are not valid here. |
 | `projectUrl` | public repository URL, unique | HUMAN, after the repository is public. |
 | `demoUrl` | public demo post on X | HUMAN, after Brandon publishes the post. |
@@ -170,40 +170,6 @@ Two things in the live `HACKATHON.md` differ from the copy in `docs/HACKATHON.md
 - After submission, changes go through `https://nearhackathon.com/request-changes`. Never resubmit.
 - Q-000: the $10 of NEAR AI credits claimed through NEAR Builders use a separate API key and do not show in the cloud.near.ai dashboard.
 
-## Proposed PRODUCT.md changes (not applied)
+## PRODUCT.md (applied)
 
-`PRODUCT.md` was not edited; it needs Brandon's explicit yes. It is stale: it still describes the personality NFT as the product, names `nfts`, `swarms` and `agents` as the tracks, lists "Marketplace or trading" and "Token economics or payments" as out of scope, and its demo flow says `npm run swarm` does not exist. The README links it as "Design", so a judge who follows the link reads a different product. Proposed replacement text for the sections that changed:
-
-**One-sentence pitch**
-
-> AI agents propose trades, a NEAR vault contract's on-chain rules veto the bad ones, and only the trades that pass execute on Rhea (Ref Finance).
-
-**Value prop**
-
-> A small business or DAO treasury gets yield from automated trading without trusting a single bot. The owner sets a pool allowlist, per-token trade and daily caps, a price floor and a runner allowlist on the vault contract. Agents can only propose. A wrong or compromised agent is bounded by those limits, and only the owner can withdraw.
-
-**How it works**
-
-> Four personality agents (Aloof, Chaotic, Social, Skeptic) and a yield-optimizer planner each propose a swap from Rhea (Ref Finance) pool data; Skeptic can veto. Each proposal is checked off chain against the vault rules (`src/yield/rules.mjs`) and again on chain by the vault contract (`contracts/yield-vault/`), which refuses with a named error or runs the swap on Ref and reconciles the result in callbacks. `npm run yield:demo` shows all of it offline with mock inference and a committed pool snapshot. The vault was deployed on testnet and made one swap on 2026-11-09 (README, "Live on testnet").
-
-**Demo flow**
-
-> 1. `npm install && npm run yield:demo`. See the agent proposals, the vetoes, four on-chain rule rejections and `1 unsigned execute_swap call planned, 0 signed, 0 sent`.
-> 2. Open `out/yield-demo/index.html`. See the same run as one page.
-> 3. `npm run demo`, then open `out/index.html`. See the four agents the proposals come from.
-> 4. `bash scripts/verify.sh`. See an 18-row table ending in `result: PASS`.
-> 5. Open the explorer links in the README section "Live on testnet". See the deployed vault and the one swap.
-
-**Tracks**
-
-> Submit `security` and `defi`. `nfts` is optional supporting context. Leave `swarms`, `agents` and `privacy` off: what those tracks ask for is not built.
-
-**Out of scope**
-
-> Mainnet. NEAR Intents. Shade Agents and chain signatures beyond the offline dry run. Token wallets. The memory-NFT story as the pitch (it stays as supporting context). A hosted UI. More than one live swap before submission.
-
-**Timeline**
-
-> Nov 2-5: NFT contract, swarm, vault contract, planner, offline demos. Nov 9: live testnet run. Nov 11: freeze. Nov 13: submit target. Nov 14 5:59pm CST: deadline.
-
-The sections "The four agents", "Rendering" and "Memory / learning loop" can stay as they are under a new heading such as "Supporting: the personality agents".
+Brandon approved the change on 2026-11-09. [`PRODUCT.md`](../../PRODUCT.md) was replaced with the vault version: the vault is the pitch, the personality agents sit under "Supporting: the personality agents", and the tracks are `security`, `defi` and `nfts`.
