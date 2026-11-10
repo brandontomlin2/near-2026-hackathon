@@ -59,3 +59,4 @@
 {"ts":"2026-11-03T16:55:29.132Z","actor":"claude","item_id":"swarm-and-evidence-mock-sheets-use-the-demo-s-counting-stand-in-fix-1-rounds-plural","action":"claim","from":"todo","to":"doing","note":""}
 {"ts":"2026-11-10T03:22:59.483Z","actor":"claude-release-1109","item_id":"release-doc-judge-review-and-validation-notes-docs-release","action":"add","from":null,"to":"todo","note":""}
 {"ts":"2026-11-10T03:23:04.638Z","actor":"claude-release-1109","item_id":"release-doc-judge-review-and-validation-notes-docs-release","action":"claim","from":"todo","to":"doing","note":""}
+{"ts":"2026-11-10T03:28:14.046Z","actor":"claude-release-1109","item_id":"release-doc-judge-review-and-validation-notes-docs-release","action":"set","from":"doing","to":"review","note":"docs/release/{RELEASE,judge-review,validation}.md on claude/release-doc-1109; not pushed; needs Brandon: tracks, PRODUCT.md, README reorder"}

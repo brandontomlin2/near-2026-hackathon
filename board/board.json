@@ -133,12 +133,12 @@
   {
     "id": "release-doc-judge-review-and-validation-notes-docs-release",
     "title": "release doc, judge review and validation notes (docs/release/)",
-    "status": "doing",
+    "status": "review",
     "owner": "claude-release-1109",
     "kind": "task",
     "lane": "claude",
-    "notes": "",
-    "updated_at": "2026-11-10T03:23:04.638Z",
+    "notes": "docs/release/{RELEASE,judge-review,validation}.md on claude/release-doc-1109; not pushed; needs Brandon: tracks, PRODUCT.md, README reorder",
+    "updated_at": "2026-11-10T03:28:14.046Z",
     "updated_by": "claude-release-1109"
   },
   {
