@@ -36,6 +36,40 @@ Run once on 2026-11-09 (testnet only, nothing on mainnet). The live run is the [
 | Rhea/Ref `execute_swap` tx hash | [B4oDeCFzeEpDaKMJe6F5rDh5F2ie2qdTKTm7YQVg24Em](https://testnet.nearblocks.io/txns/B4oDeCFzeEpDaKMJe6F5rDh5F2ie2qdTKTm7YQVg24Em) (`swap_executed`, `amount_out` 94246798) |
 | Explorer links (`https://explorer.testnet.near.org/transactions/<hash>` for the swap, `.../accounts/<id>` for the vault and the NFT contract) | [swap](https://explorer.testnet.near.org/transactions/B4oDeCFzeEpDaKMJe6F5rDh5F2ie2qdTKTm7YQVg24Em), [vault](https://explorer.testnet.near.org/accounts/vault.near-2026-hackathon.testnet), [NFT contract](https://explorer.testnet.near.org/accounts/near-hackathon-2026-vault-20261106.testnet) |
 
+### Verify it yourself with curl (read-only, no near-cli-rs)
+
+This needs only `curl` and Node, which this repository already requires. Both commands are read-only JSON-RPC queries to public testnet endpoints from the [official provider list](https://docs.near.org/api/rpc/providers): nothing is signed or sent, and no account or key is used. The test suite does not run them (they need the network); `scripts/readme-live-verify.test.mjs` pins the endpoints, request bodies and ids, and runs the decoding and `grep` steps on responses recorded in `scripts/fixtures/live-verify/`.
+
+1. Read the vault's state through the FASTNEAR testnet endpoint (`https://test.rpc.fastnear.com`). `e30=` is base64 for `{}`, the empty arguments. The RPC returns the view result as a byte array, and the Node one-liner decodes it into text.
+
+```sh
+curl -s https://test.rpc.fastnear.com -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","finality":"final","account_id":"vault.near-2026-hackathon.testnet","method_name":"get_state","args_base64":"e30="}}' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(Buffer.from(JSON.parse(s).result.result).toString()))'
+```
+
+Real output on 2026-11-09, one line:
+
+```text
+{"owner_id":"near-2026-hackathon.testnet","nft_contract_id":"near-hackathon-2026-vault-20261106.testnet","token_id":"aloof","ref_exchange_id":"ref-finance-101.testnet","paused":false,"swap_in_flight":false,"recovery_in_flight":false,"release_in_flight":false,"day":20767,"spent_today":[["wrap.testnet","10000000000000000000000"]],"balances":[["rft.tokenfactory.testnet","94246798"],["wrap.testnet","10000000000000000000000"]],"stranded_on_ref":[],"unverified_on_ref":[],"swaps_executed":1}
+```
+
+Look for `"swaps_executed":1`, `"swap_in_flight":false` and `"stranded_on_ref":[]`. The vault's `rft` balance, `"balances":[["rft.tokenfactory.testnet","94246798"],...`, is the swap's `amount_out`. This is live state, so it holds as long as the owner sends nothing further; none is planned.
+
+2. Read the swap transaction itself through the NEAR archival testnet endpoint (`https://archival-rpc.testnet.near.org`). An archival node is used because a non-archival node may no longer hold a transaction this old. The provider list marks this endpoint as severely rate limited, so on HTTP 429 or an empty reply, wait and retry, or open the explorer links in the table above.
+
+```sh
+curl -s https://archival-rpc.testnet.near.org -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"tx","params":{"tx_hash":"B4oDeCFzeEpDaKMJe6F5rDh5F2ie2qdTKTm7YQVg24Em","sender_account_id":"runner.near-2026-hackathon.testnet","wait_until":"FINAL"}}' | grep -o 'swap_executed[^]]*'
+```
+
+Real output on 2026-11-09 (JSON-escaped, because the event sits inside a log string), one line:
+
+```text
+swap_executed\",\"data\":[{\"pool_id\":0,\"token_in\":\"wrap.testnet\",\"token_out\":\"rft.tokenfactory.testnet\",\"amount_in\":\"10000000000000000000000\",\"amount_out\":\"94246798\"}
+```
+
+That is the vault's `swap_executed` event: 0.01 wNEAR (`10000000000000000000000` yocto of `wrap.testnet`) in, `94246798` of `rft.tokenfactory.testnet` out on pool 0, the same `amount_out` as the state above. Without the `grep`, the full response also shows `final_execution_status` `FINAL`, the transaction's `signer_id` `runner.near-2026-hackathon.testnet` and `receiver_id` `vault.near-2026-hackathon.testnet`, a `FunctionCall` to `execute_swap`, and a top-level status of `{"SuccessValue":"Ijk0MjQ2Nzk4Ig=="}`, which is base64 for `"94246798"`.
+
+With near-cli-rs installed, the next paragraph does the same through that tool.
+
 Check it yourself: `near contract call-function as-read-only vault.near-2026-hackathon.testnet get_state json-args '{}' network-config testnet now` shows `swaps_executed: 1`, `swap_in_flight: false` and empty `stranded_on_ref`; `nft_token` with `{"token_id":"aloof"}` on the NFT contract returns the owner `near-2026-hackathon.testnet` and the `media_hash` of `docs/nft-media/aloof.svg` (its `media` URL resolves once this repository is public). The NFT media files are the byte-identical output of `npm run render`, committed under `docs/nft-media/`.
 
 Supporting footnote: the older personality-NFT-only proof (`npm run live-proof`) is in [`docs/live-runbook.md`](docs/live-runbook.md); the vault run above is the live story for this entry.
