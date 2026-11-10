@@ -19,6 +19,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { scrubEnv } from "./fresh-clone-lib.mjs";
+import { HEADLINE } from "../src/demo/page.mjs";
 
 const sha256 = (data) => crypto.createHash("sha256").update(data).digest("hex");
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -246,10 +247,10 @@ export function judgePathChecks() {
     },
     {
       step: "judge:2 page",
-      readmeOnly: ["Your NFT remembers who you are", ...PAGE_ORDER],
+      readmeOnly: [HEADLINE, ...PAGE_ORDER],
       assert(ctx) {
         const html = ctx.read("out/index.html");
-        ctx.check(/<h1>Your NFT remembers who you are/.test(html), "out/index.html lacks the h1 'Your NFT remembers who you are'");
+        ctx.check(html.includes(`<h1>${HEADLINE}</h1>`), `out/index.html lacks the h1 '${HEADLINE}'`);
         const marks = ["<h1>", ...PAGE_ORDER.map((n) => (n === "24 share cards" ? `<summary>${n}</summary>` : /^(Tampered|Mint|On test|Check)/.test(n) ? `<h3>${n}` : `<h2>${n}`))];
         const miss = ctx.inOrder(html, marks);
         ctx.check(miss === null, `page sections out of order or missing at ${JSON.stringify(miss)}`);

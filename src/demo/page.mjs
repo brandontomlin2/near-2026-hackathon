@@ -9,6 +9,10 @@ import { moodForText } from "../art/moods.mjs";
 import { plural } from "../util/plural.mjs";
 import { transferSection } from "./transfer-section.mjs";
 
+// The page headline and browser title. One copy: scripts/demo.mjs prints it and
+// the tests and the fresh-clone judge path read it from here.
+export const HEADLINE = "AI agents propose trades. On-chain rules decide.";
+
 const CSS = `
 :root{color-scheme:light dark;--bg:#fafaf7;--fg:#1c1c1a;--mut:#5f5f58;--card:#fff;--line:#d9d9d0;--acc:#0a6b4f}
 @media(prefers-color-scheme:dark){:root{--bg:#161614;--fg:#ecece6;--mut:#a0a098;--card:#201f1d;--line:#3a3935;--acc:#5fd3a8}}
@@ -195,12 +199,13 @@ ${memes}
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 ${securityMetaTags(CSS)}
-<title>Your NFT remembers who you are</title>
+<title>${esc(HEADLINE)}</title>
 <style>${CSS}</style></head><body><main>
 <header class="hero">
-<p class="pitch">Personality NFT: an AI personality that lives in your NFT.</p>
-<h1>Your NFT remembers who you are</h1>
-<p class="sub">An AI personality lives in your NFT, argues with three others in a swarm, remembers it in a character sheet whose hash ${anchorPhrase}, and reacts with a face to every line.</p>
+<p class="pitch">Yield Optimizer vault on NEAR: yield for a small business or DAO treasury without trusting a single bot.</p>
+<h1>${esc(HEADLINE)}</h1>
+<p class="sub">Four AI personality agents propose swaps. The vault contract's on-chain rules veto the bad ones, and the ones that pass execute on Rhea (Ref Finance).</p>
+<p class="mut">This page is the supporting demo: the four agents, their shared channel, and the character sheets whose hash ${anchorPhrase}. The vault demo, with the proposals and the rule rejections, is <code>npm run yield:demo</code>.</p>
 <div class="faces">${hero}</div>
 </header>
 <p class="notice">Mock mode, dry run: inference is mocked and nothing is signed, sent or deployed. ${plural(esc(manifest.rounds), "round")}, seed ${esc(manifest.seed)}, a sheet every ${plural(esc(manifest.every), "round")}, art style ${esc(manifest.style ?? "default")}.</p>

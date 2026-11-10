@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { runDemo, DEMO_DEFAULTS } from "./pipeline.mjs";
-import { enemyInSheet, formatDeposit, renderDemoPage, thenNowCaption } from "./page.mjs";
+import { enemyInSheet, formatDeposit, HEADLINE, renderDemoPage, thenNowCaption } from "./page.mjs";
 import { main } from "../../scripts/demo.mjs";
 import { AGENTS } from "../traits/agents.mjs";
 import { verifyRounds } from "../swarm/runner.mjs";
@@ -258,7 +258,7 @@ describe("demo: page content", () => {
   const html = () => fs.readFileSync(path.join(dirA, "index.html"), "utf8");
 
   it("has the hero text and one short mock notice", () => {
-    assert.ok(html().includes("<h1>Your NFT remembers who you are</h1>"));
+    assert.ok(html().includes(`<h1>${HEADLINE}</h1>`));
     assert.equal((html().match(/class="notice"/g) ?? []).length, 1);
   });
 
@@ -406,7 +406,7 @@ describe("demo: styles", () => {
     assert.equal(r, 0);
     const html = fs.readFileSync(path.join(dir, "index.html"), "utf8");
     assert.ok(!html.includes('class="moods"'));
-    assert.ok(html.includes("Your NFT remembers who you are"));
+    assert.ok(html.includes(HEADLINE));
     const manifest = readJson(dir, "demo.json");
     assert.equal(manifest.style, "default");
     assert.deepEqual(manifest.moods, ["neutral"]);
