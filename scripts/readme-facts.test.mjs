@@ -305,11 +305,22 @@ test("README calls docs/img/page.png the top of the page, and quotes its real pi
   assert.ok(screenshot.includes(`--window-size=${width},${height}`), "the tracked PNG is a viewport capture at the screenshot script's window size");
 });
 
-test("README track-fit paragraph covers every claimed track and disclaims agent economics", () => {
-  const tracks = readme.match(/^Tracks: (.+)\.$/m)[1].match(/`([a-z]+)`/g).map((t) => t.replace(/`/g, ""));
+test("README track-fit paragraph covers every claimed track and disclaims agent economics", async () => {
+  const tracks = readme.match(/^Tracks: (.+?)\. /m)[1].match(/`([a-z]+)`/g).map((t) => t.replace(/`/g, ""));
   const fit = readme.match(/^Track fit, plainly: .*$/m);
   assert.ok(fit, "README must have a 'Track fit, plainly:' paragraph");
+  // The owner's decision (2026-11-09): exactly security, defi and nfts, with the official ids and names from docs/HACKATHON.md.
+  assert.deepEqual(tracks, ["security", "defi", "nfts"]);
+  assert.match(readme, /^Tracks: `security` \(AI Security & Defense\), `defi` \(Unstoppable DeFi\) and `nfts` \(NFTs That Do Something\)\./m);
+  const hackathon = await readFile(join(root, "docs/HACKATHON.md"), "utf8");
+  for (const [id, name] of [["security", "AI Security & Defense"], ["defi", "Unstoppable DeFi"], ["nfts", "NFTs That Do Something"]]) {
+    assert.ok(hackathon.includes(`\`${id}\``) && hackathon.includes(name), `docs/HACKATHON.md lists ${id} as ${name}`);
+  }
   for (const t of tracks) assert.ok(fit[0].includes(`\`${t}\``), `track fit must mention ${t}`);
+  // swarms, agents and privacy are named only as not claimed.
+  assert.ok(fit[0].includes("Not claimed: `swarms`, `agents` and `privacy`."));
+  const trackSection = readme.split("## Tracks and how NEAR fits\n")[1].split(/\n## /)[0];
+  assert.doesNotMatch(trackSection, /^- .*`(swarms|agents)`/m, "no track bullet claims swarms or agents");
   // Says what exists and, against the organisers' track definitions, what does not.
   assert.ok(fit[0].includes("What does not exist: no coordination market, bidding, collective purchasing or settlement between agents, and no agent earns, spends, negotiates, hires or pays in the swarm, demo or NFT."));
   // The Yield Optimizer is the one place agents propose trades; it must be named, undeployed and dry run.
