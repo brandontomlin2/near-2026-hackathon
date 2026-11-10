@@ -1,25 +1,21 @@
 # Judge checklist for an AI screener
 
-What an AI screener checks on this repository, in order. Everything runs
-offline with no keys and no chain writes. Nothing here needs a testnet
-account. Inference is mock (`MOCK_INFERENCE=1`) and anchor calls are dry runs;
-no testnet deployment, NEAR AI Cloud call or on-chain anchor has been run or
-is evidenced in this repository. Live paths exist in code (`src/inference/client.mjs`,
-`scripts/testnet-deploy.mjs`, `scripts/live-proof.mjs`) but need keys and a
-human's explicit approval. See `docs/tracks.md`.
+What an AI screener checks on this repository, in order. The product is the Yield Optimizer vault: AI agents propose trades, a NEAR vault contract's on-chain rules veto the bad ones, and only trades that pass execute on Rhea (Ref Finance). Everything below runs offline with no keys and no chain writes; nothing here needs a testnet account. Inference is mock (`MOCK_INFERENCE=1`) and every vault and anchor command is a dry run. One approved testnet run happened on 2026-11-09 (testnet only, nothing on mainnet): the vault and the NFT contract are deployed, one NFT token (`aloof`) was minted, and one swap went through `execute_swap`. Its ids, transaction hashes and a read-only `curl` check are in the README section "Live on testnet". The owner sent that swap by hand, so it was not agent-picked, and the vault has not refused a live transaction. The tooling in this repository never signs. See `docs/tracks.md`.
 
 ## Checks
 
 | # | Check | How |
 | --- | --- | --- |
-| 1 | The README says what the product is, the problem, and how NEAR fits | Read `README.md` top to bottom. |
-| 2 | The README has numbered "do X, see Y" steps | Each step is a command plus the output to expect. Steps a judge can run are in fenced blocks marked `<!-- judge:run -->`. |
+| 1 | The README says what the product is, the problem, and how NEAR fits | Read `README.md` top to bottom. It opens with the vault: the problem, what `npm run yield:demo` shows and a plain status paragraph, then "Judge quick path", "Live on testnet", "Validate locally" and "Tracks and how NEAR fits". The personality NFTs are under "Supporting: the personality NFTs". |
+| 2 | The README has numbered "do X, see Y" steps | "Judge quick path" has four steps: `npm install && npm run yield:demo`, `npm run demo`, `open out/index.html`, `bash scripts/verify.sh`. Each step is a command plus the output to expect. Steps a judge can run are in fenced blocks marked `<!-- judge:run -->`. |
 | 3 | Those steps actually work from a fresh clone | `bash scripts/fresh-clone-test.sh` (see below). |
 | 4 | `LICENSE` exists | The same script checks it. MIT. |
 | 5 | Tests run | `npm ci` then `npm test` (also part of `bash scripts/verify.sh`). |
-| 6 | The code matches the README's claims | For each claim (4 agents, round hash chain, character sheets and their hashes, dry-run anchor calls, determinism), find the code and the output that shows it. A claim with no code or output is a mismatch. |
+| 6 | The code matches the README's claims | For each claim (the vault's pool allowlist, `max_trade`, `daily_cap`, price floor, runner allowlist and the named errors; four rule rejections in `npm run yield:demo`; the live swap in "Live on testnet"; and, for the supporting side, 4 agents, round hash chain, character sheets and their hashes, dry-run anchor calls, determinism), find the code and the output that shows it. A claim with no code or output is a mismatch. |
 | 7 | Disclosures | The README lists libraries, templates and AI-generated code, and any pre-hackathon code. |
-| 8 | No secrets, no CI workflows | `bash scripts/verify.sh` (secret files, gitleaks when installed, no `.github/workflows`). |
+| 8 | The live claims are checkable and no larger than they are | The README's "Verify it yourself with curl (read-only, no near-cli-rs)" reads the vault's state and the swap transaction from public testnet RPC endpoints (needs the network, so the tests do not run it). Expect `"swaps_executed":1` and a `swap_executed` event. Claims beyond one swap, mainnet, NEAR Intents or TEE attestation are mismatches. |
+| 9 | No secrets, no CI workflows | `bash scripts/verify.sh` (secret files, gitleaks when installed, no `.github/workflows`). |
+| 10 | The claimed tracks match what exists | The claimed tracks are exactly `security` (AI Security & Defense), `defi` (Unstoppable DeFi) and `nfts` (NFTs That Do Something): `security` and `defi` are the Yield Optimizer vault, `nfts` is supporting. `swarms`, `agents` and `privacy` are not claimed. Read `docs/tracks.md` for what each track gets and what does not exist. |
 
 ## Run the fresh-clone script
 

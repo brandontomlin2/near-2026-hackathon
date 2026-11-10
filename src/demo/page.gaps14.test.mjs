@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { renderDemoPage } from "./page.mjs";
+import { HEADLINE, renderDemoPage } from "./page.mjs";
 import { GENESIS_HASH } from "../swarm/runner.mjs";
 
 const H1 = "1".repeat(64);
@@ -87,7 +87,7 @@ describe("demo page: proof sections", () => {
     const html = render();
     assert.ok(html.startsWith("<!doctype html>"));
     assert.equal(html.match(/<title>/g).length, 1);
-    assert.ok(html.includes("<title>Your NFT remembers who you are</title>"));
+    assert.ok(html.includes(`<title>${HEADLINE}</title>`));
     assert.ok(!/<script/i.test(html));
   });
 

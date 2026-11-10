@@ -292,6 +292,6 @@ describe("renderDemoPage hero subtitle", () => {
 
   it("says anchored only when every call was signed and sent", () => {
     const html = render(baseManifest(), baseData({ anchors: { contractId: "c.testnet", signed: true, calls: [call({ status: "sent", transactionHash: "tx" })] } }));
-    assert.ok(html.includes("whose hash is anchored on NEAR,"));
+    assert.ok(html.includes("whose hash is anchored on NEAR."));
   });
 });

@@ -162,7 +162,7 @@ recovery, run once against a live report and shown in the demo.
    Keep the offline module as the first gate and the mock mode for judges
    without keys.
 2. **No-go** if that does not fit before the Nov 11 freeze. Drop `privacy`
-   from the submission; keep `nfts`, `swarms`, `agents`. Do not describe the
+   from the submission; keep `security`, `defi`, `nfts`. Do not describe the
    mock check as attestation anywhere in the README.
 3. Either way, README wording: "offline consistency check; hardware
    verification is X or not done", never "verified private".

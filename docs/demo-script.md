@@ -1,14 +1,32 @@
 # Demo video script (2.5 minutes)
 
-Goal: one complete moment, from a real action to a visible result: the owner asks, the agent remembers, a buyer can check. No slides, no architecture tour. The human records and narrates; this file is the shot list.
+Goal: one complete moment, from a real action to a visible result. The product is the Yield Optimizer vault, so the video leads with it: AI agents propose trades, the vault contract's on-chain rules veto the bad ones, and only a trade that passes can execute on Rhea (Ref Finance). Then the live proof from the one testnet run on 2026-11-09, then the supporting personality NFT demo briefly, then the judge screen. No slides, no architecture tour. The human records and narrates; this file is the shot list.
 
-**Command status.** The shot list uses `npm run demo` and `npm run ask`, and both exist. `npm run demo` runs the whole product offline in one go: swarm, memory sheets, art, meme cards, dry-run anchors, and the page at `out/index.html`. `npm run ask -- <agentId> "<question>"` exists (README step 3, the shot 3 command): the owner asks one agent a question and it remembers the exchange. It changes only `out/memory`, so run `npm run demo` again before a second take. Before recording, run both once and check that the output still matches this file.
+The vault scenes V1 to V7 below take about 90 seconds. The full vault shot table and voice-over are in `docs/yield-demo-video-script.md`; `docs/demo-video.md` has the same vault shots as a 90 second cut, so keep the three consistent. For 2.5 minutes, record V1 to V7, then supporting scenes 3, 4 and 8 (about one minute). The full nine supporting scenes run about 2 minutes 25 and make a longer cut.
 
-Run everything in mock mode (`MOCK_INFERENCE=1`, the default). No keys on screen. Do not show `.env`.
+**Command status.** The vault scenes use `npm run yield:demo`, `bash scripts/verify.sh` and the live links in the README section "Live on testnet"; all exist. The supporting scenes use `npm run demo` and `npm run ask`, and both exist. `npm run demo` runs the supporting product offline in one go: swarm, memory sheets, art, meme cards, dry-run anchors, and the page at `out/index.html`. `npm run ask -- <agentId> "<question>"` exists (README step 3, the shot 3 command): the owner asks one agent a question and it remembers the exchange. It changes only `out/memory`, so run `npm run demo` again before a second take. Before recording, run the commands once and check that the output still matches this file.
 
-**Who this is for.** A buyer of an AI character NFT, and its owner. The buyer's job: check that the memory they were sold is the one the seller anchored. The owner's job: talk to the character and have it remember. Open on that, and put the `npm run ask` moment in the first 30 seconds.
+Run everything in mock mode (`MOCK_INFERENCE=1`, the default). No keys on screen. Do not show `.env`. Nothing the commands print is live: the vault and runner ids in the demo output are placeholders. The one live result is scene V5, a real testnet transaction.
 
-## Shot list
+**Who this is for.** A treasury owner who wants yield from an automated trader without trusting every trade it picks. The owner sets limits on the vault contract once; agents can only propose. Open on that problem, then run `npm run yield:demo` in the first 30 seconds.
+
+## Vault scenes (about 90 seconds)
+
+| # | Time | On screen | Command or file |
+| --- | --- | --- | --- |
+| V1 | 0:00 to 0:08 | Title card with the problem: "Handing an AI agent your tokens means trusting every trade it picks. Here the agent only proposes." Then terminal. | none |
+| V2 | 0:08 to 0:20 | Fresh clone, install, one command. The first line, `YIELD DEMO - DRY RUN - mock inference, offline - nothing signed, nothing sent`. | `git clone <REPO_URL> && cd <repo> && npm install && npm run yield:demo` |
+| V3 | 0:20 to 0:40 | The agent table: three agents refused as off reference, Chaotic vetoed by Skeptic (`chaotic vetoed by skeptic: size is 10000 bps of max_trade, above the 8000 bps audit line`), and the optimizer row `yield-optimizer  pool 747: 0.05 usdc -> min 0.050406 usdt  OK           execute`. | same run |
+| V4 | 0:40 to 0:55 | The four rule rejections with the contract's error names (`REJECTED ERR_MAX_TRADE: 1001 exceeds max_trade 1000`, `REJECTED ERR_DAILY_CAP: spent 1501 + 1000 exceeds daily_cap 2500`, `REJECTED ERR_PRICE_FLOOR: min_amount_out 149 below floor 3/2 of amount_in 100`, `REJECTED ERR_PAUSED: vault is paused`), then `1 unsigned execute_swap call planned, 0 signed, 0 sent`. | same run |
+| V5 | 0:55 to 1:10 | The live proof: the explorer page of the swap transaction, or the read-only `curl` check, both in the README section "Live on testnet". Say that the owner sent this one swap by hand, it was not agent-picked, and the vault has not refused a live transaction. | the swap link in the README table |
+| V6 | 1:10 to 1:20 | `out/yield-demo/index.html` for the same run as one page. Then `npm run demo` and `out/index.html` for the four agents the proposals come from, the supporting demo. | `open out/yield-demo/index.html`, `npm run demo`, `open out/index.html` |
+| V7 | 1:20 to 1:30 | The judge screen: an 18-row table ending `result: PASS`. Pre-record it; it takes a minute or two. | `bash scripts/verify.sh` |
+
+Vault narration, one sentence per scene: V1 the problem; V2 one offline command, mock inference, nothing signed; V3 each agent proposes, the planner finds one swap that passes; V4 four proposals break an on-chain rule and the contract's own messages say which; V5 this is the one real swap on testnet, sent by the owner; V6 the same run as a page, and the agents are also NFTs; V7 one command re-checks it all. The full voice-over is in `docs/yield-demo-video-script.md`.
+
+## Supporting scenes: the personality NFT demo
+
+The scenes below are the supporting demo, where the four agents come from. Their numbers are within this table, and their times are within the supporting block. The memory story is not the pitch; do not open on it. The first scene's title card can be skipped when the vault scenes ran first.
 
 | # | Time | On screen | Command or file |
 | --- | --- | --- | --- |
@@ -30,7 +48,7 @@ Fallbacks if the browser is awkward on camera: `cat out/transcript.txt` for shot
 
 ## Narration
 
-Plain words. Read at a normal pace; about 380 words in total.
+This narration is for the supporting scenes. Plain words. Read at a normal pace; about 380 words in total.
 
 **Scene 1 (0:00 to 0:12)**
 "Someone is selling you an AI character. How do you know the memory you are buying is the one they anchored? We built an NFT that carries its character with it, and lets you check."
@@ -63,7 +81,7 @@ Plain words. Read at a normal pace; about 380 words in total.
 
 - Terminal font large enough to read at 720p. Light background or high contrast.
 - Trim waiting time. Do not speed up output so much that it can't be read.
-- The demo never signs. If the video also shows a live testnet run, show transaction hashes only. Never show a key, a seed phrase or `.env`.
-- Say "mock mode" out loud once. Do not imply a live NEAR AI call or on-chain write unless that run was really live.
-- Do not claim the `privacy` track or any TEE attestation. `npm run attest:check` exists, but it only checks a hand-made fixture offline and ends `CONSISTENT, NOT VERIFIED`; `PRODUCT.md` says to leave `privacy` off until a real check ships. Keep it off screen.
-- Export a 60 to 90 second cut for the X post: `docs/demo-video.md` is that cut (it keeps the `npm run ask` and meme card scenes).
+- The demos never sign. The live proof (scene V5) is the one testnet run of 2026-11-09: show the explorer page or the `curl` check from the README section "Live on testnet", and nothing else from that run. Never show a key, a seed phrase or `.env`.
+- Say "mock mode" out loud once. Do not imply a live NEAR AI call, mainnet use, an agent-picked live trade or a live rejection; the one live swap was sent by the owner by hand.
+- Do not claim the `privacy` track or any TEE attestation. `npm run attest:check` exists, but it only checks a hand-made fixture offline and ends `CONSISTENT, NOT VERIFIED`; `privacy` is not claimed (`PRODUCT.md`, `docs/tracks.md`). Keep it off screen.
+- Export a 60 to 90 second cut for the X post: `docs/demo-video.md` is that cut (the vault shots first, then the supporting `npm run ask` and meme card shots).

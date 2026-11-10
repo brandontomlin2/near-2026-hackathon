@@ -10,6 +10,7 @@ import { getStyle, STYLE_NAMES } from "../src/art/styles/index.mjs";
 import { MAX_ROUNDS } from "../src/swarm/runner.mjs";
 import { DEMO_DEFAULTS, runDemo } from "../src/demo/pipeline.mjs";
 import { memoryDiffLine } from "../src/demo/memory-diff.mjs";
+import { HEADLINE } from "../src/demo/page.mjs";
 import { plural } from "../src/util/plural.mjs";
 
 const USAGE = `Usage: node scripts/demo.mjs [--rounds N] [--seed N] [--every N] [--style NAME] [--out DIR]
@@ -103,7 +104,7 @@ export async function main(argv = process.argv.slice(2), { env = process.env, lo
     log("Done. Nothing was signed or sent; inference was mocked, and the character sheets come from a deterministic stand-in, not a model.");
     log("");
     log("Do this, see that:");
-    log(`  1. Open ${at("index.html")} in a browser. See the hero line "Your NFT remembers who you are", the four agents with a strip of reaction faces each, their character sheets, the channel with a reaction face beside every message, the share cards and the dry-run anchor table.`);
+    log(`  1. Open ${at("index.html")} in a browser. See the headline "${HEADLINE}", the four agents with a strip of reaction faces each, their character sheets, the channel with a reaction face beside every message, the share cards and the dry-run anchor table.`);
     log(`  2. Open ${at(manifest.shares[0].file)} in a browser. See a standalone share card: the reaction face for one channel line, the quote and a "Personality NFT" footer.`);
     if (manifest.memes.length) {
       log(`     Then open ${at(manifest.memes[0].file)}. See ${manifest.memes.length === 1 ? "the one meme card" : `one of ${manifest.memes.length} meme cards`} (caption, villain arc) built from that agent's real channel lines and sheet.`);

@@ -69,7 +69,8 @@ test("Judge quick path: npm run demo prints the lines it quotes and writes the p
       const want = line.startsWith("Open the page:") ? "Open the page: open " : line;
       assert.ok(run.stdout.includes(want), `demo output has: ${want}`);
     }
-    const headline = quoted(quick.split(/^3\. /m)[1].split(/^4\. /m)[0]).find((q) => /remembers/.test(q));
+    const headline = quoted(quick.split(/^3\. /m)[1].split(/^4\. /m)[0]).find((q) => /propose trades/.test(q));
+    assert.ok(headline, "step 3 quotes the page headline");
     assert.ok(readFileSync(join(out, "index.html"), "utf8").includes(headline), "page has the headline");
   } finally {
     rmSync(out, { recursive: true, force: true });

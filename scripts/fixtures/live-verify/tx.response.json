@@ -1,0 +1,54 @@
+{
+  "_note": "Trimmed from the real response of the tx query captured 2026-11-09 from https://archival-rpc.testnet.near.org. Kept: final_execution_status, status, transaction (without public_key and signature, so the secret-scan fallback has nothing key-shaped to match), and the receipt outcomes whose logs carry swap_proposed or swap_executed. Dropped: the other 26 of 28 receipt outcomes, proofs, block hashes and gas profiles.",
+  "jsonrpc": "2.0",
+  "id": "1",
+  "result": {
+    "final_execution_status": "FINAL",
+    "status": {
+      "SuccessValue": "Ijk0MjQ2Nzk4Ig=="
+    },
+    "transaction": {
+      "actions": [
+        {
+          "FunctionCall": {
+            "args": "eyJwcm9wb3NhbCI6eyJhbW91bnRfaW4iOiIxMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIsIm1pbl9hbW91bnRfb3V0IjoiNTAwMDAwMDAiLCJwb29sX2lkIjowLCJ0b2tlbl9pbiI6IndyYXAudGVzdG5ldCIsInRva2VuX291dCI6InJmdC50b2tlbmZhY3RvcnkudGVzdG5ldCJ9fQ==",
+            "deposit": "0",
+            "gas": 280000000000000,
+            "method_name": "execute_swap"
+          }
+        }
+      ],
+      "hash": "B4oDeCFzeEpDaKMJe6F5rDh5F2ie2qdTKTm7YQVg24Em",
+      "nonce": 277005266000001,
+      "priority_fee": 0,
+      "receiver_id": "vault.near-2026-hackathon.testnet",
+      "signer_id": "runner.near-2026-hackathon.testnet"
+    },
+    "receipts_outcome": [
+      {
+        "id": "XAWjTVLMvs9PDdLKktvk9KaMzKcp74JiyemwXthbQDR",
+        "outcome": {
+          "executor_id": "vault.near-2026-hackathon.testnet",
+          "logs": [
+            "EVENT_JSON:{\"standard\":\"yield_vault\",\"version\":\"1.0.0\",\"event\":\"swap_proposed\",\"data\":[{\"runner_id\":\"runner.near-2026-hackathon.testnet\",\"pool_id\":0,\"token_in\":\"wrap.testnet\",\"token_out\":\"rft.tokenfactory.testnet\",\"amount_in\":\"10000000000000000000000\",\"min_amount_out\":\"50000000\"}]}"
+          ],
+          "status": {
+            "SuccessReceiptId": "GLXJqBkYD43LX25CWNiWEHnr9G3PP4DnAYVPp5qMajeH"
+          }
+        }
+      },
+      {
+        "id": "BMM9XgzcoCK4v9et5FuK6vmpjY4zkbn3wNFq9J4SqdGi",
+        "outcome": {
+          "executor_id": "vault.near-2026-hackathon.testnet",
+          "logs": [
+            "EVENT_JSON:{\"standard\":\"yield_vault\",\"version\":\"1.0.0\",\"event\":\"swap_executed\",\"data\":[{\"pool_id\":0,\"token_in\":\"wrap.testnet\",\"token_out\":\"rft.tokenfactory.testnet\",\"amount_in\":\"10000000000000000000000\",\"amount_out\":\"94246798\"}]}"
+          ],
+          "status": {
+            "SuccessValue": "Ijk0MjQ2Nzk4Ig=="
+          }
+        }
+      }
+    ]
+  }
+}

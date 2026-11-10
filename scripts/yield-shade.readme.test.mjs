@@ -95,28 +95,40 @@ test("go/no-go checklist has exactly 10 yes-gated steps, numbered 1 to 10, none 
   assert.doesNotMatch(nogo, /\[[xX]\]/);
 });
 
-test("go/no-go decision is not decided: all three options unticked, recommendation stays Partial", () => {
-  assert.equal(tableRow(nogoSection("Decision"), "My decision"), "[ ] Go   [ ] Partial   [ ] No-go   (not decided)");
+test("go/no-go decision is recorded as No-go (cut): nothing ticked, recommendation stays Partial", () => {
+  assert.match(tableRow(nogoSection("Decision"), "My decision") ?? "", /^Go and Partial: not chosen\. \*\*No-go\*\*: recorded 2026-11-09/);
   assert.equal(tableRow(nogoSection("Decision"), "Recommendation"), "**Partial**");
   assert.match(plan, /^\*\*Recommendation: Partial\.\*\*/m);
+  assert.match(nogo, /^Decision: not pursued for this submission \(recorded 2026-11-09\)\. The 2026-11-06 decision date passed with no go\./m, "the top of the checklist states the decision");
+  assert.match(plan, /^Note \(2026-11-09\): the Shade Agent runner was cut for this submission/m, "the plan carries a note that the runner was cut");
 });
 
 test("go/no-go status at a glance matches the checklist it summarizes", () => {
   const glance = nogoSection("Status at a glance");
-  assert.match(tableRow(glance, "Decision") ?? "", /^not decided \(Brandon decides by 2026-11-06\)$/);
-  assert.match(tableRow(glance, "Recommendation") ?? "", /^Partial \(not a decision\)$/);
+  assert.match(tableRow(glance, "Decision") ?? "", /^No-go: not pursued for this submission \(recorded 2026-11-09; the 2026-11-06 decision date passed with no go\)$/);
+  assert.match(tableRow(glance, "Recommendation") ?? "", /^Partial \(the plan's recommendation, not taken\)$/);
   const done = tableRow(glance, "Yes-gated steps done") ?? "";
   const ticked = yesItems.filter((m) => m[1] !== " ").length;
   assert.match(done, new RegExp(`^${ticked} of ${yesItems.length}\\. All ${yesItems.length} are NOT DONE`));
   assert.equal(tableRow(glance, "Live Shade evidence"), "none: no transaction id, no signature, no deployed account or contract");
 });
 
-test("README Shade subsection states the same undecided status and counts as the checklist", () => {
+test("README Shade subsection states the No-go (cut) status and the same counts as the checklist", () => {
   const status = sub.split("\n").find((l) => l.startsWith("Go/no-go status:")) ?? "";
-  assert.match(status, /^Go\/no-go status: not decided \(the owner decides by 2026-11-06; the plan recommends Partial\)\./);
+  assert.match(status, /^Go\/no-go status: No-go, cut\. The Shade Agent runner is not pursued for this submission \(recorded 2026-11-09; the 2026-11-06 decision date passed with no go\)\./);
   const ticked = yesItems.filter((m) => m[1] !== " ").length;
-  assert.ok(status.includes(`${ticked} of ${yesItems.length} yes-gated steps are done; all ${yesItems.length} are NOT DONE`), status);
+  assert.ok(status.includes(`${ticked} of ${yesItems.length} yes-gated steps were done and none will be before submission; all ${yesItems.length} are NOT DONE`), status);
   assert.match(status, /No Shade account, deployment, signature or transaction id exists\./);
+  assert.doesNotMatch(status, /not decided/);
+});
+
+test("README 'Not done: Shade Agent runner' says the runner is cut and links resolve", () => {
+  const body = readme.match(/^## Not done: Shade Agent runner\n([\s\S]*?)(?=^## )/m)?.[1] ?? "";
+  assert.ok(body, "the section exists");
+  assert.match(body, /The Shade Agent runner is cut: it is not pursued for this submission/);
+  assert.match(body, /No Shade account, deployment, MPC signature or transaction exists/);
+  assert.doesNotMatch(readme, /work-in-progress-yield-optimizer|Work in progress/);
+  assert.ok(readme.includes("(#not-done-shade-agent-runner)"), "other sections link the new anchor");
 });
 
 test("go/no-go 'What runs today without a yes' steps: quoted lines are real output and exit codes match", () => {

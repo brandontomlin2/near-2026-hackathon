@@ -6,7 +6,7 @@ Submission is one attempt per repository and cannot be edited. Window: 2026-11-0
 
 Agents never do the items marked **HUMAN**. Without an explicit yes, agents must not send the submission, post on X, make the repo public, push, or sign or spend anything.
 
-Status key: **done** (evidence given), **missing** (agent-doable work not finished), **needs Brandon** (only the human can supply or do it). Last walked: 2026-11-04 on branch `claude/docs-accuracy27`, based on main `c8e48d8`.
+Status key: **done** (evidence given), **missing** (agent-doable work not finished), **needs Brandon** (only the human can supply or do it). The rule-by-rule table and sections 1 to 10 were first walked on 2026-11-04 (main `c8e48d8`) and revised on 2026-11-09 on branch `claude/release-doc-1109b` for the vault story, the tracks decision and the one live testnet run of 2026-11-09 (README section "Live on testnet"). Rows are changed only where a fact changed; items that need the human stay open.
 
 ## At a glance: what the hackathon requires, and where it stands
 
@@ -17,16 +17,17 @@ Status key: **done** (evidence given), **missing** (agent-doable work not finish
 | `LICENSE` | done (MIT) | Section 1 |
 | Libraries, templates, AI-generated code listed; pre-hackathon code disclosed | done (`docs/DISCLOSURE.md`: none predates the window) | Section 2 |
 | Pre-hackathon / `hackathon-submission` tags and README diff link (Q-003) | not applicable: no code predates 2026-11-01 (first commit `992acee`, 2026-11-02); no such tags exist | Section 3 |
-| Demo video, 60 to 90 s (Q-012: screenshots alone are not enough if judges cannot open a hosted demo) | **HUMAN** records it; shot list is `docs/demo-video.md`, the 2.5 minute script is `docs/demo-script.md` | Section 4 |
-| X post: says built at NEAR HACKATHON, tags `@NEARProtocol` and `#NEARHackathon`, video or screenshots attached | drafts done (3, each at most 280 characters, both tags); **HUMAN** edits, attaches media and publishes | Section 4 |
+| Demo video, 60 to 90 s (Q-012: screenshots alone are not enough if judges cannot open a hosted demo) | **HUMAN** records it; the vault video is `docs/yield-demo-video-script.md`, the 90 second cut is `docs/demo-video.md` and the 2.5 minute script is `docs/demo-script.md`. Not recorded yet | Section 4 |
+| X post: says built at NEAR HACKATHON, tags `@NEARProtocol` and `#NEARHackathon`, video or screenshots attached | vault-first drafts done (3, each at most 280 characters, both tags); **HUMAN** edits, attaches media and publishes. Not posted | Section 4 |
 | Form fields: project name, lead name, email, team size, tracks, payout account, repo URL, demo post URL, idea, consent | all **HUMAN** | Section 6 |
 | At most 2 projects per person, each independent and named in the other's README (Q-015) | **HUMAN** to answer; README names no second project | Sections 2 and 5 |
 | Submission itself (one attempt, cannot be edited) | **HUMAN** confirms the printed payload; not started | Section 7 |
+| One approved live testnet run (vault deploy, one NFT mint, one swap) | done on 2026-11-09, testnet only, nothing on mainnet; recorded in README "Live on testnet" | Sections 2 and 8 |
 | Hosted demo (optional, a plus) | **HUMAN** (needs their hosting account); `npm run site` builds it | Section 2 |
 
 ## Rule-by-rule audit of `docs/HACKATHON.md`
 
-Walked 2026-11-04 against this tree (main `aaaa5ba`), offline. Status: **PASS** (proved in the repo), **GAP** (agent-doable fix not done), **TODO-OWNER** (only the human can do or supply it), **N/A** (rule does not apply, reason given). The sections after this table give more detail.
+Walked 2026-11-04 against this tree (main `aaaa5ba`), offline; revised 2026-11-09 where the vault story, the tracks or the live run changed a row. Status: **PASS** (proved in the repo), **GAP** (agent-doable fix not done), **TODO-OWNER** (only the human can do or supply it), **N/A** (rule does not apply, reason given). The sections after this table give more detail.
 
 | Rule (HACKATHON.md section) | Status | Proof |
 | --- | --- | --- |
@@ -36,14 +37,14 @@ Walked 2026-11-04 against this tree (main `aaaa5ba`), offline. Status: **PASS** 
 | Same: secret scan on the full history before going public | TODO-OWNER | `scripts/verify.sh` secret-scan row is `PASS ... FALLBACK` (`scripts/secret-scan-fallback.mjs`, narrower than gitleaks) or `SKIP`. Install gitleaks and run `gitleaks detect` once before the repo is made public. |
 | Public-repo readiness: no absolute local paths | PASS | `git grep -nE "/Users/\|/home/[a-z]"` outside `.agents/` and `.claude/`: one hit, `src/demo/demo.test.mjs:162`, a test needle asserting that demo output does NOT contain `/Users/`. Tracked symlinks in `.claude/skills/` are relative (`../../.agents/skills/...`). |
 | Public-repo readiness: no private links | PASS | `git grep` for gist, notion, google docs, figma, slack, linear, ngrok, `.internal`: no hits outside `.agents/` and `.claude/`. `localhost`/`127.0.0.1` appear only in `src/inference/client.mjs:11,247,267` (documented: plain http accepted for loopback only) and `scripts/claude-loop.sh:531` (a local git author email `claude-loop@localhost`, not a link). |
-| Procedure 1 / Q-012: README for a machine reader: what it is, the problem, "do X - see Y" steps, no marketing | PASS | README `## Judge quick path` (4 numbered steps, the seconds-long demos first and verify.sh last) and `## Try it (judge path)` (steps 1-10 numbered, each "run X, see Y"); `scripts/readme-facts.test.mjs` and `scripts/readme-commands.test.mjs` pin the commands. `## What this is` gives product and problem, followed by its "How NEAR fits:" paragraph. |
+| Procedure 1 / Q-012: README for a machine reader: what it is, the problem, "do X - see Y" steps, no marketing | PASS | README `## Judge quick path` (4 numbered steps, the seconds-long demos first and verify.sh last) and `## Try it (judge path)` (steps 1-10 numbered, each "run X, see Y"); `scripts/readme-facts.test.mjs` and `scripts/readme-commands.test.mjs` pin the commands. The README opens with the vault (the problem, what `npm run yield:demo` shows, a plain status paragraph); `## Tracks and how NEAR fits` has the product-to-NEAR mapping and `## Live on testnet` the live run. |
 | Q-012: local-only demo OK with public repo, reproducible README, X post with a video; screenshots not enough if judges cannot open the demo | TODO-OWNER | Reproducible README: PASS (above). Video and X post are the human's: `docs/demo-video.md`, `docs/x-post.md`. Hosted demo is optional: `docs/hosting.md`. |
-| Q-002: existing product on another chain is allowed; disclose in README | N/A | No earlier product. README "Nothing in this repository is deployed" paragraph and `## Disclosure` ("pre-hackathon code (none exists)") say pre-hackathon code: none. |
+| Q-002: existing product on another chain is allowed; disclose in README | N/A | No earlier product. README opening status paragraph ("Status, plainly:") and `## Disclosure` ("pre-hackathon code (none exists)") say pre-hackathon code: none. |
 | Q-003 / Q-004: dedicated branch, or tags `pre-hackathon` and `hackathon-submission`, plus a README section linking the diff | N/A | No code predates the window, so there is no baseline to diff. `git rev-parse 992acee` resolves to `992acee11248ef2929fc21cf3897e04241f8435b` (first commit, named in `docs/DISCLOSURE.md`); `docs/DISCLOSURE.md` names no tag. `git tag -l` lists only four local `hp-pre-rebase-*` safety tags (not baseline tags, never pushed). If the owner wants belt and braces, a `pre-hackathon` tag on `992acee` would be empty of code. |
 | Q-001: window runs from the 2026-10-19 announcement to 2026-11-14; earlier commits are baseline | PASS | `docs/DISCLOSURE.md` "Pre-hackathon code" (first commit 2026-11-03T00:20:04Z UTC, `scripts/disclosure-facts.test.mjs` pins it). |
 | Q-005: list libraries, templates, boilerplate, AI code in README | PASS (by link) | README `## Disclosure` links `docs/DISCLOSURE.md`, which lists: no npm dependencies, Rust deps `near-sdk` 5.30.0 and `near-contract-standards` 5.30.0, `.agents/skills`, no template, AI-generated code (effectively all). Optional hardening, see GAP row below. |
 | Q-005 hardening: README itself should carry a one-line list, not only a link | GAP | Suggested line for README.md `## Disclosure` (README is owned by other PRs; not edited here): "Third-party code: no npm dependencies; Rust crates `near-sdk` 5.30.0 and `near-contract-standards` 5.30.0 (contract only); NEAR agent skills under `.agents/skills/`; no template. Nearly all code is AI-generated (Claude Code) under human direction." |
-| Q-007 / Q-008 / Q-010: testnet first; Intents is mainnet-only; testnet-only is eligible | PASS | Testnet-only and mock-only stated at README `## Judge quick path` ("Everything here is mock or dry-run"), README ("Nothing in this repository is deployed or live on testnet"), README `## Live on testnet` (not run yet). Guards: `scripts/testnet-deploy.mjs` and `scripts/live-proof.mjs` refuse `NEAR_NETWORK` other than `testnet`; `docs/DISCLOSURE.md` "Other notes" and Shade spike section say nothing was signed. No Intents or mainnet use (`PRODUCT.md`). `docs/DISCLOSURE.md` "Other notes" now states it in one line ("Mock and testnet status: ..."). |
+| Q-007 / Q-008 / Q-010: testnet first; Intents is mainnet-only; testnet-only is eligible | PASS | Testnet-only and mock-only stated at README `## Judge quick path` ("Everything here is mock or dry-run"), README opening status paragraph (the vault and one NFT token are on testnet from the run of 2026-11-09, nothing on mainnet, every demo offline), README `## Live on testnet` (the 2026-11-09 run, testnet only). Guards: `scripts/testnet-deploy.mjs` and `scripts/live-proof.mjs` refuse `NEAR_NETWORK` other than `testnet`; `docs/DISCLOSURE.md` "Other notes" and Shade spike section say nothing was signed. No Intents or mainnet use (`PRODUCT.md`). `docs/DISCLOSURE.md` "Other notes" now states it in one line ("Mock and testnet status: ..."). |
 | Q-006: 1Click JWT not required | N/A | Product does not use NEAR Intents. |
 | Q-011: mandatory integrations: none | N/A | Own contract on NEAR fits: `contracts/personality-nft/`. |
 | Q-013: organizers get non-exclusive promo rights, team keeps rights | N/A | No action; human to be aware. |
@@ -55,7 +56,7 @@ Walked 2026-11-04 against this tree (main `aaaa5ba`), offline. Status: **PASS** 
 | Procedure 3: submit only between 2026-11-01T00:00Z and 2026-11-14T23:59Z, once, after repo is public and the post is up; re-read live HACKATHON.md first | TODO-OWNER | Section 7 below. Not started. |
 | Procedure 3: payload has exactly the 11 API fields, no `website`, body at most 12000 bytes, `requestId` generated once, payload not committed | TODO-OWNER | Section 7 below. No payload exists in the repo (`git grep -ln requestId` finds only `docs/HACKATHON.md` and this file). |
 | Never-list: print the full JSON payload and wait for an explicit yes before sending | TODO-OWNER | Section 7 below. |
-| Tracks: one or more valid ids, each once | TODO-OWNER | Plan `defi`, `security` first (the Yield Optimizer vault), then `nfts`, `swarms`, `agents` as supporting context (README "Tracks: `defi`, `security`, `nfts`, `swarms` and `agents`."; `PRODUCT.md` and `docs/tracks.md` still list the earlier three and are not updated here); `privacy` stays off (Section 5). Human confirms. |
+| Tracks: one or more valid ids, each once | TODO-OWNER | Decided by Brandon on 2026-11-09: exactly `security`, `defi`, `nfts` (`["security","defi","nfts"]`), `security` and `defi` leading (the Yield Optimizer vault), `nfts` supporting. README "Tracks and how NEAR fits", `PRODUCT.md` "Tracks", `docs/tracks.md` and `docs/release/RELEASE.md` say the same. `swarms`, `agents`, `privacy` and `business` are not claimed (Section 5). Human confirms at submission. |
 | Human decides: project name (2-80) | TODO-OWNER | Not in repo by design. |
 | Human decides: team lead name (2-80) | TODO-OWNER | `LICENSE` names a copyright holder, but that is not the confirmed `leadName`. Ask. |
 | Human decides: contact email (max 160, at most 2 submissions per email) | TODO-OWNER | Ask. |
@@ -63,12 +64,12 @@ Walked 2026-11-04 against this tree (main `aaaa5ba`), offline. Status: **PASS** 
 | Human decides: mainnet NEAR account for payout (`nearAddress`) | TODO-OWNER | Ask. Never create or invent one. |
 | Human decides: public repository URL (`projectUrl`, unique) | TODO-OWNER | Known only after the repo is public. |
 | Human decides: public demo post URL (`demoUrl`) | TODO-OWNER | Known only after the human publishes the post. |
-| Human decides: what they built (`idea`, 20-2000 chars) | TODO-OWNER | Human approves a draft from the README opening (vault lede) and "What this is" / "How NEAR fits". |
+| Human decides: what they built (`idea`, 20-2000 chars) | TODO-OWNER | Human approves a draft from the README opening (vault lede) and "Tracks and how NEAR fits"; a draft `idea` is in `docs/release/RELEASE.md`. |
 | Human decides: consent to the contact notice, read verbatim | TODO-OWNER | Quote is in Section 6. `true` only after the human agrees. |
 
-Disclosure note: `docs/DISCLOSURE.md` carries the Q-002, Q-003 and Q-005 answers. A one-sentence "everything here is mock or dry-run; nothing is deployed to testnet; no mainnet or Intents use" is added there so the disclosure file stands alone.
+Disclosure note: `docs/DISCLOSURE.md` carries the Q-002, Q-003 and Q-005 answers. A one-sentence status ("Mock and testnet status": the demos are mock or dry-run, the one live state is the testnet run of 2026-11-09, no mainnet or Intents use) is there so the disclosure file stands alone.
 
-Open GAPs for the lead: (1) README one-line library list (suggested text above). TODO-OWNER items that block submission: public repo, gitleaks run on history, X post and video, Q-015 answer, tracks, all form fields.
+Open GAPs for the lead: (1) README one-line library list (suggested text above). TODO-OWNER items that block submission: public repo, gitleaks run on history, X post and video, Q-015 answer, all form fields (tracks are decided: `security`, `defi`, `nfts`).
 
 ## 1. Repository
 
@@ -85,16 +86,16 @@ Open GAPs for the lead: (1) README one-line library list (suggested text above).
 
 | Requirement | Status | Evidence / next step |
 | --- | --- | --- |
-| What the product is, the problem, how NEAR fits; no marketing | done | README opening (the vault lede, "Problem:" and "Status, plainly:" paragraphs), then "What this is" and "How NEAR fits" for the NFT side. |
+| What the product is, the problem, how NEAR fits; no marketing | done | README opening (the vault lede, "Problem:" and "Status, plainly:" paragraphs), then "Tracks and how NEAR fits"; the NFT side is under "Supporting: the personality NFTs". |
 | Numbered "do X, see Y" steps from a fresh clone | done | README "Try it (judge path)" steps 1-10. Re-check each command exists in `package.json` before submit. |
 | Works with no keys (`MOCK_INFERENCE=1`); live env vars documented | done | README "Inference" section. |
-| Track ids named in README | done | README "What this is" section: "Tracks: `defi`, `security`, `nfts`, `swarms` and `agents`." `docs/HACKATHON.md` lists all 13 valid ids. |
+| Track ids named in README | done | README "Tracks and how NEAR fits" section: "Tracks: `security` (AI Security & Defense), `defi` (Unstoppable DeFi) and `nfts` (NFTs That Do Something)." `docs/HACKATHON.md` lists all 13 valid ids. |
 | Libraries, templates, AI-generated code listed (Q-005) | done | `docs/DISCLOSURE.md`, linked from README "Disclosure". |
 | Pre-hackathon code disclosed (Q-002, Q-003) | done | README "Mock caveats and status" and "Disclosure": none. `docs/DISCLOSURE.md` names first commit `992acee`. |
-| Planned features not described as shipped | done | README "Mock caveats and status" and "Live on testnet" say nothing is deployed and there are no hashes to show. Re-check after any live run. |
+| Planned features not described as shipped | done | README "Mock caveats and status" and "Live on testnet" say what ran live: one swap, sent by the owner by hand, testnet only; rejections are shown by tests and the offline demo only. Re-check after any further live run (none is planned). |
 | Second project named in README (Q-015) | needs Brandon | Ask if the lead is submitting another project. If yes, add a README line naming it (not done, none known). If no, record "one project only" in section 5. |
 | Hosted demo up (Q-012, optional but a plus) | needs Brandon | `npm run site` builds `out/site/`; `docs/hosting.md`. Hosting needs the human's account. Keep up to 2026-11-18, ideally 2026-11-25. |
-| Live testnet evidence section filled | missing | README "Live on testnet" says "Not run yet". Fill only after the human hosts the four SVGs, approves `npm run live-proof -- --send --i-approve --media-base <url>` and sees real hashes. That run writes them to `out/live-proof/txs.json`; then `EVIDENCE_NETWORK=testnet NEAR_CONTRACT_ACCOUNT_ID=<NEAR_CONTRACT_ACCOUNT_ID> EVIDENCE_TX_FILE=out/live-proof/txs.json npm run evidence` (read-only views; the evidence script reads `NEAR_CONTRACT_ACCOUNT_ID` as the contract account to query) writes `out/evidence.json`. A bare `npm run evidence` is mock mode and is not proof. Never invent hashes. |
+| Live testnet evidence section filled | done for the vault run (2026-11-09) | README "Live on testnet" has the ids, transaction hashes, explorer links and a read-only `curl` check, copied from the real transaction output; nothing was resent. Still not run: the older personality-NFT-only proof. It needs the human to host the four SVGs, approve `npm run live-proof -- --send --i-approve --media-base <url>` and see real hashes. That run would write them to `out/live-proof/txs.json`; then `EVIDENCE_NETWORK=testnet NEAR_CONTRACT_ACCOUNT_ID=<NEAR_CONTRACT_ACCOUNT_ID> EVIDENCE_TX_FILE=out/live-proof/txs.json npm run evidence` (read-only views; the evidence script reads `NEAR_CONTRACT_ACCOUNT_ID` as the contract account to query) writes `out/evidence.json`. A bare `npm run evidence` is mock mode and is not proof. Never invent hashes. |
 
 ## 3. Pre-hackathon baseline (Q-001 to Q-004)
 
@@ -109,7 +110,7 @@ Submissions open 2026-11-01; the code baseline cutoff is 2026-10-19 (announcemen
 
 ## 4. Demo post on X (**HUMAN** writes and publishes)
 
-Requirements from Procedure step 2. Drafts: `docs/x-post.md` (3 drafts, counted the way X does, link 23 and emoji 2: 270, 262 and 277 characters; each has `@NEARProtocol`, `#NEARHackathon` and "built at NEAR HACKATHON"; `scripts/docs-accuracy.test.mjs` re-checks all of this). Video plan: `docs/demo-video.md`, `docs/demo-script.md`.
+Requirements from Procedure step 2. Drafts: `docs/x-post.md` (3 vault-first drafts, counted the way X does, link 23: 272, 279 and 258 characters; each has `@NEARProtocol`, `#NEARHackathon` and "built at NEAR HACKATHON"; `scripts/docs-accuracy.test.mjs` re-checks all of this). Video plan: `docs/yield-demo-video-script.md` (the vault video), `docs/demo-video.md` (90 second cut) and `docs/demo-script.md` (2.5 minutes); all lead with the vault.
 
 | Requirement | Status | Evidence / next step |
 | --- | --- | --- |
@@ -119,7 +120,7 @@ Requirements from Procedure step 2. Drafts: `docs/x-post.md` (3 drafts, counted 
 | Record demo video (Q-012: screenshots alone are not enough when judges cannot open a hosted demo) | needs Brandon | Shot list in `docs/demo-video.md`. |
 | First line stands alone; NEAR's role concrete; repo linked; one real question | done in drafts | Re-check after the human edits. |
 | Post is published, public, opens logged out | needs Brandon | The post URL becomes `demoUrl`. Agents never post. |
-| Claims match the demo (mock mode, dry-run, nothing deployed) | done in drafts | Re-check against README Status; no live claims until a live run happened. |
+| Claims match the demo and the live run (mock inference, offline dry run, one testnet swap sent by the owner, nothing on mainnet) | done in drafts | Re-check against README "Live on testnet" after the human edits. No draft claims a live rejection, an agent-picked trade, mainnet, Intents or TEE. |
 
 ## 5. Tracks and second-project rule
 
@@ -127,7 +128,7 @@ Valid ids (API table): `defi`, `thesis`, `privacy`, `business`, `swarms`, `secur
 
 | Requirement | Status | Evidence / next step |
 | --- | --- | --- |
-| Plan: `defi`, `security` (vault), then `nfts`, `swarms`, `agents` (supporting) | done (plan) | README leads with `defi` and `security`; `PRODUCT.md` "Tracks" is not edited here and still lists `nfts`, `swarms`, `agents`. |
+| Claimed tracks: exactly `security`, `defi`, `nfts` | done (decided 2026-11-09) | `security` and `defi` lead (the vault), `nfts` is supporting. `swarms` and `agents` are not claimed: no market, bidding or settlement between agents, and no agent earns, spends or pays. README, `PRODUCT.md`, `docs/tracks.md` and `docs/release/RELEASE.md` agree. |
 | `privacy` only if a TEE attestation check ships | not met, stays off | `npm run attest:check` exists but only checks a hand-made fixture offline and ends `CONSISTENT, NOT VERIFIED`: no TDX quote signature, NVIDIA attestation or chat signature is checked, and nothing has run against a real report. So `privacy` stays off (`PRODUCT.md`, `docs/privacy.md`). |
 | Final track list confirmed | needs Brandon | Human picks every track the project fits. |
 | Q-015: at most 2 projects per person, each independent and named in the other's README; at most 2 submissions per email | needs Brandon | Ask whether a second project is planned; record the answer here. |
@@ -169,7 +170,7 @@ Status of this section: not started, correctly. This walk drafted no payload and
 | Build on testnet first; testnet-only projects are eligible in all tracks (Q-010) | done | Contract targets testnet; `scripts/testnet-deploy.mjs` refuses any `NEAR_NETWORK` but `testnet`; `scripts/verify.sh` refuses `mainnet`. |
 | Product uses no mainnet or Intents (no testnet for Intents, Q-007) | done | `PRODUCT.md` out of scope: Mainnet, Intents. If that changes: separate dev accounts, tiny amounts, `dry: true` quotes, human's yes per action. |
 | Deploy, mint and anchor are dry runs unless both `--send` and `--i-approve` are given | done | README "Deploy to testnet"; `npm run mint` prints only (`dry-run: nothing is signed or sent`), and `npm run deploy:nft` stops with `error: wasm not found ... Run npm run build:contract first` until the contract is built, then prints only; `--send` without `--i-approve` is refused; `npm run live-proof` hands its `--i-approve` on to both and refuses any `NEAR_NETWORK` but `testnet`. |
-| Live testnet run | needs Brandon | Needs a testnet account and the human's yes. `npm run live:check` is read-only preflight. |
+| Live testnet run | done (2026-11-09, by the owner) | One vault deploy, one NFT mint and one `execute_swap`, testnet only; ids and hashes in README "Live on testnet". Not repeated, and no further live action is planned. Any new live action needs the human's yes. |
 | Payout account is mainnet (not testnet) | needs Brandon | Section 6. Receiving a prize needs no repo action. |
 
 ## 9. Other rules (no action unless noted)

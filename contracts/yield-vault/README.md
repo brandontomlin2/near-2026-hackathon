@@ -4,7 +4,7 @@ What it is: a near-sdk Rust smart contract that holds NEP-141 token balances for
 
 A trading vault, one per personality (aloof, chaotic, social, skeptic), each driven by an AI agent running a strategy off chain. The vault is owned by a fixed `owner_id` account set at `new`. It records the personality NFT's `nft_contract_id` and `token_id` as metadata only and does not check them: owner checks ignore NFT ownership, so transferring the NFT does not transfer the vault. The agent acts only through approved **runner** accounts, and this contract enforces hard limits on chain regardless of what the strategy proposes. Approved swaps run on the Rhea (Ref Finance) testnet exchange `ref-finance-101.testnet` with the deposit -> swap -> withdraw pattern. wNEAR is `wrap.testnet`.
 
-**Status: NOT deployed.** A testnet deploy needs the human's explicit yes. Tested with unit tests (`cargo test`, 278 tests) and 22 integration tests in a throwaway local sandbox against a mock Ref and mock NEP-141 tokens (`sandbox/`, see "Sandbox measurements"). See "Known risks".
+**Status: deployed once on testnet, one swap executed (2026-11-09).** The account, the transaction hashes and the explorer links are in [`README.md`, "Live on testnet"](../../README.md#live-on-testnet). Nothing is on mainnet, and any further deploy or send needs the human's explicit yes. Tested with unit tests (`cargo test`, 278 tests) and 22 integration tests in a throwaway local sandbox against a mock Ref and mock NEP-141 tokens (`sandbox/`, see "Sandbox measurements"). See "Known risks".
 
 Live testnet runbook (every step, cost, failure handling, verification table): [../../docs/yield-vault-live-runbook.md](../../docs/yield-vault-live-runbook.md).
 
@@ -259,7 +259,7 @@ Fixed after the first AI review:
 - Medium, no escape from a stuck `in_flight` lock: `started_at` plus owner `force_release_lock` after 10 minutes, with swap ids so late callbacks cannot touch a newer swap.
 - Medium, `recover_from_ref` during a swap: rejected with `ERR_SWAP_IN_FLIGHT`. `update_config` is rejected the same way. A follow-up review found the reverse case (a swap or second recovery starting while a recovery's reconcile was still pending, so the two reconciles misread each other's Ref balance); a recovery now holds its own lock until its reconcile runs.
 - Low, dead `_reserved` storage map: removed.
-- The first AI review found zero tests; there are now 278 unit tests and 22 local sandbox tests against a mock Ref. No testnet test exists.
+- The first AI review found zero tests; there are now 278 unit tests and 22 local sandbox tests against a mock Ref. There is no automated testnet test; the one live testnet swap was run by hand.
 
 Fixed after a second AI review (report not in the repository):
 
@@ -303,7 +303,7 @@ Open (not fixed). Severity is the impact on funds if the item happens, not its l
 - Low, `daily_cap` is per UTC calendar day, so up to 2x `daily_cap` can be spent within minutes around 00:00 UTC.
 - Info, the off-chain JS and Rust rule order and the JS side of the rules are outside this contract and are covered elsewhere in the repository, not here.
 
-Not deployed. No professional audit. Any deploy, funding or mainnet use needs the owner's explicit approval.
+Deployed once on testnet with one swap executed (see the status line at the top). No professional audit. Any further deploy, funding or mainnet use needs the owner's explicit approval.
 
 ---
 

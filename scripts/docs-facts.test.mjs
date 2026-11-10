@@ -124,7 +124,7 @@ test("demo-video.md: the quoted banner is on the page, and 'mock' appears where 
   assert.ok(page.includes("Inference (NEAR AI Cloud) : mocked"));
 });
 
-test("art gains a star per sheet (not a ring); the X post, video and script say star", async () => {
+test("art gains a star per sheet (not a ring); the supporting video and script say star", async () => {
   const stars = async (file) => ((await readFile(join(out, file), "utf8")).match(/data-ring=/g) ?? []).length;
   for (const a of demo.agents) {
     assert.equal(await stars(`art/${a.id}.mint.svg`), 1);
@@ -132,11 +132,14 @@ test("art gains a star per sheet (not a ring); the X post, video and script say 
     assert.equal(a.memoryDepth, 1 + a.sheets.length);
   }
   assert.equal(demo.agents[0].memoryDepth, 3);
+  // The X drafts are vault-first and no longer describe the art; they only must not describe a ring.
   for (const name of ["x-post.md", "demo-video.md", "demo-script.md"]) {
     const text = await doc(name);
     assert.doesNotMatch(text, /\bring (is added|for every|for each)|extra rings/i, `${name} still describes a ring`);
   }
-  assert.match(await doc("x-post.md"), /a star is added to its art/);
+  for (const name of ["demo-video.md", "demo-script.md"]) {
+    assert.match(await doc(name), /star/, `${name} still says star for the supporting art`);
+  }
 });
 
 test("demo-script.md: page facts (verify: ok, Chaotic's rivalry grows, who is caught off guard, section order)", async () => {
@@ -251,7 +254,7 @@ test("privacy.md: attest-check prints CONSISTENT, NOT VERIFIED (exit 0) and REJE
   assert.ok(privacy.includes("`CONSISTENT, NOT VERIFIED` and exits 0, `REJECT` and exits 1, or"));
 });
 
-test("demo-video.md, demo-script.md and x-post.md: the quoted npm run ask lines and the meme card text are real", async () => {
+test("demo-video.md and demo-script.md: the quoted npm run ask lines and the meme card text are real; x-post.md drafts are vault-first", async () => {
   const video = await doc("demo-video.md");
   const script = await doc("demo-script.md");
   const post = await doc("x-post.md");
@@ -276,8 +279,9 @@ test("demo-video.md, demo-script.md and x-post.md: the quoted npm run ask lines 
   const skepticCard = await readFile(join(out, "share/meme-caption-skeptic.svg"), "utf8");
   assert.ok(skepticCard.includes("4TH REPLY FROM CHAOTIC AND I AM OUT OF FACES"));
   const drafts = [...post.matchAll(/```\n([^\n]+)\n```/g)].map((m) => m[1]);
-  assert.ok(drafts[0].startsWith('SKEPTIC SAW MY POST AND CHOSE TO SPEAK: "SHOW THE HASH?? I DO NOT EVEN KNOW WHERE THE HASH LIVES 🚀"'), "draft 1 opens with the meme");
-  assert.ok(drafts[1].includes('"5 fights and counting, bro I did not read the contract and it SHOWS 💀"'));
+  // The X drafts are vault-first (the memory-NFT drafts were replaced on 2026-11-09): they must not quote the NFT demo.
+  assert.equal(drafts.length, 3);
+  for (const d of drafts) assert.doesNotMatch(d, /SKEPTIC SAW MY POST|5 fights and counting/, "an X draft still pitches the memory NFT");
   assert.doesNotMatch(script, /Each turn is a call to NEAR AI Cloud/);
   assert.match(script, /In live mode each turn would call NEAR AI Cloud; this demo is mocked and has not been run against it\./);
 });

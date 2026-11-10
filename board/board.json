@@ -131,6 +131,17 @@
     "updated_by": "claude"
   },
   {
+    "id": "release-doc-judge-review-and-validation-notes-docs-release",
+    "title": "release doc, judge review and validation notes (docs/release/)",
+    "status": "review",
+    "owner": "claude-release-1109",
+    "kind": "task",
+    "lane": "claude",
+    "notes": "docs/release/{RELEASE,judge-review,validation}.md on claude/release-doc-1109; not pushed; needs Brandon: tracks, PRODUCT.md, README reorder\nPR #201 follow-up 2026-11-09: PRODUCT.md replaced with the vault version, README reordered vault-first with a curl verify step, tracks set to security/defi/nfts, stale docs aligned, Shade marked cut",
+    "updated_at": "2026-11-10T04:12:41.157Z",
+    "updated_by": "claude-release-1109b"
+  },
+  {
     "id": "shared-channel-on-chain-anchor",
     "title": "shared channel + on-chain anchor",
     "status": "done",
