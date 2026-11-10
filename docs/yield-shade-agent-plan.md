@@ -1,5 +1,7 @@
 # Yield vault runner as a Shade Agent: plan and go/no-go
 
+Note (2026-11-09): the Shade Agent runner was cut for this submission and is not pursued; this plan is kept as a historical record, and its "not decided" statements below predate that decision (see [the checklist](yield-shade-go-nogo.md#status-at-a-glance)).
+
 ## 1. Status
 
 PLAN ONLY, DRY RUN. Nothing is deployed, signed, sent, built or pushed. This is not part of the demo. Written 2026-11-05 for the 2026-11-06 go/no-go call by Brandon. It builds on `docs/spikes/shade-agent.md` (earlier spike) and the dry-run code in `spikes/shade/` and `src/yield/shade/`.

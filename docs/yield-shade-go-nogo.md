@@ -1,5 +1,7 @@
 # Shade Agent go/no-go: owner checklist
 
+Decision: not pursued for this submission (recorded 2026-11-09). The 2026-11-06 decision date passed with no go. The Shade Agent runner is cut; this checklist is kept as a historical record, and all 10 steps below are NOT DONE and will not be done before submission.
+
 This document performs nothing. Nothing in it has been done: no account is created, no contract is deployed, nothing is signed, sent, funded or hosted. Every item below is unchecked and marked "NOT DONE". An item may only be ticked after the owner (Brandon) gave an explicit yes for that item and it was carried out. Everything is testnet; mainnet is out of scope.
 
 Background and sources: [`yield-shade-agent-plan.md`](yield-shade-agent-plan.md). Option table and time boxes: [plan section 9](yield-shade-agent-plan.md#9-gono-go-for-brandon). Step numbers below (plan step N) refer to [plan section 7](yield-shade-agent-plan.md#7-minimal-steps-to-go-live-on-testnet). Risks: plan section 8. Costs: plan section 6. All times UTC.
@@ -8,9 +10,9 @@ Background and sources: [`yield-shade-agent-plan.md`](yield-shade-agent-plan.md)
 
 | | |
 | --- | --- |
-| Decision | not decided (Brandon decides by 2026-11-06) |
-| Recommendation | Partial (not a decision) |
-| Yes-gated steps done | 0 of 10. All 10 are NOT DONE and unchecked, see [Steps that need an explicit yes](#steps-that-need-an-explicit-yes) |
+| Decision | No-go: not pursued for this submission (recorded 2026-11-09; the 2026-11-06 decision date passed with no go) |
+| Recommendation | Partial (the plan's recommendation, not taken) |
+| Yes-gated steps done | 0 of 10. All 10 are NOT DONE and unchecked (historical record), see [Steps that need an explicit yes](#steps-that-need-an-explicit-yes) |
 | Live Shade evidence | none: no transaction id, no signature, no deployed account or contract |
 | What exists today | offline dry-run evidence only, runnable without anyone's yes, see [What runs today without a yes](#what-runs-today-without-a-yes-offline) |
 
@@ -20,10 +22,10 @@ Background and sources: [`yield-shade-agent-plan.md`](yield-shade-agent-plan.md)
 | --- | --- |
 | Options | **Go** (full Shade plus TEE on Phala), **Partial** (local-mode agent contract, real MPC signature, derived key as executor, one real `execute_swap`), **No-go** (keep dry-run evidence only) |
 | Recommendation | **Partial** |
-| Decide by | 2026-11-06 |
+| Decide by | 2026-11-06 (passed with no go) |
 | Partial time box | 12 h total. Checkpoint 1 by 2026-11-09: first real signature (plan step 8). Checkpoint 2 by 2026-11-11: first real `execute_swap` (plan step 10). TEE leg (plan step 12) only decided after step 10 and not after 2026-11-11. |
 | Hard fallback to No-go | 2026-11-11 23:59 at the latest (earlier if checkpoint 1 is missed) |
-| My decision | [ ] Go   [ ] Partial   [ ] No-go   (not decided) |
+| My decision | Go and Partial: not chosen. **No-go**: recorded 2026-11-09 (not pursued for this submission) |
 
 ## What runs today without a yes (offline)
 
@@ -96,6 +98,6 @@ If the decision is No-go, or a checkpoint is missed, what ships is the dry-run e
 - The derivation code is checked against live read-only testnet view calls (`spikes/shade/evidence/testnet-mpc-views.txt`); the dry run's own derived key is for an invented placeholder account and was not queried on chain.
 - Nothing else: no account, deployment, signature, `AddKey`, `execute_swap` or transaction id exists for the Shade Agent part. All 10 yes-gated steps stay NOT DONE.
 
-README wording change needed for No-go (describe only, not applied): none for the claims, since the README already states the Shade Agent part is a dry run and a plan that signs and sends nothing. Optionally add one sentence to the "Work in progress: Yield Optimizer" paragraph and the "Shade Agent dry run" subsection saying the go/no-go outcome was No-go on the decision date, that no live signature, `AddKey` or `execute_swap` was made, and that the only Shade evidence is the dry run and the read-only derivation check. The README must not describe the executor key as live.
+README wording for No-go (applied 2026-11-09): the README's "Not done: Shade Agent runner" section and its "Shade Agent dry run" subsection say the runner was cut and not pursued for this submission, that no live signature, `AddKey` or `execute_swap` was made, and that the only Shade evidence is the dry run and the read-only derivation check. The README must not describe the executor key as live.
 
 For Partial or Go, after steps are done the README must be changed instead: add numbered "do X, see Y" steps with real transaction ids and explorer links for each completed step, state which steps ran on testnet, state that the TEE leg was or was not done, and update the "not deployed" statements in "Mock caveats and status" and "Yield Optimizer" to match. Not before the transactions exist.

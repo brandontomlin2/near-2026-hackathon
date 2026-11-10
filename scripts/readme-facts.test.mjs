@@ -65,7 +65,7 @@ test("README Try-it steps are numbered 1 to 10 and the npm run ask step is step 
   assert.match(section, ASK_STEP, "step 3 is the ask step and says it changes out/memory");
   const step3 = section.match(ASK_STEP)[0];
   assert.ok(step3.includes("Do that now: run `npm run demo` again"), "the ask step resets the memory before the sheet and anchor steps read it");
-  assert.match(section, /\n10\. [^\n]*\n\nEverything below this section is reference for the pieces the demo ran\.\n/, "verify.sh is the last step, one blank line before the closing sentence, and no blank line inside the list");
+  assert.match(section, /\n10\. [^\n]*\n\nThe sections below, down to Repository layout, are reference for the pieces the demo ran\.\n/, "verify.sh is the last step, one blank line before the closing sentence, and no blank line inside the list");
   const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
   assert.equal(pkg.scripts.ask, "node scripts/ask.mjs");
   const checklist = await readFile(join(root, "docs/submission-checklist.md"), "utf8");
@@ -321,9 +321,18 @@ test("README 'Live on testnet' is vault-first, records the one real run, and lin
   const headings = [...readme.matchAll(/^## (.+)$/gm)].map((m) => m[1]);
   const liveIdx = headings.indexOf("Live on testnet");
   assert.ok(liveIdx >= 0, "README must have a 'Live on testnet' section");
-  for (const h of ["Try it (judge path)", "Contract", "Deploy to testnet", "Inference", "Swarm", "Art", "Yield Optimizer"]) {
-    assert.ok(headings.indexOf(h) >= 0 && headings.indexOf(h) < liveIdx, `'${h}' must come before 'Live on testnet'`);
+  // Vault-first order: the quick path, then the live run, then the vault material; the personality NFT material is supporting and comes last.
+  assert.equal(liveIdx, headings.indexOf("Judge quick path") + 1, "'Live on testnet' directly follows 'Judge quick path'");
+  const yieldIdx = headings.indexOf("Yield Optimizer");
+  assert.ok(yieldIdx > liveIdx, "'Yield Optimizer' follows 'Live on testnet'");
+  const supportingIdx = headings.indexOf("Supporting: the personality NFTs");
+  assert.ok(supportingIdx > yieldIdx, "the supporting NFT material follows the vault sections");
+  for (const h of ["What the personality NFT is", "Try it (judge path)", "Mock caveats and status", "Contract", "Deploy to testnet", "Inference", "Swarm", "Art"]) {
+    assert.ok(headings.indexOf(h) > supportingIdx, `'${h}' must come after 'Supporting: the personality NFTs'`);
   }
+  assert.ok(headings.indexOf("Not done: Shade Agent runner") > yieldIdx && headings.indexOf("Not done: Shade Agent runner") < supportingIdx, "one 'Not done' heading, between the vault and the supporting material");
+  assert.equal(headings.filter((h) => /^Not done/.test(h)).length, 1);
+  assert.ok(!headings.includes("Work in progress: Yield Optimizer"), "the stale Shade heading is gone");
   const body = readme.split("## Live on testnet\n")[1].split(/\n## /)[0].trim();
   assert.doesNotMatch(body, /TBD|not run yet/i);
   assert.match(body, /^Run once on 2026-11-09 \(testnet only, nothing on mainnet\)\./);

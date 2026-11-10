@@ -1,6 +1,6 @@
 # Design note: Shade Agents + chain signatures for the Yield Optimizer
 
-Status: in progress, dry-run only. Nothing was signed, sent or deployed, and this is not part of the demo (see the README section "Work in progress: Yield Optimizer"). The Yield Optimizer is a planned fifth personality: a vault with on-chain rules, plus an agent that can act on it through chain signatures without holding a private key.
+Status: in progress, dry-run only. Nothing was signed, sent or deployed, and this is not part of the demo (see the README section "Not done: Shade Agent runner"). The Yield Optimizer is a planned fifth personality: a vault with on-chain rules, plus an agent that can act on it through chain signatures without holding a private key.
 
 ## What is established
 
