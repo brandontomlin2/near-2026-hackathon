@@ -363,8 +363,12 @@ test("README 'Live on testnet' fill-in table holds the real ids and tx hashes of
   for (const h of hashes) assert.ok(body.includes(`https://testnet.nearblocks.io/txns/${h}`) || body.includes(`https://explorer.testnet.near.org/transactions/${h}`), `${h} must link to the explorer`);
   assert.doesNotMatch(body, /<hash>\)|<id>\)/, "no placeholder links remain");
   // Only testnet accounts, never mainnet.
-  assert.doesNotMatch(body.replaceAll("explorer.testnet.near.org", "EXPLORER").replaceAll("testnet.nearblocks.io", "EXPLORER"), /\b[a-z0-9][a-z0-9_.-]*\.near(?![a-z0-9_.-])/, "a mainnet account id must not appear");
+  assert.doesNotMatch(body.replaceAll("explorer.testnet.near.org", "EXPLORER").replaceAll("testnet.nearblocks.io", "EXPLORER"), /\b[a-z0-9][a-z0-9_.-]*\.near(?![a-z0-9_-]|\.[a-z0-9])/, "a mainnet account id must not appear");
   assert.ok(body.includes("testnet only, nothing on mainnet"));
+  // The mainnet guard still fires on a real .near id, including one that ends a sentence.
+  const mainnetId = /\b[a-z0-9][a-z0-9_.-]*\.near(?![a-z0-9_-]|\.[a-z0-9])/;
+  for (const s of ["`alice.near`", "owner alice.near here", "(bob.near)", "ends with carol.near."]) assert.match(s, mainnetId, s);
+  for (const s of ["vault.near-2026-hackathon.testnet", "x.near.testnet"]) assert.doesNotMatch(s, mainnetId, s);
 });
 
 test("README meme paragraph: templates not jokes, caption bottom line is a scripted reply, fold rule is fights then replies then roster", async () => {
