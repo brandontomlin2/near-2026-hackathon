@@ -314,10 +314,10 @@ test("README track-fit paragraph covers every claimed track and disclaims agent 
   assert.ok(fit[0].includes("What does not exist: no coordination market, bidding, collective purchasing or settlement between agents, and no agent earns, spends, negotiates, hires or pays in the swarm, demo or NFT."));
   // The Yield Optimizer is the one place agents propose trades; it must be named, undeployed and dry run.
   assert.ok(fit[0].includes("[Yield Optimizer](#yield-optimizer)"));
-  assert.ok(fit[0].includes("it is not deployed and its CLI is a dry run by default, so nothing has been traded."));
+  assert.ok(fit[0].includes("its CLI is a dry run by default, and the one trade ever made is the single testnet swap in [Live on testnet](#live-on-testnet)."));
 });
 
-test("README 'Live on testnet' is vault-first, says not run yet, and has an empty fill-in table", () => {
+test("README 'Live on testnet' is vault-first, records the one real run, and links the runbook", () => {
   const headings = [...readme.matchAll(/^## (.+)$/gm)].map((m) => m[1]);
   const liveIdx = headings.indexOf("Live on testnet");
   assert.ok(liveIdx >= 0, "README must have a 'Live on testnet' section");
@@ -325,8 +325,8 @@ test("README 'Live on testnet' is vault-first, says not run yet, and has an empt
     assert.ok(headings.indexOf(h) >= 0 && headings.indexOf(h) < liveIdx, `'${h}' must come before 'Live on testnet'`);
   }
   const body = readme.split("## Live on testnet\n")[1].split(/\n## /)[0].trim();
-  assert.doesNotMatch(body, /TBD/);
-  assert.match(body, /^Not run yet\./);
+  assert.doesNotMatch(body, /TBD|not run yet/i);
+  assert.match(body, /^Run once on 2026-11-09 \(testnet only, nothing on mainnet\)\./);
   // Vault-first: the owner's one entry and the vault runbook come before any mention of the NFT-only proof.
   const once = body.indexOf("`npm run yield:live:once");
   const runbook = body.indexOf("(docs/yield-vault-live-runbook.md)");
@@ -338,7 +338,7 @@ test("README 'Live on testnet' is vault-first, says not run yet, and has an empt
   assert.doesNotMatch(body, /--i-approve/, "the README live section must not expand the NFT send command");
 });
 
-test("README 'Live on testnet' fill-in cells stay 'not run yet': no invented ids, hashes or tx links", () => {
+test("README 'Live on testnet' fill-in table holds the real ids and tx hashes of the 2026-11-09 run", () => {
   const body = readme.split("## Live on testnet\n")[1].split(/\n## /)[0];
   const rows = body.split("\n").filter((l) => /^\|/.test(l)).slice(2).map((l) => l.split("|").map((c) => c.trim()).filter(Boolean));
   assert.deepEqual(rows.map((r) => r[0].replace(/\(.*$/, "").trim()), [
@@ -347,11 +347,28 @@ test("README 'Live on testnet' fill-in cells stay 'not run yet': no invented ids
     "Rhea/Ref `execute_swap` tx hash",
     "Explorer links",
   ]);
-  for (const r of rows) assert.equal(r[1], "not run yet", `fill-in cell for '${r[0]}' must stay 'not run yet' until a real run is pasted`);
-  // A real transaction hash is 43 or 44 base58 characters; no account id of any kind may appear before a run.
-  assert.doesNotMatch(body, /\b[1-9A-HJ-NP-Za-km-z]{43,44}\b/, "a hash-shaped string appears before any live run");
-  assert.doesNotMatch(body.replaceAll("explorer.testnet.near.org", "EXPLORER"), /\b[a-z0-9][a-z0-9_.-]*\.testnet\b/, "a .testnet account id appears before any live run");
-  assert.doesNotMatch(body, /explorer\.testnet\.near\.org\/transactions\/(?!<hash>)/, "an explorer tx link with a real hash appears before any live run");
+  const cell = (name) => rows.find((r) => r[0].startsWith(name))[1];
+  const vault = "vault.near-2026-hackathon.testnet";
+  const nft = "near-hackathon-2026-vault-20261106.testnet";
+  const swapTx = "B4oDeCFzeEpDaKMJe6F5rDh5F2ie2qdTKTm7YQVg24Em";
+  assert.ok(cell("Vault contract id").includes(`\`${vault}\``));
+  assert.ok(cell("NFT contract id").includes(`\`${nft}\``));
+  assert.ok(cell("Rhea/Ref").includes(swapTx));
+  assert.ok(cell("Explorer links").includes(`https://explorer.testnet.near.org/transactions/${swapTx}`));
+  assert.ok(cell("Explorer links").includes(`https://explorer.testnet.near.org/accounts/${vault}`));
+  assert.ok(cell("Explorer links").includes(`https://explorer.testnet.near.org/accounts/${nft}`));
+  // Every hash in the section is a real 43/44-character base58 transaction id with an explorer link; no placeholders.
+  const hashes = [...new Set(body.match(/\b[1-9A-HJ-NP-Za-km-z]{43,44}\b/g))];
+  assert.equal(hashes.length, 4, "deploy vault, deploy NFT, mint and swap: four distinct tx hashes");
+  for (const h of hashes) assert.ok(body.includes(`https://testnet.nearblocks.io/txns/${h}`) || body.includes(`https://explorer.testnet.near.org/transactions/${h}`), `${h} must link to the explorer`);
+  assert.doesNotMatch(body, /<hash>\)|<id>\)/, "no placeholder links remain");
+  // Only testnet accounts, never mainnet.
+  assert.doesNotMatch(body.replaceAll("explorer.testnet.near.org", "EXPLORER").replaceAll("testnet.nearblocks.io", "EXPLORER"), /\b[a-z0-9][a-z0-9_.-]*\.near(?![a-z0-9_-]|\.[a-z0-9])/, "a mainnet account id must not appear");
+  assert.ok(body.includes("testnet only, nothing on mainnet"));
+  // The mainnet guard still fires on a real .near id, including one that ends a sentence.
+  const mainnetId = /\b[a-z0-9][a-z0-9_.-]*\.near(?![a-z0-9_-]|\.[a-z0-9])/;
+  for (const s of ["`alice.near`", "owner alice.near here", "(bob.near)", "ends with carol.near."]) assert.match(s, mainnetId, s);
+  for (const s of ["vault.near-2026-hackathon.testnet", "x.near.testnet"]) assert.doesNotMatch(s, mainnetId, s);
 });
 
 test("README meme paragraph: templates not jokes, caption bottom line is a scripted reply, fold rule is fights then replies then roster", async () => {
