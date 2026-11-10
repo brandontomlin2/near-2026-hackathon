@@ -15,3 +15,12 @@ fd7bb18dbf00876cec8bcd86557d8203d7fb1fc1:.agents/skills/near-ai-cloud/references
 01b0859227a08740ea8919774318f434cc69bfd6:.agents/skills/near-ai-cloud/references/specialized-endpoints.md:curl-auth-header:65
 01b0859227a08740ea8919774318f434cc69bfd6:.agents/skills/near-ai-cloud/references/specialized-endpoints.md:curl-auth-header:80
 01b0859227a08740ea8919774318f434cc69bfd6:.agents/skills/near-ai-cloud/references/specialized-endpoints.md:curl-auth-header:104
+
+# Test-fixture API-key sentinels that trip generic-api-key. They are not credentials:
+# each is a hard-coded test stub, never sent to a real API, and not a real provider format.
+# Fingerprints only, as reported by gitleaks 8.30.1 on a fresh clone of main (2608a4a6).
+# Do not add other paths or rules here.
+
+9e8bdd95678d5d07220517c6a4f58753cc27dc10:src/memory/memory.gaps17.test.mjs:generic-api-key:15
+f69e41ded9db0185fd224ccef3574440e73c9f2f:src/inference/client.gaps14.test.mjs:generic-api-key:19
+71918593fd831d1d08081eae16f2b9cc6b39071d:src/inference/hardening.test.mjs:generic-api-key:9
