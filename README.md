@@ -27,7 +27,7 @@ Going deeper on the personality NFTs: the numbered steps in [Try it (judge path)
 
 ## Live on testnet
 
-Run once on 2026-11-09 (testnet only, nothing on mainnet). The live run is the [Yield Optimizer](#yield-optimizer) vault: the owner deployed the vault, minted one personality NFT (`aloof`), and made one small Rhea/Ref testnet swap through the vault's `execute_swap` (0.01 wNEAR to 0.94246798 `rft` on pool 0, signed by the runner account). It is the pool 0 wNEAR swap the runbook names as the fallback, not the pool 747 swap the offline demo plans. Every value below is copied from the real transaction output; nothing was resent. Every other hash in this README and in the demo output is a mock or a dry run. The owner's entry was `npm run yield:live:once -- --config out/yield-vault.live.json --media-base <url>` (offline; it never runs `near`, signs or sends) followed by its printed commands one at a time with `sign-with-keychain`. The step-by-step runbook, with every command, its cost and its rollback, is [`docs/yield-vault-live-runbook.md`](docs/yield-vault-live-runbook.md).
+Run once on 2026-11-09 (testnet only, nothing on mainnet). The date is America/Chicago; the swap's block is timestamped 2026-11-10 02:40 UTC. The live run is the [Yield Optimizer](#yield-optimizer) vault: the owner deployed the vault, minted one personality NFT (`aloof`), and made one small Rhea/Ref testnet swap through the vault's `execute_swap` (0.01 wNEAR to 0.94246798 `rft` on pool 0, signed by the runner account). It is the pool 0 wNEAR swap the runbook names as the fallback, not the pool 747 swap the offline demo plans. Every value below is copied from the real transaction output; nothing was resent. Every other hash in this README and in the demo output is a mock or a dry run. The owner's entry was `npm run yield:live:once -- --config out/yield-vault.live.json --media-base <url>` (offline; it never runs `near`, signs or sends) followed by its printed commands one at a time with `sign-with-keychain`. The step-by-step runbook, with every command, its cost and its rollback, is [`docs/yield-vault-live-runbook.md`](docs/yield-vault-live-runbook.md).
 
 | Item | Value |
 | --- | --- |
@@ -46,7 +46,7 @@ This needs only `curl` and Node, which this repository already requires. Both co
 curl -s https://test.rpc.fastnear.com -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","finality":"final","account_id":"vault.near-2026-hackathon.testnet","method_name":"get_state","args_base64":"e30="}}' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(Buffer.from(JSON.parse(s).result.result).toString()))'
 ```
 
-Real output on 2026-11-09, one line:
+Real output on 2026-11-09 (America/Chicago; 2026-11-10 UTC, which is why `day` reads 20767), one line:
 
 ```text
 {"owner_id":"near-2026-hackathon.testnet","nft_contract_id":"near-hackathon-2026-vault-20261106.testnet","token_id":"aloof","ref_exchange_id":"ref-finance-101.testnet","paused":false,"swap_in_flight":false,"recovery_in_flight":false,"release_in_flight":false,"day":20767,"spent_today":[["wrap.testnet","10000000000000000000000"]],"balances":[["rft.tokenfactory.testnet","94246798"],["wrap.testnet","10000000000000000000000"]],"stranded_on_ref":[],"unverified_on_ref":[],"swaps_executed":1}
@@ -60,7 +60,7 @@ Look for `"swaps_executed":1`, `"swap_in_flight":false` and `"stranded_on_ref":[
 curl -s https://archival-rpc.testnet.near.org -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"tx","params":{"tx_hash":"B4oDeCFzeEpDaKMJe6F5rDh5F2ie2qdTKTm7YQVg24Em","sender_account_id":"runner.near-2026-hackathon.testnet","wait_until":"FINAL"}}' | grep -o 'swap_executed[^]]*'
 ```
 
-Real output on 2026-11-09 (JSON-escaped, because the event sits inside a log string), one line:
+Real output on 2026-11-09 (America/Chicago; JSON-escaped, because the event sits inside a log string), one line:
 
 ```text
 swap_executed\",\"data\":[{\"pool_id\":0,\"token_in\":\"wrap.testnet\",\"token_out\":\"rft.tokenfactory.testnet\",\"amount_in\":\"10000000000000000000000\",\"amount_out\":\"94246798\"}
