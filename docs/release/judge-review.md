@@ -69,7 +69,7 @@ The README links it as "Design". It pitches "Own an AI personality as an NFT", s
 
 The offline demo, the unsigned live plan and the runbook all describe pool 747 (0.05 USDC.e to USDT.e). The live swap was pool 0 (0.01 wNEAR to `rft`). The "Live on testnet" section now says so in one sentence. Still true, and worth stating in the demo video rather than hiding:
 
-- No model picked the live trade; the owner ran printed commands by hand.
+- The owner sent the live swap by hand from printed commands. The README does not record an agent proposing it, so it should not be presented as an agent-picked trade.
 - The vault has never refused a live transaction. The rejections are shown by unit tests, sandbox tests and the offline demo.
 - A cheap way to close this without any transaction: the deployed vault has a read-only `check_proposal(proposal, runner_id)` view. One documented RPC view call with an over-limit proposal would let a judge see the live contract return `ERR_MAX_TRADE` themselves. Not done here (this session made no network calls to NEAR); it is a README step plus one test.
 
