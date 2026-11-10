@@ -98,7 +98,7 @@ README line 288: "Go/no-go status: not decided (the owner decides by 2026-11-06 
 - The repository must be public by Sat Nov 14, 5:59pm CST. Until then, and until PR #200 is on `main`, the NFT's `media` link (a GitHub raw URL to `docs/nft-media/aloof.svg`) returns 404. Expected; do not host the art elsewhere.
 - Q-012: with no hosted demo, the X post needs a video, not only screenshots. There is no vault demo video yet.
 - Run a full-history `gitleaks detect` once before making the repository public. On this machine gitleaks is not installed, so `verify.sh` used its narrower fallback scan (`PASS`, no findings).
-- The four local tags `hp-pre-rebase-*` are worker leftovers. They are not the Q-003 tags; do not push them. No `pre-hackathon` tag is needed because no code predates the window (`docs/DISCLOSURE.md`).
+- The four local tags `hp-pre-rebase-*` are worker leftovers. They are not the Q-003 tags; do not push them. The annotated `pre-hackathon` tag now points at the root commit `992acee` because no code predates the window (`docs/DISCLOSURE.md`); the compare is `pre-hackathon...main` until `hackathon-submission` exists.
 
 ### 11. Nits
 
