@@ -20,6 +20,7 @@ human's explicit approval. See `docs/tracks.md`.
 | 6 | The code matches the README's claims | For each claim (4 agents, round hash chain, character sheets and their hashes, dry-run anchor calls, determinism), find the code and the output that shows it. A claim with no code or output is a mismatch. |
 | 7 | Disclosures | The README lists libraries, templates and AI-generated code, and any pre-hackathon code. |
 | 8 | No secrets, no CI workflows | `bash scripts/verify.sh` (secret files, gitleaks when installed, no `.github/workflows`). |
+| 9 | The claimed tracks match what exists | The claimed tracks are exactly `security` (AI Security & Defense), `defi` (Unstoppable DeFi) and `nfts` (NFTs That Do Something): `security` and `defi` are the Yield Optimizer vault, `nfts` is supporting. `swarms`, `agents` and `privacy` are not claimed. Read `docs/tracks.md` for what each track gets and what does not exist. |
 
 ## Run the fresh-clone script
 
