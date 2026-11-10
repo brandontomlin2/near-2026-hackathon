@@ -1,6 +1,6 @@
 # Yield Optimizer vault: release document
 
-Status of this file: DRAFT for Brandon, written 2026-11-09 on branch `claude/release-doc-1109`. Nothing in it has been submitted, posted or published. Every live fact is copied from the README section "Live on testnet"; no hash or account here is new. Companion files: [`judge-review.md`](judge-review.md) (what a fresh-clone judge hits) and [`validation.md`](validation.md) (test and verify results for this branch).
+Status of this file: DRAFT for Brandon, written 2026-11-09 on branch `claude/release-doc-1109b`. Nothing in it has been submitted, posted or published. Every live fact is copied from the README section "Live on testnet"; no hash or account here is new. Companion files: [`judge-review.md`](judge-review.md) (what a fresh-clone judge hits) and [`validation.md`](validation.md) (test and verify results for this branch).
 
 Settled: Brandon decided on 2026-11-09 that the tracks are `security`, `defi` and `nfts`, and that `PRODUCT.md` is vault-first. The README, `PRODUCT.md` and the checklists claim exactly these three (see "Tracks" and "PRODUCT.md (applied)").
 
@@ -159,7 +159,7 @@ Try it: npm install && npm run yield:demo runs offline with no keys. It shows fo
 Limits: testnet only, one live swap, the demo's inference is a deterministic mock, and the price-peg check is off chain.
 ```
 
-Demo post (step 2 of the Procedure): Brandon writes and publishes it. It must say the project was built at NEAR HACKATHON, tag `@NEARProtocol` and `#NEARHackathon`, and carry the demo video (a video, not only screenshots, because there is no hosted demo: Q-012). The drafts in `docs/x-post.md` still pitch the memory NFT and should not be used as they are. A vault-first starting point (274 characters with the link counted as 23), not posted anywhere:
+Demo post (step 2 of the Procedure): Brandon writes and publishes it. It must say the project was built at NEAR HACKATHON, tag `@NEARProtocol` and `#NEARHackathon`, and carry the demo video (a video, not only screenshots, because there is no hosted demo: Q-012). The drafts in `docs/x-post.md` are now vault-first too (three drafts, each at most 280 characters, both tags, none posted); `docs/yield-demo-video-script.md` is the vault video script. A vault-first starting point (274 characters with the link counted as 23), not posted anywhere:
 
 ```text
 Would you hand a trading bot your treasury? Ours can only propose. A NEAR vault contract checks each swap against on-chain limits and refuses the rest. Live on Rhea testnet. Built at NEAR HACKATHON. @NEARProtocol #NEARHackathon <REPO_URL> Which rule is missing?

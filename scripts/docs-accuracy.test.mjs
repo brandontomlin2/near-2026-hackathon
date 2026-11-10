@@ -77,3 +77,43 @@ test('x-post.md draft counts quoted in the prose match the drafts', () => {
   assert.ok(m, 'x-post.md does not quote the draft lengths');
   assert.deepEqual([1, 2, 3].map((i) => Number(m[i])), drafts.map(xLength));
 });
+
+test('x-post.md drafts pitch the vault, not the memory NFT, and make no claim the repo cannot back', () => {
+  const drafts = [...read('docs/x-post.md').matchAll(/```\n([\s\S]*?)\n```/g)].map((m) => m[1]);
+  for (const [i, d] of drafts.entries()) {
+    assert.match(d, /vault/i, `draft ${i + 1} does not mention the vault`);
+    assert.doesNotMatch(d, /\bNFT\b|memory|remember/i, `draft ${i + 1} pitches the memory NFT`);
+    // "nothing on mainnet" is a true negation; any other mention of mainnet, TEE or Intents is a claim the repo cannot back.
+    assert.doesNotMatch(d.replace(/nothing on mainnet/gi, ''), /mainnet|\bTEE\b|Intents/i, `draft ${i + 1} claims mainnet, TEE or Intents`);
+  }
+});
+
+test('vault video docs quote only lines that npm run yield:demo really prints', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'yield-video-'));
+  try {
+    const env = { ...process.env, MOCK_INFERENCE: '1' };
+    const stdout = execFileSync(process.execPath, [join(root, 'scripts/yield-demo.mjs'), '--out', dir], { env, encoding: 'utf8' });
+    const squash = (t) => t.replace(/\s+/g, ' ');
+    const out = squash(stdout);
+    const lines = [
+      'YIELD DEMO - DRY RUN - mock inference, offline - nothing signed, nothing sent',
+      'yield-optimizer pool 747: 0.05 usdc -> min 0.050406 usdt OK execute',
+      'chaotic vetoed by skeptic: size is 10000 bps of max_trade, above the 8000 bps audit line',
+      'REJECTED ERR_MAX_TRADE: 1001 exceeds max_trade 1000',
+      'REJECTED ERR_DAILY_CAP: spent 1501 + 1000 exceeds daily_cap 2500',
+      'REJECTED ERR_PRICE_FLOOR: min_amount_out 149 below floor 3/2 of amount_in 100',
+      'REJECTED ERR_PAUSED: vault is paused',
+      '1 unsigned execute_swap call planned, 0 signed, 0 sent',
+    ];
+    for (const line of lines) assert.ok(out.includes(line), `yield:demo does not print: ${line}`);
+    for (const doc of ['docs/demo-video.md', 'docs/demo-script.md']) {
+      const text = squash(read(doc));
+      for (const line of lines) assert.ok(text.includes(line), `${doc} does not quote: ${line}`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

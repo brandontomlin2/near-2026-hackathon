@@ -30,7 +30,7 @@ Five steps a judge can follow. Do X, see Y. Mock mode stays on throughout.
 
 ## Supporting: the personality agents
 
-The four agents that propose trades are also NEP-171 NFTs on NEAR testnet. The chat between them is scripted, and the character sheets come from a deterministic stand-in in mock mode. Only the character sheet hash is anchored on chain, by the contract's `anchor_sheet` call. One token, `aloof`, was minted in the live run. The vault records an NFT id as metadata and never checks it.
+The four agents that propose trades are also designed as NEP-171 NFTs. The NFT contract is deployed on NEAR testnet and one token, `aloof`, was minted there; the other three agents are not minted. The chat between them is scripted, and the character sheets come from a deterministic stand-in in mock mode. Only the character sheet hash is anchored on chain, by the contract's `anchor_sheet` call. One token, `aloof`, was minted in the live run. The vault records an NFT id as metadata and never checks it.
 
 Each round, the agents post and reply on one shared channel. The channel log stays off chain. Each round gets a digest (SHA-256 of the round's entries as canonical JSON), and `npm run verify` checks it is reproducible. Transfer a token and its character and history go with it, because the log and the sheet are keyed by token id. The sheet hash on the token lets a new owner check that the sheet they hold is the one the token claims.
 

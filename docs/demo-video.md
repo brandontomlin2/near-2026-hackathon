@@ -1,19 +1,35 @@
 # Demo video shot list (60 to 90 seconds) and screenshot fallback
 
-For the public X post (`docs/HACKATHON.md`: attach a demo video or screenshots). The human records it. This is the short cut of `docs/demo-script.md` (the 2.5 minute version). It leads with the user's problem and the owner asking an agent a question (`npm run ask`), then shows the three meme cards and the transfer + re-hash panel.
+For the public X post (`docs/HACKATHON.md`: attach a demo video or screenshots). The human records it. The product is the Yield Optimizer vault, so the cut leads with it: the problem, `npm run yield:demo` (the agents' proposals, a veto, four rule rejections with the contract's error names, 1 unsigned `execute_swap` planned), then the live proof from the one testnet run on 2026-11-09 (README section "Live on testnet"), then the supporting `npm run demo` page briefly, then `bash scripts/verify.sh`. The vault part has a full shot table and voice-over in `docs/yield-demo-video-script.md`; the vault shots below are its short form and must stay consistent with it. This file is the short cut of `docs/demo-script.md` (the 2.5 minute version). After the vault shots it keeps the supporting personality NFT shots (the owner asks an agent a question with `npm run ask`, the three meme cards, the transfer and re-hash panel) for a longer cut.
 
-**Everything here is MOCK.** Inference is mocked, the character sheets come from a deterministic stand-in (not a model), the accounts (`alice.demo.testnet`, `bob.demo.testnet`) and the contract id are placeholders, and nothing is signed, sent or deployed. Every hash on screen is a MOCK hash. Say "mock mode" out loud once, and keep the caption in beat 1 on screen. Do not show `.env`, keys or a wallet. Do not claim a live NEAR AI call, an on-chain write, TEE attestation or the `privacy` track.
+**Everything the commands print is MOCK.** Inference is mocked, the vault and runner ids the vault demo prints (`vault.yield-demo.testnet`) and the NFT demo's accounts (`alice.demo.testnet`, `bob.demo.testnet`) and contract id are placeholders, and the demos sign and send nothing. Every hash those demos print is a MOCK hash. The one exception is the live proof in shot V5: a real testnet transaction, shown from the explorer page or the read-only `curl` check in the README. Say "mock mode" out loud once for the demos, and keep the caption in shot V2 on screen. Do not show `.env`, keys or a wallet. Do not claim a live NEAR AI call, mainnet use, an agent-picked live trade (the owner sent the swap by hand), a live rejection (the vault has not refused a live transaction), TEE attestation or the `privacy` track.
 
-All commands below were run on the committed tree and the output lines pasted here are real; `scripts/docs-facts.test.mjs` re-checks the hashes and quoted lines against a fresh `npm run demo`, so if that test passes this file is current. The project has no npm dependencies, so `npm install` finishes at once. Needs Node 22 or newer.
+All commands below were run on the committed tree and the output lines pasted here are real. `scripts/docs-facts.test.mjs` re-checks the supporting shots' hashes and quoted lines against a fresh `npm run demo`, and `scripts/docs-accuracy.test.mjs` re-checks the vault shots' quoted lines against a fresh `npm run yield:demo`. The project has no npm dependencies, so `npm install` finishes at once. Needs Node 22 or newer.
+
+## Vault shots (about 90 seconds)
+
+| # | Time | Show on screen | Command (from the repo root) | Key output to point at | Caption (on screen) |
+| --- | --- | --- | --- | --- | --- |
+| V1 | 0:00 to 0:08 | Title card with the problem, then an empty terminal. | none | none | "Handing an AI agent your tokens means trusting every trade it picks. Here the agent only proposes." |
+| V2 | 0:08 to 0:20 | Terminal, fresh clone. One command runs the vault demo offline. | `git clone <REPO_URL> && cd <repo> && npm install && npm run yield:demo` | `YIELD DEMO - DRY RUN - mock inference, offline - nothing signed, nothing sent` | "Mock inference, one committed Ref testnet snapshot, nothing signed or sent." |
+| V3 | 0:20 to 0:40 | Terminal, zoom on the agent table. Three agents refused as off reference, Chaotic vetoed, one swap passes. | same run | `yield-optimizer  pool 747: 0.05 usdc -> min 0.050406 usdt  OK           execute` and `chaotic vetoed by skeptic: size is 10000 bps of max_trade, above the 8000 bps audit line` | "Four agents and a planner propose. One swap passes every check." |
+| V4 | 0:40 to 0:55 | Terminal, zoom on the rule block. | same run | `REJECTED ERR_MAX_TRADE: 1001 exceeds max_trade 1000`, `REJECTED ERR_DAILY_CAP: spent 1501 + 1000 exceeds daily_cap 2500`, `REJECTED ERR_PRICE_FLOOR: min_amount_out 149 below floor 3/2 of amount_in 100`, `REJECTED ERR_PAUSED: vault is paused`, then `1 unsigned execute_swap call planned, 0 signed, 0 sent` | "The contract's own error names. The rules live on chain, not in the agent." |
+| V5 | 0:55 to 1:10 | Browser: the explorer page of the swap transaction (link in the README section "Live on testnet"), or the `curl` check there. Say that the owner sent this one swap by hand, it was not agent-picked, and the vault has not refused a live transaction. | open the swap link from the README table | the vault's `swap_executed` event: 0.01 wNEAR in, `94246798` of `rft.tokenfactory.testnet` out on pool 0; with the `curl` check, `"swaps_executed":1` | "Live on testnet, 2026-11-09: one small swap through execute_swap. Testnet only." |
+| V6 | 1:10 to 1:20 | Browser: `out/yield-demo/index.html` for the same run as one page, then `out/index.html` for the four agents the proposals come from (supporting demo). | `open out/yield-demo/index.html`, then `npm run demo` and `open out/index.html` | the headline `AI agents propose trades. On-chain rules decide.` | "The same four agents are NFTs too (supporting)." |
+| V7 | 1:20 to 1:30 | Terminal: the judge screen. | `bash scripts/verify.sh` (pre-record it; it takes a minute or two) | an 18-row table ending `result: PASS`, with the `yield demo` row `PASS` | "Judge check: one command, result: PASS." |
+
+Voice-over for the vault shots is in `docs/yield-demo-video-script.md`. Keep the cut honest: no sped-up fake output, no edited numbers. If a line changes in the code, re-record.
 
 ## Before you record
 
 1. Fresh clone in an empty folder, terminal font large enough for 720p, high contrast.
 2. Run the commands once off camera, so you know the output matches the table below. If a hash differs, re-read the terminal, not this file: the hashes here are for the defaults (`--rounds 6 --seed 1 --every 3`).
-3. Have a browser window ready for `out/index.html` and for `out/share/meme-caption-chaotic.svg`.
+3. Run `npm run yield:demo` once so `out/yield-demo/index.html` exists, and have a browser window ready for it, for the swap's explorer page from the README section "Live on testnet", for `out/index.html` and for `out/share/meme-caption-chaotic.svg`. The vault demo's rule lines are long: use a terminal at least 180 columns wide.
 4. Shot 3 runs `npm run ask`, which rewrites `out/memory/chaotic/` (only that; the page and the hashes in the table below do not change). To record a second take, run `npm run demo` first: it starts the memory over.
 
-## Shot list (about 90 seconds)
+## Supporting shots: the personality NFT demo (optional longer cut)
+
+These nine shots are the supporting demo the four agents come from. Their numbers are within this table. Skip shot 1 if the vault shots already ran `npm install`; for the 90 second cut, take shots 3 and 7 at most.
 
 | # | Time | Show on screen | Command (from the repo root) | Key output to point at | Caption (on screen) |
 | --- | --- | --- | --- | --- | --- |
@@ -34,6 +50,8 @@ Notes on timing: shots 2 and 8 print in well under a second, so most of that tim
 Shot 8 uses `grep` on purpose: the demo prints a lot, and the grep keeps the screen to one readable line. The `Done.` list in the full output also shows the same hash in step 6. Running `npm run demo` again also starts the memory over, so the `Owner` line from shot 3 is gone afterwards.
 
 ## Narration (about 220 words)
+
+This narration is for the supporting shots above. The vault voice-over is in `docs/yield-demo-video-script.md`.
 
 1. "Someone is selling you an AI character. How do you know the memory you are buying is the one they anchored? Everything you will see is in mock mode: no keys, no network, nothing signed."
 2. "Fresh clone, one command. Four agents run six rounds on a shared channel, memory sheets get written, and the anchor calls are prepared, never sent."
@@ -66,5 +84,5 @@ Every screenshot should show the word MOCK somewhere: add it in the post text or
 ## What not to show
 
 - `.env`, keys, seed phrases, wallet windows, the `near` CLI.
-- Any claim of a live testnet run, unless a real live run happened and you show its transaction hashes only.
-- The placeholder contract id as if it were deployed.
+- Any claim of a live result beyond the one swap of 2026-11-09 in the README section "Live on testnet". Show that run from the explorer page or the `curl` check only.
+- The placeholder ids the demos print (`vault.yield-demo.testnet`, `personality-nft.demo.testnet`, `alice.demo.testnet`) as if they were the live accounts. The live ones are in the README section "Live on testnet".

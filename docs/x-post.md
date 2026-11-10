@@ -7,50 +7,52 @@ Rules from `docs/HACKATHON.md` (Procedure, step 2):
 - Say the project was built at NEAR HACKATHON.
 - Include `@NEARProtocol` and `#NEARHackathon`. `@NearLegion` and `@NearBuilders` are optional.
 - Attach the demo video or screenshots. A video is needed when judges cannot open a hosted demo (Q-012).
-- First line makes sense to someone who has not heard of the project. Every draft here opens with the meme or the owner's question, not with a description of the architecture.
+- First line makes sense to someone who has not heard of the project. Every draft here opens with the problem or the claim, not with a description of the architecture.
 - Say what NEAR does in the product. Link the repo. Ask one real question.
 
-Each draft is at most 280 characters, counted the way X does: the `<REPO_URL>` placeholder as 23 characters (how X counts a link) and each emoji as 2. Counted that way: draft 1 is 270, draft 2 is 262, draft 3 is 277. `scripts/docs-accuracy.test.mjs` re-counts every draft and checks both tags, so re-run `node --test scripts/docs-accuracy.test.mjs` after editing one. Replace `<REPO_URL>` with `https://github.com/brandontomlin2/near-2026-hackathon` before posting (the repository must be public first; X counts the link as 23 characters, which is why the placeholder stays in the blocks below). Live demo URL: TODO(owner): none exists; do not add one unless the human hosts it. Do not claim live testnet results until the human has run the live proof and it has shown them (`bash scripts/verify.sh` skips live stages by default).
+The product is the Yield Optimizer vault: AI agents propose trades, a NEAR vault contract's on-chain rules veto the bad ones, and only trades that pass execute on Rhea (Ref Finance). Each draft is at most 280 characters, counted the way X does: the `<REPO_URL>` placeholder as 23 characters (how X counts a link). Counted that way: draft 1 is 272, draft 2 is 279, draft 3 is 258. `scripts/docs-accuracy.test.mjs` re-counts every draft and checks both tags, so re-run `node --test scripts/docs-accuracy.test.mjs` after editing one. Replace `<REPO_URL>` with `https://github.com/brandontomlin2/near-2026-hackathon` before posting (the repository must be public first; X counts the link as 23 characters, which is why the placeholder stays in the blocks below). Live demo URL: TODO(owner): none exists; do not add one unless the human hosts it.
 
-## Draft 1 (270 characters): the meme first
+What is true, so every claim in a post can be checked against it: one approved testnet run happened on 2026-11-09 (testnet only, nothing on mainnet): the vault is deployed and made one small swap through `execute_swap` on Rhea (Ref Finance). The owner sent that swap by hand, so do not say an agent picked it, and the vault has not refused a live transaction (rejections are shown by the contract's tests and by the offline demo). The demo (`npm run yield:demo`) is offline: mock inference, a committed pool snapshot, placeholder account ids, nothing signed or sent. The ids, transaction hashes and a read-only `curl` check are in the README section "Live on testnet". Do not claim a TEE, NEAR Intents, mainnet use or a live NEAR AI Cloud call.
 
-```
-SKEPTIC SAW MY POST AND CHOSE TO SPEAK: "SHOW THE HASH?? I DO NOT EVEN KNOW WHERE THE HASH LIVES 🚀" (Chaotic, AI agent, 5 fights in). It remembers. Ask it. Mock demo, built at NEAR HACKATHON. @NEARProtocol #NEARHackathon <REPO_URL> What should it remember?
-```
-
-- Media: lead image is `out/share/meme-caption-chaotic.svg` (export it as a PNG; it is a 900 x 900 square), the best card in the meme pack. Add the shot-3 clip of `npm run ask` from `docs/demo-video.md` if the post has room for a second item.
-- NEAR's role: the NFT contract (NEP-171) has an `anchor_sheet` method for the hash of the memory sheet. In the demo it runs as a dry run: 8 calls prepared, 0 signed. The replies and the sheets are mocked: the card's lines are scripted persona lines, not model output.
-
-## Draft 2 (262 characters): the owner asks
+## Draft 1 (272 characters): the problem
 
 ```
-I asked my AI agent what it thinks of Skeptic. "5 fights and counting, bro I did not read the contract and it SHOWS 💀" Then it put me in its memory. Mock-mode demo, built at NEAR HACKATHON. @NEARProtocol #NEARHackathon <REPO_URL> Who would you ask?
+Would you hand a trading bot your treasury? Ours only proposes. A NEAR vault contract checks each swap against on-chain limits and refuses the rest. One live testnet swap. Built at NEAR HACKATHON. @NEARProtocol #NEARHackathon <REPO_URL> Which rule is missing?
 ```
 
-- Media: the meme card first (`out/share/meme-caption-chaotic.svg` as a PNG), then a terminal recording of `npm run ask -- chaotic "what do you think of Skeptic?"`: the answer line, and the sheet diff where `Owner: 0 fights, 0 hugs, 1 shrug` joins the scorecard.
-- NEAR's role: every answer rewrites the character sheet, and the new hash is sent to `anchor_sheet` as a dry run (`anchor_sheet dry-run (not sent)`). Nothing is signed. The sheets come from a deterministic stand-in, not a model. In the page's art, a star is added to its art for every sheet written: 1 star at mint, 3 after six rounds.
+- Media: the terminal screenshot of `npm run yield:demo`, cropped from the `YIELD DEMO` line to `1 unsigned execute_swap call planned, 0 signed, 0 sent`, and a screenshot of the swap transaction page linked in the README section "Live on testnet".
+- NEAR's role: the vault contract (`contracts/yield-vault/`) holds the tokens, checks every `execute_swap` against the owner's rules and makes the swap on Rhea (Ref Finance). The live swap is 0.01 wNEAR on Ref pool 0 on testnet.
 
-## Draft 3 (277 characters): for builders
+## Draft 2 (279 characters): the rejections
 
 ```
-4 AI agents argue in one channel, then turn their own replies into memes. Each is meant as an NFT whose memory hash a new owner can re-check. Offline, mock mode: `npm run demo`. Built at NEAR HACKATHON. @NEARProtocol #NEARHackathon <REPO_URL> What would you break?
+AI agents propose swaps; a NEAR vault contract decides: max trade, daily cap, price floor, pause. The offline mock demo shows 4 proposals it rejects, with the contract's own errors. Built at NEAR HACKATHON. @NEARProtocol #NEARHackathon <REPO_URL> What would you cap?
 ```
 
-- Media: meme card first, then a screenshot of `out/index.html` (Transfer section, four `match` rows) and a screenshot of `bash scripts/verify.sh` showing `result: PASS`.
-- NEAR's role: the contract (NEP-171, Rust) is unit-tested locally (README "Contract"). Nothing is deployed to testnet or minted, no anchor is sent (all dry runs), and inference is mocked.
+- Media: the "Rejected by the on-chain rules" table on `out/yield-demo/index.html` (the four `REJECTED ERR_...` lines), then the terminal summary.
+- NEAR's role: the four messages are the exact strings the Rust `check_rules` returns, read from `contracts/yield-vault/tests/rule-vectors.json`, the vectors the contract is tested with. The demo is a dry run with mock inference; the agents' proposals come from a committed snapshot of Ref testnet pools.
 
-> Live testnet transaction hashes get added to the post only after the human runs the live proof (`npm run live-proof`) and sees them. Until then every claim above is mock mode or dry run.
+## Draft 3 (258 characters): for builders
+
+```
+A Rust vault on NEAR swaps on Rhea (Ref Finance) only if the owner's rules pass. One live testnet swap, nothing on mainnet. `npm run yield:demo` runs offline. Built at NEAR HACKATHON. @NEARProtocol #NEARHackathon <REPO_URL> What would you break?
+```
+
+- Media: a screenshot of `bash scripts/verify.sh` ending `result: PASS`, and the explorer page of the swap transaction.
+- NEAR's role: near-sdk contract, NEP-141 deposits, cross-contract promises and callbacks to Ref. The refund and recovery paths have run only against a mock Ref; the one live swap is the only run against the real Ref testnet contract.
+
+> The personality NFTs the four agents also come from are supporting context and are not in these drafts. If the human wants a line about them, the true version is: the agents are also NEP-171 NFTs, the NFT contract is deployed on testnet and one token (`aloof`) was minted. The chat between the agents is scripted and the character sheets come from a deterministic stand-in, not a model.
 
 ## What to attach
 
-- Screenshot (produced by the code): `npm run screenshot` runs `node scripts/screenshot.mjs`, which runs the demo into a temp dir and writes a full-page PNG to `out/page.png` (`DEFAULT_OUT = join(ROOT, "out", "page.png")`, `scripts/screenshot.mjs` line 17; it needs a Chrome or Chromium already installed). `out/page.png` is gitignored.
-- Meme card: `npm run demo` writes `out/share/meme-caption-chaotic.svg` (also `meme-caption-skeptic.svg`, `meme-villain-chaotic.svg`; names built in `src/demo/memes.mjs`). X does not accept SVG, so the human opens it in a browser and saves or screenshots it as a PNG.
-- Video: no script produces one. The human records it by hand from `docs/demo-video.md` (60 to 90 seconds; its screenshot checklist is the fallback). `docs/HACKATHON.md` Q-012 says screenshots are not enough when judges cannot open a hosted demo, so record the video.
+- Screenshot of the offline vault page: run `npm run yield:demo`, then open `out/yield-demo/index.html` and capture it by hand.
+- Screenshot (produced by the code) of the supporting NFT page: `npm run screenshot` runs `node scripts/screenshot.mjs`, which runs the demo into a temp dir and writes a full-page PNG to `out/page.png` (it needs a Chrome or Chromium already installed). `out/page.png` is gitignored.
+- Video: no script produces one. The human records it by hand from `docs/yield-demo-video-script.md` (the vault video, about 90 seconds) or `docs/demo-video.md` (the vault first, then the supporting demo). `docs/HACKATHON.md` Q-012 says screenshots are not enough when judges cannot open a hosted demo, so record the video.
 
 ## Before the human posts
 
 - [ ] Pick one draft and edit it into their own voice.
 - [ ] Replace `<REPO_URL>`. The repository must be public first.
 - [ ] Attach the video or screenshots.
-- [ ] Confirm every claim in the text matches what the demo shows.
+- [ ] Confirm every claim in the text matches the "What is true" paragraph above and the README section "Live on testnet".
 - [ ] Publish, copy the post URL, and give it to the agent. That URL is `demoUrl` in the submission.

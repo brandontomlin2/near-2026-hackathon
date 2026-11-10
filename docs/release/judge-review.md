@@ -1,5 +1,7 @@
 # Judge-eye review, 2026-11-09
 
+Follow-up, 2026-11-09 (branch `claude/release-doc-1109b`): findings 3, 4, 5, 7 and 8 were addressed after this review, and finding 9 in part. The findings below are left as written. Finding 3: the tracks are now exactly `security`, `defi` and `nfts` in the README, `PRODUCT.md`, `docs/tracks.md` and the checklists. Finding 4: `PRODUCT.md` was replaced with the vault version. Finding 5: the README is vault-first, the NFT material sits under "Supporting: the personality NFTs", and the "Work in progress: Yield Optimizer" heading is gone. Finding 7: the README has a read-only `curl` check of the vault and the swap. Finding 8: `docs/tracks.md`, `docs/judge-checklist.md`, `docs/submission-checklist.md`, `docs/x-post.md`, `docs/demo-video.md`, `docs/demo-script.md` and `docs/yield-demo-video-script.md` now follow the vault story and the live run. Finding 9: the README marks the Shade Agent runner as cut and `docs/yield-shade-go-nogo.md` records it as not pursued; the README's Shade dry-run subsection still lists its commands. Finding 6 (no live rejection) and finding 10 (human-only items) are unchanged.
+
 What a fresh-clone AI screen (Claude Code or Codex, Q-017 in `docs/HACKATHON.md`) hits when it follows the README, and what a human judge reads next. Reviewed commit: `f605da2` on `claude/release-doc-1109` (PR #200 on top of `main` `581ae9a`). Fixes made on this branch are marked FIXED; everything else is listed for Brandon and not done.
 
 ## How it was checked
