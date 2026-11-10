@@ -12,11 +12,11 @@ Status key: **done** (evidence given), **missing** (agent-doable work not finish
 
 | Requirement (source) | Status | Where |
 | --- | --- | --- |
-| Public repo before 2026-11-14T23:59Z, kept public through judging | **HUMAN** (only they can make it public; the repo cannot show its visibility) | Section 1 |
+| Public repo before 2026-11-14T23:59Z, kept public through judging | done (public as of 2026-11-10: https://github.com/brandontomlin2/near-2026-hackathon); **HUMAN** to keep it public through judging | Section 1 |
 | README: what it is, the problem, how NEAR fits, numbered "do X, see Y" steps | done | Section 2 |
 | `LICENSE` | done (MIT) | Section 1 |
 | Libraries, templates, AI-generated code listed; pre-hackathon code disclosed | done (`docs/DISCLOSURE.md`: none predates the window) | Section 2 |
-| Pre-hackathon / `hackathon-submission` tags and README diff link (Q-003) | not applicable: no code predates 2026-11-01 (first commit `992acee`, 2026-11-02); no such tags exist | Section 3 |
+| Pre-hackathon / `hackathon-submission` tags and README diff link (Q-003) | done: annotated `pre-hackathon` tag on root commit `992acee` (repo created 2026-11-02, no pre-Oct-19 code); README and `docs/DISCLOSURE.md` link https://github.com/brandontomlin2/near-2026-hackathon/compare/pre-hackathon...main (`hackathon-submission` at final) | Section 3 |
 | Demo video, 60 to 90 s (Q-012: screenshots alone are not enough if judges cannot open a hosted demo) | **HUMAN** records it; the vault video is `docs/yield-demo-video-script.md`, the 90 second cut is `docs/demo-video.md` and the 2.5 minute script is `docs/demo-script.md`. Not recorded yet | Section 4 |
 | X post: says built at NEAR HACKATHON, tags `@NEARProtocol` and `#NEARHackathon`, video or screenshots attached | vault-first drafts done (3, each at most 280 characters, both tags); **HUMAN** edits, attaches media and publishes. Not posted | Section 4 |
 | Form fields: project name, lead name, email, team size, tracks, payout account, repo URL, demo post URL, idea, consent | all **HUMAN** | Section 6 |
@@ -31,7 +31,7 @@ Walked 2026-11-04 against this tree (main `aaaa5ba`), offline; revised 2026-11-0
 
 | Rule (HACKATHON.md section) | Status | Proof |
 | --- | --- | --- |
-| Start here 2 / Procedure 1: repo public by 2026-11-14T23:59Z | TODO-OWNER | Visibility is not visible from the tree. Human makes it public (agents must not), then opens the URL logged out. |
+| Start here 2 / Procedure 1: repo public by 2026-11-14T23:59Z | PASS | The repository is public: https://github.com/brandontomlin2/near-2026-hackathon (made public on 2026-11-10 after the owner's yes once #202 merged). Staying public through judging remains a human obligation. |
 | Q-014: repo stays public through judging; add a LICENSE file | PASS (LICENSE) / TODO-OWNER (staying public) | `LICENSE` line 1 `MIT License`, line 3 `Copyright (c) 2026 Brandon Tomlin`; README `## License` says "MIT. See `LICENSE`." |
 | Never-list: commit no secrets, keys in environment variables | PASS | `git grep -nE "ed25519:\|secp256k1:\|sk-[A-Za-z0-9]{8}\|BEGIN .*PRIVATE\|ghp_\|AKIA"` outside `.agents/` finds only placeholders (`ed25519:...`) in skill docs, fake keys in `scripts/*.test.mjs` and the pattern list in `scripts/secret-scan-fallback.mjs`, and on-chain public keys in `docs/spikes/shade-agent.md:25-26`. `git ls-files` lists no `.env`, `.pem` or `.key`; `.gitignore` excludes them. History: `git log --all -G'BEGIN [A-Z ]*PRIVATE KEY\|ghp_...\|sk-...'` hits only the scanner's own test commits; the 80+ character `secp256k1:` string in commit 83fbec5 is the public MPC root key from a testnet view call (`spikes/shade/evidence/testnet-mpc-views.txt`), not a secret. gitleaks is not installed here: see the next row. |
 | Same: secret scan on the full history before going public | TODO-OWNER | `scripts/verify.sh` secret-scan row is `PASS ... FALLBACK` (`scripts/secret-scan-fallback.mjs`, narrower than gitleaks) or `SKIP`. Install gitleaks and run `gitleaks detect` once before the repo is made public. |
@@ -40,7 +40,7 @@ Walked 2026-11-04 against this tree (main `aaaa5ba`), offline; revised 2026-11-0
 | Procedure 1 / Q-012: README for a machine reader: what it is, the problem, "do X - see Y" steps, no marketing | PASS | README `## Judge quick path` (4 numbered steps, the seconds-long demos first and verify.sh last) and `## Try it (judge path)` (steps 1-10 numbered, each "run X, see Y"); `scripts/readme-facts.test.mjs` and `scripts/readme-commands.test.mjs` pin the commands. The README opens with the vault (the problem, what `npm run yield:demo` shows, a plain status paragraph); `## Tracks and how NEAR fits` has the product-to-NEAR mapping and `## Live on testnet` the live run. |
 | Q-012: local-only demo OK with public repo, reproducible README, X post with a video; screenshots not enough if judges cannot open the demo | TODO-OWNER | Reproducible README: PASS (above). Video and X post are the human's: `docs/demo-video.md`, `docs/x-post.md`. Hosted demo is optional: `docs/hosting.md`. |
 | Q-002: existing product on another chain is allowed; disclose in README | N/A | No earlier product. README opening status paragraph ("Status, plainly:") and `## Disclosure` ("pre-hackathon code (none exists)") say pre-hackathon code: none. |
-| Q-003 / Q-004: dedicated branch, or tags `pre-hackathon` and `hackathon-submission`, plus a README section linking the diff | N/A | No code predates the window, so there is no baseline to diff. `git rev-parse 992acee` resolves to `992acee11248ef2929fc21cf3897e04241f8435b` (first commit, named in `docs/DISCLOSURE.md`); `docs/DISCLOSURE.md` names no tag. `git tag -l` lists only four local `hp-pre-rebase-*` safety tags (not baseline tags, never pushed). If the owner wants belt and braces, a `pre-hackathon` tag on `992acee` would be empty of code. |
+| Q-003 / Q-004: dedicated branch, or tags `pre-hackathon` and `hackathon-submission`, plus a README section linking the diff | PASS (pre-hackathon; hackathon-submission at final) | No code predates the window. The annotated `pre-hackathon` tag points at the root commit `992acee` (`992acee11248ef2929fc21cf3897e04241f8435b`, named in `docs/DISCLOSURE.md`). README `## Hackathon window` and `docs/DISCLOSURE.md` link https://github.com/brandontomlin2/near-2026-hackathon/compare/pre-hackathon...main. That compare will point at `hackathon-submission` once that tag exists. Local `hp-pre-rebase-*` safety tags are not baseline tags and must not be pushed. |
 | Q-001: window runs from the 2026-10-19 announcement to 2026-11-14; earlier commits are baseline | PASS | `docs/DISCLOSURE.md` "Pre-hackathon code" (first commit 2026-11-03T00:20:04Z UTC, `scripts/disclosure-facts.test.mjs` pins it). |
 | Q-005: list libraries, templates, boilerplate, AI code in README | PASS (by link) | README `## Disclosure` links `docs/DISCLOSURE.md`, which lists: no npm dependencies, Rust deps `near-sdk` 5.30.0 and `near-contract-standards` 5.30.0, `.agents/skills`, no template, AI-generated code (effectively all). Optional hardening, see GAP row below. |
 | Q-005 hardening: README itself should carry a one-line list, not only a link | GAP | Suggested line for README.md `## Disclosure` (README is owned by other PRs; not edited here): "Third-party code: no npm dependencies; Rust crates `near-sdk` 5.30.0 and `near-contract-standards` 5.30.0 (contract only); NEAR agent skills under `.agents/skills/`; no template. Nearly all code is AI-generated (Claude Code) under human direction." |
@@ -62,20 +62,20 @@ Walked 2026-11-04 against this tree (main `aaaa5ba`), offline; revised 2026-11-0
 | Human decides: contact email (max 160, at most 2 submissions per email) | TODO-OWNER | Ask. |
 | Human decides: team size (`1`, `2 - 4`, `4 - 6`, `6 - 8`, `8+`) | TODO-OWNER | Ask. |
 | Human decides: mainnet NEAR account for payout (`nearAddress`) | TODO-OWNER | Ask. Never create or invent one. |
-| Human decides: public repository URL (`projectUrl`, unique) | TODO-OWNER | Known only after the repo is public. |
+| Human decides: public repository URL (`projectUrl`, unique) | TODO-OWNER | Public URL is https://github.com/brandontomlin2/near-2026-hackathon; the human still confirms it in the payload. |
 | Human decides: public demo post URL (`demoUrl`) | TODO-OWNER | Known only after the human publishes the post. |
 | Human decides: what they built (`idea`, 20-2000 chars) | TODO-OWNER | Human approves a draft from the README opening (vault lede) and "Tracks and how NEAR fits"; a draft `idea` is in `docs/release/RELEASE.md`. |
 | Human decides: consent to the contact notice, read verbatim | TODO-OWNER | Quote is in Section 6. `true` only after the human agrees. |
 
 Disclosure note: `docs/DISCLOSURE.md` carries the Q-002, Q-003 and Q-005 answers. A one-sentence status ("Mock and testnet status": the demos are mock or dry-run, the one live state is the testnet run of 2026-11-09, no mainnet or Intents use) is there so the disclosure file stands alone.
 
-Open GAPs for the lead: (1) README one-line library list (suggested text above). TODO-OWNER items that block submission: public repo, gitleaks run on history, X post and video, Q-015 answer, all form fields (tracks are decided: `security`, `defi`, `nfts`).
+Open GAPs for the lead: (1) README one-line library list (suggested text above). TODO-OWNER items that block submission: X post and video, Q-015 answer, all form fields (tracks are decided: `security`, `defi`, `nfts`). The repository is public; a full-history gitleaks scan was run before that change.
 
 ## 1. Repository
 
 | Requirement | Status | Evidence / next step |
 | --- | --- | --- |
-| Repo public by 2026-11-14T23:59Z, stays public through judging (Q-014) | needs Brandon | Only the human makes it public. Check after: open the repo URL logged out. |
+| Repo public by 2026-11-14T23:59Z, stays public through judging (Q-014) | done (public as of 2026-11-10) / needs Brandon (stay public) | https://github.com/brandontomlin2/near-2026-hackathon is public. Keep it public through judging; check logged out if needed. |
 | `LICENSE` file (Q-014) | done | MIT, `head -3 LICENSE`; README "License" section. |
 | No secrets in tree or history | done (local) | `bash scripts/verify.sh` row `PASS secret files`. The gitleaks row is `SKIP` unless gitleaks is installed: run `gitleaks detect` before going public (needs Brandon to install or approve). |
 | `bash scripts/verify.sh` ends `result: PASS` | done | Re-run on the final commit; paste into the final PR `## Proof`. |
@@ -104,7 +104,7 @@ Submissions open 2026-11-01; the code baseline cutoff is 2026-10-19 (announcemen
 | Requirement | Status | Evidence / next step |
 | --- | --- | --- |
 | Decide whether any code predates 2026-11-01 | done | None. `git log --reverse --format='%h %ad %s' --date=short \| head` starts 2026-11-02. |
-| If any: tags `pre-hackathon` and `hackathon-submission` plus a README diff link | done (not applicable) | No `pre-hackathon` tag exists or is needed. If this changes, tag, link `<repo>/compare/pre-hackathon...hackathon-submission`, and the human pushes the tags. |
+| If any: tags `pre-hackathon` and `hackathon-submission` plus a README diff link | done (`pre-hackathon`; `hackathon-submission` at final) | Annotated `pre-hackathon` tag is on root commit `992acee`. README and `docs/DISCLOSURE.md` link https://github.com/brandontomlin2/near-2026-hackathon/compare/pre-hackathon...main. That compare will point at `hackathon-submission` once that tag exists. |
 | One-line "no pre-hackathon code" in README | done | README line under "Mock caveats and status" and in "Disclosure". |
 | Pushing tags or branches | needs Brandon | Human's explicit yes, per `HACKATHON.md`. |
 

@@ -478,6 +478,14 @@ Each token's SVG is drawn deterministically from its traits in one of four style
 | `docs/DISCLOSURE.md` | Libraries, AI-generated code and pre-hackathon code. |
 | `board/`, `.agents/`, `.claude/`, `skills-lock.json` | Agent tooling used to build this repository (build board, vendored NEAR skills), not part of the product. |
 
+## Hackathon window
+
+This repository was created during the hackathon window (first commit after the 2026-10-19 announcement), so the `pre-hackathon` tag points at the root commit. The work in the window is the diff from that tag to `main`:
+
+https://github.com/brandontomlin2/near-2026-hackathon/compare/pre-hackathon...main
+
+That compare will point at `hackathon-submission` once that tag exists.
+
 ## Disclosure
 
 Libraries used, AI-generated code, and pre-hackathon code (none exists): see [`docs/DISCLOSURE.md`](docs/DISCLOSURE.md).

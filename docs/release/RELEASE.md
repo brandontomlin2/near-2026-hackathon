@@ -64,11 +64,11 @@ What the live run does not show, so nobody over-claims it:
 - It is one swap. The vault has not refused a live transaction on testnet; the rejections are shown by the contract's unit tests, the sandbox tests and the offline demo, which prints the exact messages the Rust `check_rules` returns.
 - The live swap is pool 0 (wNEAR to `rft`). The offline demo plans a different swap (pool 747, 0.05 USDC.e to USDT.e). The README live-path section explains why: the owner could fund a pool 0 swap by wrapping testnet NEAR.
 - The owner sent the live swap by hand from printed near-cli-rs commands, using the runbook's pool 0 fallback. The README does not record an agent proposing it, so do not present it as an agent-picked trade. No agent runs unattended.
-- The NFT's `media` URL is a GitHub raw link to `docs/nft-media/aloof.svg` on `main`. It returns 404 until PR #200 is merged and the repository is public. That is expected; the art is already committed under `docs/nft-media/` and will resolve then. Do not host it elsewhere.
+- The NFT's `media` URL is a GitHub raw link to `docs/nft-media/aloof.svg` on `main`. PR #200 is merged and the repository is public, so that raw link should resolve. The art lives under `docs/nft-media/`.
 
 ## What was built during the hackathon
 
-All of it. The first commit is `992acee` on 2026-11-02 (CST); there is no pre-hackathon code (`docs/DISCLOSURE.md`), so no `pre-hackathon` tag is needed. The code was written by AI coding agents under Brandon's direction and review, which `docs/DISCLOSURE.md` states.
+All of it. The first commit is `992acee` on 2026-11-02 (CST); there is no pre-hackathon code (`docs/DISCLOSURE.md`), so the annotated `pre-hackathon` tag points at that root commit. The work in the window is the diff from that tag to `main`: https://github.com/brandontomlin2/near-2026-hackathon/compare/pre-hackathon...main (that compare will point at `hackathon-submission` once that tag exists). The code was written by AI coding agents under Brandon's direction and review, which `docs/DISCLOSURE.md` states.
 
 - The vault contract: about 2,000 lines of Rust plus about 4,200 lines of unit tests (`cargo test` in `contracts/yield-vault`; count in [`validation.md`](validation.md)), and a separate local sandbox suite against a mock Ref and mock tokens (`contracts/yield-vault/sandbox/`).
 - One JavaScript copy of the vault rules (`src/yield/rules.mjs`) held to the contract by shared vectors.

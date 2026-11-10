@@ -66,6 +66,33 @@ test("submission-checklist cites README sections that exist", async () => {
   assert.match(readme, /pre-hackathon code \(none\)/);
 });
 
+test("DISCLOSURE.md names the pre-hackathon tag and the compare link", async () => {
+  const text = await disclosure;
+  assert.doesNotMatch(text, /there is no `pre-hackathon` tag|no `pre-hackathon` tag and no baseline/);
+  assert.match(text, /`pre-hackathon` tag therefore points at the root commit `992acee`/);
+  assert.match(
+    text,
+    /https:\/\/github.com\/brandontomlin2\/near-2026-hackathon\/compare\/pre-hackathon\.\.\.main/,
+  );
+  assert.match(text, /hackathon-submission/);
+});
+
+test("docs no longer claim there is no pre-hackathon tag", async () => {
+  for (const rel of [
+    "docs/DISCLOSURE.md",
+    "docs/submission-checklist.md",
+    "docs/release/RELEASE.md",
+    "docs/release/judge-review.md",
+  ]) {
+    const text = await read(rel);
+    assert.doesNotMatch(
+      text,
+      /no `pre-hackathon` tag(?: and no baseline| exists or is needed| is needed)|there is no `pre-hackathon` tag|no such tags exist|names no tag/,
+      `${rel} still claims there is no pre-hackathon tag`,
+    );
+  }
+});
+
 test("personality-nft audit names the init call testnet-deploy really builds", async () => {
   const deploy = await read("scripts/testnet-deploy.mjs");
   assert.match(deploy, /"with-init-call", INIT_METHOD/);
